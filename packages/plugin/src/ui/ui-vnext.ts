@@ -6,7 +6,7 @@
  */
 
 import {
-  extract, ProseProxyError, specHashProjection, contentHash, EXTRACTOR_VERSION,
+  extract, specHashProjection, contentHash, EXTRACTOR_VERSION,
   type SpecHashProjection, type Bump,
 } from '@spec-layer/extractor';
 import type { ProseV2 } from '@spec-layer/extractor';
@@ -31,6 +31,7 @@ import { setRailBadge } from './shell/sidebar';
 import { confirmDialog } from './shell/confirmDialog';
 import {
   createComponentSelection,
+  MEASURE_LAST_VIEW_TITLE,
   renderComponentScreen,
   type ComponentSelection,
 } from './screens/component';
@@ -89,6 +90,7 @@ import {
   finishOperation,
 } from './viewModel/operationGate';
 import {
+  aiFailureNote,
   autoExtract,
   copyBriefFromSource,
   copyFoundationBrief,
@@ -102,9 +104,9 @@ import {
   onFoundationMessage,
   setFoundationGroupDescriptions,
   onSelectionFoundation,
+  nextPhaseIndex,
   omissionsMessage,
   withoutAiOmissions,
-  quotaExhaustedNote,
   onFoundationToggleAll,
   pluginBuild,
   resultOutcome,
@@ -126,7 +128,6 @@ import {
   deactivateLicense,
   effectiveAuth,
   fetchQuota,
-  groupErrorCopy,
   isQuotaExhausted,
   licenseExternalUrl,
   publishAuth,
@@ -191,8 +192,21 @@ let settingsFontsRequested = false;
 let fontMenu: { field: FontField; query: string; activeIndex: number } | null = null;
 let settingsCustomDraft: BrandTheme | null = null;
 let licenseScreenState: LicenseState = 'checking';
+/** A saved key's Check again is running, so the button reads Checking…. */
+let licenseRechecking = false;
 let licenseInput = '';
 let libraryEntries: LibraryEntry[] = [];
+/**
+ * Whether each selected component already has a doc, as main reports after a
+ * selection (`selectionDoc`). Keyed by component so an answer that arrives
+ * while a build defers the selection is still there when it applies. A known
+ * doc turns the footer's Create docs into Replace docs; unknown stays Create.
+ */
+const componentHasDoc = new Map<string, boolean>();
+const currentHasDoc = (): boolean => {
+  const id = state.currentNode?.id;
+  return id ? componentHasDoc.get(id) === true : false;
+};
 const libraryDrift = new Map<string, LibraryDriftState>();
 const libraryBaseline = new Map<string, string>();
 // docId → the EXTRACTOR_VERSION stamped on its doc link (undefined on blobs
@@ -280,7 +294,9 @@ setFoundationHost({
   },
   startProgress: (messages) => {
     stopFoundationProgress();
-    const phases = messages.length ? messages : ['Creating foundation frames'];
+    // setFoundationGenerating always passes foundationBuildMessages, so the
+    // lines are used as given.
+    const phases = messages;
     let index = 0;
     const current = foundationScreen.kind === 'generating'
       ? foundationScreen
@@ -290,7 +306,14 @@ setFoundationHost({
     if (phases.length > 1) {
       foundationProgressTimer = setInterval(() => {
         if (foundationScreen.kind !== 'generating') return;
-        index = (index + 1) % phases.length;
+        // Hold on the last line: a slow AI build must not cycle back to
+        // "Reading this file’s variables and styles".
+        const next = nextPhaseIndex(index, phases.length);
+        if (next === null) {
+          stopFoundationProgress();
+          return;
+        }
+        index = next;
         foundationScreen = { ...foundationScreen, phase: phases[index] };
         if (view === 'foundations') paint();
       }, 2600);
@@ -365,7 +388,9 @@ function startComponentProgress(
   action: 'create',
 ): void {
   stopComponentProgress();
-  const phases = messages.length ? messages : ['Working'];
+  // createDocFrame always passes generatingMessages, so the lines are used as
+  // given.
+  const phases = messages;
   let index = 0;
   screen = {
     kind: 'building',
@@ -377,7 +402,14 @@ function startComponentProgress(
   if (phases.length > 1) {
     componentProgressTimer = setInterval(() => {
       if (screen.kind !== 'building') return;
-      index = (index + 1) % phases.length;
+      // Hold on the last line: a slow AI build must not cycle back to
+      // "Looking at the component" after "Placing docs on the canvas".
+      const next = nextPhaseIndex(index, phases.length);
+      if (next === null) {
+        stopComponentProgress();
+        return;
+      }
+      index = next;
       screen = { ...screen, phase: phases[index] };
       if (view === 'component') paint();
     }, 2600);
@@ -397,7 +429,7 @@ function paintAllowance(): void {
 function paint(): void {
   switch (view) {
     case 'component':
-      renderComponentScreen(refs, screen, selection, facts);
+      renderComponentScreen(refs, screen, selection, facts, currentHasDoc());
       return;
     case 'foundations':
       renderFoundationScreen(
@@ -443,14 +475,14 @@ function paint(): void {
         const progress = update
           ? {
               label: update.batch
-                ? `Updating document ${Math.min(update.completed + 1, update.total)} of ${update.total}`
-                : 'Updating documentation',
+                ? `Updating doc ${Math.min(update.completed + 1, update.total)} of ${update.total}`
+                : 'Updating this doc',
               current: update.completed,
               total: update.total,
             }
           : libraryRefreshing || pendingChecks
               ? {
-                  label: libraryEntries.length === 0 ? 'Reading Library' : 'Checking source changes',
+                  label: libraryEntries.length === 0 ? 'Finding docs in this file' : 'Checking for source changes',
                   ...(checkTotal > 0 ? { current: checkDone, total: checkTotal } : {}),
                 }
               : null;
@@ -478,6 +510,10 @@ function paint(): void {
         remaining,
         limit,
         resetsAt: quota?.resetsAt ?? '',
+        // A limit only the proxy can state: before its answer, offline, or
+        // with no limit in the answer, there is no count to show.
+        quotaKnown: quota !== null && quota.limit !== null,
+        rechecking: licenseRechecking,
       });
       return;
     }
@@ -612,6 +648,26 @@ async function removeCurrentLicense(): Promise<void> {
   licenseScreenState = 'removed';
   paint();
   await refreshQuota(false);
+}
+
+/**
+ * Check again, for a saved key whose last check could not finish. It runs the
+ * same check the plugin runs on launch. It used to switch the screen to the
+ * inactive state instead, which told the user the key was not connected when
+ * nothing had said so.
+ */
+async function recheckLicense(): Promise<void> {
+  if (licenseRechecking) return;
+  licenseRechecking = true;
+  paint();
+  try {
+    await refreshQuota();
+  } finally {
+    licenseRechecking = false;
+    // Back on the button when the check still could not finish; when it did,
+    // the button is gone and there is nothing to focus.
+    paintAndFocus('[data-license-retry]');
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -751,20 +807,13 @@ async function buildFoundations(): Promise<void> {
       groupDescriptions = draft.descriptions;
       collectionOverviews = Object.keys(draft.overviews).length > 0 ? draft.overviews : undefined;
       if (Object.keys(groupDescriptions).length === 0 && !collectionOverviews) {
-        foundationAiNote = 'AI descriptions came back empty.';
+        foundationAiNote = 'AI writing returned nothing usable, so the AI descriptions were left out.';
       }
     } catch (error) {
-      if (error instanceof ProseProxyError && error.code === 'quota_exhausted') {
-        // The same sentence a component build uses, with the limit and the
-        // reset date, rather than "skipped" plus a bare "used up".
-        state.quotaExhausted = true;
-        foundationAiNote = quotaExhaustedNote(state.quota, 'foundation');
-      } else {
-        const detail = error instanceof ProseProxyError
-          ? groupErrorCopy(error.code)
-          : 'The AI service could not be reached.';
-        foundationAiNote = `AI descriptions were skipped. ${detail}`;
-      }
+      // The same notes a component build uses, worded for descriptions: the
+      // quota with its limit and reset date, a lapsed license (which also
+      // drops this session to the free plan), or the request's own failure.
+      foundationAiNote = aiFailureNote(state, error, 'foundation');
     }
   }
 
@@ -975,7 +1024,13 @@ function copyFoundationRow(id: string, kind: 'collection' | 'textStyles' | 'effe
   );
 }
 
-function finishLibraryOperation(error = ''): void {
+/**
+ * End the Library's update or copy and say how it went.
+ *
+ * `error` is why the run ended early, if it did. It shows as an error unless
+ * `canceled` says the user chose to stop, which is not a failure.
+ */
+function finishLibraryOperation(error = '', canceled = false): void {
   const active = libraryOperation;
   if (!active) return;
   let message = '';
@@ -984,15 +1039,18 @@ function finishLibraryOperation(error = ''): void {
   if (active.kind === 'update') {
     message = error
       ? active.completed > 0
-        ? `Updated ${active.completed} of ${active.total}. ${error}`
+        ? `Updated ${active.completed} of ${active.total} docs. ${error}`
         : error
       : active.batch
-        ? `Updated ${active.completed} ${active.completed === 1 ? 'document' : 'documents'}.`
-        : 'Document updated.';
+        ? `Updated ${active.completed} ${active.completed === 1 ? 'doc' : 'docs'}.`
+        : 'Doc updated.';
     // Same sentences the Create path appends, so a section the Library left
-    // out is reported rather than silently missing from the frame.
+    // out is reported rather than silently missing from the frame. An AI note
+    // explains the empty AI sections itself, so they are not listed again.
     if (!error && active.omitted.length) {
-      omitted = state.quotaExhausted ? withoutAiOmissions(active.omitted) : active.omitted;
+      omitted = state.quotaExhausted || active.aiNotes.length > 0
+        ? withoutAiOmissions(active.omitted)
+        : active.omitted;
       message = omissionsMessage(message, omitted);
     }
     // A failed rebuild top-up, reported the way Create reports its own
@@ -1014,7 +1072,9 @@ function finishLibraryOperation(error = ''): void {
   if (message) {
     nativeNotify(
       message,
-      error ? { error: true, timeout: 5000 } : (omitted.length || aiNotes.length) ? { timeout: 5500 } : {},
+      error
+        ? canceled ? { timeout: 5000 } : { error: true, timeout: 5000 }
+        : (omitted.length || aiNotes.length) ? { timeout: 5500 } : {},
     );
   }
   libraryOperation = null;
@@ -1033,7 +1093,7 @@ function dispatchNextLibraryUpdate(): void {
   }
   const entry = libraryEntry(docId);
   if (!entry || !entry.sourceExists) {
-    finishLibraryOperation('A source is no longer available, so the remaining updates stopped.');
+    finishLibraryOperation('A doc’s source is no longer in this file, so the remaining updates stopped. Try again to update the rest.');
     return;
   }
   active.currentDocId = docId;
@@ -1049,19 +1109,44 @@ function dispatchNextLibraryUpdate(): void {
   if (view === 'library') paint();
 }
 
-async function startLibraryUpdates(docIds: string[], batch: boolean): Promise<void> {
+/** The one-doc hand-edit confirm's title, shared by both places that ask. */
+const HAND_EDIT_TITLE = 'Replace your edits to generated content?';
+
+/**
+ * The one-doc hand-edit confirm's body, shared by the row Update and the
+ * docSource reply's own check so the two cannot drift. What survives an
+ * Update is the writing sections, and only a component doc has them: a
+ * foundation doc tags none, so there an Update replaces every edit.
+ */
+function handEditBody(foundation: boolean): string {
+  const replaced = 'You edited generated content in this doc by hand. Updating replaces those edits.';
+  return foundation ? replaced : `${replaced} Your text in the writing sections is kept.`;
+}
+
+/**
+ * Update the given docs, one at a time.
+ *
+ * `batchLabel` is the label of the button that started a batch, so the
+ * hand-edit confirm repeats the action the user chose: "Update all docs", or
+ * "Rebuild docs" from the rebuild banner.
+ */
+async function startLibraryUpdates(
+  docIds: string[],
+  batch: boolean,
+  batchLabel = 'Update all docs',
+): Promise<void> {
   if (docIds.length === 0 || operation.active) return;
   const edited = docIds.filter((docId) => libraryEntry(docId)?.selfEdited);
   if (edited.length > 0) {
     const ok = await confirmDialog(batch
       ? {
-          title: `Replace hand edits in ${edited.length} ${edited.length === 1 ? 'document' : 'documents'}?`,
-          body: `${edited.length} selected ${edited.length === 1 ? 'document has' : 'documents have'} hand edits to generated content. Updating replaces those edits. Text in the writing sections is kept.`,
-          confirmLabel: 'Update all',
+          title: `Replace hand edits in ${edited.length} ${edited.length === 1 ? 'doc' : 'docs'}?`,
+          body: `${edited.length} ${edited.length === 1 ? 'doc has' : 'docs have'} hand edits to generated content. Updating replaces those edits. In component docs, text in the writing sections is kept.`,
+          confirmLabel: batchLabel,
         }
       : {
-          title: 'Replace your edits to generated content?',
-          body: 'You edited generated content in this frame by hand. Updating replaces those edits. Your text in the writing sections is kept.',
+          title: HAND_EDIT_TITLE,
+          body: handEditBody(libraryEntry(edited[0])?.kind === 'foundation'),
           confirmLabel: 'Update',
         });
     if (!ok) return;
@@ -1359,7 +1444,7 @@ function fontFallbackWarning(value: string): string {
     settingsFonts.length > 0 &&
     !settingsFonts.includes(value);
   return unknown
-    ? 'Figma does not list Regular, Medium, and Bold styles for this font. The frame will fall back to Inter.'
+    ? 'Figma doesn’t list Regular, Medium, and Bold styles for this font, so docs will use Inter. Pick a font from the list instead.'
     : '';
 }
 
@@ -1558,7 +1643,7 @@ function syncMeasurementOptions(): void {
     button.setAttribute('aria-pressed', String(selected));
     if (selected && only === id) {
       button.setAttribute('aria-disabled', 'true');
-      button.title = 'At least one measurement view is required';
+      button.title = MEASURE_LAST_VIEW_TITLE;
     } else {
       button.removeAttribute('aria-disabled');
       button.removeAttribute('title');
@@ -1663,6 +1748,7 @@ document.addEventListener('click', (event) => {
           || (!rebuildOnly && row.status === 'updateAvailable'))
         .map((row) => row.docId),
       true,
+      rebuildOnly ? 'Rebuild docs' : 'Update all docs',
     );
     return;
   }
@@ -1750,9 +1836,28 @@ document.addEventListener('click', (event) => {
   }
 
   if (target.closest('[data-publish-rotate]')) {
-    void onRotateClick(
-      publishAuth(state.licenseKey, state.licenseInstanceId, state.figmaUserId),
-    );
+    const rotate = (): void => {
+      void onRotateClick(
+        publishAuth(state.licenseKey, state.licenseInstanceId, state.figmaUserId),
+      );
+    };
+    // With the key on this device the screen shows its setup commands and
+    // never states what rotating costs, so the confirm does. Without it, the
+    // screen's own note already says so beside the button.
+    if (!publishState().pullKey) {
+      rotate();
+      return;
+    }
+    void confirmDialog({
+      title: 'Rotate the pull key?',
+      body: 'The current pull key stops working for everyone within about a minute, '
+        + 'and it can’t be restored. Developers need the new setup command to keep pulling.',
+      confirmLabel: 'Rotate',
+      cancelLabel: 'Cancel',
+      tone: 'danger',
+    }).then((ok) => {
+      if (ok) rotate();
+    });
     return;
   }
 
@@ -1827,8 +1932,8 @@ document.addEventListener('click', (event) => {
       case 'detach':
         if (operation.active) return;
         void confirmDialog({
-          title: 'Detach this documentation?',
-          body: 'It stays on the canvas as a plain frame and stops tracking its source.',
+          title: 'Detach this doc?',
+          body: 'It stays on the canvas but leaves the Library. Spec Layer stops tracking its source and can’t update it again.',
           confirmLabel: 'Detach',
         }).then((ok) => {
           if (ok && !operation.active) send({ type: 'detachDoc', docId });
@@ -1837,9 +1942,9 @@ document.addEventListener('click', (event) => {
       case 'remove':
         if (operation.active) return;
         void confirmDialog({
-          title: 'Remove this frame from the canvas?',
-          body: 'The documentation Section is deleted and its Library connection is removed.',
-          confirmLabel: 'Remove',
+          title: 'Delete this doc?',
+          body: 'This deletes the doc’s Section and everything in it, and removes the doc from the Library.',
+          confirmLabel: 'Delete',
           tone: 'danger',
         }).then((ok) => {
           if (ok && !operation.active) send({ type: 'removeDoc', docId });
@@ -1863,9 +1968,7 @@ document.addEventListener('click', (event) => {
   }
 
   if (target.closest('[data-license-retry]')) {
-    licenseInput = state.licenseKey ?? '';
-    licenseScreenState = 'inactive';
-    paintAndFocus('[data-license-input]');
+    void recheckLicense();
     return;
   }
 
@@ -2509,15 +2612,20 @@ window.onmessage = (event: MessageEvent): void => {
       {
         stopComponentProgress();
         const note = state.pendingAiNote;
-        // Out of AI uses: the note explains the empty AI sections once, so
-        // they are not also listed one by one as "nothing to show".
-        const omittedToList = state.quotaExhausted ? withoutAiOmissions(state.lastOmitted) : state.lastOmitted;
-        const outcome = omissionsMessage(resultOutcome(Boolean(msg.replaced), state.lastFrameCount), omittedToList);
+        // Out of AI uses, or any other failed AI request: the note explains
+        // the empty AI sections once, so they are not also listed one by one
+        // as "nothing to show".
+        const omittedToList = state.quotaExhausted || note
+          ? withoutAiOmissions(state.lastOmitted)
+          : state.lastOmitted;
+        const outcome = omissionsMessage(resultOutcome(Boolean(msg.replaced)), omittedToList);
         screen = {
           kind: 'success',
           componentName: currentName(),
           replaced: msg.replaced,
         };
+        // The component has a doc now, so the next Create replaces it.
+        if (state.currentNode) componentHasDoc.set(state.currentNode.id, true);
         nativeNotify(
           note ? `${outcome} ${note}` : outcome,
           (note || state.lastOmitted.length) ? { timeout: 5500 } : {},
@@ -2534,7 +2642,7 @@ window.onmessage = (event: MessageEvent): void => {
 
     case 'docFrameError':
       if (libraryOperation?.kind === 'update' && libraryOperation.currentDocId) {
-        finishLibraryOperation(`Update failed: ${msg.message}`);
+        finishLibraryOperation(`Couldn’t update this doc. (${msg.message})`);
         return;
       }
       stopComponentProgress();
@@ -2609,6 +2717,11 @@ window.onmessage = (event: MessageEvent): void => {
       paint();
       return;
 
+    case 'selectionDoc':
+      componentHasDoc.set(msg.nodeId, msg.hasDoc);
+      if (view === 'component' && state.currentNode?.id === msg.nodeId) paint();
+      return;
+
     case 'componentImage':
       resolveComponentImage({ base64: msg.base64, mediaType: msg.mediaType });
       return;
@@ -2663,12 +2776,18 @@ window.onmessage = (event: MessageEvent): void => {
       }
       setFoundationGenerating(false);
       {
-        const parts = [
-          msg.created ? `${msg.created} created` : '',
-          msg.replaced ? `${msg.replaced} updated` : '',
-          foundationAiNote,
-        ].filter(Boolean);
-        nativeNotify(parts.join(' · ') || 'Foundation docs created', foundationAiNote ? { timeout: 5500 } : {});
+        // Nothing created or updated means the file changed after the list
+        // was read: the selected sources are gone. Said even with an AI note,
+        // which alone would leave the empty result unexplained.
+        const outcome = [
+          msg.created ? `Created ${msg.created} doc${msg.created === 1 ? '' : 's'}.` : '',
+          msg.replaced ? `Updated ${msg.replaced} doc${msg.replaced === 1 ? '' : 's'}.` : '',
+        ].filter(Boolean).join(' ')
+          || 'No docs were created. The selected sources are no longer in this file. Refresh sources and try again.';
+        nativeNotify(
+          foundationAiNote ? `${outcome} ${foundationAiNote}` : outcome,
+          foundationAiNote ? { timeout: 5500 } : {},
+        );
       }
       foundationScreen = { kind: 'ready' };
       foundationAiNote = '';
@@ -2683,13 +2802,14 @@ window.onmessage = (event: MessageEvent): void => {
         libraryOperation.currentDocId &&
         libraryEntry(libraryOperation.currentDocId)?.kind === 'foundation'
       ) {
-        finishLibraryOperation(`Update failed: ${msg.message}`);
+        finishLibraryOperation(`Couldn’t update this doc. (${msg.message})`);
         return;
       }
       setFoundationGenerating(false);
       nativeNotify(
         msg.created > 0
-          ? `${msg.created} created before the build stopped. ${msg.message}`
+          ? `Created ${msg.created} doc${msg.created === 1 ? '' : 's'}, then the build stopped. `
+            + `Create docs again to finish. (${msg.message})`
           : msg.message,
         { error: true, timeout: 5500 },
       );
@@ -2810,6 +2930,9 @@ window.onmessage = (event: MessageEvent): void => {
         return;
       }
       const runUpdate = (): void => {
+        // updateFromSource reports through this callback before every false
+        // return, so a refusal arrives with its own sentence. The backstop
+        // below only keeps an empty one from reading as "Doc updated."
         let preparationError = '';
         // A stale-version rebuild tops up the sections the old prompt could
         // not write before the frame rebuilds; a plain update sends the
@@ -2831,23 +2954,21 @@ window.onmessage = (event: MessageEvent): void => {
             preparationError = message;
           }));
         })().then((dispatched) => {
-          if (!dispatched) {
-            finishLibraryOperation(
-              preparationError ||
-              'The source could not be prepared, so the remaining updates stopped.',
-            );
-          }
+          if (!dispatched) finishLibraryOperation(preparationError || 'Couldn’t update this doc.');
         });
       };
       if (msg.selfEdited && !active.confirmedOverwrite.has(msg.docId)) {
         void confirmDialog({
-          title: 'Replace your edits to generated content?',
-          body: 'You edited generated content in this frame by hand. Updating replaces those edits. Your text in the writing sections is kept.',
+          title: HAND_EDIT_TITLE,
+          // docSource only ever serves component docs, so the writing
+          // sections are always there to keep.
+          body: handEditBody(false),
           confirmLabel: 'Update',
         }).then((ok) => {
           if (libraryOperation !== active) return; // the operation ended while the dialog was open
           if (!ok) {
-            finishLibraryOperation('Update canceled because the frame has hand edits to generated content.');
+            // The user's own choice, so it reads as a status, not an error.
+            finishLibraryOperation('Update canceled. Your edits were kept.', true);
             return;
           }
           active.confirmedOverwrite.add(msg.docId);
@@ -2892,9 +3013,14 @@ window.onmessage = (event: MessageEvent): void => {
       setFoundationGroupDescriptions(msg.groupDescriptions);
       nativeNotify(
         msg.type === 'docDetached'
-          ? 'Documentation detached from its source.'
-          : 'Documentation connection removed.',
+          ? 'Doc detached. It stays on the canvas but no longer appears in the Library.'
+          : 'Doc deleted.',
       );
+      // A detached or deleted doc no longer counts as the component's doc:
+      // Create would make a new one, not replace it.
+      for (const entry of libraryEntries) {
+        if (entry.docId === msg.docId && entry.sourceNodeId) componentHasDoc.set(entry.sourceNodeId, false);
+      }
       libraryEntries = libraryEntries.filter((entry) => entry.docId !== msg.docId);
       libraryDrift.delete(msg.docId);
       libraryBaseline.delete(msg.docId);

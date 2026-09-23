@@ -1,9 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { ProxyQuota } from '@spec-layer/extractor';
 import {
-  authHeaders, fetchQuota, activateLicense, deactivateLicense, PROXY_URL,
-  CHECKOUT_URL, effectiveAuth, generationErrorCopy, isQuotaExhausted,
-  licenseExternalUrl, publishAuth,
+  authHeaders, fetchQuota, activateLicense, activationInstanceName, deactivateLicense, PROXY_URL,
+  CHECKOUT_URL, effectiveAuth, generationErrorCopy, isNetworkFailure, isQuotaExhausted,
+  licenseExternalUrl, publishAuth, unreachableCopy,
 } from '../src/ui/proxy';
 
 describe('authHeaders', () => {
@@ -74,11 +74,16 @@ describe('activateLicense', () => {
     const fetcher = vi.fn(async () => new Response(
       JSON.stringify({ valid: true, status: 'active', instanceId: 'i1' }), { status: 200 },
     ));
-    const out = await activateLicense('LK-1', null, fetcher as unknown as typeof fetch);
+    const out = await activateLicense('LK-1', null, fetcher as unknown as typeof fetch, new Date(2026, 8, 23, 14, 5));
     expect(out).toEqual({ valid: true, status: 'active', instanceId: 'i1' });
     const [url, init] = fetcher.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe(`${PROXY_URL}/v1/license/activate`);
-    expect(JSON.parse(String(init.body))).toEqual({ key: 'LK-1', instanceName: 'Figma plugin' });
+    expect(JSON.parse(String(init.body))).toEqual({ key: 'LK-1', instanceName: 'Figma plugin, added Sep 23, 2026' });
+  });
+
+  it('names each device by the local day it was added, in any locale', () => {
+    expect(activationInstanceName(new Date(2026, 0, 5))).toBe('Figma plugin, added Jan 5, 2026');
+    expect(activationInstanceName(new Date(2026, 11, 31, 23, 59))).toBe('Figma plugin, added Dec 31, 2026');
   });
 
   it('sends the stored instance id so the proxy revalidates instead of re-activating', async () => {
@@ -125,14 +130,48 @@ describe('effectiveAuth', () => {
 });
 
 describe('generationErrorCopy', () => {
-  it('rate_limited', () => expect(generationErrorCopy('rate_limited')).toMatch(/a minute/));
-  it('generation_pending', () => expect(generationErrorCopy('generation_pending')).toMatch(/already generating/));
+  it('rate_limited', () => expect(generationErrorCopy('rate_limited')).toBe(
+    'Too many AI writing requests in the last minute, so the AI sections were left out. Try again in a minute.',
+  ));
+  it('generation_pending', () => expect(generationErrorCopy('generation_pending')).toBe(
+    'AI writing is still busy with an earlier request, so the AI sections were left out. Try again in a minute or two.',
+  ));
   it('other codes name the real consequence without leaking the code', () => {
     // Docs 2.0 draws no placeholder text: a section AI would have filled is
     // omitted instead, so the copy has to say that and not promise a stand-in.
-    expect(generationErrorCopy('upstream')).toBe("AI didn't run this time, so the AI sections were left out.");
+    expect(generationErrorCopy('upstream')).toBe('AI writing failed, so the AI sections were left out. Try again.');
     expect(generationErrorCopy('bad_request')).not.toContain('bad_request');
     expect(generationErrorCopy('upstream')).not.toContain('placeholder');
+  });
+  it('words a foundation build for descriptions', () => {
+    expect(generationErrorCopy('rate_limited', 'foundation')).toBe(
+      'Too many AI writing requests in the last minute, so the AI descriptions were left out. Try again in a minute.',
+    );
+  });
+  it('ends a rebuild note at what it cost', () => {
+    expect(generationErrorCopy('generation_pending', 'rebuild')).toBe(
+      'AI writing is still busy with an earlier request, so sections that needed AI were left empty.',
+    );
+    expect(unreachableCopy('rebuild')).toBe('Couldn’t reach Spec Layer, so sections that needed AI were left empty.');
+  });
+  it('uses no dash as punctuation in any note', () => {
+    for (const kind of ['component', 'rebuild', 'foundation'] as const) {
+      for (const code of ['rate_limited', 'generation_pending', 'upstream'] as const) {
+        expect(generationErrorCopy(code, kind)).not.toMatch(/[\u2013\u2014]/);
+      }
+      expect(unreachableCopy(kind)).not.toMatch(/[\u2013\u2014]/);
+    }
+  });
+});
+
+describe('isNetworkFailure', () => {
+  it('is a fetch that never arrived, and nothing else', () => {
+    expect(isNetworkFailure(new TypeError('Failed to fetch'))).toBe(true);
+    expect(isNetworkFailure(new TypeError('fetch failed'))).toBe(true);
+    expect(isNetworkFailure(new TypeError('Load failed'))).toBe(true);
+    expect(isNetworkFailure(new TypeError('Cannot read properties of undefined'))).toBe(false);
+    expect(isNetworkFailure(new Error('Failed to fetch'))).toBe(false);
+    expect(isNetworkFailure('Failed to fetch')).toBe(false);
   });
 });
 

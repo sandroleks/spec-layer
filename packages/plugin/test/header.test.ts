@@ -45,7 +45,8 @@ describe('headerMarkup', () => {
 
   it('names every icon-only control', () => {
     const html = headerMarkup();
-    expect(html).toContain('aria-label="Open quick search"');
+    // Starts with the visible word, Search, so voice control can match it.
+    expect(html).toContain('aria-label="Search your docs"');
     expect(html).toContain('aria-label="Switch to light theme"');
   });
 
@@ -57,7 +58,8 @@ describe('headerMarkup', () => {
     expect(summary).toBeInstanceOf(HTMLButtonElement);
     expect(upgrade).toBeInstanceOf(HTMLButtonElement);
     expect(upgrade?.textContent).toBe('Upgrade');
-    expect(upgrade?.getAttribute('aria-label')).toBe('Upgrade to Pro');
+    // It leaves Figma for checkout, and nothing on screen says so.
+    expect(upgrade?.getAttribute('aria-label')).toBe('Upgrade to Pro, opens in your browser');
     expect(summary?.contains(upgrade ?? null)).toBe(false);
   });
 

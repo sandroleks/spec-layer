@@ -411,7 +411,7 @@ function convertLiteral(
       // clamped or padded guess.
       diagnostics.push(diagnostic('INVALID_SOURCE_COLOR', {
         entity_id: entityId, mode_id: modeId,
-        message: `Colour could not be canonicalized: ${result.reason}`,
+        message: `Color could not be canonicalized: ${result.reason}`,
       }));
       return { kind: 'missing', reason: 'invalid_source_value' };
     }

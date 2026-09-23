@@ -245,7 +245,8 @@ describe('Component Context v5', () => {
       ...foundation(),
       diagnostics: [{
         code: 'STYLE_BINDING_DRIFT', severity: 'warning', entity_id: 'StyleID:text',
-        message: 'The typography property snapshot differs from its unambiguous bound token value.',
+        message: 'The typography style\'s own value for `details.property` differs from the value its bound '
+          + 'token holds in every mode; the style keeps its own value, and `details` carries both.',
         details: {
           property: 'font_weight',
           style_value: { type: 'number', value: 400 },

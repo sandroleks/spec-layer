@@ -44,7 +44,7 @@ describe('scaleNote', () => {
   it('is null at true size and names the floored percentage otherwise', () => {
     expect(scaleNote(1)).toBeNull();
     // Floored, so a diagram that did shrink never claims true size.
-    expect((scaleNote(0.996) as unknown as FakeText).characters).toBe('Shown at 99%');
+    expect((scaleNote(0.996) as unknown as FakeText).characters).toBe('Shown at 99% of actual size');
   });
 });
 
@@ -71,9 +71,21 @@ describe('buildAnatomyLegend', () => {
     expect(legend.textChars().join(' ')).not.toContain('color/bg');
   });
 
+  it('names a nested part’s main component, and says it is unknown rather than printing a bare "component"', () => {
+    const legend = buildAnatomyLegend([
+      { label: '1', name: 'Icon', nested: true, id: '1:2', depth: 0, tokens: [], type: 'INSTANCE', component: 'Icon/Check' },
+      { label: '2', name: 'Badge', nested: true, id: '1:3', depth: 0, tokens: [], type: 'INSTANCE' },
+    ]) as unknown as FakeFrame;
+    const rows = legend.children.filter((c) => c instanceof FakeFrame && c.getPluginData(SLOT_KEY) === 'anatomyPart') as FakeFrame[];
+    expect(rows.map((r) => (r.children[1] as FakeText).characters)).toEqual([
+      'Icon  ·  Icon/Check',
+      'Badge  ·  Unknown component',
+    ]);
+  });
+
   it('renders the scale note text', async () => {
     const note = scaleNote(0.6) as unknown as FakeText;
-    expect(note.characters).toBe('Shown at 60%');
+    expect(note.characters).toBe('Shown at 60% of actual size');
   });
 });
 
@@ -168,7 +180,7 @@ describe('buildAnatomyDiagram', () => {
     const box = card.children[0] as FakeFrame;
     expect(box.width).toBeLessThanOrEqual(768 - ANATOMY_PAD * 2);
     const note = scaleNote(result!.scale) as unknown as FakeText;
-    expect(note.characters).toBe('Shown at 36%');
+    expect(note.characters).toBe('Shown at 36% of actual size');
   });
 
   it('gives the card the column width and only hugs its height, so a small diagram sits in a card its own size with a legend that can fill it', async () => {

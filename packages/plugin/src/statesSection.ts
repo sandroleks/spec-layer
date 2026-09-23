@@ -40,14 +40,15 @@ export function matrixLayout(columnCount: number, contentWidth: number, widestIn
   return { kind: 'grid', colsPerBand, cellW };
 }
 
-/** The dash cell for a combination the component has no variant for. */
+/** The "No variant" cell for a combination the component has no variant for.
+ *  A word, never a dash glyph: an empty cell says why it is empty. */
 function emptyCell(width: number): FrameNode {
   const empty = vstack(0);
   empty.resize(width, 40);
   empty.fills = solidFill(palette.paneBg);
   empty.cornerRadius = 8;
-  const dash = makeText('—', 'Regular', 12, palette.muted);
-  empty.appendChild(dash);
+  const label = makeText('No variant', 'Regular', 12, palette.muted);
+  empty.appendChild(label);
   empty.primaryAxisAlignItems = 'CENTER';
   empty.counterAxisAlignItems = 'CENTER';
   return empty;

@@ -204,14 +204,21 @@ describe('global search presentation', () => {
     const markup = globalSearchMarkup(buildSearchModel([], 'button'), {
       libraryLoading: true,
     });
-    expect(markup).toContain('Checking connected documentation…');
+    expect(markup).toContain('Finding docs in this file…');
     expect(markup).not.toContain('No matches for');
 
     const beforeTyping = globalSearchMarkup(buildSearchModel([]), {
       libraryLoading: true,
     });
-    expect(beforeTyping).toContain('Checking connected documentation…');
+    expect(beforeTyping).toContain('Finding docs in this file…');
     expect(beforeTyping).not.toContain('No component docs yet');
+  });
+
+  it('names what it searches, the docs, with a screen-reader name that matches the placeholder', () => {
+    const markup = globalSearchMarkup(buildSearchModel(DOCUMENTS));
+    expect(markup).toContain('placeholder="Search your docs…"');
+    expect(markup).toContain('aria-label="Search your docs"');
+    expect(markup).not.toContain('Search your library');
   });
 
   it('escapes query and Library content before placing them in HTML', () => {

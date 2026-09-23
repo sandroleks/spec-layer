@@ -45,9 +45,9 @@ describe('docText', () => {
     expect(table.textChars()).toEqual(['KEY', 'ACTION', 'Tab', 'Moves focus']);
   });
 
-  it('renders a None. row when there are no data rows, instead of a bare header strip', () => {
+  it('renders a None row when there are no data rows, instead of a bare header strip', () => {
     const table = buildTable(['Key', 'Action'], [], 768) as unknown as FakeFrame;
-    expect(table.textChars()).toEqual(['KEY', 'ACTION', 'None.']);
+    expect(table.textChars()).toEqual(['KEY', 'ACTION', 'None']);
   });
 
   it('paints a code run in an explicit ink instead of the heading ink when given one', () => {

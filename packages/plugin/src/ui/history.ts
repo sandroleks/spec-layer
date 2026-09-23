@@ -10,14 +10,18 @@
 import type { VersionLog } from '@spec-layer/extractor';
 import { PROXY_URL, isLibraryId } from './proxy';
 
-export interface HistoryState {
-  status: 'idle' | 'loading' | 'ready' | 'error' | 'gone' | 'noLibrary' | 'noKey';
+interface HistoryStateBase {
   log: VersionLog | null;
   etag: string | null;
-  message: string | null;
   /** The one expanded record's version, or null. */
   expanded: string | null;
 }
+
+/** An error always carries the sentence the pane shows; no other status carries one. */
+export type HistoryState = HistoryStateBase & (
+  | { status: 'error'; message: string }
+  | { status: 'idle' | 'loading' | 'ready' | 'gone' | 'noLibrary' | 'noKey'; message: null }
+);
 
 let state: HistoryState = { status: 'idle', log: null, etag: null, message: null, expanded: null };
 let host: { repaint(): void } = { repaint: () => {} };
@@ -25,8 +29,9 @@ let host: { repaint(): void } = { repaint: () => {} };
 export function setHistoryHost(next: { repaint(): void }): void { host = next; }
 export function historyState(): Readonly<HistoryState> { return state; }
 
-const UNREACHABLE = 'Could not reach the publish service. Check your connection and try again.';
-const BAD_LIBRARY_ID = 'The library id stored for this file is not valid, so the history cannot be loaded.';
+const UNREACHABLE = 'Couldn’t reach Spec Layer. Check your connection and try again.';
+const BAD_LIBRARY_ID = 'Couldn’t load versions. This file’s link to its published library is damaged.';
+const UNREADABLE = 'Couldn’t load versions. Spec Layer sent a reply the plugin couldn’t read. Try again in a moment.';
 
 export async function fetchVersionLog(opts: {
   libraryId: string; pullKey: string; etag: string | null; fetcher?: typeof fetch;
@@ -50,17 +55,25 @@ export async function fetchVersionLog(opts: {
   }
   if (res.status === 304) return { kind: 'not_modified' };
   if (res.status === 404) return { kind: 'gone' };
-  if (res.status === 401) return { kind: 'error', message: 'The pull key on this device no longer opens this library. Rotate the key and try again.' };
-  if (res.status === 429) return { kind: 'error', message: 'Too many requests just now. Give it a minute.' };
-  if (!res.ok) return { kind: 'error', message: `Loading the history failed with HTTP ${res.status}.` };
+  if (res.status === 401) {
+    return {
+      kind: 'error',
+      message: 'Couldn’t load versions. This device’s pull key no longer works, likely because it was rotated elsewhere. ' +
+        'Open History there, or rotate the key on the Publish screen.',
+    };
+  }
+  if (res.status === 429) {
+    return { kind: 'error', message: 'Couldn’t load versions. Too many requests in the last minute. Try again in a minute.' };
+  }
+  if (!res.ok) return { kind: 'error', message: `Couldn’t load versions. Try again in a moment (HTTP ${res.status}).` };
   let log: VersionLog;
   try {
     log = await res.json() as VersionLog;
   } catch {
-    return { kind: 'error', message: 'The publish service answered with something that is not a version log.' };
+    return { kind: 'error', message: UNREADABLE };
   }
   if (!log || log.v !== 1 || !Array.isArray(log.records)) {
-    return { kind: 'error', message: 'The publish service answered with something that is not a version log.' };
+    return { kind: 'error', message: UNREADABLE };
   }
   return { kind: 'ok', log, etag: res.headers.get('ETag') };
 }
@@ -78,13 +91,21 @@ export async function onHistoryOpen(libraryId: string | null, pullKey: string | 
   }
   state = { ...state, status: 'loading', message: null };
   host.repaint();
-  const answer = await fetchVersionLog({ libraryId, pullKey, etag: state.etag, fetcher });
+  let answer = await fetchVersionLog({ libraryId, pullKey, etag: state.etag, fetcher });
+  // A 304 means Spec Layer answered, so it is never a connection failure. With
+  // no log cached to keep, ask again without If-None-Match for the whole log.
+  if (answer.kind === 'not_modified' && !state.log) {
+    answer = await fetchVersionLog({ libraryId, pullKey, etag: null, fetcher });
+  }
   switch (answer.kind) {
     case 'ok':
       state = { ...state, status: 'ready', log: answer.log, etag: answer.etag, message: null };
       break;
     case 'not_modified':
-      state = { ...state, status: state.log ? 'ready' : 'error', message: state.log ? null : UNREACHABLE };
+      // Still a 304 to a request that named no version: an answer, not a log.
+      state = state.log
+        ? { ...state, status: 'ready', message: null }
+        : { ...state, status: 'error', message: UNREADABLE };
       break;
     case 'gone':
       state = { ...state, status: 'gone', log: null, etag: null, message: null };

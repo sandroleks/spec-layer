@@ -14,7 +14,7 @@
  * cycle for the sake of those three lines.
  */
 import type { ColorContrastReport, ContrastMatrix } from '@spec-layer/extractor';
-import { BACKGROUND_WORDS, FOREGROUND_WORDS } from '@spec-layer/extractor';
+import { BACKGROUND_WORDS, FOREGROUND_WORDS, CONTRAST_AXIS_CAP } from '@spec-layer/extractor';
 import { palette, solidFill, makeText, vstack, hstack, radius, hex } from './frameKit';
 
 // ---------------------------------------------------------------------------
@@ -47,9 +47,10 @@ function pairingHint(): string {
     + `${orList(BACKGROUND_WORDS)}.`;
 }
 
-/** "1 colour" or "4 colours". A count of one is not rare here. */
+/** "1 color" or "4 colors". A count of one is not rare here. US spelling,
+ *  matching the frame's "Colors" heading. */
 function colourCount(n: number): string {
-  return n === 1 ? '1 colour' : `${n} colours`;
+  return n === 1 ? '1 color' : `${n} colors`;
 }
 
 /**
@@ -82,7 +83,7 @@ export function contrastBlockModel(
     // missing and how to fix it, and asserts no number it cannot source.
     return {
       kind: 'none',
-      reason: `${who} has no colour pairs to measure. Contrast needs two colours in the `
+      reason: `${who} has no color pairs to measure. Contrast needs two colors in the `
         + 'same collection whose names say which one is drawn on the other. '
         + pairingHint(),
     };
@@ -95,7 +96,10 @@ export function contrastBlockModel(
   const { unclassified, omitted } = matrices[0];
   const sentences: string[] = [];
   if (omitted > 0) {
-    sentences.push(`The grid is capped, so it leaves out ${colourCount(omitted)}.`);
+    // The cap is the extractor's own constant, not a restated 24, so the number
+    // printed is the one colorContrast enforced.
+    sentences.push(`The grid shows at most ${CONTRAST_AXIS_CAP} rows and ${CONTRAST_AXIS_CAP} `
+      + `columns, so it leaves out ${colourCount(omitted)}.`);
   }
   if (unclassified > 0) {
     // Carried here too, not only in the no-matrix case. A colour missing from a
@@ -103,7 +107,7 @@ export function contrastBlockModel(
     // has, so it gets the same treatment.
     const lead = omitted > 0 ? 'It also leaves out' : 'The grid leaves out';
     sentences.push(`${lead} ${colourCount(unclassified)}, because a name has to say which `
-      + `side of a pair the colour sits on. ${pairingHint()}`);
+      + `side of a pair the color sits on. ${pairingHint()}`);
   }
   return { kind: 'matrix', matrices, note: sentences.length > 0 ? sentences.join(' ') : null };
 }
@@ -131,7 +135,7 @@ const BAR_LABELS: Record<string, string> = {
 export function cellLabel(cell: { ratio: number; clears: readonly string[] } | null): string {
   // Not blank and not "fails": a pair that could not be measured is a different
   // fact from a pair that was measured and failed.
-  if (!cell) return 'not measured';
+  if (!cell) return 'Not measured';
   const strongest = cell.clears[cell.clears.length - 1];
   // The ratio prints exactly as the extractor floored it, so 21 stays "21"
   // rather than becoming "21.00". Uppercasing an unmapped bar is a floor, not a
@@ -242,7 +246,7 @@ function gridRow(cells: FrameNode[], width: number): FrameNode {
 export function matrixFrame(m: ContrastMatrix): FrameNode {
   const width = gridWidth(m.backgrounds.length);
   const wrap = vstack(0);
-  wrap.name = `Contrast ${m.collection} ${m.mode}`;
+  wrap.name = `Contrast · ${m.collection} · ${m.mode}`;
   wrap.layoutSizingHorizontal = 'FIXED';
   wrap.resize(width, wrap.height);
   wrap.layoutSizingVertical = 'HUG';

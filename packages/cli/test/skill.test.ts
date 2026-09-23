@@ -167,7 +167,7 @@ describe('buildSkillGuide', () => {
     const guide = buildSkillGuide(input({ pull }));
     expect(guide).toContain('- `component-specs/`: one Markdown page per component.');
     expect(guide).toContain('2. Building or changing a component: read its page under `component-specs/`, or `npx spec-layer show component NAME`. **Properties** gives variants, states, booleans, and slots; **Anatomy** names the parts; **Token bindings** says which token each part\'s property uses and under which **When** conditions; **Unbound values** lists values that are hardcoded in Figma.');
-    expect(guide).toContain('5. A row under **Unbound values** is design debt reported from Figma.');
+    expect(guide).toContain('5. A row under **Unbound values** is a value hardcoded in Figma with no token bound to it, which is design debt. Keep the literal value, do not replace it with a token, and note in your change that Figma has no binding for it.');
     expect(guide).toContain('a section of a component page that says it was written by AI');
     expect(guide).toContain('a component\'s or the foundation\'s `guidelines` block, marked `origin: generated`');
     expect(guide).not.toContain('one YAML per component');
@@ -178,7 +178,7 @@ describe('buildSkillGuide', () => {
     const guide = buildSkillGuide(input({ pull: PULL }));
     expect(guide).toContain('- `component-specs/`: one YAML per component.');
     expect(guide).toContain('2. Building or changing a component: read its YAML under `component-specs/`');
-    expect(guide).toContain('5. An `unbound` entry is design debt reported from Figma.');
+    expect(guide).toContain('5. An `unbound` entry is a value hardcoded in Figma with no token bound to it, which is design debt. Keep the literal value, do not replace it with a token, and note in your change that Figma has no binding for it.');
     expect(guide).toContain('a component\'s or the foundation\'s `guidelines` block, marked `origin: generated`');
   });
 
@@ -564,6 +564,30 @@ describe('stale snapshot detection', () => {
     expect(outcome.staleSnapshot).toEqual([
       '.claude/skills/spec-layer/components',
       '.claude/skills/spec-layer/tokens',
+    ]);
+  });
+
+  it('reports a snapshot fonts.json too, which the snapshot guide also says to delete', () => {
+    mkdirSync(join(cwd, '.claude/skills/spec-layer/components'), { recursive: true });
+    mkdirSync(join(cwd, '.claude/skills/spec-layer/tokens'), { recursive: true });
+    writeFileSync(join(cwd, '.claude/skills/spec-layer/fonts.json'), '[]\n');
+    writeFileSync(join(cwd, '.claude/skills/spec-layer/SKILL.md'), 'old\n');
+
+    const outcome = installSkill(cwd, 'claude', 'guide\n');
+
+    expect(outcome.staleSnapshot).toEqual([
+      '.claude/skills/spec-layer/components',
+      '.claude/skills/spec-layer/tokens',
+      '.claude/skills/spec-layer/fonts.json',
+    ]);
+  });
+
+  it('reports a lone fonts.json left by a Foundation-only snapshot', () => {
+    mkdirSync(join(cwd, '.claude/skills/spec-layer'), { recursive: true });
+    writeFileSync(join(cwd, '.claude/skills/spec-layer/fonts.json'), '[]\n');
+
+    expect(installSkill(cwd, 'claude', 'guide\n').staleSnapshot).toEqual([
+      '.claude/skills/spec-layer/fonts.json',
     ]);
   });
 

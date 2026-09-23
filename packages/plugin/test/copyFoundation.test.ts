@@ -110,11 +110,13 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('copyFoundationBrief', () => {
-  it('refuses to copy when no foundation has been read', async () => {
+  it('copies nothing, and says nothing, when no foundation has been read', async () => {
+    // The footer draws Copy all for AI only once the file has been read, so
+    // there is no click here a message could answer.
     const ui = presenter();
     await copyFoundationBrief(ui);
     expect(copyText).not.toHaveBeenCalled();
-    expect(ui.error).toHaveBeenCalled();
+    expect(ui.error).not.toHaveBeenCalled();
   });
 
   it('copies one DTCG resolver document backed by the canonical content hash', async () => {
@@ -244,7 +246,7 @@ describe('copyFoundationBrief', () => {
     expect(renderManualCopyModal).toHaveBeenCalledTimes(1);
     const [text, notice] = renderManualCopyModal.mock.calls[0];
     const kb = Math.round(new TextEncoder().encode(text).length / 1024);
-    expect(notice).toBe(`${kb} KB, which is large for some chat windows.`);
+    expect(notice).toBe(`It’s ${kb} KB, which some chat windows can’t take in one paste.`);
   });
 
   it('says nothing about size under the threshold', async () => {
@@ -413,7 +415,7 @@ describe('copyFoundationBriefForScope', () => {
     await fresh.copyFoundationBriefForScope(COLOR_SCOPE, ui);
     expect(copyText).not.toHaveBeenCalled();
     expect(ui.error).toHaveBeenCalledWith(
-      "Still reading this file's variables. Try again in a moment.",
+      'Still reading this file’s variables. Try again in a moment.',
     );
   });
 

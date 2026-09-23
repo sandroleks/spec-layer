@@ -35,7 +35,6 @@ function row(
     expanded: false,
     canOpenFrame: true,
     canOpenSource: true,
-    canReconnect: false,
     canUpdate: false,
     canDetach: true,
     canRemove: true,
@@ -73,11 +72,11 @@ function mount(revealedDocId: string | null): ShellRefs {
 }
 
 describe('revealLibraryRow', () => {
-  it('focuses the revealed row’s own Open control', () => {
+  it('focuses the revealed row’s own View control', () => {
     const refs = mount('buttonPrimary');
     revealLibraryRow(refs, 'buttonPrimary');
     expect(document.activeElement?.getAttribute('aria-label'))
-      .toBe('Open buttonPrimary in Figma');
+      .toBe('View buttonPrimary on canvas');
   });
 
   it('falls back to the row menu when the row has no frame to open', () => {

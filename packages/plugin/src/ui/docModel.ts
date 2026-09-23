@@ -22,7 +22,7 @@ export const ALL_SECTIONS: { id: SectionId; label: string; ai: boolean; group: G
   { id: 'definition',            label: 'Overview',             ai: true,  group: 'usage' },
   { id: 'whenToUse',             label: 'When to use',          ai: true,  group: 'usage' },
   { id: 'variants',              label: 'Variants',             ai: true,  group: 'usage' },
-  { id: 'dosDonts',              label: "Do and don't",         ai: true,  group: 'usage' },
+  { id: 'dosDonts',              label: 'Do and don’t',         ai: true,  group: 'usage' },
   { id: 'related',               label: 'Related components',   ai: false, group: 'usage' },
   { id: 'anatomy',               label: 'Anatomy',              ai: true,  group: 'specs' },
   { id: 'properties',            label: 'Properties',           ai: true,  group: 'specs' },
@@ -165,7 +165,7 @@ export type MeasureView = 'size' | 'padding' | 'spacing';
  *  without changing the underlying spec — the anatomy view mode, which
  *  measurement lenses to render, and whether AI writing was on. */
 export interface DocModelOptions {
-  anatomyView?: 'diagram' | 'table' | 'both';
+  anatomyView?: 'diagram';
   measureViews?: MeasureView[];
   /** Draw the parts a boolean property hides by default (DocConfig.includeHidden). */
   includeHidden?: boolean;
@@ -206,7 +206,7 @@ export type SectionBlock =
   | { id: SectionId; heading: string; kind: 'keyboardTable'; rows: KeyboardRow[] }
   | { id: SectionId; heading: string; kind: 'table'; columns: string[]; rows: string[][] }
   | { id: SectionId; heading: string; kind: 'variantTokens'; columns: string[]; variants: VariantTokenBlock[] }
-  | { id: SectionId; heading: string; kind: 'anatomy'; componentId: string; parts: AnatomyPartBlock[]; view: 'diagram' | 'table' | 'both'; summary: string | null }
+  | { id: SectionId; heading: string; kind: 'anatomy'; componentId: string; parts: AnatomyPartBlock[]; view: 'diagram'; summary: string | null }
   | { id: SectionId; heading: string; kind: 'measure'; componentId: string; rootPart: string; tokens: Record<string, string>; views: MeasureView[]; tableRows: string[][] }
   | { id: SectionId; heading: string; kind: 'statesMatrix'; axisName: string; states: string[]; rows: { label: string; cells: (string | null)[] }[]; capped: boolean }
   | { id: SectionId; heading: string; kind: 'variantsMatrix'; intro: string | null; guide: { name: string; guidance: string }[]; columns: string[]; rows: { label: string; cells: (string | null)[] }[]; capped: boolean; note: string | null };
@@ -236,16 +236,6 @@ export function groupSections(sections: SectionBlock[]): DocGroup[] {
       sections: sections.filter((s) => groupOf.get(s.id) === id),
     }))
     .filter((g) => g.sections.length > 0);
-}
-
-/** How many frames a model draws: one per group that has at least one section. */
-export function frameCountFor(model: DocFrameModel): number {
-  const groups = new Set<string>();
-  for (const section of model.sections) {
-    const group = ALL_SECTIONS.find((s) => s.id === section.id)?.group;
-    if (group) groups.add(group);
-  }
-  return groups.size;
 }
 
 /** Human label for a variant instance as axis=value pairs, e.g.
@@ -490,7 +480,9 @@ function buildSection(
       const rows: PropertyRow[] = spec.props.map((pr) => ({
         name: pr.name,
         type: TYPE_WORDS[pr.kind] ?? pr.kind,
-        values: pr.kind === 'boolean' ? 'true / false' : pr.options?.length ? pr.options.join(' · ') : '',
+        // One separator for the whole Values column: a boolean's pair is
+        // joined the way an enum's options are.
+        values: pr.kind === 'boolean' ? 'true · false' : pr.options?.length ? pr.options.join(' · ') : '',
         defaultValue: pr.default === undefined ? '' : String(pr.default),
         description: descByName.get(pr.name.trim().toLowerCase()) ?? null,
       }));
@@ -620,7 +612,7 @@ function buildSection(
       }));
 
       const note = held.length
-        ? `Others held at default: ${held.map((h) => `${h.prop}=${defaults[h.prop] ?? h.values[0]}`).join(', ')}`
+        ? `Other properties held at default: ${held.map((h) => `${h.prop}=${defaults[h.prop] ?? h.values[0]}`).join(', ')}`
         : null;
 
       return { id, heading: label, kind: 'variantsMatrix', intro, guide, columns, rows, capped, note };
@@ -727,7 +719,10 @@ function buildSection(
 
       // Plain component, or no variant ticked: the conditioned table, as
       // before, but omitted rather than drawn empty.
-      const rows = tokens.map((t) => [t.part, t.property, t.name, formatConditions(t.conditions)]);
+      // An unconditioned binding reads "Always" on the canvas. formatConditions
+      // keeps its dash: the AI prompt (promptV2.ts) compares against it.
+      const rows = tokens.map((t) => [t.part, t.property, t.name,
+        Object.keys(t.conditions).length ? formatConditions(t.conditions) : 'Always']);
       if (!rows.length) return null;
       return { id, heading: label, kind: 'table', columns: ['Part', 'Property', 'Token', 'Condition'], rows };
     }

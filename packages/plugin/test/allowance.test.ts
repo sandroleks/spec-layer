@@ -13,7 +13,7 @@ describe('allowanceState', () => {
 
   it('is unknown when a settled fetch produced nothing', () => {
     expect(allowanceState(null, true)).toEqual({
-      kind: 'unknown', message: 'Plan status unavailable',
+      kind: 'unknown', message: 'Couldn’t check your plan',
     });
   });
 
@@ -53,6 +53,8 @@ describe('allowanceCopy', () => {
     });
     expect(copy.tone).toBe('normal');
     expect(copy.detail).toBe('8 of 10 free uses left');
+    // The accessible name repeats the visible words ("left", not "remaining").
+    expect(copy.ariaLabel).toBe('AI writing: 8 of 10 free uses left. Open License.');
     expect(copy.showUpgrade).toBe(true);
     expect(copy.fillPct).toBe(80);
   });
@@ -108,9 +110,9 @@ describe('allowanceCopy', () => {
   });
 
   it('passes an unknown plan through without demoting it', () => {
-    const copy = allowanceCopy({ kind: 'unknown', message: 'Plan status unavailable' });
+    const copy = allowanceCopy({ kind: 'unknown', message: 'Couldn’t check your plan' });
     expect(copy.tone).toBe('unknown');
-    expect(copy.detail).toBe('Plan status unavailable');
+    expect(copy.detail).toBe('Couldn’t check your plan');
     expect(copy.showUpgrade).toBe(false);
   });
 
@@ -119,7 +121,7 @@ describe('allowanceCopy', () => {
       { kind: 'loading' },
       { kind: 'free', remaining: 4, limit: 5, resetsAt: '' },
       { kind: 'pro' },
-      { kind: 'unknown', message: 'Plan status unavailable' },
+      { kind: 'unknown', message: 'Couldn’t check your plan' },
     ] as const;
     for (const state of states) {
       const { ariaLabel } = allowanceCopy(state);
@@ -150,7 +152,7 @@ describe('publishAllowance', () => {
   });
 
   it('hides a free allowance whose limit the server did not state', () => {
-    // `0 of 0 free updates left` would be a count the proxy never gave.
+    // `0 of 0 free publishes left` would be a count the proxy never gave.
     expect(publishAllowance({ tier: 'free', used: 0, limit: null, remaining: null, resetsAt: '' }))
       .toEqual({ kind: 'hidden' });
   });
@@ -167,17 +169,17 @@ describe('publishAllowance', () => {
 });
 
 describe('publishAllowanceCopy', () => {
-  it('names updates and the reset date', () => {
+  it('names free publishes and the reset date', () => {
     expect(publishAllowanceCopy({ kind: 'free', remaining: 3, limit: 10, resetsAt: '2026-10-01T00:00:00.000Z' }))
-      .toBe('3 of 10 free updates left this month, resets Oct 1');
+      .toBe('3 of 10 free publishes left this month, resets Oct 1');
   });
   it('drops the reset clause when the date is unknown', () => {
     expect(publishAllowanceCopy({ kind: 'free', remaining: 10, limit: 10, resetsAt: '' }))
-      .toBe('10 of 10 free updates left this month');
+      .toBe('10 of 10 free publishes left this month');
   });
   it('says so at zero', () => {
     expect(publishAllowanceCopy({ kind: 'free', remaining: 0, limit: 10, resetsAt: '2026-10-01T00:00:00.000Z' }))
-      .toBe('No free updates left this month, resets Oct 1');
+      .toBe('No free publishes left this month, resets Oct 1');
   });
   it('returns null when hidden', () => {
     expect(publishAllowanceCopy({ kind: 'hidden' })).toBeNull();

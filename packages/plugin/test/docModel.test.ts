@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  buildDocModel, calloutLabels, measureKey, groupSections, frameCountFor, GROUPS, ALL_SECTIONS,
+  buildDocModel, calloutLabels, measureKey, groupSections, GROUPS, ALL_SECTIONS,
   KNOWN_SECTION_IDS,
   LEGACY_SECTION_IDS, AI_ONLY_SECTIONS, firstSentence, proseKeysForSections, headingLine,
   type SectionId, type SectionBlock,
@@ -153,7 +153,8 @@ describe('buildDocModel with prose', () => {
     expect(block.hasDescriptions).toBe(true);
     expect(block.rows).toEqual([
       { name: 'Style', type: 'Variant', values: 'Filled · Outlined', defaultValue: 'Filled', description: null },
-      { name: 'showLabel', type: 'Boolean', values: 'true / false', defaultValue: 'true', description: 'Hides the label for icon-only use.' },
+      // One separator for the whole Values column, boolean or enum.
+      { name: 'showLabel', type: 'Boolean', values: 'true · false', defaultValue: 'true', description: 'Hides the label for icon-only use.' },
       { name: 'label', type: 'Text', values: '', defaultValue: 'Label', description: null },
     ]);
   });
@@ -207,7 +208,7 @@ describe('buildDocModel without prose', () => {
     expect(find(model, 'tokens')).toMatchObject({ kind: 'table', columns: ['Part', 'Property', 'Token', 'Condition'] });
     expect(model.omitted).toEqual([
       { id: 'whenToUse', label: 'When to use', reason: 'aiOff' },
-      { id: 'dosDonts', label: "Do and don't", reason: 'aiOff' },
+      { id: 'dosDonts', label: 'Do and don’t', reason: 'aiOff' },
       { id: 'keyboard', label: 'Keyboard', reason: 'aiOff' },
       { id: 'pointer', label: 'Pointer and touch', reason: 'aiOff' },
       { id: 'accessibility', label: 'Semantics and focus', reason: 'aiOff' },
@@ -359,17 +360,30 @@ describe('anatomy section', () => {
     }
   });
 
-  it('honours the requested anatomy view', () => {
+  it('writes Always, not a dash, for a token bound under every condition', () => {
+    const specT = {
+      ...spec,
+      tokens: [
+        { part: 'label', property: 'fill', ...ident('color/label'), conditions: {} },
+        { part: 'label', property: 'fill', ...ident('color/label-hover'), conditions: { State: ['Hover'] } },
+      ],
+    } as unknown as IntermediateSpec;
+    const block = buildDocModel(specT, null, new Set<SectionId>(['tokens'])).sections[0];
+    if (block.kind !== 'table') throw new Error('expected the conditioned tokens table');
+    expect(block.rows.map((row) => row[3])).toEqual(['Always', 'State=Hover']);
+  });
+
+  it('draws anatomy as a diagram, the only view there is', () => {
     const specA = {
       ...spec,
       anatomyComponentId: 'c:1',
       anatomy: [{ id: '2', name: 'label', type: 'TEXT', nested: false, depth: 0 }],
       tokens: [{ part: 'label', property: 'fill', ...ident('color/label'), conditions: {} }],
     } as unknown as IntermediateSpec;
-    const model = buildDocModel(specA, null, new Set<SectionId>(['anatomy']), undefined, { anatomyView: 'both' });
+    const model = buildDocModel(specA, null, new Set<SectionId>(['anatomy']), undefined, { anatomyView: 'diagram' });
     const block = model.sections[0];
     if (block.kind !== 'anatomy') throw new Error('expected anatomy');
-    expect(block.view).toBe('both');
+    expect(block.view).toBe('diagram');
     expect(block.parts[0].depth).toBe(0);
     expect(block.parts[0].tokens).toContain('color/label');
   });
@@ -925,7 +939,7 @@ describe('variants matrix section', () => {
     if (block.kind !== 'variantsMatrix') throw new Error('expected variantsMatrix');
     expect(block.columns).toEqual(['Large', 'Small']);
     expect(block.rows.map((r) => r.label)).toEqual(['Primary', 'Outline']);
-    expect(block.note).toBe('Others held at default: shape=Rounded');
+    expect(block.note).toBe('Other properties held at default: shape=Rounded');
   });
 
   it('qualifies boolean axis values with the axis name so cells are not bare True/False', () => {
@@ -1104,21 +1118,6 @@ describe('groupSections', () => {
   });
 });
 
-describe('frameCountFor', () => {
-  it('counts the distinct frames the selected sections land in', () => {
-    const usageOnly = buildDocModel(spec, null, new Set(['definition', 'related']), new Set(), { aiEnabled: false });
-    expect(frameCountFor(usageOnly)).toBe(1);
-    // Every a11y-group section is AI-only (see AI_ONLY_SECTIONS), so none of
-    // them render off `prose: null` no matter what `aiEnabled` says. The
-    // module's own `prose` fixture (used above with AI on) supplies real
-    // `semantics` content here too, so Accessibility renders and this proves
-    // a genuine three-frame count instead of one that can never occur.
-    const three = buildDocModel(spec, prose, new Set(['definition', 'anatomy', 'accessibility']), new Set(), { aiEnabled: false });
-    expect(frameCountFor(three)).toBe(3);
-    const none = buildDocModel(spec, null, new Set(), new Set(), { aiEnabled: false });
-    expect(frameCountFor(none)).toBe(0);
-  });
-});
 
 describe('contrast is not a component section', () => {
   it('is absent from ALL_SECTIONS', () => {

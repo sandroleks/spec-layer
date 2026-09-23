@@ -11,7 +11,7 @@
     "allowedDomains": [
       "https://api.spec-layer.com"
     ],
-    "reasoning": "AI guideline text is generated through the Spec Layer proxy service, which enforces free-tier quotas and Pro licenses. No user API keys are required or stored. AI requests include a structured component summary and a rendered image of the selected component.",
+    "reasoning": "The Spec Layer server at api.spec-layer.com uses Anthropic to write the optional AI text, checks free plan limits and Pro license keys, and stores the libraries you publish for developers to pull. AI requests send a summary of the component or variables being documented and, for a component, an image of it. Your Figma user ID is sent to count free plan use. You never need an API key of your own.",
     "devAllowedDomains": [
       "https://api.spec-layer.com"
     ]

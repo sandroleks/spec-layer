@@ -70,8 +70,32 @@ describe('componentFacts', () => {
       'Button',
     );
     expect(facts.variants[0].chips).toEqual([
-      { text: 'Default', tone: 'muted', title: 'Default' },
+      { text: 'All off', tone: 'muted', title: 'Disabled: false' },
     ]);
+  });
+
+  it('says All off, not Default, and names every axis that is off', () => {
+    // A row whose booleans are all false is not necessarily the default
+    // variant: here the default has Checked on. The title is also the row
+    // checkbox's accessible name, so it names axis and value like every chip.
+    const facts = componentFacts(
+      spec({
+        props: [
+          { kind: 'variant', name: 'Checked', default: 'True' },
+          { kind: 'variant', name: 'Disabled', default: 'False' },
+        ] as never,
+        variantInstances: [
+          { nodeId: '1:1', values: { Checked: 'True', Disabled: 'False' } },
+          { nodeId: '1:2', values: { Checked: 'False', Disabled: 'False' } },
+        ] as never,
+      }),
+      'Checkbox',
+    );
+    expect([...facts.defaultVariantIds]).toEqual(['1:1']);
+    expect(facts.variants[1].chips).toEqual([
+      { text: 'All off', tone: 'muted', title: 'Checked: False, Disabled: False' },
+    ]);
+    expect(JSON.stringify(facts.variants)).not.toContain('Default');
   });
 
   it('reports whether any anatomy part is hidden by default', () => {

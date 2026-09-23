@@ -43,46 +43,31 @@ const SITE_LABEL = 'Spec Layer website';
 const LINKEDIN_LABEL = 'Spec Layer on LinkedIn';
 
 /**
- * The badge is a dot, not a count.
- *
- * A count is a number the UI only knows progressively: source checks resolve
- * one doc at a time, so a digit would climb as they land and vanish on every
- * refresh. "Something in the Library needs attention" is the whole message,
- * and a dot says it without changing shape.
- *
- * The dot itself stays aria-hidden, and the state goes on the button's
- * accessible name instead: colour and shape alone are not available to a screen
- * reader, and the count never was either.
+ * One rail button, always drawn without a badge. The rail is built once, at
+ * mount, before any source check has answered, so the only badge path is
+ * setRailBadge repainting the live button in place.
  */
-function railButton(item: NavigationItem, active: PluginView, badge: boolean | undefined): string {
+function railButton(item: NavigationItem, active: PluginView): string {
   const current = item.id === active ? ' aria-current="page"' : '';
-  const dot = badge
-    ? '<span class="sl-sidebar-badge" aria-hidden="true"></span>'
-    : '';
-  const label = badge ? `${item.label}, updates available` : item.label;
   return (
     '<div class="sl-sidebar-item" data-tooltip-trigger>' +
     `<button class="sl-icon-button" type="button" data-view="${item.id}"${current} ` +
-    `aria-label="${label}">${icon(railIcon(item.id))}${dot}</button>` +
+    `aria-label="${item.label}">${icon(railIcon(item.id))}</button>` +
     `<span class="sl-tooltip" role="tooltip">${item.label}</span>` +
     '</div>'
   );
 }
 
-export function sidebarMarkup(
-  active: PluginView,
-  /** Which views show an attention dot. Not counts: see railButton. */
-  badges: Partial<Record<PluginView, boolean>>,
-): string {
+export function sidebarMarkup(active: PluginView): string {
   const groups = railBlocks(navigation)
     .map((block) =>
       '<div class="sl-sidebar-group">' +
-      block.items.map((item) => railButton(item, active, badges[item.id])).join('') +
+      block.items.map((item) => railButton(item, active)).join('') +
       '</div>')
     .join('<span class="sl-sidebar-separator" aria-hidden="true"></span>');
 
   return (
-    '<nav class="sl-sidebar" aria-label="Workflows">' +
+    '<nav class="sl-sidebar" aria-label="Main">' +
     groups +
     '<div class="sl-sidebar-spacer"></div>' +
     '<span class="sl-sidebar-separator" aria-hidden="true"></span>' +
@@ -99,9 +84,19 @@ export function sidebarMarkup(
 /**
  * Show or hide one live badge without rebuilding the rail or losing focus.
  *
- * Takes a boolean, not a count: see railButton. The caller decides WHEN the
- * answer is settled enough to act on (ui-vnext.ts holds the badge steady while
- * source checks are still resolving); this only draws it.
+ * The badge is a dot, not a count. A count is a number the UI only knows
+ * progressively: source checks resolve one doc at a time, so a digit would
+ * climb as they land and vanish on every refresh. "Something in the Library
+ * needs attention" is the whole message, and a dot says it without changing
+ * shape.
+ *
+ * The dot itself stays aria-hidden, and the state goes on the button's
+ * accessible name instead: colour and shape alone are not available to a
+ * screen reader, and the count never was either.
+ *
+ * The caller decides WHEN the answer is settled enough to act on (ui-vnext.ts
+ * holds the badge steady while source checks are still resolving); this only
+ * draws it.
  */
 export function setRailBadge(
   root: HTMLElement,

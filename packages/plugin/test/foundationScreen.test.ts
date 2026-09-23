@@ -39,6 +39,12 @@ const SPEC = {
   effectStyles: [{ id: 'e1', name: 'Elevation/Low' }],
 } as unknown as FoundationSpec;
 
+const EMPTY_SPEC = {
+  collections: [],
+  textStyles: [],
+  effectStyles: [],
+} as unknown as FoundationSpec;
+
 const ALL: FoundationSelection = {
   collections: [
     { collectionId: 'colors', modeIds: ['light', 'dark', 'hc'] },
@@ -50,8 +56,30 @@ const ALL: FoundationSelection = {
 
 describe('foundation screen', () => {
   it('uses the approved standalone page title', () => {
-    expect(foundationHeaderMarkup()).toContain('Foundation documents');
+    expect(foundationHeaderMarkup()).toContain('<h1>Foundations</h1>');
     expect(foundationHeaderMarkup()).not.toContain('<p>');
+  });
+
+  it('shows the empty state for a file that has no variables or styles', () => {
+    const markup = foundationScrollMarkup({ kind: 'ready' }, EMPTY_SPEC, { collections: [], textStyles: false, effectStyles: false });
+    expect(markup).toContain('No local variables or styles');
+    expect(markup).toContain(
+      'Spec Layer documents local variable collections, text styles, and effect styles. '
+      + 'Add one to this file, then select Refresh sources.',
+    );
+    expect(markup).not.toContain('0 of 0 included');
+    expect(markup).not.toContain('data-foundation-bulk');
+  });
+
+  it('keeps one accessible name per source row, whether it is included or not', () => {
+    // aria-pressed carries the state; a label that flipped with it announced
+    // "Remove Mapped Colors from docs, pressed".
+    const none: FoundationSelection = { collections: [], textStyles: false, effectStyles: false };
+    for (const selection of [ALL, none]) {
+      const markup = foundationScrollMarkup({ kind: 'ready' }, SPEC, selection);
+      expect(markup).toContain('aria-label="Include Mapped Colors in docs"');
+      expect(markup).not.toContain('Remove Mapped Colors');
+    }
   });
 
   it('renders a flat row for every source and the shared bulk control', () => {
@@ -131,6 +159,8 @@ describe('foundation screen', () => {
     const wrongToAsk: Array<[string, FoundationScreenState, FoundationSpec | null]> = [
       ['page load, list is still skeletons', { kind: 'loading' }, null],
       ['file has no variables or text styles', { kind: 'ready' }, null],
+      // What buildFoundation really returns for an empty file: a spec, not null.
+      ['file has no variables or styles, as read', { kind: 'ready' }, EMPTY_SPEC],
       ['read failed, remedy is Refresh sources', { kind: 'error', message: 'x' }, null],
     ];
     for (const [why, state, spec] of wrongToAsk) {
@@ -237,7 +267,7 @@ describe('foundation screen', () => {
   it('shows loading, real progress, and persistent read errors honestly', () => {
     expect(foundationScrollMarkup({ kind: 'loading' }, null, ALL)).toContain('sl-loading-row');
     expect(foundationScrollMarkup({ kind: 'loading' }, null, ALL)).not.toContain('sl-work-status');
-    expect(foundationFooterMarkup({ kind: 'loading' }, null, ALL)).toContain('Reading this file');
+    expect(foundationFooterMarkup({ kind: 'loading' }, null, ALL)).toContain('Reading this file’s variables and styles');
     expect(foundationFooterMarkup(
       { kind: 'generating', done: 1, total: 3, phase: 'Laying out the tables' },
       SPEC,

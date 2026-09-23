@@ -833,10 +833,15 @@ export function runSkill(cwd: string, flags: Flags, io: Io): number {
     }
     const verb = outcome.result === 'created' ? 'Wrote' : outcome.result === 'updated' ? 'Updated' : 'Unchanged:';
     io.out(`${verb} ${outcome.path} (${host}, ${chosen}).`);
-    if (outcome.staleSnapshot.length > 0) {
+    const stale = outcome.staleSnapshot;
+    if (stale.length > 0) {
+      // Folders and `fonts.json` alike, so the sentence names neither kind.
+      const list = stale.length <= 2
+        ? stale.join(' and ')
+        : `${stale.slice(0, -1).join(', ')}, and ${stale[stale.length - 1]}`;
       io.out(
-        `A downloaded snapshot is still in ${outcome.staleSnapshot.join(' and ')}. `
-        + 'The guide above supersedes it, and those folders can be deleted.',
+        `A downloaded snapshot is still at ${list}. `
+        + `The guide above supersedes it, and ${stale.length === 1 ? 'that path' : 'those paths'} can be deleted.`,
       );
     }
   }

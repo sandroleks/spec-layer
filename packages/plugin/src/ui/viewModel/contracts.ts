@@ -27,7 +27,8 @@ export type ComponentScreenState =
   | { kind: "empty"; waiting?: boolean }
   | { kind: "reading"; componentName: string }
   | { kind: "ready"; componentName: string }
-  | { kind: "building"; componentName: string; action: "create" | "download"; phase?: string }
+  /** `phase` is the progress line under the button, always set by the build. */
+  | { kind: "building"; componentName: string; action: "create"; phase: string }
   | {
       kind: "success";
       componentName: string;
@@ -81,8 +82,8 @@ export interface NavigationItem {
 }
 
 export const navigation: readonly NavigationItem[] = [
-  { id: "component", label: "Generate component docs", group: "create" },
-  { id: "foundations", label: "Generate foundation docs", group: "create" },
+  { id: "component", label: "Create component docs", group: "create" },
+  { id: "foundations", label: "Create foundation docs", group: "create" },
   { id: "library", label: "Library", group: "library" },
   { id: "settings", label: "Settings", group: "settings" },
   { id: "license", label: "License", group: "settings" },

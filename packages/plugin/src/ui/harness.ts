@@ -92,7 +92,7 @@ const ALLOWANCES: Record<string, AllowanceState> = {
   low: { kind: 'free', remaining: 4, limit: 10, resetsAt: '2026-08-01T00:00:00Z' },
   exhausted: { kind: 'free', remaining: 0, limit: 10, resetsAt: '2026-08-01T00:00:00Z' },
   pro: { kind: 'pro' },
-  unknown: { kind: 'unknown', message: 'Plan status unavailable' },
+  unknown: { kind: 'unknown', message: 'Couldn’t check your plan' },
 };
 
 const VIEWS: PluginView[] = ['component', 'foundations', 'library', 'settings', 'license'];
@@ -119,8 +119,9 @@ const COMPONENT_STATES: Record<string, ComponentScreenState> = {
   waiting: { kind: 'empty', waiting: true },
   reading: { kind: 'reading', componentName: 'buttonPrimary' },
   ready: { kind: 'ready', componentName: 'buttonPrimary' },
-  building: { kind: 'building', componentName: 'buttonPrimary', action: 'create' },
-  downloading: { kind: 'building', componentName: 'buttonPrimary', action: 'download' },
+  // One of generatingMessages' phases (actions.ts): the shipped build always
+  // sets one, so the harness shows what a user sees.
+  building: { kind: 'building', componentName: 'buttonPrimary', action: 'create', phase: 'Composing sections' },
   success: { kind: 'success', componentName: 'buttonPrimary', replaced: false },
   warning: {
     kind: 'success',
@@ -513,7 +514,7 @@ if (view === 'library') {
       { label: 'Tokens', items: [
         {
           text: 'Container / fill: color/surface/primary/default changed to colors/gray/1000',
-          scope: '1 of 128 variants: type Primary · size Large · others default',
+          scope: '1 of 128 variants: type Primary · size Large · others at default',
         },
         {
           text: 'Vector / fill: color/icon/primary/primary changed to color/surface/semantic/informative/press',
@@ -589,7 +590,7 @@ if (view === 'library') {
     error: {
       ...IDLE_BASE,
       status: 'error',
-      message: 'Could not reach the publish service. Check your connection and try again.',
+      message: 'Couldn’t reach Spec Layer. Check your connection and try again.',
     },
     // The dry run answered: current, next, reason, raise control, note.
     proposal: {
@@ -654,7 +655,7 @@ if (view === 'library') {
     noKey: { status: 'noKey', log: null, etag: null, message: null, expanded: null },
     error: {
       status: 'error', log: null, etag: null, expanded: null,
-      message: 'Could not reach the publish service. Check your connection and try again.',
+      message: 'Couldn’t reach Spec Layer. Check your connection and try again.',
     },
     gone: { status: 'gone', log: null, etag: null, message: null, expanded: null },
   };
@@ -1021,7 +1022,7 @@ if (view === 'license') {
       licenseModel.state === 'pro' || licenseModel.state === 'removing'
         ? { kind: 'pro' }
         : licenseModel.state === 'unknown'
-          ? { kind: 'unknown', message: 'Plan status unavailable' }
+          ? { kind: 'unknown', message: 'Couldn’t check your plan' }
           : {
               kind: 'free',
               remaining: licenseModel.remaining,

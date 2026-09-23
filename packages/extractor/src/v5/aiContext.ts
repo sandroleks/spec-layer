@@ -452,11 +452,15 @@ export function valueText(value: unknown): string {
  *  code instead of leaving the count to speak for itself. */
 const DIAGNOSTIC_MESSAGE: Record<string, (d: Diagnostic) => string> = {
   STYLE_BINDING_DRIFT: (d) =>
-    `${String(d.details?.property)} is ${valueText(d.details?.style_value)} in the style but `
-    + `${valueText(d.details?.token_value)} in the token it is bound to; the two disagree.`,
+    `\`${String(d.details?.property)}\` is ${valueText(d.details?.style_value)} in the style but `
+    + `${valueText(d.details?.token_value)} in the token it is bound to; both values are kept as `
+    + 'Figma states them, and neither is corrected.',
+  // "No unit or more than one": `numericValue` (units.ts) returns null for
+  // both, so this fires when two scopes state conflicting units too.
   UNIT_METADATA_UNAVAILABLE: (d) =>
-    `The numeric value is kept, but scopes ${JSON.stringify(d.details?.scopes ?? [])} state no `
-    + 'unit, so a consumer cannot use it as a length.',
+    'The numeric value is kept as a bare number because its scopes '
+    + `${JSON.stringify(d.details?.scopes ?? [])} state no unit or more than one, so a consumer `
+    + 'cannot use it as a length.',
   UNRESOLVED_REFERENCE: (d) => d.message,
 };
 

@@ -53,13 +53,23 @@ export const NO_FACTS: ComponentFacts = {
  * An enum value keeps its axis so "Default" stays attributed to the property it
  * came from. A true boolean renders as a flag named after the axis, since the
  * value is implied. A false boolean is dropped as noise, which can empty a row,
- * so a row with nothing left says "Default" rather than rendering blank.
+ * so a row with nothing left says "All off" rather than rendering blank.
+ *
+ * Not "Default": a row whose booleans are all false is not necessarily the
+ * default variant, so the chip says what it knows. Its title names the axes
+ * that are off, the way every other chip's title names axis and value, and
+ * since the row checkbox's accessible name is built from the titles, a screen
+ * reader hears which properties are off rather than a bare "All off".
  */
 function chipsFor(values: Record<string, string>): VariantChip[] {
   const chips: VariantChip[] = [];
+  const off: string[] = [];
   for (const [axis, value] of Object.entries(values)) {
     const low = value.toLowerCase();
-    if (low === 'false') continue;
+    if (low === 'false') {
+      off.push(`${axis}: ${value}`);
+      continue;
+    }
     if (low === 'true') {
       chips.push({ text: axis, tone: 'flag', title: `${axis}: ${value}` });
     } else {
@@ -67,7 +77,7 @@ function chipsFor(values: Record<string, string>): VariantChip[] {
     }
   }
   if (chips.length === 0) {
-    return [{ text: 'Default', tone: 'muted', title: 'Default' }];
+    return [{ text: 'All off', tone: 'muted', title: off.length ? off.join(', ') : 'All off' }];
   }
   return chips;
 }

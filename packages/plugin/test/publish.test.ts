@@ -4,7 +4,7 @@ import { unzipSync } from 'fflate';
 import { extract, libraryBundleContentHash, specContentHash, type SerializedFoundation } from '@spec-layer/extractor';
 import type { PublishComponentSource, UiToMain } from '../src/messages';
 import {
-  agentSetupMessage, buildPublishArtifacts, buildPublishBundle, publishBundle, rotatePullKey, setupCommand,
+  agentSetupMessage, buildPublishArtifacts, buildPublishBundle, dryRunBundle, publishBundle, rotatePullKey, setupCommand,
   type PublishSources, type PublishSourcesMsg,
 } from '../src/ui/publish';
 import type { ProxyAuth } from '../src/ui/proxy';
@@ -65,6 +65,16 @@ const FOUNDATION: SerializedFoundation = {
 };
 
 const GENERATED_AT = '2026-09-01T00:00:00.000Z';
+
+const NO_IDENTITY =
+  'Couldn’t publish without a Figma account or license key. '
+  + 'Sign in to Figma, or activate your license key on the License screen.';
+const UNREACHABLE = 'Couldn’t reach Spec Layer. Check your connection and try again.';
+const FREE_LIMIT_PREFIX = 'Couldn’t publish. The free plan publishes 1 Figma file.';
+const GENERIC_500 =
+  'Couldn’t publish. Spec Layer returned an error. Try again, or reopen the plugin if it keeps happening. (HTTP 500)';
+const rotateHttp = (status: number): string =>
+  `Couldn’t rotate the pull key. Spec Layer returned an error. Try again in a minute. (HTTP ${status})`;
 
 function baseSources(overrides: Partial<PublishSources> = {}): PublishSources {
   return {
@@ -273,7 +283,8 @@ describe('publishBundle', () => {
     expect((await publishBundle(BUNDLE, { auth: AUTH, libraryId: 'lib_theirs', fetcher: notOwner })).outcome)
       .toEqual({
         kind: 'error',
-        message: 'This library was published by another account, or from a device that no longer holds its key. Nothing was published.',
+        message: 'Couldn’t publish. This library belongs to another account, or this device doesn’t have its current pull key. '
+        + 'Publish from the device that first published it or last rotated its key.',
       });
   });
 
@@ -292,19 +303,20 @@ describe('publishBundle', () => {
   it('maps 401 to a plain sign-in problem, not a Pro requirement', async () => {
     const fetcher = vi.fn(async () => jsonResponse(401, { error: 'unauthenticated' }));
     const { outcome } = await publishBundle(BUNDLE, { auth: AUTH, libraryId: null, fetcher });
-    expect(outcome).toEqual({ kind: 'error', message: 'Publishing needs a signed-in Figma account or a license key.' });
+    expect(outcome).toEqual({ kind: 'error', message: NO_IDENTITY });
   });
 
   it('maps a 401 for a key that is not active to the key, not to signing in', async () => {
     const expired = vi.fn(async () => jsonResponse(401, { error: 'license_not_active', reason: 'expired' }));
     expect((await publishBundle(BUNDLE, { auth: AUTH, libraryId: null, fetcher: expired })).outcome).toEqual({
       kind: 'error',
-      message: 'This license key is not active. Renew it in Settings, or sign in to Figma to publish on the free plan.',
+      message: 'Couldn’t publish. Your license key isn’t active. Renew or reconnect it on the License screen, '
+        + 'or sign in to Figma to publish on the free plan.',
     });
     const unreachable = vi.fn(async () => jsonResponse(401, { error: 'license_not_active', reason: 'unreachable' }));
     expect((await publishBundle(BUNDLE, { auth: AUTH, libraryId: null, fetcher: unreachable })).outcome).toEqual({
       kind: 'error',
-      message: 'Could not check your license key just now. Nothing was published. Try again in a minute.',
+      message: 'Couldn’t publish. Spec Layer couldn’t check your license key right now. Try again in a minute.',
     });
   });
 
@@ -314,15 +326,48 @@ describe('publishBundle', () => {
     }));
     const { outcome } = await publishBundle(BUNDLE, { auth: AUTH, libraryId: null, fetcher });
     expect((outcome as { message: string }).message)
-      .toBe('Free plans publish one Figma file. This account already publishes 3 files, including Marketing DS. Upgrade to Pro to publish up to 10 files.');
+      .toBe(`${FREE_LIMIT_PREFIX} This account already publishes 3 files, including Marketing DS. Upgrade to Pro to publish up to 10 files.`);
   });
 
-  it('maps 402 to the monthly updates message with the reset date', async () => {
-    const fetcher = vi.fn(async () => jsonResponse(402, { error: 'quota_exhausted', resetsAt: '2026-10-01T00:00:00.000Z' }));
+  it('maps 402 to the monthly publishes message, with the limit from the quota headers and the reset date', async () => {
+    const exhausted = {
+      ...PUBLISH_QUOTA_HEADERS, 'X-Quota-Used': '10', 'X-Quota-Remaining': '0',
+    };
+    const fetcher = vi.fn(async () => jsonResponse(
+      402, { error: 'quota_exhausted', resetsAt: '2026-10-01T00:00:00.000Z' }, exhausted,
+    ));
     const { outcome } = await publishBundle(BUNDLE, { auth: AUTH, libraryId: null, fetcher });
     expect(outcome).toEqual({
       kind: 'error',
-      message: 'You have used your 10 free updates for this month. Upgrade to Pro or publish again after Oct 1.',
+      message: 'Couldn’t publish. You’ve used your 10 free publishes this month. Upgrade to Pro or publish again from Oct 1.',
+    });
+  });
+
+  /**
+   * The count is the server's, never a number written into the plugin: a
+   * different X-Quota-Limit changes the sentence, and a 402 without quota
+   * headers says the same thing with no number rather than a guessed one.
+   */
+  it('never writes its own number into the 402 message', async () => {
+    const seven = vi.fn(async () => jsonResponse(
+      402, { error: 'quota_exhausted', resetsAt: '2026-10-01T00:00:00.000Z' },
+      { ...PUBLISH_QUOTA_HEADERS, 'X-Quota-Limit': '7', 'X-Quota-Used': '7', 'X-Quota-Remaining': '0' },
+    ));
+    expect((await publishBundle(BUNDLE, { auth: AUTH, libraryId: null, fetcher: seven })).outcome).toEqual({
+      kind: 'error',
+      message: 'Couldn’t publish. You’ve used your 7 free publishes this month. Upgrade to Pro or publish again from Oct 1.',
+    });
+    const one = vi.fn(async () => jsonResponse(
+      402, { error: 'quota_exhausted' },
+      { ...PUBLISH_QUOTA_HEADERS, 'X-Quota-Limit': '1', 'X-Quota-Used': '1', 'X-Quota-Remaining': '0' },
+    ));
+    expect((await publishBundle(BUNDLE, { auth: AUTH, libraryId: null, fetcher: one })).outcome).toEqual({
+      kind: 'error', message: 'Couldn’t publish. You’ve used your 1 free publish this month. Upgrade to Pro.',
+    });
+    const headerless = vi.fn(async () => jsonResponse(402, { error: 'quota_exhausted', resetsAt: '2026-10-01T00:00:00.000Z' }));
+    expect((await publishBundle(BUNDLE, { auth: AUTH, libraryId: null, fetcher: headerless })).outcome).toEqual({
+      kind: 'error',
+      message: 'Couldn’t publish. You’ve used your free publishes this month. Upgrade to Pro or publish again from Oct 1.',
     });
   });
 
@@ -333,7 +378,7 @@ describe('publishBundle', () => {
     const { outcome } = await publishBundle(BUNDLE, { auth: AUTH, libraryId: null, fetcher });
     expect(outcome).toEqual({
       kind: 'error',
-      message: 'Free plans publish one Figma file. This account already publishes Marketing DS. Upgrade to Pro to publish up to 10 files.',
+      message: `${FREE_LIMIT_PREFIX} This account already publishes Marketing DS. Upgrade to Pro to publish up to 10 files.`,
     });
   });
 
@@ -343,13 +388,15 @@ describe('publishBundle', () => {
     }));
     const { outcome } = await publishBundle(BUNDLE, { auth: AUTH, libraryId: null, fetcher });
     expect((outcome as { message: string }).message)
-      .toBe('Free plans publish one Figma file. This account already publishes another file. Upgrade to Pro to publish up to 10 files.');
+      .toBe(`${FREE_LIMIT_PREFIX} This account already publishes another file. Upgrade to Pro to publish up to 10 files.`);
   });
 
   it('maps a Pro library_limit to the count', async () => {
     const fetcher = vi.fn(async () => jsonResponse(403, { error: 'library_limit', limit: 10 }));
     const { outcome } = await publishBundle(BUNDLE, { auth: AUTH, libraryId: null, fetcher });
-    expect(outcome).toEqual({ kind: 'error', message: 'This plan already publishes 10 Figma files, which is the limit.' });
+    expect(outcome).toEqual({
+      kind: 'error', message: 'Couldn’t publish. This account already publishes 10 Figma files, which is the Pro limit.',
+    });
   });
 
   it('reports an unchanged republish as its own outcome', async () => {
@@ -392,7 +439,7 @@ describe('publishBundle', () => {
     const fetcher = vi.fn(async () => jsonResponse(409, { error: 'publish_pending' }));
     const { outcome } = await publishBundle(BUNDLE, { auth: AUTH, libraryId: LIB, fetcher });
     expect(outcome).toEqual({
-      kind: 'error', message: 'A publish is already running. Give it a moment and try again.',
+      kind: 'error', message: 'These changes are already being published. Try again in a minute.',
     });
   });
 
@@ -400,7 +447,7 @@ describe('publishBundle', () => {
     const fetcher = vi.fn(async () => jsonResponse(429, {}));
     const { outcome } = await publishBundle(BUNDLE, { auth: AUTH, libraryId: null, fetcher });
     expect(outcome).toEqual({
-      kind: 'error', message: 'Too many requests just now. Give it a minute.',
+      kind: 'error', message: 'Couldn’t publish. Too many requests in the last minute. Try again in a minute.',
     });
   });
 
@@ -411,7 +458,8 @@ describe('publishBundle', () => {
     const { outcome } = await publishBundle(BUNDLE, { auth: AUTH, libraryId: null, fetcher });
     expect(outcome).toEqual({
       kind: 'error',
-      message: 'This library is larger than the publish limit (5.6 MB of 5 MB).',
+      message: 'Couldn’t publish. This library is 5.6 MB, over the 5 MB limit. '
+        + 'Remove docs you don’t need from this file, then publish again.',
     });
   });
 
@@ -420,7 +468,7 @@ describe('publishBundle', () => {
     const { outcome } = await publishBundle(BUNDLE, { auth: AUTH, libraryId: null, fetcher });
     expect(outcome).toEqual({
       kind: 'error',
-      message: 'This plan already publishes 3 Figma files, which is the limit.',
+      message: 'Couldn’t publish. This account already publishes 3 Figma files, which is the Pro limit.',
     });
   });
 
@@ -428,24 +476,21 @@ describe('publishBundle', () => {
     const fetcher = vi.fn(async () => jsonResponse(500, {}));
     const { outcome } = await publishBundle(BUNDLE, { auth: AUTH, libraryId: null, fetcher });
     expect(outcome).toEqual({
-      kind: 'error', message: 'Publishing failed with HTTP 500.',
+      kind: 'error', message: GENERIC_500,
     });
   });
 
   it('maps network failure to unreachable copy', async () => {
     const fetcher = vi.fn(async () => { throw new Error('network down'); });
     const { outcome } = await publishBundle(BUNDLE, { auth: AUTH, libraryId: null, fetcher });
-    expect(outcome).toEqual({
-      kind: 'error',
-      message: 'Could not reach the publish service. Check your connection and try again.',
-    });
+    expect(outcome).toEqual({ kind: 'error', message: UNREACHABLE });
   });
 
   it('refuses locally with no license identity, never hitting the network', async () => {
     const fetcher = vi.fn();
     const noAuth: ProxyAuth = { licenseKey: null, licenseInstanceId: null, figmaUserId: null };
     const { outcome } = await publishBundle(BUNDLE, { auth: noAuth, libraryId: null, fetcher });
-    expect(outcome).toEqual({ kind: 'error', message: 'Publishing needs a signed-in Figma account or a license key.' });
+    expect(outcome).toEqual({ kind: 'error', message: NO_IDENTITY });
     expect(fetcher).not.toHaveBeenCalled();
   });
 });
@@ -465,27 +510,51 @@ describe('rotatePullKey', () => {
       ok: false, status: 401, json: async () => ({}),
     } as unknown as Response));
     expect(await rotatePullKey('lib_000000000000000000000001', AUTH, unauthorizedFetch)).toEqual({
-      kind: 'error', message: 'Rotating the key failed with HTTP 401.',
+      kind: 'error', message: rotateHttp(401),
     });
 
     const serverErrorFetch = vi.fn(async () => ({
       ok: false, status: 500, json: async () => ({}),
     } as unknown as Response));
     expect(await rotatePullKey('lib_000000000000000000000001', AUTH, serverErrorFetch)).toEqual({
-      kind: 'error', message: 'Rotating the key failed with HTTP 500.',
+      kind: 'error', message: rotateHttp(500),
     });
 
     const networkFailFetch = vi.fn(async () => { throw new Error('offline'); });
     expect(await rotatePullKey('lib_000000000000000000000001', AUTH, networkFailFetch)).toEqual({
-      kind: 'error', message: 'Could not reach the publish service. Check your connection and try again.',
+      kind: 'error', message: UNREACHABLE,
     });
 
     const noAuth: ProxyAuth = { licenseKey: null, licenseInstanceId: null, figmaUserId: null };
     const unusedFetch = vi.fn();
     expect(await rotatePullKey('lib_000000000000000000000001', noAuth, unusedFetch)).toEqual({
-      kind: 'error', message: 'Rotating the key needs a signed-in Figma account or a license key.',
+      kind: 'error',
+      message: 'Couldn’t rotate the pull key without a Figma account or license key. '
+        + 'Sign in to Figma, or activate your license key on the License screen.',
     });
     expect(unusedFetch).not.toHaveBeenCalled();
+
+    // A stored id that fails the format check never reaches the network.
+    expect(await rotatePullKey('not-a-library-id', AUTH, unusedFetch)).toEqual({
+      kind: 'error', message: 'Couldn’t rotate the pull key. The library link saved in this file is damaged.',
+    });
+    expect(unusedFetch).not.toHaveBeenCalled();
+  });
+});
+
+describe('dryRunBundle', () => {
+  const AUTH: ProxyAuth = { licenseKey: 'sl_key', licenseInstanceId: 'inst-1', figmaUserId: null };
+
+  /**
+   * No dry-run message is ever shown (a failed dry run reads as the version
+   * block's own sentence), so a request that never reached the proxy carries
+   * none rather than a string nothing renders.
+   */
+  it('reports a network throw as an error with no message', async () => {
+    const bundle = buildPublishBundle(baseSources(), GENERATED_AT);
+    const offline = vi.fn(async () => { throw new Error('offline'); });
+    expect(await dryRunBundle(bundle, { auth: AUTH, libraryId: 'lib_000000000000000000000001', fetcher: offline }))
+      .toEqual({ kind: 'error' });
   });
 });
 
@@ -516,6 +585,14 @@ describe('voice: no em dashes in error copy', () => {
     const publishCases: Array<{ auth: ProxyAuth; libraryId: string | null; fetcher: typeof fetch }> = [
       // 401 license_not_active
       { auth: AUTH, libraryId: null, fetcher: vi.fn(async () => jsonResponse(401, { error: 'license_not_active' })) },
+      // 401 license_not_active, the proxy could not check the key
+      { auth: AUTH, libraryId: null, fetcher: vi.fn(async () => jsonResponse(401, { error: 'license_not_active', reason: 'unreachable' })) },
+      // 402 quota_exhausted, with and without quota headers
+      {
+        auth: AUTH, libraryId: null,
+        fetcher: vi.fn(async () => jsonResponse(402, { error: 'quota_exhausted' }, { 'X-Tier': 'free', 'X-Quota-Limit': '10' })),
+      },
+      { auth: AUTH, libraryId: null, fetcher: vi.fn(async () => jsonResponse(402, { error: 'quota_exhausted' })) },
       // 409 publish_pending
       { auth: AUTH, libraryId: null, fetcher: vi.fn(async () => jsonResponse(409, { error: 'publish_pending' })) },
       // 429 rate limited
@@ -656,7 +733,7 @@ describe('publish controller', () => {
     const state = publish.publishState();
     expect(state.status).toBe('error');
     expect(state.message).toBe(
-      'Nothing was published. 1 component could not be read: Button. Fix or remove those docs, then publish again.',
+      'Nothing was published. 1 component couldn’t be read: Button. Fix or remove those docs, then publish again.',
     );
     expect(fetcher).not.toHaveBeenCalled();
     expect(state.libraryId).toBeNull();
@@ -680,7 +757,7 @@ describe('publish controller', () => {
     expect(state.lastPublishedAt).toBe('2026-09-01T00:00:01.000Z');
     // Success is a toast, not a line under the blocks.
     expect(state.message).toBeNull();
-    expect(notified).toEqual(['Published. Anyone with the key can pull this version.']);
+    expect(notified).toEqual(['Published. Anyone with the pull key can pull this version.']);
     expect(sent).toContainEqual({
       type: 'setPublishInfo', libraryId: 'lib_new', pullKey: 'sl_pull',
     });
@@ -779,7 +856,8 @@ describe('publish controller', () => {
     const state = publish.publishState();
     expect(state.status).toBe('error');
     expect(state.message).toBe(
-      'This library was published by another account, or from a device that no longer holds its key. Nothing was published.',
+      'Couldn’t publish. This library belongs to another account, or this device doesn’t have its current pull key. '
+        + 'Publish from the device that first published it or last rotated its key.',
     );
     // The id in the file is still the one developers pull; nothing is cleared.
     expect(state.libraryId).toBe('lib_theirs');
@@ -821,8 +899,8 @@ describe('publish controller', () => {
     expect(fetcher).toHaveBeenCalledTimes(1);
     expect(state.status).toBe('error');
     expect(state.message).toBe(
-      'That library no longer exists on the publish service. Nothing was published. '
-      + 'Publish again to create a new library, then share its setup command with your developers.',
+      'Couldn’t publish. Spec Layer no longer has this library. '
+      + 'Publish again to create a new one, then share its new setup command with your developers.',
     );
     // The stale identity is dropped locally and in the file, so the next
     // click is a deliberate create rather than another failed republish.
@@ -874,7 +952,7 @@ describe('publish controller', () => {
     await publish.onPublishSources(sourcesMsg(), AUTH, fetcher);
     const state = publish.publishState();
     expect(state.status).toBe('error');
-    expect(state.message).toBe('Publishing failed with HTTP 500.');
+    expect(state.message).toBe(GENERIC_500);
   });
 
   it('onPublishSourcesError sets an honest error, without touching any stored key', () => {
@@ -883,8 +961,8 @@ describe('publish controller', () => {
     const state = publish.publishState();
     expect(state.status).toBe('error');
     expect(state.message).toBe(
-      'Could not read the library. Nothing was published. the selection has no components. '
-      + 'Try again, or reopen the plugin if it keeps happening.',
+      'Couldn’t read this file’s docs. Nothing was published. '
+      + 'Try again, or reopen the plugin if it keeps happening. (the selection has no components)',
     );
     // A failed source read leaves any already-known library identity intact.
     expect(state.libraryId).toBe('lib_000000000000000000000001');
@@ -903,24 +981,30 @@ describe('publish controller', () => {
     const state = publish.publishState();
     expect(state.status).toBe('error');
     expect(state.message).toBe(
-      'Could not read the library. Nothing was downloaded. the file has no docs. '
-      + 'Try again, or reopen the plugin if it keeps happening.',
+      'Couldn’t read this file’s docs. Nothing was downloaded. '
+      + 'Try again, or reopen the plugin if it keeps happening. (the file has no docs)',
     );
     expect(state.message).not.toContain('published');
   });
 
   /**
    * `message` is a caught error's own text (main.ts forwards `err.message`
-   * verbatim), which is not guaranteed to end in punctuation. Without
-   * normalizing it first, the retry sentence runs on with no boundary, e.g.
-   * "...reading 'name') Try again...". A message that already ends in
-   * punctuation must not get a second, doubled terminator.
+   * verbatim): technical detail, so it goes last, in parentheses, after the
+   * retry sentence. Its own trailing period is dropped so the parentheses
+   * close cleanly, and an empty message adds no bare "()".
    */
-  it('does not double a terminator when the caught message already ends in one', () => {
+  it('puts the caught message last in parentheses, without its own trailing period', () => {
     publish.onPublishSourcesError("Cannot read properties of null (reading 'name').");
     expect(publish.publishState().message).toBe(
-      "Could not read the library. Nothing was published. Cannot read properties of null (reading 'name'). "
-      + 'Try again, or reopen the plugin if it keeps happening.',
+      'Couldn’t read this file’s docs. Nothing was published. '
+      + "Try again, or reopen the plugin if it keeps happening. (Cannot read properties of null (reading 'name'))",
+    );
+  });
+
+  it('adds no empty parentheses when the caught message is blank', () => {
+    publish.onPublishSourcesError('  ');
+    expect(publish.publishState().message).toBe(
+      'Couldn’t read this file’s docs. Nothing was published. Try again, or reopen the plugin if it keeps happening.',
     );
   });
 
@@ -1018,7 +1102,7 @@ describe('publish controller', () => {
     expect(state.status).toBe('done');
     expect(state.message).toBeNull();
     expect(notified).toContain(
-      'Key rotated. The old key stops working within about a minute. Share the new command with your developers.',
+      'Pull key rotated. The old key stops working within about a minute. Share the new setup command.',
     );
     expect(sent).toContainEqual({
       type: 'setPublishInfo', libraryId: 'lib_000000000000000000000001', pullKey: 'sl_rotated',
@@ -1064,7 +1148,7 @@ describe('publish controller', () => {
     await publish.onRotateClick(AUTH, rotateFetcher);
     const state = publish.publishState();
     expect(state.status).toBe('error');
-    expect(state.message).toBe('Rotating the key failed with HTTP 401.');
+    expect(state.message).toBe(rotateHttp(401));
     expect(state.pullKey).toBe('sl_old');
   });
 
@@ -1076,7 +1160,10 @@ describe('publish controller', () => {
     await publish.onRotateClick(AUTH, rotateFetcher);
     const state = publish.publishState();
     expect(state.status).toBe('error');
-    expect(state.message).toBe('Only the account that published this library can rotate its key.');
+    expect(state.message).toBe(
+      'Couldn’t rotate the pull key. That takes the license key this library was published with, '
+      + 'or the Figma account that published it on a device with the current pull key.',
+    );
     expect(state.pullKey).toBeNull();
     expect(notified).toEqual([]);
   });
@@ -1199,6 +1286,7 @@ describe('publish controller', () => {
     expect(body.initialVersion).toBe('2.1.0');
     expect(sent.map((m) => m.type)).toEqual(['requestPublishSources', 'setPublishInfo', 'stampPublished']);
     expect(publish.publishState().version).toBe('2.1.0');
+    expect(notified.at(-1)).toBe('Published 2.1.0. Anyone with the pull key can pull this version.');
   });
 
   it('refuses to publish an invalid first version without calling the proxy', async () => {
@@ -1217,7 +1305,7 @@ describe('publish controller', () => {
     const fetcher = vi.fn(async () => jsonResponse(400, { error: 'bump_below_minimum', minimumBump: 'minor', proposedVersion: '1.5.0' })) as unknown as typeof fetch;
     await publish.onPublishSources(sourcesMsg(), AUTH, fetcher);
     expect(publish.publishState()).toMatchObject({
-      status: 'error', message: 'The changes need at least a minor bump.', chosenBump: null,
+      status: 'error', message: 'These edits need at least a minor version change.', chosenBump: null,
       proposal: expect.objectContaining({ minimumBump: 'minor', proposedVersion: '1.5.0' }),
     });
     expect(sent.some((m) => m.type === 'stampPublished')).toBe(false);
@@ -1256,7 +1344,8 @@ describe('publish controller', () => {
       expect(downloadBytes).toHaveBeenCalledWith(
         expect.any(Uint8Array), 'spec-layer-design-system-skill.zip', 'application/zip',
       );
-      expect(notified).toEqual(['Downloaded.']);
+      // The browser can still refuse the file, so the toast claims only a start.
+      expect(notified).toEqual(['Snapshot download started.']);
       // "A snapshot is not a publish" means these two durable writes to the
       // file never fire on the download path, not just that the state object
       // looks right in memory.
@@ -1272,7 +1361,7 @@ describe('publish controller', () => {
       const state = publish.publishState();
       expect(state.status).toBe('error');
       expect(state.message).toBe(
-        'Nothing was downloaded. 1 component could not be read: Button. Fix or remove those docs, then download again.',
+        'Nothing was downloaded. 1 component couldn’t be read: Button. Fix or remove those docs, then download again.',
       );
       expect(state.message).not.toContain('published');
       expect(downloadBytes).not.toHaveBeenCalled();
@@ -1289,7 +1378,7 @@ describe('publish controller', () => {
       const state = publish.publishState();
       expect(state.status).toBe('error');
       expect(state.message).toBe(
-        'Nothing was published. 1 component could not be read: Button. Fix or remove those docs, then publish again.',
+        'Nothing was published. 1 component couldn’t be read: Button. Fix or remove those docs, then publish again.',
       );
       expect(fetcher).not.toHaveBeenCalled();
     });
@@ -1303,7 +1392,7 @@ describe('publish controller', () => {
       const state = publish.publishState();
       expect(state.status).toBe('error');
       expect(state.message).toBe(
-        'The download could not be created. Nothing was saved. Try again, or reopen the plugin if it keeps happening.',
+        'Couldn’t create the download. Nothing was saved. Try again, or reopen the plugin if it keeps happening.',
       );
       expect(state.message).not.toContain('—');
       // Not wedged: a fresh click is accepted rather than guard-blocked on
@@ -1370,7 +1459,24 @@ describe('agentSetupMessage', () => {
     expect(message).toContain(`npx --yes spec-layer setup --id ${LIB} --key ${KEY}`);
     expect(message).toContain('npx --yes spec-layer skill --install');
     expect(message).toContain('npx --yes spec-layer tools');
-    expect(message).toContain('Never print, commit, or copy the key');
+    expect(message).toContain('Never print, commit, or copy the pull key');
+  });
+
+  /**
+   * An agent reads this text, so file and folder names and the inline tools
+   * command sit in backticks to read as paths and code. The commands on their
+   * own lines are unchanged, since a developer may copy those verbatim.
+   */
+  it('marks the file names and the inline command as code', () => {
+    const message = agentSetupMessage(LIB, KEY, 'yaml');
+    expect(message).toContain(
+      'It writes `speclayer.json`, stores the pull key in a gitignored `speclayer.local.json`, '
+      + 'and pulls the published library into `.speclayer/`.',
+    );
+    expect(message).toContain('`npx --yes spec-layer tools` lists every command');
+    expect(message).toContain('into the file you read project instructions from.');
+    expect(message).toContain(`\n   npx --yes spec-layer setup --id ${LIB} --key ${KEY}\n`);
+    expect(message).toContain('\n   npx --yes spec-layer skill --install\n');
   });
 
   it('is plain text a person can read back: numbered steps, no em dash, no markup', () => {

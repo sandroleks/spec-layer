@@ -18,6 +18,9 @@
 import { canonicalNumber } from './precision';
 import type { ColorValue } from './value';
 
+/** A rejection's `reason` is a fixed code from `canonicalColor`, whose only
+ *  caller reads `ok` alone, and a sentence from `colorFromHex`, which reaches
+ *  an INVALID_SOURCE_COLOR diagnostic's `details.reason`. */
 export type ColorResult =
   | { ok: true; value: ColorValue }
   | { ok: false; reason: string };
@@ -55,11 +58,10 @@ export function canonicalColor(
   const b = snap(rgba.b);
   const a = snap(rgba.a);
   if (r === null || g === null || b === null || a === null) {
-    return {
-      ok: false,
-      reason: `colour channel out of range or not finite: `
-        + `rgba(${rgba.r}, ${rgba.g}, ${rgba.b}, ${rgba.a})`,
-    };
+    // A code, not a sentence: the one caller (foundation.ts) reads `ok` and
+    // discards the reason, and the INVALID_SOURCE_COLOR diagnostic it leads
+    // to carries its own message. Covers a non-finite channel too.
+    return { ok: false, reason: 'channel_out_of_range' };
   }
   const value: ColorValue = {
     type: 'color',
@@ -85,10 +87,10 @@ export function canonicalColor(
 export function colorFromHex(hex: string, alpha: number): ColorResult {
   const trimmed = hex.trim();
   if (!HEX_PATTERN.test(trimmed)) {
-    return { ok: false, reason: `not a valid hex colour: ${JSON.stringify(hex)}` };
+    return { ok: false, reason: `The value ${JSON.stringify(hex)} is not a 3-digit or 6-digit hex color.` };
   }
   const a = snap(alpha);
-  if (a === null) return { ok: false, reason: `alpha out of range: ${alpha}` };
+  if (a === null) return { ok: false, reason: `The alpha ${alpha} is not a number from 0 to 1.` };
   const raw = trimmed.replace(/^#/, '').toLowerCase();
   const full = raw.length === 3 ? raw.split('').map((c) => c + c).join('') : raw;
   return {

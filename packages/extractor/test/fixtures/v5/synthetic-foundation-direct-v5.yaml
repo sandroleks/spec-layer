@@ -523,12 +523,12 @@ diagnostics:
     severity: error
     entity_id: VariableID:declared-missing
     mode_id: ModeID:s-dark
-    message: The source states no value for this declared mode.
+    message: The source states no value for this declared mode, so the value for this mode is recorded as `missing`.
   - code: MISSING_MODE_VALUE
     severity: error
     entity_id: VariableID:local-collision
     mode_id: ModeID:p-light-duplicate
-    message: The source states no value for this declared mode.
+    message: The source states no value for this declared mode, so the value for this mode is recorded as `missing`.
   - code: UNRESOLVED_ALIAS
     severity: error
     entity_id: VariableID:cycle-a
@@ -568,12 +568,12 @@ diagnostics:
   - code: CONFUSABLE_NAME
     severity: warning
     entity_id: VariableID:confusable
-    message: Token name "Background/Chip/Сhip (Hover)" contains non-ASCII characters.
+    message: Token name "Background/Chip/Сhip (Hover)" contains non-ASCII characters, some of which can look like ASCII letters; the name is kept exactly as Figma states it.
     details: { kind: token, name: Background/Chip/Сhip (Hover) }
   - code: STYLE_BINDING_DRIFT
     severity: warning
     entity_id: StyleID:shadow-card
-    message: The effect property snapshot differs from its unambiguous bound token value.
+    message: The effect style's own value for `details.property` differs from the value its bound token holds in every mode; the style keeps its own value, and `details` carries both.
     details:
       property: effects[0].blur
       token_id: VariableID:shadow-blur
@@ -582,12 +582,12 @@ diagnostics:
   - code: UNIT_METADATA_UNAVAILABLE
     severity: warning
     entity_id: VariableID:unknown-number
-    message: The numeric source value is retained, but its scopes do not state one unit.
+    message: The numeric source value is kept as a bare number because its scopes state no unit or more than one, so a consumer cannot use it as a length.
     details: { scopes: [ALL_SCOPES] }
   - code: METADATA_UNAVAILABLE
     severity: info
     entity_id: <artifact>
-    message: Composite styles are emitted, but Figma exposes no complete style publication, lifecycle, or consuming-mode metadata.
+    message: The styles are exported, but Figma exposes no publication state or lifecycle for them, and no consuming mode for effect styles; those fields are absent, and `completeness.styles` is `partial`.
     details:
       typography: 1
       effects: 1

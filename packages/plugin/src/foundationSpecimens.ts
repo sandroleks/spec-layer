@@ -23,17 +23,21 @@ export const SPECIMEN_TEXT = 'The quick brown fox jumps over the lazy dog';
 
 const CASE_WORD: Record<string, string> = {
   UPPER: 'uppercase', LOWER: 'lowercase', TITLE: 'title case',
-  SMALL_CAPS: 'small caps', SMALL_CAPS_FORCED: 'small caps forced',
+  SMALL_CAPS: 'small caps', SMALL_CAPS_FORCED: 'forced small caps',
 };
+
+/** A pixel value with its unit, so no number on the canvas prints bare.
+ *  Display only: the metrics are hashed as numbers, never as these labels. */
+const px = (n: number): string => `${n}px`;
 
 function lineHeightLabel(lh: FoundationTextMetrics['lineHeight']): string {
   if (lh.unit === 'AUTO') return 'auto';
   if (lh.value === undefined) return 'unknown';
-  return lh.unit === 'PERCENT' ? `${lh.value}%` : String(lh.value);
+  return lh.unit === 'PERCENT' ? `${lh.value}%` : px(lh.value);
 }
 
 function spacingLabel(s: FoundationTextMetrics['letterSpacing']): string {
-  return s.unit === 'PERCENT' ? `${s.value}%` : String(s.value);
+  return s.unit === 'PERCENT' ? `${s.value}%` : px(s.value);
 }
 
 const tokensFor = (b: Record<string, string>, ...fields: string[]): string[] =>
@@ -45,9 +49,9 @@ export function metricsLine(m: FoundationTextMetrics): LinePart[] {
   const parts: LinePart[] = [
     { label: m.fontFamily, tokens: tokensFor(b, 'fontFamily') },
     { label: m.fontStyle, tokens: tokensFor(b, 'fontStyle') },
-    { label: `${m.fontSize}/${lineHeightLabel(m.lineHeight)}`, tokens: tokensFor(b, 'fontSize', 'lineHeight') },
+    { label: `${px(m.fontSize)}/${lineHeightLabel(m.lineHeight)}`, tokens: tokensFor(b, 'fontSize', 'lineHeight') },
     { label: `letter spacing ${spacingLabel(m.letterSpacing)}`, tokens: tokensFor(b, 'letterSpacing') },
-    { label: `paragraph spacing ${m.paragraphSpacing}`, tokens: tokensFor(b, 'paragraphSpacing') },
+    { label: `paragraph spacing ${px(m.paragraphSpacing)}`, tokens: tokensFor(b, 'paragraphSpacing') },
   ];
   if (m.textCase !== 'ORIGINAL') {
     parts.push({ label: CASE_WORD[m.textCase] ?? m.textCase.toLowerCase().replace(/_/g, ' '), tokens: [] });
@@ -100,9 +104,9 @@ export function layerLines(layers: EffectLayer[], boundTokens: Record<string, st
       case 'inner-shadow':
         parts = [
           part(layer.type === 'drop-shadow' ? 'Drop shadow' : 'Inner shadow'),
-          { label: `${num(layer.offset.x)}, ${num(layer.offset.y)}`, tokens: [...tok('offset_x'), ...tok('offset_y')] },
-          part(`blur ${num(layer.radius)}`, 'blur'),
-          ...(layer.spread !== undefined ? [part(`spread ${num(layer.spread)}`, 'spread')] : []),
+          { label: `${px(layer.offset.x)}, ${px(layer.offset.y)}`, tokens: [...tok('offset_x'), ...tok('offset_y')] },
+          part(`blur ${px(layer.radius)}`, 'blur'),
+          ...(layer.spread !== undefined ? [part(`spread ${px(layer.spread)}`, 'spread')] : []),
           part(colorLabel(layer.color), 'color'),
         ];
         break;
@@ -110,8 +114,8 @@ export function layerLines(layers: EffectLayer[], boundTokens: Record<string, st
       case 'background-blur':
         parts = [
           part(layer.type === 'layer-blur' ? 'Layer blur' : 'Background blur'),
-          part(num(layer.radius), 'blur'),
-          ...(layer.blurType === 'progressive' ? [part(`progressive from ${num(layer.startRadius)}`)] : []),
+          part(px(layer.radius), 'blur'),
+          ...(layer.blurType === 'progressive' ? [part(`progressive from ${px(layer.startRadius)}`)] : []),
         ];
         break;
       case 'noise':
@@ -304,7 +308,8 @@ function groupedList<T extends { name: string }>(
   return list;
 }
 
-const TEXT_FALLBACK_NOTE = 'Font not available, showing the default font.';
+const TEXT_FALLBACK_NOTE = 'Font not available, so this sample uses the default font. '
+  + 'The listed metrics are the style’s own.';
 
 /**
  * The text-styles list. `failedFamilies` holds `${family}|${style}` keys whose

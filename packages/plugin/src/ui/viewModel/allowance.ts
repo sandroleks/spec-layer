@@ -1,7 +1,7 @@
 /**
  * allowance.ts — the two allowance readouts, as pure functions: the header's
  * AI writing control (`allowanceState` / `allowanceCopy`) and the publish
- * screen's monthly updates line (`publishAllowance` /
+ * screen's monthly free publishes line (`publishAllowance` /
  * `publishAllowanceCopy`), plus the UTC date formatter both share with the
  * publish error copy.
  *
@@ -26,7 +26,7 @@ export const LOW_REMAINING = 5;
 
 export function allowanceState(quota: ProxyQuota | null, fetched: boolean): AllowanceState {
   if (!fetched) return { kind: 'loading' };
-  if (!quota) return { kind: 'unknown', message: 'Plan status unavailable' };
+  if (!quota) return { kind: 'unknown', message: 'Couldn’t check your plan' };
   if (quota.tier === 'pro') return { kind: 'pro' };
 
   const limit = quota.limit ?? 0;
@@ -98,7 +98,9 @@ export function allowanceCopy(state: AllowanceState): AllowanceCopy {
         detail: `${remaining} of ${limit} free uses left`,
         showUpgrade: true,
         fillPct,
-        ariaLabel: `AI writing: ${remaining} of ${limit} free uses remaining. Open License.`,
+        // The visible detail's own words ("left"), so a screen reader hears
+        // what a sighted reader sees.
+        ariaLabel: `AI writing: ${remaining} of ${limit} free uses left. Open License.`,
       };
     }
 
@@ -112,7 +114,7 @@ export type PublishAllowance =
   | { kind: 'free'; remaining: number; limit: number; resetsAt: string };
 
 /**
- * The publish screen's updates line, from the publish snapshot of a quota
+ * The publish screen's free publishes line, from the publish snapshot of a quota
  * fetch or of a publish response. Pro and "not told yet" both hide it: the
  * server is the authority, and the publish result carries the answer when the
  * meter could not.
@@ -120,7 +122,7 @@ export type PublishAllowance =
 export function publishAllowance(publish: ProxyQuota['publish'] | null): PublishAllowance {
   if (!publish || publish.tier === 'pro') return { kind: 'hidden' };
   // A free plan whose limit the server did not state is not a plan with no
-  // updates left. Hiding the line says nothing; a `0 of 0` line would say
+  // publishes left. Hiding the line says nothing; a `0 of 0` line would say
   // something false.
   if (publish.limit === null) return { kind: 'hidden' };
   const limit = publish.limit;
@@ -157,6 +159,8 @@ export function publishAllowanceCopy(state: PublishAllowance): string | null {
   if (state.kind === 'hidden') return null;
   const reset = formatResetDate(state.resetsAt);
   const tail = reset ? `, resets ${reset}` : '';
-  if (state.remaining <= 0) return `No free updates left this month${tail}`;
-  return `${state.remaining} of ${state.limit} free updates left this month${tail}`;
+  // "publishes", not "updates": the proxy spends one on every publish that
+  // writes a version, the first one included.
+  if (state.remaining <= 0) return `No free publishes left this month${tail}`;
+  return `${state.remaining} of ${state.limit} free publishes left this month${tail}`;
 }

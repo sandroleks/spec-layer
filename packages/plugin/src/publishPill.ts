@@ -21,7 +21,7 @@
 export const PUBLISH_RECORD_KEY = 'specLayerPublish';
 /** Set to '1' on the pill frame and its text node, so hashing and repainting can find them by data, not by name. */
 export const PILL_KEY = 'specLayerPill';
-export const PILL_NODE_NAME = 'Spec Layer publish pill';
+export const PILL_NODE_NAME = 'Spec Layer publish status';
 
 export interface DocPublishRecord {
   v: 1;
@@ -54,7 +54,7 @@ export function pillState(record: DocPublishRecord | null, currentSourceHash: st
 export function pillLabel(state: PillState): string {
   switch (state.kind) {
     case 'published': return `v${state.version} · Published`;
-    case 'changed': return `v${state.version} · Changed since`;
+    case 'changed': return `Changed since v${state.version}`;
     case 'unpublished': return 'Not published';
   }
 }

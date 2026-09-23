@@ -344,7 +344,7 @@ function indexPaths(p: Projection): void {
         code: note.code, severity: note.code === 'segment_split' ? 'info' : 'warning', path,
         message: note.code === 'segment_split'
           ? `The segment "${note.original}" contains "." and was split into nested groups.`
-          : `The segment "${note.original}" contains a character DTCG forbids and was escaped.`,
+          : `The segment "${note.original}" is empty, starts with "$", or contains a curly brace, none of which DTCG allows in a name; it was escaped with "_".`,
         details: { id: token.id, original: note.original },
       });
     }
@@ -360,7 +360,7 @@ function indexPaths(p: Projection): void {
       p.collidedIds.add(token.id);
       reportOnce(p, {
         code: 'path_collision', severity: 'error', path,
-        message: `${tokens.length} tokens share this DTCG path after escaping; all were omitted.`,
+        message: `${tokens.length} tokens map to this DTCG path; all of them were omitted so that none replaces another.`,
         details: { id: token.id, ids: tokens.map((t) => t.id) },
       });
     }
@@ -431,7 +431,7 @@ function ownerFor(p: Projection, token: TokenV5): ProjectedOwner {
     overrideConflict: (override) => {
       reportOnce(p, {
         code: 'unit_override_conflicts_with_scope', severity: 'warning', path,
-        message: 'A unit override names this token but its scopes state a unitless number; the override was ignored.',
+        message: 'A `dtcg.units` override in `speclayer.json` names this token, but its Figma scopes state a unitless number, so the override was ignored and the value stays a number.',
         details: { id: token.id, override, scopes: [...token.scopes] },
       });
     },
@@ -446,7 +446,7 @@ function ownerFor(p: Projection, token: TokenV5): ProjectedOwner {
         // name it. What is true of both kinds of evidence is that the token's
         // OWN variable states nothing. The CSS header that points a reader at
         // this entry says it the same way, for the same reason.
-        message: `This token's own variable states no unit, so ${evidence.unit} was taken from how the library uses it: ${evidence.source} ${evidence.via === 'binding' ? 'binds it to' : 'is scoped'} ${evidence.reason}.`,
+        message: `This token's own variable states no unit, so ${evidence.unit} was taken from how the library uses it: ${evidence.source} ${evidence.via === 'binding' ? 'binds it to' : 'aliases it and is scoped'} \`${evidence.reason}\`.`,
         details: {
           id: token.id, unit: evidence.unit, via: evidence.via,
           source: evidence.source, reason: evidence.reason,
@@ -554,7 +554,7 @@ function reportAliasTypeMismatch(
 ): void {
   reportOnce(p, {
     code: 'alias_type_mismatch', severity: 'error', path,
-    message: `This token is "${ownType}" but its alias target ${targetPath} is "${targetType}"; a consumer reading the declared type gets a value the target cannot carry.`,
+    message: `This token is \`${ownType}\` but its alias target \`${targetPath}\` is \`${targetType}\`, and a DTCG reference must match its target's type; the resolved value is written as a literal, so this token no longer follows its target.`,
     details: { target: targetPath, own_type: ownType, target_type: targetType },
   });
 }
@@ -596,7 +596,7 @@ function reportCollectionNameCollisions(p: Projection): void {
       reportOnce(p, {
         code: 'collection_name_collision', severity: 'warning',
         path: collectionLabelOf(p, collection),
-        message: `${collections.length} collections are named "${name}"; the resolver labels each one by its id.`,
+        message: `${collections.length} collections are named "${name}"; the resolver labels each one by its name followed by its id in brackets, so every label is unique.`,
         details: { id: collection.id, ids: collections.map((c) => c.id) },
       });
     }
@@ -664,7 +664,7 @@ function reportDuplicateCodeSyntax(p: Projection): void {
       reportOnce(p, {
         code: 'duplicate_code_syntax', severity: 'warning',
         path: p.pathById.get(token.id) ?? p.segmentsById.get(token.id)?.join('.') ?? token.name,
-        message: `${tokens.length} tokens declare the ${platform} identifier "${identifier}".`,
+        message: `${tokens.length} tokens declare the ${platform} identifier \`${identifier}\`, so the identifier alone does not say which token is meant; each token keeps it as declared.`,
         details: { id: token.id, platform, identifier, ids: tokens.map((t) => t.id) },
       });
     }
@@ -685,7 +685,7 @@ function reportBindingDropped(
 ): void {
   reportOnce(p, {
     code: 'binding_dropped', severity: 'warning', path,
-    message: `The ${property} property is bound to a token this export does not carry; the resolved literal is written instead.`,
+    message: `The \`${property}\` property is bound to a token this export does not carry, so the resolved value is written as a literal; \`details.reason\` says whether that token was omitted here or was never in the artifact.`,
     details: {
       property, target_id: targetId,
       reason: p.tokenIds.has(targetId) ? 'target_omitted' : 'target_unavailable',
@@ -707,7 +707,7 @@ function styleMember(
   if (property.resolved === null) {
     reportOnce(p, {
       code: 'value_omitted', severity: 'warning', path,
-      message: `The ${name} property has no resolved value and was omitted.`,
+      message: `The \`${name}\` property has no resolved value and was omitted.`,
       details: { property: name, reason: 'source_unavailable' },
     });
     return null;
@@ -717,7 +717,7 @@ function styleMember(
     if (converted.omit === 'unit_not_expressible') {
       reportOnce(p, {
         code: 'unit_not_expressible', severity: 'info', path,
-        message: `The ${name} unit is not a DTCG dimension unit; the value is kept under $extensions.`,
+        message: `The \`${name}\` property uses a unit DTCG dimensions do not accept (only px and rem); the value is kept under \`$extensions["com.spec-layer"]\`.`,
         details: { property: name, ...converted.details },
       });
       const d = property.resolved as DimensionValue;
@@ -725,7 +725,7 @@ function styleMember(
     }
     reportOnce(p, {
       code: 'type_not_expressible', severity: 'warning', path,
-      message: `The ${name} property has a type DTCG cannot state and was omitted.`,
+      message: `The \`${name}\` property has a type DTCG cannot state and was omitted.`,
       details: { property: name, ...converted.details },
     });
     return null;
@@ -774,7 +774,7 @@ function typographyLeaf(p: Projection, style: TypographyStyleV5, path: string): 
       }
       reportOnce(p, {
         code: 'unit_not_expressible', severity: 'info', path,
-        message: 'DTCG line height is a unitless multiplier of the font size; the measured value is kept under $extensions.',
+        message: 'The line height is a measured value, but DTCG `lineHeight` is a unitless multiplier of the font size; the measured value is kept under `$extensions["com.spec-layer"]`, and `$value` has no `lineHeight`.',
         // The binding is replaced by a literal here, so the entry names the
         // target it stood for; without it a consumer cannot tell this value
         // was bound at all.
@@ -847,7 +847,7 @@ function effectLeaf(p: Projection, style: EffectStyleV5, path: string): DtcgTree
   if (shadows.length === 0) {
     reportOnce(p, {
       code: 'effect_not_expressible', severity: 'warning', path,
-      message: 'The style has no visible shadow; DTCG has no blur type, so it is kept only under $extensions.',
+      message: 'The style has no visible shadow, so its `$value` is an empty shadow list; DTCG has no blur type, so each layer\'s type, visibility, and any blur radius are kept under `$extensions["com.spec-layer"].layers`.',
       details: { id: style.id },
     });
   }
@@ -873,7 +873,7 @@ function styleFiles(p: Projection): Record<string, DtcgTree> {
       if (other !== undefined) {
         reportOnce(p, {
           code: 'path_collision', severity: 'error', path,
-          message: 'Two styles share this DTCG path after escaping; the later one was omitted.',
+          message: 'Two styles map to this DTCG path; the first in source order was kept, and the one named by `details.id` was omitted.',
           details: { id: style.id, ids: [other, style.id] },
         });
         continue;
@@ -1161,7 +1161,7 @@ function tokenLeaf(p: Projection, token: TokenV5, collection: CollectionV5, mode
   if (value === undefined || value.kind === 'missing') {
     reportOnce(p, {
       code: 'value_omitted', severity: 'warning', path, mode,
-      message: 'The token has no value for this mode.',
+      message: 'The token has no value for this mode, so none was written.',
       details: { id: token.id, reason: value?.reason ?? 'no_value_for_mode' },
     });
     return null;
@@ -1171,7 +1171,7 @@ function tokenLeaf(p: Projection, token: TokenV5, collection: CollectionV5, mode
     if (value.resolved.status === 'unresolved') {
       reportOnce(p, {
         code: 'value_omitted', severity: 'warning', path, mode,
-        message: `The alias could not be resolved (${value.resolved.reason}); no value was written.`,
+        message: `The alias could not be resolved (\`${value.resolved.reason}\`); no value was written.`,
         details: {
           id: token.id, reason: value.resolved.reason,
           target_path: value.reference.target_path.join('/'),
@@ -1187,7 +1187,7 @@ function tokenLeaf(p: Projection, token: TokenV5, collection: CollectionV5, mode
     if (targetPath === undefined) {
       reportOnce(p, {
         code: 'value_omitted', severity: 'warning', path, mode,
-        message: 'The alias target was itself omitted from the DTCG output.',
+        message: 'The alias target was itself omitted from this export; no value was written, since a reference to it would not resolve.',
         details: {
           id: token.id, reason: 'target_omitted',
           target_path: value.reference.target_path.join('/'),
@@ -1212,7 +1212,7 @@ function tokenLeaf(p: Projection, token: TokenV5, collection: CollectionV5, mode
         const hopMode = modeLabelOf(p, targetCollection, hop.mode_id);
         reportOnce(p, {
           code: 'mode_selection_not_expressible', severity: 'info', path, mode,
-          message: `Figma resolved this alias through the target's "${hopMode}" mode; DTCG resolves it by the consumer's context.`,
+          message: `Figma resolved this alias through the target's "${hopMode}" mode, but a DTCG resolver picks the target's mode from the consumer's context, so the result can differ; the reference is kept, and \`details.resolved\` holds the value Figma resolved.`,
           details: {
             id: token.id, target_id: targetId ?? '', target_mode: hopMode,
             resolved: asJson(value.resolved.value),
@@ -1260,7 +1260,7 @@ function tokenLeaf(p: Projection, token: TokenV5, collection: CollectionV5, mode
       code: converted.omit, severity: 'warning', path, mode,
       message: converted.omit === 'type_not_expressible'
         ? `DTCG has no ${String(converted.details.type)} type; the value was omitted.`
-        : `DTCG dimensions take px or rem; a ${String(converted.details.unit)} value was omitted.`,
+        : `DTCG dimensions take only px or rem, and this value is in ${String(converted.details.unit)}; the value was omitted.`,
       details: { id: token.id, ...converted.details },
     });
     return null;

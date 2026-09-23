@@ -137,7 +137,7 @@ function typographyStyleOf(
   if (!style.id) {
     diagnostics.push(diagnostic('SOURCE_PARTIALLY_UNAVAILABLE', {
       entity_id: ROOT,
-      message: 'A text style could not be exported because its stable source id is unavailable.',
+      message: 'A typography style could not be exported because its stable source id is unavailable; `details.name` names the style.',
       details: { kind: 'typography', name: style.name },
     }));
     return null;
@@ -152,7 +152,9 @@ function typographyStyleOf(
   ) {
     diagnostics.push(diagnostic('INCONSISTENT_VALUE_SHAPE', {
       entity_id: style.id,
-      message: 'The text style exposes different variable ids for fontWeight and fontStyle.',
+      // typographyBinding keeps `fontWeight` for `font_weight`, so the
+      // `fontStyle` binding is the one that does not survive.
+      message: 'The typography style binds `fontWeight` and `fontStyle` to different variables; `font_weight` keeps the `fontWeight` binding, and the `fontStyle` binding is not exported.',
       details: {
         font_weight_token_id: style.bindingIds.fontWeight,
         font_style_token_id: style.bindingIds.fontStyle,
@@ -162,7 +164,7 @@ function typographyStyleOf(
   if (weight === null) {
     diagnostics.push(diagnostic('UNSUPPORTED_VALUE_TYPE', {
       entity_id: style.id,
-      message: 'The text style font label has no unambiguous numeric weight.',
+      message: 'The typography style\'s font style, `details.font_style`, maps to no single numeric weight, so `font_weight` has no resolved value.',
       details: { property: 'font_weight', font_style: style.fontStyle },
     }));
   }
@@ -178,7 +180,7 @@ function typographyStyleOf(
   if (lineHeight === null) {
     diagnostics.push(diagnostic('UNSUPPORTED_VALUE_TYPE', {
       entity_id: style.id,
-      message: 'Automatic or valueless line height has no numeric v5 representation.',
+      message: 'The typography style\'s line height is Auto or has no value, and Foundation Context v5 has no numeric form for that, so `line_height` has no resolved value.',
       details: { property: 'line_height', source_unit: style.lineHeight.unit },
     }));
   }
@@ -240,7 +242,7 @@ function typographyStyleOf(
     if (canonicalJson(tokenValue) === canonicalJson(property.resolved)) continue;
     diagnostics.push(diagnostic('STYLE_BINDING_DRIFT', {
       entity_id: style.id,
-      message: 'The typography property snapshot differs from its unambiguous bound token value.',
+      message: 'The typography style\'s own value for `details.property` differs from the value its bound token holds in every mode; the style keeps its own value, and `details` carries both.',
       details: {
         property: propertyName,
         token_id: property.source.target_id,
@@ -274,7 +276,7 @@ function effectOf(
     if (!color.ok) {
       diagnostics.push(diagnostic('INVALID_SOURCE_COLOR', {
         entity_id: styleId,
-        message: 'An effect style shadow contains a color v5 cannot represent.',
+        message: 'An effect style shadow has a color Foundation Context v5 cannot represent, so that shadow was omitted; `details.effect_index` names it, and `details.reason` says why.',
         details: { effect_index: sourceIndex, reason: color.reason },
       }));
       return null;
@@ -297,7 +299,7 @@ function effectOf(
     if (effect.blurType === 'progressive') {
       diagnostics.push(diagnostic('METADATA_UNAVAILABLE', {
         entity_id: styleId,
-        message: 'Progressive blur metadata is only partially representable in Foundation Context v5.',
+        message: 'The blur is progressive, and Foundation Context v5 has no field for its progressive settings; they were dropped, and only the blur radius is kept.',
         details: { effect_index: sourceIndex, figma_type: effect.type },
       }));
     }
@@ -309,7 +311,7 @@ function effectOf(
   }
   diagnostics.push(diagnostic('UNSUPPORTED_VALUE_TYPE', {
     entity_id: styleId,
-    message: 'An effect style layer kind is not representable by Foundation Context v5.',
+    message: 'An effect style layer has a type Foundation Context v5 does not model, so the layer was omitted; `details.figma_type` names the type.',
     details: { effect_index: sourceIndex, figma_type: effect.type },
   }));
   return null;
@@ -487,7 +489,7 @@ function projectValue(
   if (value === undefined || (value.kind === 'unresolved' && value.reason === 'missing')) {
     diagnostics.push(diagnostic('MISSING_MODE_VALUE', {
       entity_id: variable.provenance.id, mode_id: modeId,
-      message: 'The source states no value for this declared mode.',
+      message: 'The source states no value for this declared mode, so the value for this mode is recorded as `missing`.',
     }));
     return { kind: 'missing', reason: 'no_value_for_mode' };
   }
@@ -496,7 +498,7 @@ function projectValue(
     if (value.reason === 'invalid_source_value') {
       diagnostics.push(diagnostic('INVALID_SOURCE_COLOR', {
         entity_id: variable.provenance.id, mode_id: modeId,
-        message: 'The source color contains a non-finite or out-of-range channel.',
+        message: 'The source color has a channel that is not finite or is outside 0 to 1, so the value for this mode is recorded as `missing`.',
       }));
       return { kind: 'missing', reason: 'invalid_source_value' };
     }
@@ -508,7 +510,7 @@ function projectValue(
     if (typed === null) {
       diagnostics.push(diagnostic('UNSUPPORTED_VALUE_TYPE', {
         entity_id: variable.provenance.id, mode_id: modeId,
-        message: `The source literal ${JSON.stringify(value.kind)} cannot inhabit token type ${JSON.stringify(tokenType)}.`,
+        message: `A source value of kind ${JSON.stringify(value.kind)} does not fit token type ${JSON.stringify(tokenType)}, so the value for this mode is recorded as \`missing\`.`,
       }));
       return { kind: 'missing', reason: 'unsupported_value_type' };
     }
@@ -575,7 +577,7 @@ function effectStyleOf(
   if (!style.id) {
     diagnostics.push(diagnostic('SOURCE_PARTIALLY_UNAVAILABLE', {
       entity_id: ROOT,
-      message: 'An effect style could not be exported because its stable source id is unavailable.',
+      message: 'An effect style could not be exported because its stable source id is unavailable; `details.name` names the style.',
       details: { kind: 'effect', name: style.name },
     }));
     return null;
@@ -617,7 +619,7 @@ function effectStyleOf(
     if (canonicalJson(tokenValue) !== canonicalJson(styleValue)) {
       diagnostics.push(diagnostic('STYLE_BINDING_DRIFT', {
         entity_id: style.id,
-        message: 'The effect property snapshot differs from its unambiguous bound token value.',
+        message: 'The effect style\'s own value for `details.property` differs from the value its bound token holds in every mode; the style keeps its own value, and `details` carries both.',
         details: {
           property, token_id: binding.tokenId,
           style_value: styleValue, token_value: tokenValue,
@@ -645,7 +647,7 @@ function confusableDiagnostics(
     if (hasNonAscii(collection.name)) {
       findings.push(diagnostic('CONFUSABLE_NAME', {
         entity_id: collection.id,
-        message: `Collection name ${JSON.stringify(collection.name)} contains non-ASCII characters.`,
+        message: `Collection name ${JSON.stringify(collection.name)} contains non-ASCII characters, some of which can look like ASCII letters; the name is kept exactly as Figma states it.`,
         details: { kind: 'collection', name: collection.name },
       }));
     }
@@ -653,7 +655,7 @@ function confusableDiagnostics(
       if (hasNonAscii(mode.name)) {
         findings.push(diagnostic('CONFUSABLE_NAME', {
           entity_id: mode.modeId,
-          message: `Mode name ${JSON.stringify(mode.name)} contains non-ASCII characters.`,
+          message: `Mode name ${JSON.stringify(mode.name)} contains non-ASCII characters, some of which can look like ASCII letters; the name is kept exactly as Figma states it.`,
           details: { kind: 'mode', collection_id: collection.id, name: mode.name },
         }));
       }
@@ -662,7 +664,7 @@ function confusableDiagnostics(
       if (hasNonAscii(variable.name)) {
         findings.push(diagnostic('CONFUSABLE_NAME', {
           entity_id: variable.provenance.id,
-          message: `Token name ${JSON.stringify(variable.name)} contains non-ASCII characters.`,
+          message: `Token name ${JSON.stringify(variable.name)} contains non-ASCII characters, some of which can look like ASCII letters; the name is kept exactly as Figma states it.`,
           details: { kind: 'token', name: variable.name },
         }));
       }
@@ -680,7 +682,8 @@ function confusableStyleDiagnostics(
       ? [diagnostic('CONFUSABLE_NAME', {
           entity_id: style.id,
           message: `${kind === 'typography' ? 'Typography' : 'Effect'} style name `
-            + `${JSON.stringify(style.name)} contains non-ASCII characters.`,
+            + `${JSON.stringify(style.name)} contains non-ASCII characters, some of which can look like `
+            + 'ASCII letters; the name is kept exactly as Figma states it.',
           details: { kind, name: style.name },
         })]
       : []);
@@ -724,7 +727,7 @@ function sourceIssueDiagnostics(
     issues,
     diagnostics: issues.map((issue) => diagnostic('UNRESOLVED_REFERENCE', {
       entity_id: issue.tokenId, mode_id: issue.modeId,
-      message: 'The source carries a value keyed by a mode the collection no longer declares.',
+      message: 'The source carries a value for a mode the collection no longer declares; that value is not exported.',
       details: {
         collection_id: issue.collectionId,
         declared_mode_ids: tokenInfo.get(issue.tokenId)?.declaredModeIds ?? issue.declaredModeIds,
@@ -793,7 +796,7 @@ function completenessOf(
   if (unavailable.has('variables')) {
     diagnostics.push(diagnostic('SOURCE_PARTIALLY_UNAVAILABLE', {
       entity_id: ROOT,
-      message: 'One or more local variable reads were unavailable.',
+      message: 'Figma could not read one or more of this file\'s local variables; those are absent from this artifact, and `completeness.collections` is not `complete`.',
       details: { source: 'figma:variables' },
     }));
   }
@@ -802,7 +805,7 @@ function completenessOf(
   if (typographyCount > 0 || effectCount > 0) {
     diagnostics.push(diagnostic('METADATA_UNAVAILABLE', {
       entity_id: ROOT,
-      message: 'Composite styles are emitted, but Figma exposes no complete style publication, lifecycle, or consuming-mode metadata.',
+      message: 'The styles are exported, but Figma exposes no publication state or lifecycle for them, and no consuming mode for effect styles; those fields are absent, and `completeness.styles` is `partial`.',
       details: {
         typography: typographyCount,
         effects: effectCount,
@@ -817,7 +820,7 @@ function completenessOf(
   if (textStylesUnavailable || effectStylesUnavailable) {
     diagnostics.push(diagnostic('SOURCE_PARTIALLY_UNAVAILABLE', {
       entity_id: ROOT,
-      message: 'One or more composite-style source reads were unavailable.',
+      message: 'Figma could not read this file\'s typography styles, effect styles, or both; `details` says which, and the unread styles are absent from this artifact.',
       details: {
         text_styles_unavailable: textStylesUnavailable,
         effect_styles_unavailable: effectStylesUnavailable,
@@ -898,7 +901,7 @@ export function buildFoundationArtifactV5(
       collectionMetadataUnavailable = true;
       diagnostics.push(diagnostic('METADATA_UNAVAILABLE', {
         entity_id: collection.id,
-        message: 'The collection publication status could not be read.',
+        message: 'Figma did not return this collection\'s publication status, so it has no `publication` field, and `completeness.collections` is `partial`.',
         details: { field: 'publication.published' },
       }));
     }
@@ -907,7 +910,7 @@ export function buildFoundationArtifactV5(
       collectionMetadataUnavailable = true;
       diagnostics.push(diagnostic('METADATA_UNAVAILABLE', {
         entity_id: variable.provenance.id,
-        message: 'The token publication status could not be read.',
+        message: 'Figma did not return this token\'s publication status, so it has no `publication` field, and `completeness.collections` is `partial`.',
         details: { field: 'publication.published' },
       }));
     }
@@ -959,7 +962,7 @@ export function buildFoundationArtifactV5(
         && numericValue(0, variable.provenance.scopes) === null) {
         diagnostics.push(diagnostic('UNIT_METADATA_UNAVAILABLE', {
           entity_id: variable.provenance.id,
-          message: 'The numeric source value is retained, but its scopes do not state one unit.',
+          message: 'The numeric source value is kept as a bare number because its scopes state no unit or more than one, so a consumer cannot use it as a length.',
           details: { scopes: uniqueSorted(variable.provenance.scopes) },
         }));
       }
@@ -1032,7 +1035,7 @@ export function buildFoundationArtifactV5(
   };
   const level1 = validateLevel1(provisionalArtifact);
   if (level1.length > 0) {
-    throw new Error(`Direct v5 exporter produced an invalid artifact: ${level1.map((finding) => finding.message).join(' ')}`);
+    throw new Error(`This is a Spec Layer bug, not a problem in the file: Spec Layer's own check rejected the result (${level1.map((finding) => finding.message).join(' ')}).`);
   }
 
   const level2 = validateLevel2(provisionalArtifact);

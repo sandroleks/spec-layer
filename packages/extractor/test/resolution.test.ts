@@ -54,7 +54,7 @@ describe('resolutionOf', () => {
   it('reports a local resource missing from the cached dump as not in snapshot', () => {
     const r = resolutionOf(spec(), ref({ id: 'VariableID:99', name: 'color/new' }));
     expect(r.status).toBe('not-in-snapshot');
-    expect(r.reason).toMatch(/read the foundations again/i);
+    expect(r.reason).toMatch(/Refresh sources on the Foundations screen/);
   });
 
   it('reports no foundation at all as its own status', () => {

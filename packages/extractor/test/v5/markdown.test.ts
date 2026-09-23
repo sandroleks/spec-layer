@@ -454,7 +454,8 @@ describe('tokens used: foundation issues', () => {
       ...buildComponentV5StyledArtifact(),
       foundation_diagnostics: [diagnostic('STYLE_BINDING_DRIFT', {
         entity_id: 'StyleID:text',
-        message: 'The typography property snapshot differs from its unambiguous bound token value.',
+        message: 'The typography style\'s own value for `details.property` differs from the value its bound '
+          + 'token holds in every mode; the style keeps its own value, and `details` carries both.',
         details: {
           property: 'font_size',
           token_id: 'VariableID:type-scale-body',
@@ -467,10 +468,15 @@ describe('tokens used: foundation issues', () => {
 
   it("lists the Foundation's own issues after its tables", () => {
     const out = componentMarkdown(driftingArtifact());
+    // The property is a code span in the message, and a backslash inside a
+    // code span prints literally, so the span is left unescaped; the same
+    // name outside one, in the trailing `(path, property)`, is escaped.
     expect(out).toContain(
-      '### Foundation issues\n\n- warning: font\\_size is 14px in the style but 16px in the token '
-      + 'it is bound to; the two disagree. (`Typography/Body/Regular`, font\\_size)',
+      '### Foundation issues\n\n- warning: `font_size` is 14px in the style but 16px in the token '
+      + 'it is bound to; both values are kept as Figma states them, and neither is corrected. '
+      + '(`Typography/Body/Regular`, font\\_size)',
     );
+    expect(out).not.toContain('`font\\_size`');
     // Inside Tokens used, after its tables: before the next `## ` section, if any.
     const tokensUsed = out.indexOf('## Tokens used');
     const nextSection = out.indexOf('\n## ', tokensUsed + 1);
@@ -478,6 +484,19 @@ describe('tokens used: foundation issues', () => {
     expect(out.indexOf('### Typography styles')).toBeLessThan(issues);
     expect(issues).toBeGreaterThan(tokensUsed);
     expect(issues).toBeLessThan(nextSection === -1 ? out.length : nextSection);
+  });
+
+  it('keeps a message code span verbatim and still escapes the markup around it', () => {
+    const artifact: ComponentArtifactV5 = {
+      ...buildComponentV5GoldenArtifact(),
+      validation: [{
+        id: 'synthetic', severity: 'warning', path: 'Container/container',
+        message: '`a_b` and *c* <d> with an unpaired ` tick_e',
+      }],
+    } as ComponentArtifactV5;
+    expect(componentMarkdown(artifact)).toContain(
+      '- warning: `a_b` and \\*c\\* \\<d\\> with an unpaired ` tick\\_e (`Container/container`)',
+    );
   });
 
   it('draws no Foundation issues subsection when the Foundation reports nothing actionable', () => {

@@ -218,7 +218,7 @@ describe('buildSlot', () => {
     expect(slot.width).toBe(200);
     expect(slot.clipsContent).toBe(true);
     expect(slot.children).toHaveLength(1);
-    expect((slot.children[0] as Record<string, unknown>).characters).toBe('Drop instance');
+    expect((slot.children[0] as Record<string, unknown>).characters).toBe('Preview unavailable');
   });
 
   it('places a live instance when the node is a component', async () => {
@@ -245,13 +245,13 @@ describe('buildSlot', () => {
   it('falls back to the placeholder when instancing throws', async () => {
     installFigma({ getNodeByIdAsync: async () => { throw new Error('gone'); } });
     const slot = await buildSlot('1:1', 200) as unknown as FakeFrame;
-    expect((slot.children[0] as Record<string, unknown>).characters).toBe('Drop instance');
+    expect((slot.children[0] as Record<string, unknown>).characters).toBe('Preview unavailable');
   });
 
   it('ignores a node that is not a component', async () => {
     installFigma({ getNodeByIdAsync: async () => ({ type: 'FRAME' }) });
     const slot = await buildSlot('1:1', 200) as unknown as FakeFrame;
-    expect((slot.children[0] as Record<string, unknown>).characters).toBe('Drop instance');
+    expect((slot.children[0] as Record<string, unknown>).characters).toBe('Preview unavailable');
   });
 
   it('hugs its height instead of drawing a square', async () => {

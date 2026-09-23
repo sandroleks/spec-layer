@@ -18,7 +18,7 @@ and one bundle; no legacy build flag or alternate UI artifact remains.
 Before merging a branch that touched the plugin, walk these in order. Each one
 covers something unit tests cannot reach, roughly highest risk first:
 
-1. **Generate component docs** on a component set with two variant axes.
+1. **Create component docs** on a component set with two variant axes.
 2. **Generate Foundation docs** and exercise file-wide **Copy for AI**, which
    copies a DTCG resolver document.
 3. **Doc frame content**, where most rendering regressions show up.
@@ -50,7 +50,7 @@ use and rate limits. Component requests carry a structured summary and, when it
 fits the export limits, a rendered image of the selected node. Foundation group
 requests carry token names and resolved values without an image.
 
-## Generate component docs
+## Create component docs
 
 1. Select a component or component set and run the plugin.
 2. Confirm the component name is shown (and the atom notice appears for
@@ -353,16 +353,16 @@ captured for the review record.
 1. Generate two or three component and Foundation Sections. Confirm Library
    lists every connection with its source and page name and correct filter
    counts.
-2. Use **Open documentation frame** and, for a component, **View source
+2. Use **View this doc on canvas** and, for a component, **View source
    component**. Confirm each focuses the intended object.
 3. A fresh document reports **In sync**.
 4. Change a source and refresh Library. Confirm **Update available**, then run
-   **Update documentation** and verify replacement in place and a return to
+   **Update this doc** and verify replacement in place and a return to
    **In sync**.
 5. Edit text in a writing section (the definition, a do or don't, an
    accessibility line, an anatomy part description). Refresh Library and
    confirm the row still reads **In sync**. Change the source, run **Update
-   documentation**, and confirm the rebuilt frame keeps your edited text
+   this doc**, and confirm the rebuilt frame keeps your edited text
    word for word, bold included, while its tables reflect the source change.
    Duplicate a do row before updating and confirm the extra row survives.
    Then edit a generated cell (a token table value). Confirm **Manually
@@ -393,14 +393,14 @@ captured for the review record.
    styles"]` and no unrelated collection.
 9. Confirm Update and Copy do not disturb the selection or settings on the
    Selected component screen.
-10. **Detach documentation** first asks for confirmation in a dialog inside
+10. **Detach this doc** first asks for confirmation in a dialog inside
     the panel. Confirm the dialog follows the current theme, Cancel leaves the
     row unchanged, Escape closes the dialog without also leaving the screen
     underneath, a click on the dimmed backdrop cancels, and focus returns to
     the row menu button afterwards. Accepting leaves the canvas Section in
-    place while removing its Library connection. **Remove connection** asks
-    the same way and performs the cleanup only on accept. Also confirm that
-    **Update documentation** on a row marked **Manually edited** shows its
+    place while removing its Library connection. **Delete this doc** asks
+    the same way and deletes the doc’s Section, and everything in it, only on accept. Also confirm that
+    **Update this doc** on a row marked **Manually edited** shows its
     confirmation, and that **Update all** with an edited row shows one
     confirmation naming how many documents have hand edits.
 11. Close and reopen the plugin. Library must survive because connections live
@@ -418,16 +418,16 @@ captured for the review record.
     item, not a "Removed" line plus several "Added" lines: the first line
     reads "Part / fill: old changed to new" and a quieter second line reads
     "1 of N variants:" followed by the axis values of the variant you edited,
-    with axes left at their default collapsed to "others default". The other
+    with axes left at their default collapsed to "others at default". The other
     variants of the same part are not mentioned, and no token name repeats
     within one line. No item names anything you did
-    not change. Run **Update documentation** and confirm the row returns to
+    not change. Run **Update this doc** and confirm the row returns to
     **In sync** and the panel is no longer offered.
 13. A doc generated before this build shows "Source changed" with "Update
     this doc once to enable change lists." To produce one on a fresh file,
     generate the doc with the currently published plugin build, then open the
     same file with this development build and refresh the Library. Run
-    **Update documentation**, change the source again, refresh, and confirm
+    **Update this doc**, change the source again, refresh, and confirm
     the list now appears.
 14. In Settings > Export choose **Markdown**. Run **Copy for AI** from the
     component screen's footer and from a component row's menu, and paste each
@@ -505,7 +505,7 @@ action. The rows below start there.
       the token collections with their modes, and carries no key. A second run
       reports the file unchanged.
 - [ ] AI agent setup: the block shows the full numbered message under its own
-      **Copy**, below the Developer setup block and above **Rotate key**, is
+      **Copy**, below the Developer setup block and above **Rotate pull key**, is
       present on a free plan, and Copy puts on the clipboard a
       numbered message whose first command is `npx --yes spec-layer setup` with
       the same id and key as the setup command, followed by
@@ -546,17 +546,17 @@ action. The rows below start there.
       succeeds.
 - [ ] Republish after editing a token: `spec-layer status` exits 2 and names
       the new publish time; `spec-layer pull` then `status` exits 0.
-- [ ] Rotate key: old command fails with the rotated-key message within about
-      a minute; new command pulls. While a publish is running, **Rotate key**
+- [ ] Rotate pull key: a confirmation asks first on the device that holds the key; after it, the old command fails with the rotated-key message within about
+      a minute; new command pulls. While a publish is running, **Rotate pull key**
       is disabled.
 - [ ] Two files: publish file A, then open an unrelated file B and publish.
       B gets its own library id and key; pulling A's id still returns A's
       components.
 - [ ] Second device (or a second Figma account on the same file): the publish
       screen shows the **Published** pill, the library id, that the key is
-      stored on the device that published, and only **Rotate key**, with no
+      stored on the device that published, and only **Rotate pull key**, with no
       command or prompt block. The Last published line shows the same date the
-      first device saw. On the same account, rotating shows a "Key rotated"
+      first device saw. On the same account, rotating shows a "Pull key rotated."
       toast and both blocks, and the first device's old command then fails. On
       a different Figma account with no license, rotating shows "Only the
       account that published this library can rotate its key." and nothing
@@ -567,10 +567,10 @@ action. The rows below start there.
       **Not published**, and the next publish creates a new library.
 - [ ] Recorded date: publish, close the plugin, reopen it and open Publish. The
       Last published line shows the publish time without a new publish.
-      **Read documentation** in the footer opens
+      **Read the guide** in the footer opens
       spec-layer.com/docs/quickstart/#publish-pull in the browser.
 - [ ] Free plan publish and pull (no license key entered): the screen opens
-      with the **Not published** pill and "10 of 10 free updates left this
+      with the **Not published** pill and "10 of 10 free publishes left this
       month"; Publish creates a library and shows both blocks; the developer
       command pulls it. Publish again without changes: a toast reads "Nothing
       changed since the last publish.", the line still shows 9, and the Last
@@ -580,7 +580,7 @@ action. The rows below start there.
 - [ ] Free plan at the cap: after 10 changed publishes in one month the status
       line names the reset date and Publish stays enabled.
 - [ ] Lapsed Pro key with a library published while Pro: Publish updates it
-      and the meter appears; Rotate key works.
+      and the meter appears; Rotate pull key works.
 - [ ] Broken source: delete a doc's source component, publish; the error names
       the component and nothing was published.
 - [ ] First version: a file with a Foundation doc and two component docs,

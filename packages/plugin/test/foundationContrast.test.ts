@@ -3,7 +3,7 @@ import {
   contrastBlockModel, cellLabel, matrixFrame, gridWidth, contrastBlockWidth,
 } from '../src/foundationContrast';
 import {
-  FOREGROUND_WORDS, BACKGROUND_WORDS,
+  FOREGROUND_WORDS, BACKGROUND_WORDS, CONTRAST_AXIS_CAP,
   type ColorContrastReport, type ContrastMatrix,
 } from '@spec-layer/extractor';
 import { installFakeFigma, uninstallFakeFigma, FakeFrame, FakeSection } from './fakeFigma';
@@ -42,7 +42,7 @@ describe('contrastBlockModel', () => {
   it('explains itself when the collection has no matrix at all', () => {
     const m = contrastBlockModel(empty, 'Spacing');
     expect(m.kind).toBe('none');
-    expect(m.kind === 'none' && m.reason).toMatch(/no colour pairs/i);
+    expect(m.kind === 'none' && m.reason).toMatch(/no color pairs/i);
   });
 
   it('never borrows the foundation total for a collection it cannot source', () => {
@@ -94,6 +94,9 @@ describe('contrastBlockModel', () => {
     const m = contrastBlockModel(
       { ...empty, measured: 4, omitted: 7, matrices: [matrix({ omitted: 7 })] }, 'Semantic');
     expect(m.kind === 'matrix' && m.note).toContain('7');
+    // The limit itself is stated, from the extractor's own constant.
+    expect(m.kind === 'matrix' && m.note).toContain(
+      `The grid shows at most ${CONTRAST_AXIS_CAP} rows and ${CONTRAST_AXIS_CAP} columns, so it leaves out 7 colors.`);
   });
 
   it('names unclassified colours too, even when a grid was drawn', () => {
@@ -126,12 +129,14 @@ describe('contrastBlockModel', () => {
     expect(primitives.kind === 'matrix' && primitives.note).toContain('12');
   });
 
-  it('counts one colour in the singular', () => {
+  it('counts one color in the singular', () => {
     const one = contrastBlockModel(
       { ...empty, measured: 1, matrices: [matrix({ omitted: 1, unclassified: 1 })] }, 'Semantic');
     const note = one.kind === 'matrix' ? (one.note ?? '') : '';
-    expect(note).toContain('1 colour');
-    expect(note).not.toContain('1 colours');
+    expect(note).toContain('1 color');
+    expect(note).not.toContain('1 colors');
+    // US spelling throughout the block's copy.
+    expect(note).not.toMatch(/colour/);
   });
 
   it('uses no em dash or en dash in any copy', () => {
@@ -179,7 +184,7 @@ describe('cellLabel', () => {
   });
 
   it('distinguishes unmeasured from failing', () => {
-    expect(cellLabel(null)).toBe('not measured');
+    expect(cellLabel(null)).toBe('Not measured');
   });
 
   it('falls back to the bar name if a new bar is ever added', () => {
@@ -233,7 +238,7 @@ describe('matrixFrame', () => {
 
   it('lays out backgrounds across the top and foregrounds down the side', () => {
     const frame = matrixFrame(matrix()) as unknown as FakeFrame;
-    expect(frame.name).toBe('Contrast Semantic Light');
+    expect(frame.name).toBe('Contrast · Semantic · Light');
     // Header row, then one row per foreground.
     expect(frame.children).toHaveLength(2);
     expect(frame.textChars()).toEqual(['', 'x', 'a', '6.94:1 AA']);
@@ -265,7 +270,7 @@ describe('matrixFrame', () => {
     })) as unknown as FakeFrame;
     const row = frame.children[1] as FakeFrame;
     const [, unmeasured, failing] = cellsOf(row);
-    expect(textOf(unmeasured).characters).toBe('not measured');
+    expect(textOf(unmeasured).characters).toBe('Not measured');
     expect(textOf(failing).characters).toBe('1.2:1 fails');
     expect(textOf(failing).fills).not.toEqual(textOf(unmeasured).fills);
     expect(textOf(failing).fontName).not.toEqual(textOf(unmeasured).fontName);
@@ -354,13 +359,13 @@ describe('buildFoundationFrame with contrast', () => {
     const off = await build(pairable, false);
     const absent = await build(pairable);
     expect(off.textChars()).toEqual(absent.textChars());
-    expect(off.findAllNamed('Contrast Semantic Light')).toHaveLength(0);
+    expect(off.findAllNamed('Contrast · Semantic · Light')).toHaveLength(0);
     expect(off.width).toBe(absent.width);
   });
 
   it('draws the grid and names the block when the toggle is on', async () => {
     const card = await build(pairable, true);
-    expect(card.findAllNamed('Contrast Semantic Light')).toHaveLength(1);
+    expect(card.findAllNamed('Contrast · Semantic · Light')).toHaveLength(1);
     expect(card.textChars()).toContain('Contrast');
     // Same colour on both sides, so the pair fails and says so.
     expect(card.textChars()).toContain('1:1 fails');
@@ -379,8 +384,8 @@ describe('buildFoundationFrame with contrast', () => {
 
   it('explains itself instead of drawing a blank grid when nothing pairs', async () => {
     const card = await build(['color/brand/500', 'color/brand/600'], true);
-    expect(card.findAllNamed('Contrast Semantic Light')).toHaveLength(0);
-    expect(card.textChars().join(' ')).toMatch(/no colour pairs/i);
+    expect(card.findAllNamed('Contrast · Semantic · Light')).toHaveLength(0);
+    expect(card.textChars().join(' ')).toMatch(/no color pairs/i);
   });
 
   it('uses no em dash or en dash in anything it renders', async () => {

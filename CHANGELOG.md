@@ -192,6 +192,97 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
 
 ### Changed
 
+- **The plugin's copy follows one style sheet.** Every customer-facing
+  string was reviewed in context (974 of them, across the plugin window,
+  toasts, canvas docs, layer names, and exported files), and about 390
+  accepted changes are applied. The rules: the thing the plugin makes is
+  "docs" ("documentation" is gone from the UI); Spec Layer's own help is the
+  "guide"; the Pro key is the "license key" and a published library's key the
+  "pull key"; the server is "Spec Layer", never "publish service", "license
+  server", or "AI service"; metered AI is "AI writing" and "free AI writing
+  uses"; the publish quota is "free publishes", because the first publish
+  counts too; "free plan", never "free tier". The UI uses contractions and
+  typographic apostrophes; canvas docs and exported files do not. No em or en
+  dash is drawn anywhere, including empty cells, which now say why they are
+  empty: "Unknown" for a missing Library age, "Always" for an unconditioned
+  token binding, "No variant" for a missing matrix combination. Errors lead
+  with the outcome, then the cause, then the fix, and every rate-limit error
+  now reads "Couldn’t [action]. Too many requests in the last minute. Try
+  again in a minute."
+
+  Several strings were false and now match what the code does:
+  - Create docs says **Replace docs** when the component already has a doc,
+    because Create replaces it. The main thread answers whether one exists
+    with a separate `selectionDoc` message after each selection, using the
+    same lookup a render does, so the selection itself never waits.
+  - Renewing Pro is on the **License** screen, not Settings; the errors that
+    said Settings now say so.
+  - The AI writing tooltip no longer tells Pro users that a draft uses a free
+    use.
+  - The Library row menu's **Remove connection** is **Delete this doc**, with
+    a matching dialog and toast: the action deletes the doc's Section and
+    everything in it.
+  - The Detach dialog says the doc leaves the Library and can't be updated
+    again. The hand-edit dialog no longer promises that writing-section text
+    is kept in foundation docs, which have none.
+  - "Foundation docs created" appeared only when nothing was created; that
+    case now says "No docs were created" and why.
+  - The hidden-layers tooltip says only the Anatomy section names the
+    property that reveals each layer, which is the only section that does.
+  - The patch tooltip on History no longer calls style changes a patch (see
+    the version-bump change below).
+
+  Behavior that changed with the copy:
+  - AI-failure toasts are worded for the kind of build: a Library rebuild no
+    longer says "the AI sections were left out" or "try again". Raw error
+    text goes to the console instead of the toast. A Foundations license
+    failure now marks the key inactive, as a component build already did.
+  - Three "a build is still running" guards showed their toast twice; they
+    show it once. The plugin window is titled "Spec Layer".
+  - Progress phases stop on their last line instead of cycling back to the
+    first during a slow build.
+  - The License screen's **Retry** is **Check again** and re-checks the key,
+    instead of switching to a state that showed a false "isn't connected"
+    warning. The AI writing meter waits for a quota instead of showing
+    "0 of 0 free uses left". A newly activated device is named with the date
+    it was added.
+  - Rotating the pull key asks for confirmation first on the device that
+    holds it. The out-of-publishes error reads the limit from the server's
+    quota headers instead of a hard-coded 10.
+  - An empty file shows the Foundations empty state instead of "0 of 0
+    included" and "Select sources to continue".
+  - Library change lines put the subject first, one grammar with History
+    ("State hover added"), and show Figma's own names for types instead of
+    raw enums (`FLOAT`, `instanceSwap`, `FRAME`). History refetches when a
+    304 arrives with nothing cached, instead of reporting a connection
+    failure.
+  - The variant picker labels a row whose properties are all off "All off",
+    not "Default".
+  - Canvas docs print units on type and effect metrics ("24px/32px"),
+    explain unresolved values in plain words ("Not resolved: aliases form a
+    loop"), and head the guidelines "Do and don’t".
+  - Exported diagnostics, the skill zip's `SKILL.md`, and the agent guide
+    from `spec-layer skill` say what was found, what it means for a consumer,
+    and what was done about it. The Markdown projection no longer escapes
+    text inside backticks. `spec-layer skill` reports a leftover `fonts.json`
+    as well as the two folders.
+  - Dead copy and the code behind it are removed: the Anatomy table view
+    (diagram only now, and old doc links still parse), the Library's
+    Reconnect path, the fallback progress labels, and unreachable error and
+    status strings.
+
+  Deploy and release notes: no `specContentHash`, `foundationContentHash`, or
+  `semanticContentHash` golden moved, and `EXTRACTOR_VERSION` is unchanged.
+  `libraryDiff` runs in the proxy, so its changes need a proxy deploy and
+  apply only to versions published after it; stored versions keep their
+  wording. That includes a semver change: removing or renaming a text or
+  effect style is now a major change and adding one a minor, with a rename
+  reported as its own change, so a publish that removes a style is pushed to
+  a major version. Diagnostic and brief text rides in the published bundle,
+  so each library whose diagnostics were reworded reports one change on its
+  next publish. The License screen's **Contact support** still opens the
+  homepage, because there is no support channel to point it at yet.
+
 - **Stale docs are explained once, in a banner.** The Library no longer
   repeats the rebuild explanation under every "Rebuild needed" row. When any
   row needs a rebuild, a short banner above the filters ("New plugin

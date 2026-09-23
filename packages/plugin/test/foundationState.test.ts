@@ -371,9 +371,9 @@ describe('panel copy', () => {
     expect(fileSummary(summarize(empty))).toBe('Nothing to document in this file yet.');
   });
 
-  it('mentions a split in the row meta, and stays quiet about one frame', () => {
+  it('mentions a split in the row meta as a doc total, and stays quiet about one doc', () => {
     const c = { id: 'x', name: 'P', variableCount: 170, modes: [{ modeId: 'm', name: 'V' }], iconKind: 'mixed' as const };
-    expect(collectionMeta(c, 3)).toBe('170 variables · 1 mode · + 3 frames');
+    expect(collectionMeta(c, 3)).toBe('170 variables · 1 mode · 3 docs');
     expect(collectionMeta(c, 1)).toBe('170 variables · 1 mode');
   });
 
@@ -385,7 +385,7 @@ describe('panel copy', () => {
   it('describes the text-styles row', () => {
     expect(textStyleMeta(5, 1)).toBe('5 styles');
     expect(textStyleMeta(1, 1)).toBe('1 style');
-    expect(textStyleMeta(200, 2)).toBe('200 styles · + 2 frames');
+    expect(textStyleMeta(200, 2)).toBe('200 styles · 2 docs');
   });
 
   it('names the action on the button and counts nothing', () => {
@@ -397,17 +397,20 @@ describe('panel copy', () => {
     expect(FOUNDATION_CREATE_LABEL).not.toContain('frame');
   });
 
-  it('still teaches per row that a large source splits into extra frames', () => {
+  it('still teaches per row that a large source splits into several docs', () => {
     // What the button count used to be defended as the only source of. It was
     // never the only one, which is why dropping it costs nothing.
     const c = {
       id: 'x', name: 'P', variableCount: 40,
       modes: [{ modeId: 'm', name: 'V' }], iconKind: 'mixed' as const,
     };
-    expect(collectionMeta(c, 3)).toContain('+ 3 frames');
-    expect(textStyleMeta(200, 2)).toContain('+ 2 frames');
-    // ...and says nothing when the obvious single frame is all it produces.
-    expect(collectionMeta(c, 1)).not.toContain('frame');
+    expect(collectionMeta(c, 3)).toContain('3 docs');
+    expect(textStyleMeta(200, 2)).toContain('2 docs');
+    // A total, not extra frames on top of one.
+    expect(collectionMeta(c, 3)).not.toContain('+');
+    expect(collectionMeta(c, 3)).not.toContain('frame');
+    // ...and says nothing when the obvious single doc is all it produces.
+    expect(collectionMeta(c, 1)).not.toContain('doc');
   });
 
   it('contains no em dash anywhere in the panel copy', () => {
@@ -522,7 +525,7 @@ describe('effect styles selection', () => {
 
   it('writes the row meta like text styles', () => {
     expect(effectStyleMeta(1, 1)).toBe('1 style');
-    expect(effectStyleMeta(4, 2)).toBe('4 styles · + 2 frames');
+    expect(effectStyleMeta(4, 2)).toBe('4 styles · 2 docs');
   });
 
   it('names all three source kinds in the empty state', () => {

@@ -226,8 +226,9 @@ Open, in rough priority order:
    single token source with a contrast gate, and both the plugin and the site
    consume it. Phase 5 is cross-surface checks, native Figma verification,
    release notes, and rollback.
-7. **A per-IP monthly publish ceiling is deferred.** Free publishing budgets a
-   library and 10 updates per self-asserted Figma identity, so a client that
+7. **A per-IP monthly publish ceiling is deferred.** Free publishing budgets 1
+   library and 10 publishes a month (the first publish counts) per
+   self-asserted Figma identity, so a client that
    lies about `X-Figma-User` can shop for fresh buckets and the per-IP rate
    limiter is the only ceiling. See the accepted risks in
    `packages/proxy/README.md`.

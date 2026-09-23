@@ -36,7 +36,7 @@ export function shellMarkup(active: PluginView): string {
   return (
     '<div class="sl-plugin-shell">' +
     headerMarkup() +
-    sidebarMarkup(active, {}) +
+    sidebarMarkup(active) +
     '<main class="sl-screen" id="sl-screen">' +
     '<div class="sl-page-header" id="sl-page-header" hidden></div>' +
     '<div class="sl-screen-scroll" id="sl-screen-scroll"></div>' +

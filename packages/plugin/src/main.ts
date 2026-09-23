@@ -218,6 +218,14 @@ async function postSelection(): Promise<void> {
       ...(foundation && foundationPosts.fresh(foundation) ? { foundation } : {}),
     };
     figma.ui.postMessage(msg);
+    // Whether Create would replace an existing doc, so the button can say
+    // "Replace docs". The same lookup renderDocFrame uses, sent separately so
+    // the panel never waits on the registry scan to show the selection.
+    const docName = `${component.name}: Documentation`;
+    void findExistingDoc(component.id, docName).then((doc) => {
+      if (seq !== selectionSeq) return;
+      figma.ui.postMessage({ type: 'selectionDoc', nodeId: node.id, hasDoc: doc !== null } as MainToUi);
+    }).catch(() => { /* the button keeps saying Create docs, which is still true */ });
   } catch (err) {
     // Serialization failed: show the empty state rather than leaving the panel
     // stuck on the previous component with no feedback. Logged for the same
@@ -236,7 +244,9 @@ async function postSelection(): Promise<void> {
 // ---------------------------------------------------------------------------
 // Boot
 // ---------------------------------------------------------------------------
-figma.showUI(__html__, { width: 480, height: 680, themeColors: true });
+// The window title is the product name alone. Without `title` Figma uses the
+// manifest name, which carries the Community listing's search words.
+figma.showUI(__html__, { width: 480, height: 680, themeColors: true, title: 'Spec Layer' });
 
 // Send stored license key (+ its activated instance id) and the Figma user id on startup
 Promise.all([
@@ -533,7 +543,7 @@ figma.ui.onmessage = async (raw: unknown) => {
       try {
         const sel = figma.currentPage.selection[0];
         if (!sel || !('exportAsync' in sel)) {
-          figma.ui.postMessage({ type: 'logoError', message: 'Select a frame or component to use as logo' } as MainToUi);
+          figma.ui.postMessage({ type: 'logoError', message: 'Select a frame or component to use as the logo.' } as MainToUi);
           break;
         }
         // Export at logo scale (target height ~64px @2x = 128px) to keep
@@ -545,7 +555,7 @@ figma.ui.onmessage = async (raw: unknown) => {
         // Guard clientStorage (and the postMessage payload) against very wide
         // nodes that stay huge even at logo height: ~700K base64 chars ≈ 500KB.
         if (encoded.length > 700_000) {
-          figma.ui.postMessage({ type: 'logoError', message: 'That image is too big. Pick a smaller node.' } as MainToUi);
+          figma.ui.postMessage({ type: 'logoError', message: 'That logo image is too large to save. Select a smaller layer and try again.' } as MainToUi);
           break;
         }
         brandLogo = encoded;
@@ -614,9 +624,9 @@ figma.ui.onmessage = async (raw: unknown) => {
         // shared UI lock should stop this from being reached at all, but a
         // guard that notifies and returns nothing leaves the UI holding a
         // button it disabled for a build that will never report back.
-        // docFrameError is the failure reply this send site already handles.
-        const message = 'Still finishing the previous frame.';
-        figma.notify(message);
+        // docFrameError is the failure reply this send site already handles,
+        // and the UI shows its message as a toast, so this does not notify too.
+        const message = 'Another build is still running. Try again when it finishes.';
         figma.ui.postMessage({ type: 'docFrameError', message } as MainToUi);
         break;
       }
@@ -883,9 +893,9 @@ figma.ui.onmessage = async (raw: unknown) => {
         // Post the rejection back, don't just notify. The UI holds a lock from
         // the moment it sends, and a request that gets no reply is a lock
         // nobody ever releases: the Foundations tab's Create button stayed
-        // disabled for the rest of the session.
-        const message = 'Another build is still finishing.';
-        figma.notify(message);
+        // disabled for the rest of the session. The UI shows the reply's
+        // message as a toast, so this does not notify too.
+        const message = 'Another build is still running. Try again when it finishes.';
         figma.ui.postMessage({ type: 'foundationFrameError', message, created: 0 } as MainToUi);
         break;
       }
@@ -1093,8 +1103,8 @@ figma.ui.onmessage = async (raw: unknown) => {
         // Same rule as renderFoundation above: reply, never drop. docSourceError
         // is the failure reply this send site already handles, so the row's
         // Update releases its lock instead of wedging the button it disabled.
-        const message = 'Another build is still finishing.';
-        figma.notify(message);
+        // The UI shows the reply's message as a toast, so this does not notify.
+        const message = 'Another build is still running. Try again when it finishes.';
         figma.ui.postMessage({ type: 'docSourceError', docId: msg.docId, message } as MainToUi);
         break;
       }
@@ -1110,7 +1120,7 @@ figma.ui.onmessage = async (raw: unknown) => {
         const link = parseDocLink(prior.getPluginData(DOC_LINK_KEY));
         if (!link || !isFoundationLink(link)) {
           figma.ui.postMessage({ type: 'docSourceError', docId: msg.docId,
-            message: 'This doc is no longer linked.' } as MainToUi);
+            message: 'This doc is no longer linked to its source.' } as MainToUi);
           break;
         }
 
@@ -1142,8 +1152,8 @@ figma.ui.onmessage = async (raw: unknown) => {
             && !spec.collections.some((c) => c.id === scopedCollectionId);
           figma.ui.postMessage({ type: 'docSourceError', docId: msg.docId,
             message: collectionGone
-              ? 'This foundation doc could no longer be rebuilt. Its collection is gone from this file.'
-              : `This foundation doc could no longer be rebuilt. Nothing in this file is named "${scope.group}" any more.` } as MainToUi);
+              ? 'Couldn’t update this doc. Its collection is no longer in this file.'
+              : `Couldn’t update this doc. Nothing in this file is named “${scope.group}” anymore.` } as MainToUi);
           break;
         }
 
@@ -1238,7 +1248,7 @@ figma.ui.onmessage = async (raw: unknown) => {
     case 'focusNode': {
       try {
         const node = await figma.getNodeByIdAsync(msg.nodeId);
-        if (!node) { figma.notify('That item no longer exists'); break; }
+        if (!node) { figma.notify('That layer is no longer in this file.'); break; }
         const page = pageOf(node);
         if (page && page.id !== figma.currentPage.id) await figma.setCurrentPageAsync(page);
         if ('x' in node) {
@@ -1246,7 +1256,7 @@ figma.ui.onmessage = async (raw: unknown) => {
           figma.currentPage.selection = [sn];
           figma.viewport.scrollAndZoomIntoView([sn]);
         }
-      } catch { figma.notify("Couldn't open that item"); }
+      } catch { figma.notify('Couldn’t open that layer.'); }
       break;
     }
 
@@ -1386,19 +1396,19 @@ figma.ui.onmessage = async (raw: unknown) => {
         const section = docNode as SectionNode;
         const data = parseDocLink(section.getPluginData(DOC_LINK_KEY));
         if (!data) {
-          figma.ui.postMessage({ type: 'docSourceError', docId: msg.docId, message: 'This doc is no longer linked.' } as MainToUi);
+          figma.ui.postMessage({ type: 'docSourceError', docId: msg.docId, message: 'This doc is no longer linked to its source.' } as MainToUi);
           break;
         }
         // Foundation docs have no sourceNodeId to rebuild from here; their
         // rebuild path is updateFoundationDoc. Bail with the same "no longer
         // linked" message rather than reading a field that does not exist.
         if (isFoundationLink(data)) {
-          figma.ui.postMessage({ type: 'docSourceError', docId: msg.docId, message: 'This doc is no longer linked.' } as MainToUi);
+          figma.ui.postMessage({ type: 'docSourceError', docId: msg.docId, message: 'This doc is no longer linked to its source.' } as MainToUi);
           break;
         }
         const src = await figma.getNodeByIdAsync(data.sourceNodeId);
         if (!src || (src.type !== 'COMPONENT' && src.type !== 'COMPONENT_SET')) {
-          figma.ui.postMessage({ type: 'docSourceError', docId: msg.docId, message: 'The source component is gone, so this doc can no longer be rebuilt.' } as MainToUi);
+          figma.ui.postMessage({ type: 'docSourceError', docId: msg.docId, message: 'This doc’s source component is no longer in this file, so it can’t be updated or copied.' } as MainToUi);
           break;
         }
         const selfEdited = textContentHash(collectGeneratedLane(section)) !== data.selfHash;

@@ -74,12 +74,12 @@ export function fanOutPins(centers: number[], pinSize: number, gap: number): num
   return out;
 }
 
-/** `Shown at 60%` under a diagram that had to shrink; null at true size.
- *  Floored, not rounded: 0.996 is not true size, and "Shown at 100%" would
- *  say it was. */
+/** `Shown at 60% of actual size` under a diagram that had to shrink; null at
+ *  true size. Floored, not rounded: 0.996 is not true size, and "Shown at
+ *  100%" would say it was. */
 export function scaleNote(scale: number): TextNode | null {
   if (scale >= 1) return null;
-  return makeText(`Shown at ${Math.floor(scale * 100)}%`, 'Regular', 12, palette.muted, 145);
+  return makeText(`Shown at ${Math.floor(scale * 100)}% of actual size`, 'Regular', 12, palette.muted, 145);
 }
 
 function numberBadge(n: string, size: number): FrameNode {
@@ -123,7 +123,7 @@ function anatomyLegendRow(part: AnatomyPartBlock): FrameNode {
   row.appendChild(numberBadge(part.label, LEGEND_BADGE));
   const shown = displayPartName(part.name);
   const role = part.role?.trim();
-  const nestedNote = part.nested ? `  ·  ${part.component ?? 'component'}` : '';
+  const nestedNote = part.nested ? `  ·  ${part.component ?? 'Unknown component'}` : '';
   const shownNote = part.shownBy ? `  ·  Shown when ${part.shownBy} is true` : '';
   const chars = role ? `${shown}: ${role}${shownNote}` : `${shown}${nestedNote}${shownNote}`;
   const text = makeText(chars, 'Regular', 15, palette.body, 150);

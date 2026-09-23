@@ -36,7 +36,7 @@ export function headerMarkup(): string {
     // No shortcut chip. The Cmd/Ctrl+K binding in ui-vnext.ts is unaffected;
     // only the badge is gone.
     `<button class="sl-header-search" id="${HEADER_IDS.search}" type="button" ` +
-    'aria-label="Open quick search">' +
+    'aria-label="Search your docs">' +
     `${icon('search', 15)}<span>Search</span>` +
     '</button>' +
 
@@ -60,7 +60,7 @@ export function headerMarkup(): string {
     // This is deliberately a sibling, not a nested interactive element: the
     // allowance summary still opens License while Upgrade goes to checkout.
     '<button class="sl-allowance-action" type="button" data-license-open="upgrade" ' +
-    'aria-label="Upgrade to Pro" hidden>Upgrade</button>' +
+    'aria-label="Upgrade to Pro, opens in your browser" hidden>Upgrade</button>' +
     '</div>' +
 
     `<button class="sl-icon-button" id="${HEADER_IDS.theme}" type="button" ` +

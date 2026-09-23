@@ -79,7 +79,7 @@ export function resolutionOf(
 ): Resolution {
   const read = READ_OF[ref.kind];
   if (read === null) {
-    return { status: 'not-extracted', reason: 'paint style definitions are not extracted.' };
+    return { status: 'not-extracted', reason: 'Paint style definitions are not extracted.' };
   }
   if (ref.remote) {
     return {
@@ -90,25 +90,25 @@ export function resolutionOf(
   if (!foundation) {
     return {
       status: 'no-foundation',
-      reason: 'no foundation was read, so no definition could be looked up.',
+      reason: 'No foundation snapshot was read, so no definition could be looked up.',
     };
   }
   if (foundation.unavailable?.includes(read)) {
     return {
       status: 'unavailable',
-      reason: `the ${READ_WORD[read]} read failed, so nothing could be looked up.`,
+      reason: `Reading ${READ_WORD[read]} failed, so nothing could be looked up.`,
     };
   }
   if (foundation.narrowedTo && !covers(foundation.narrowedTo, ref)) {
     return {
       status: 'not-in-scope',
-      reason: `this copy covers ${scopeWord(foundation, foundation.narrowedTo)}, `
+      reason: `This copy covers ${scopeWord(foundation, foundation.narrowedTo)}, `
         + `which does not include this ${KIND_WORD[ref.kind]}.`,
     };
   }
   return {
     status: 'not-in-snapshot',
-    reason: 'local to this file but absent from the foundation snapshot, which is read '
-      + 'once per session. Read the foundations again to pick it up.',
+    reason: 'This reference is local to this file but absent from the foundation snapshot, '
+      + 'which is read once per session. Refresh sources on the Foundations screen to include it.',
   };
 }

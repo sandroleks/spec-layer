@@ -51,17 +51,16 @@ export function describeChange(change: LibraryChange): { text: string; scope: st
   const from = change.from ?? '';
   switch (change.entity) {
     case 'component':
-      if (kind === 'renamed') return { text: `Renamed from ${from}`, scope: null };
+      if (kind === 'renamed') return { text: `Component renamed from ${from}`, scope: null };
       return { text: `Component ${verbOf(kind)}`, scope: null };
     case 'variant_axis':
       if (kind === 'changed' || kind === 'renamed') return { text: `Default of ${name} changed`, scope };
-      return { text: `Axis ${name} ${kind}`, scope };
-    case 'option': {
-      const axis = scope ?? 'its axis';
-      if (kind === 'added') return { text: `Option ${name} added to ${axis}`, scope: null };
-      if (kind === 'removed') return { text: `Option ${name} removed from ${axis}`, scope: null };
-      return { text: `Option ${name} changed on ${axis}`, scope: null };
-    }
+      return { text: `Variant property ${name} ${kind}`, scope };
+    case 'option':
+      // libraryDiff.ts diffs options as plain strings, so an option is only
+      // ever added or removed, and always carries its axis as the scope.
+      if (kind === 'added') return { text: `Value ${name} added to ${scope}`, scope: null };
+      return { text: `Value ${name} removed from ${scope}`, scope: null };
     case 'property':
       return { text: `Property ${name} ${verbOf(kind)}`, scope };
     case 'state':
@@ -75,21 +74,23 @@ export function describeChange(change: LibraryChange): { text: string; scope: st
     case 'value':
       return { text: valueSentence(change.id), scope };
     case 'collection':
-      if (kind === 'renamed') return { text: `Collection renamed from ${from}`, scope };
+      if (kind === 'renamed') return { text: `Collection ${from} renamed to ${name}`, scope };
       return { text: `Collection ${name} ${verbOf(kind)}`, scope };
-    case 'mode': {
-      const collection = scope ?? 'its collection';
-      if (kind === 'renamed') return { text: `Mode renamed from ${from} in ${collection}`, scope: null };
-      if (kind === 'added') return { text: `Mode ${name} added to ${collection}`, scope: null };
-      if (kind === 'removed') return { text: `Mode ${name} removed from ${collection}`, scope: null };
-      return { text: `Mode ${name} changed in ${collection}`, scope: null };
-    }
+    case 'mode':
+      // A mode is only ever added, removed, or renamed, and always carries its
+      // collection's name as the scope (libraryDiff.ts diffFoundation).
+      if (kind === 'renamed') return { text: `Mode ${from} renamed to ${name} in ${scope}`, scope: null };
+      if (kind === 'added') return { text: `Mode ${name} added to ${scope}`, scope: null };
+      return { text: `Mode ${name} removed from ${scope}`, scope: null };
     case 'token':
-      if (kind === 'renamed') return { text: `Token ${name} renamed from ${from}`, scope };
-      return { text: `Token ${name} ${verbOf(kind)}`, scope };
+      if (kind === 'renamed') return { text: `Variable ${from} renamed to ${name}`, scope };
+      return { text: `Variable ${name} ${verbOf(kind)}`, scope };
     case 'token_value':
-      return { text: `${name} in ${scope ?? 'its mode'}`, scope: null };
+      // modeName() in libraryDiff.ts always names the mode, falling back to its key.
+      return { text: `${name} in ${scope}`, scope: null };
     case 'style':
+      // A rename drops its struck values (groupChanges), so both names go in the sentence.
+      if (kind === 'renamed') return { text: `Style ${from} renamed to ${name}`, scope };
       return { text: `Style ${name} ${verbOf(kind)}`, scope };
   }
 }
@@ -144,7 +145,9 @@ export function bumpExplanation(bump: VersionRecord['bump']): string {
   switch (bump) {
     case 'major': return 'Something was removed or renamed. Code that used it may break.';
     case 'minor': return 'Something was added. Existing code keeps working.';
-    case 'patch': return 'Values or prose changed. Nothing was added or removed.';
+    // Styles are structural (libraryDiff.ts STRUCTURAL): adding, removing or
+    // renaming one is never a patch, and a style's values are covered by "Values".
+    case 'patch': return 'Values, bindings, or text changed. No component, property, variable, or mode was added or removed.';
     case 'initial': return 'The first publish. Nothing to compare against.';
   }
 }

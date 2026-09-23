@@ -137,9 +137,9 @@ describe('docFrame', () => {
   });
 
   it('puts no placeholder text anywhere', async () => {
-    const chars = (await build(null, false)).children.flatMap((f) => (f as FakeFrame).textChars()).join('\n');
-    expect(chars).not.toContain('To be written');
-    expect(chars).not.toContain('None.');
+    const lines = (await build(null, false)).children.flatMap((f) => (f as FakeFrame).textChars());
+    expect(lines.join('\n')).not.toContain('To be written');
+    expect(lines).not.toContain('None');
   });
 
   it('keeps editorial text out of the generated lane', async () => {
@@ -198,10 +198,10 @@ describe('docFrame', () => {
     expect(node.getRangeFill(codeStart)).toEqual(solidFill(palette.onHeader));
   });
 
-  it('draws no "None." row for a variant whose tokens all match the default', async () => {
+  it('draws no "None" row for a variant whose tokens all match the default', async () => {
     // A non-default variant with no differing bindings produces an empty token
     // table. The "Identical to default" note under it is what explains that;
-    // a "None." row would read as "this variant binds nothing".
+    // a "None" row would read as "this variant binds nothing".
     const twoVariants = {
       ...spec,
       props: [{ name: 'type', kind: 'variant', options: ['Primary', 'Secondary'], default: 'Primary' }],
@@ -217,8 +217,9 @@ describe('docFrame', () => {
     );
     const section = await buildDocFrames(model, resolveTheme(emptyBrandTheme()), null) as unknown as FakeSection;
     const chars = section.children.flatMap((f) => (f as FakeFrame).textChars());
-    expect(chars.join('\n')).toContain('Identical to default');
-    expect(chars).not.toContain('None.');
+    // One suppressed token reads in the singular, never "1 tokens".
+    expect(chars).toContain('Identical to default (1 token)');
+    expect(chars).not.toContain('None');
   });
 
   it('keeps the Overview as a body section when lifting it would leave no Usage frame', async () => {
@@ -333,12 +334,12 @@ describe('docFrame measure section', () => {
 
   it('prints the scale note under the diagram when the component is wider than the column', async () => {
     const section = await buildMeasureDoc(3000);
-    expect(findText(section, /^Shown at \d+%$/)).toBe('Shown at 35%');
+    expect(findText(section, /^Shown at \d+% of actual size$/)).toBe('Shown at 35% of actual size');
   });
 
   it('prints no scale note when the component fits at true size', async () => {
     const section = await buildMeasureDoc(200);
-    expect(findText(section, /^Shown at \d+%$/)).toBeNull();
+    expect(findText(section, /^Shown at \d+%/)).toBeNull();
   });
 
   it('never upscales a narrow component: rescale is not called at all', async () => {

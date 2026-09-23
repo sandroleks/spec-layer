@@ -32,7 +32,9 @@ describe('settings screen presentation', () => {
     expect(markup.match(/data-theme-preset=/g)).toHaveLength(5);
     expect(markup).toContain('data-theme-preset="Tech" aria-pressed="true"');
     expect(markup).not.toContain('sl-custom-theme-controls');
-    expect(markup).toContain('Use selected node as logo');
+    expect(markup).toContain('Use selection as logo');
+    expect(markup).toContain('Optional. Appears in the header of your docs the next time you create or update them.');
+    expect(markup).toContain('aria-label="Tech doc theme"');
   });
 
   it('renders custom color/font controls and attached-logo actions', () => {
@@ -46,7 +48,7 @@ describe('settings screen presentation', () => {
     expect(markup).toContain('sl-custom-theme-controls');
     expect(markup).toContain('value="#0f172a"');
     expect(markup).toContain('aria-label="Heading font"');
-    expect(markup).toContain('Replace with selected node');
+    expect(markup).toContain('Replace with selection');
     expect(markup).toContain('Logo added');
     expect(markup).toContain('Enter a valid color.');
   });
@@ -151,11 +153,11 @@ describe('fontMenuMarkup', () => {
     expect(fontMenuMarkup({ ...base, families: [] }))
       .toContain('No font matches that name.');
     expect(fontMenuMarkup({ ...base, families: [], loaded: false }))
-      .toContain('Figma did not list any fonts. Type a family name instead.');
+      .toContain('Figma hasn’t listed any fonts yet. Type a family name instead.');
     // A loaded list with matches says neither.
     const ok = fontMenuMarkup({ ...base, families: ['Roboto'] });
     expect(ok).not.toContain('No font matches');
-    expect(ok).not.toContain('did not list');
+    expect(ok).not.toContain('listed any fonts');
   });
 
   it('escapes family names before placing them in markup', () => {
@@ -267,11 +269,13 @@ describe('about section', () => {
     expect(markup).toContain(`<dt>Extractor version</dt><dd>${EXTRACTOR_VERSION}</dd>`);
   });
 
-  it('links to the documentation the way the rail links out', () => {
+  it('links to the guide the way the rail links out', () => {
     const markup = settingsScrollMarkup({ ...state, pluginVersion: '5.0.0' });
     expect(markup).toContain(`href="${DOCS_URL}"`);
     expect(markup).toContain('target="_blank" rel="noopener"');
-    expect(markup).toContain('Documentation');
+    expect(markup).toContain('Read the guide');
+    // "docs" means what the plugin makes; Spec Layer's own help is the guide.
+    expect(markup).not.toContain('Documentation');
   });
 
   it('renders the versions as plain selectable text, with no copy button', () => {

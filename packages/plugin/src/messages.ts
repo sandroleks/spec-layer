@@ -100,6 +100,10 @@ export type MainToUi =
   | { type: 'docFrameDone'; frameName: string; replaced: boolean }
   | { type: 'docFrameError'; message: string }
   | { type: 'library'; entries: LibraryEntry[] }
+  /** Follows a `selection`: whether Create would replace an existing doc for
+   *  that component, so the footer can say "Replace docs". Sent separately so
+   *  the selection never waits on the registry scan. */
+  | { type: 'selectionDoc'; nodeId: string; hasDoc: boolean }
   /** `groupDescriptions` is the whole-canvas merge, re-derived AFTER the
    *  detach/remove landed, not carried over from any earlier reply. Always
    *  present (possibly `{}`) rather than omitted-when-empty like the
