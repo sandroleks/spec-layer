@@ -24,6 +24,7 @@ function input(overrides: Partial<SkillInput> = {}): SkillInput {
 const PULL: NonNullable<SkillInput['pull']> = {
   outDir: '.speclayer', libraryId: 'lib_x', publishedAt: '2026-09-01T00:00:00.000Z', pluginVersion: '5.0.0',
   componentSpecsDir: 'component-specs',
+  componentSpecsFormat: 'yaml',
   components: [
     { name: 'Button', path: 'component-specs/button.yaml' },
     { name: 'Text field', path: null },
@@ -156,6 +157,33 @@ describe('buildSkillGuide', () => {
     expect(guide).toContain("a component's or the foundation's `guidelines`");
     expect(guide).not.toContain('`$description` in `.speclayer/tokens/`');
     expect(guide).not.toMatch(/\$description`\s+in\s+`[^`]*tokens\//);
+  });
+
+  it('describes markdown pages by their headings when the last pull wrote markdown', () => {
+    const pull = {
+      ...PULL, componentSpecsFormat: 'md' as const,
+      components: PULL.components.map((c) => ({ ...c, path: c.path?.replace('.yaml', '.md') ?? null })),
+    };
+    const guide = buildSkillGuide(input({ pull }));
+    expect(guide).toContain('- `component-specs/`: one Markdown page per component.');
+    expect(guide).toContain('2. Building or changing a component: read its page under `component-specs/`, or `npx spec-layer show component NAME`. **Properties** gives variants, states, booleans, and slots; **Anatomy** names the parts; **Token bindings** says which token each part\'s property uses and under which **When** conditions; **Unbound values** lists values that are hardcoded in Figma.');
+    expect(guide).toContain('5. A row under **Unbound values** is design debt reported from Figma.');
+    expect(guide).toContain('a section of a component page that says it was written by AI');
+    expect(guide).not.toContain('one YAML per component');
+    expect(guide).not.toContain('read its YAML under');
+  });
+
+  it('keeps the yaml wording word for word when the pull wrote yaml', () => {
+    const guide = buildSkillGuide(input({ pull: PULL }));
+    expect(guide).toContain('- `component-specs/`: one YAML per component.');
+    expect(guide).toContain('2. Building or changing a component: read its YAML under `component-specs/`');
+    expect(guide).toContain('5. An `unbound` entry is design debt reported from Figma.');
+    expect(guide).toContain('a component\'s or the foundation\'s `guidelines` block, marked `origin: generated`');
+  });
+
+  it('uses the config format before any pull', () => {
+    const guide = buildSkillGuide(input({ config: { libraryId: 'lib_x', componentSpecsFormat: 'md' } }));
+    expect(guide).toContain('read its page under `component-specs/`');
   });
 
   it('lists the components, collections, modes, and token files from the pull', () => {
@@ -638,6 +666,12 @@ describe('summarizePull', () => {
     writeFileSync(join(cwd, 'package.json'), JSON.stringify({ dependencies: { '@fontsource/open-sans': '^5.0.0' } }));
     summary = summarizePull(cwd, outDir, manifest());
     expect(summary?.foundation?.missingFontFamilies).toEqual([]);
+  });
+
+  it('reads the component format from the manifest, and yaml when an older manifest has none', () => {
+    expect(summarizePull(cwd, outDir, { ...manifest(), componentSpecsFormat: 'md' })?.componentSpecsFormat).toBe('md');
+    expect(manifest()).not.toHaveProperty('componentSpecsFormat');
+    expect(summarizePull(cwd, outDir, manifest())?.componentSpecsFormat).toBe('yaml');
   });
 
   it('excludes an OPACITY-scoped number from unitlessNumbers, but still counts an unscoped one', () => {
