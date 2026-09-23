@@ -403,6 +403,84 @@ describe('foundationDtcg aliases and omissions', () => {
   });
 });
 
+describe('a token whose DTCG path is also a group', () => {
+  const GROUP = 'VariableID:color-exact';
+  const LEAF = 'VariableID:color-lossy';
+
+  /** `color/red` beside `color/red/dark`, with `first` listed before `second`. */
+  const nested = (first: string, second: string) => {
+    const artifact = syntheticArtifact();
+    const group = artifact.tokens.find((t) => t.id === GROUP);
+    const nestedLeaf = artifact.tokens.find((t) => t.id === LEAF);
+    if (!group || !nestedLeaf) throw new Error('fixture lost the two Primitives colours');
+    group.name = 'color/red';
+    nestedLeaf.name = 'color/red/dark';
+    const rest = artifact.tokens.filter((t) => t.id !== GROUP && t.id !== LEAF);
+    const byId = (id: string) => (id === GROUP ? group : nestedLeaf);
+    artifact.tokens = [byId(first), byId(second), ...rest];
+    return artifact;
+  };
+
+  it('keeps the nested token and omits the one at the group path, in either order', () => {
+    for (const [first, second] of [[GROUP, LEAF], [LEAF, GROUP]]) {
+      const out = foundationDtcg(nested(first, second));
+      for (const [name, file] of Object.entries(out.files)) {
+        if (!name.startsWith('primitives.')) continue;
+        expect(leaf(file, 'Primitives.color.red.dark')?.$type, `${first} first, ${name}`).toBe('color');
+        expect(leaf(file, 'Primitives.color.red'), `${first} first, ${name}`).not.toHaveProperty('$value');
+      }
+      expect(out.report).toContainEqual(expect.objectContaining({
+        code: 'path_collision', severity: 'error', path: 'Primitives.color.red',
+        details: { id: GROUP, ids: [GROUP, LEAF], reason: 'group' },
+      }));
+      expect(out.meta['Primitives.color.red']).toMatchObject({ id: GROUP, omitted: true });
+      expect(out.meta['Primitives.color.red.dark']).toMatchObject({ id: LEAF });
+      expect(out.meta['Primitives.color.red.dark'].omitted).toBeUndefined();
+    }
+  });
+
+  it('projects both token orders to identical bytes', () => {
+    expect(dtcgExportFiles(foundationDtcg(nested(GROUP, LEAF))))
+      .toEqual(dtcgExportFiles(foundationDtcg(nested(LEAF, GROUP))));
+  });
+
+  it('does not treat a token as a group when everything beneath it was omitted', () => {
+    const artifact = nested(GROUP, LEAF);
+    const dark = artifact.tokens.find((t) => t.id === LEAF);
+    if (!dark) throw new Error('fixture lost color/red/dark');
+    dark.type = 'string';
+    for (const modeId of Object.keys(dark.values)) {
+      dark.values[modeId] = { kind: 'literal', value: { type: 'string', value: 'x' } };
+    }
+    const out = foundationDtcg(artifact);
+    expect(leaf(out.files['primitives.light.json'], 'Primitives.color.red')?.$type).toBe('color');
+    expect(out.report.filter((r) => r.code === 'path_collision')).toEqual([]);
+  });
+
+  it('omits a style whose path is a group of other styles, in either order', () => {
+    const grouped = (groupFirst: boolean) => {
+      const artifact = syntheticArtifact();
+      const regular = artifact.styles.typography[0]; // Body/Regular
+      const body = { ...structuredClone(regular), id: 'StyleID:body', name: 'Body', path: ['Body'] };
+      artifact.styles.typography = groupFirst ? [body, regular] : [regular, body];
+      return artifact;
+    };
+    for (const groupFirst of [true, false]) {
+      const out = foundationDtcg(grouped(groupFirst));
+      const file = out.files['styles.typography.json'];
+      expect(leaf(file, 'Typography styles.Body.Regular')?.$type, `group first: ${groupFirst}`).toBe('typography');
+      expect(leaf(file, 'Typography styles.Body'), `group first: ${groupFirst}`).not.toHaveProperty('$value');
+      expect(out.report.filter((r) => r.code === 'path_collision')).toEqual([
+        expect.objectContaining({
+          path: 'Typography styles.Body', details: { id: 'StyleID:body', reason: 'group' },
+        }),
+      ]);
+    }
+    expect(dtcgExportFiles(foundationDtcg(grouped(true))))
+      .toEqual(dtcgExportFiles(foundationDtcg(grouped(false))));
+  });
+});
+
 describe('foundationDtcg styles', () => {
   const out = foundationDtcg(syntheticArtifact());
 

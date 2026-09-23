@@ -367,6 +367,46 @@ function indexPaths(p: Projection): void {
   }
 }
 
+/**
+ * A token whose DTCG path is a proper prefix of a surviving token's path
+ * would have to be a leaf and a group at once. DTCG has no such node, and
+ * `setLeaf` would otherwise nest the longer path inside the shorter one's
+ * leaf, or let the shorter one replace the group, depending on which token
+ * the artifact listed first. The token AT the prefix is omitted, so the
+ * output is the same in either order and the tokens beneath it keep their
+ * group; the sidecar keeps the omitted token's values like any other omitted
+ * token. Runs after `omitInexpressibleTypes`, because a descendant that is
+ * itself omitted never creates a group.
+ */
+function omitGroupConflicts(p: Projection): void {
+  const survivors = [...p.pathById.keys()].filter((id) => !p.omittedIds.has(id));
+  const descendantsByPrefix = new Map<string, string[]>();
+  for (const id of survivors) {
+    const segments = p.segmentsById.get(id) ?? [];
+    for (let length = 1; length < segments.length; length += 1) {
+      const prefix = segments.slice(0, length).join('.');
+      let list = descendantsByPrefix.get(prefix);
+      if (list === undefined) {
+        list = [];
+        descendantsByPrefix.set(prefix, list);
+      }
+      list.push(id);
+    }
+  }
+  for (const id of survivors) {
+    const path = p.pathById.get(id);
+    if (path === undefined) continue;
+    const descendants = descendantsByPrefix.get(path);
+    if (descendants === undefined) continue;
+    p.omittedIds.add(id);
+    reportOnce(p, {
+      code: 'path_collision', severity: 'error', path,
+      message: `${descendants.length} token${descendants.length === 1 ? ' nests' : 's nest'} under this DTCG path, which makes it a group; the token whose own path this is was omitted, because a DTCG node cannot carry a $value and child tokens at once, and keeping either would depend on which token the artifact listed first.`,
+      details: { id, ids: [id, ...[...descendants].sort(compareCodeUnits)], reason: 'group' },
+    });
+  }
+}
+
 function modeName(collection: CollectionV5, modeId: string): string {
   return collection.modes.find((m) => m.id === modeId)?.name ?? modeId;
 }
@@ -866,9 +906,26 @@ function styleFiles(p: Projection): Record<string, DtcgTree> {
     if (styles.length === 0) return;
     const tree: DtcgTree = {};
     const seen = new Map<string, string>();
+    // Every proper prefix of every style path in this file. A style whose own
+    // path is one of them is a group here and cannot also be a leaf.
+    const groupPaths = new Set<string>();
+    for (const style of styles) {
+      const segments = [root, ...dtcgSegments(style.name).segments];
+      for (let length = 1; length < segments.length; length += 1) {
+        groupPaths.add(segments.slice(0, length).join('.'));
+      }
+    }
     for (const style of styles) {
       const segments = [root, ...dtcgSegments(style.name).segments];
       const path = segments.join('.');
+      if (groupPaths.has(path)) {
+        reportOnce(p, {
+          code: 'path_collision', severity: 'error', path,
+          message: 'Other styles nest under this DTCG path, which makes it a group; the style whose own path this is was omitted, because a DTCG node cannot carry a $value and child tokens at once.',
+          details: { id: style.id, reason: 'group' },
+        });
+        continue;
+      }
       const other = seen.get(path);
       if (other !== undefined) {
         reportOnce(p, {
@@ -1050,6 +1107,7 @@ export function foundationDtcg(
   };
   indexPaths(p);
   omitInexpressibleTypes(p);
+  omitGroupConflicts(p);
   reportDuplicateCodeSyntax(p);
   reportCollectionNameCollisions(p);
 

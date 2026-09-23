@@ -411,6 +411,17 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
 
 ### Fixed
 
+- **A DTCG token that is also a group is omitted and reported, in either
+  order.** A variable named `color/red` beside `color/red/dark` used to come
+  out differently depending on which Figma listed first: either `dark` was
+  written inside the `red` token's own object, or the `red` token replaced
+  the group and `dark` vanished, with nothing in the report either way. The
+  token at the group path is now omitted whichever order the file lists them
+  in, and `report.json` names it under `path_collision` with
+  `details.reason: "group"`; its values stay in `spec-layer.meta.json`. A
+  style whose name is a prefix of another style's name gets the same
+  treatment. Nothing here touches a content hash.
+
 - **Publish and the snapshot download refuse a file with nothing in it.** The
   proxy accepts an empty bundle, so a file with no local variables or styles
   and no component docs used to publish anyway: a first publish created a
