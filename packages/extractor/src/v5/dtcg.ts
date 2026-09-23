@@ -33,7 +33,7 @@ export type DtcgTree = { [key: string]: DtcgJson };
 
 export type DtcgReportCode =
   | 'segment_split' | 'name_escaped' | 'path_collision' | 'type_not_expressible'
-  | 'unit_not_expressible' | 'unit_override_conflicts_with_scope'
+  | 'unit_not_expressible' | 'unit_override_conflicts_with_scope' | 'unit_override_unmatched'
   | 'mode_selection_not_expressible' | 'value_omitted' | 'effect_not_expressible'
   | 'duplicate_code_syntax' | 'collection_name_collision' | 'binding_dropped'
   | 'alias_type_mismatch' | 'unit_derived_from_usage';
@@ -271,6 +271,9 @@ export function sortTree(value: DtcgJson): DtcgJson {
 interface Projection {
   artifact: FoundationArtifactV5;
   options: { values: DtcgValueStyle; units?: Record<string, 'px' | 'rem'> };
+  /** `options.units` compiled once, in key order. Not part of `options`, so
+   *  `config_hash` still digests exactly what the repository wrote. */
+  unitOverrides: UnitOverride[];
   /** Units derived from stated usage, keyed by token id. Deliberately NOT part
    *  of `options`: `config_hash` digests the repository's configuration, and
    *  this is read off the published library, not configured. */
@@ -417,18 +420,76 @@ function modeName(collection: CollectionV5, modeId: string): string {
   return collection.modes.find((m) => m.id === modeId)?.name ?? modeId;
 }
 
-/** `Collection/glob` -> matcher over a token's Figma name within that collection. */
-function unitOverrideFor(p: Projection, token: TokenV5, collection: CollectionV5): 'px' | 'rem' | undefined {
-  const units = p.options.units;
-  if (!units) return undefined;
+interface UnitOverride { key: string; collectionId: string; unit: 'px' | 'rem'; glob: RegExp }
+
+/**
+ * `Collection/glob` overrides, compiled once per projection rather than once
+ * per token per mode. A key names a collection by its FULL name followed by
+ * `/`, so a collection whose own name contains a slash is matched whole
+ * instead of being cut at its first slash; a key that is a prefix of two
+ * collection names compiles for both, which is the only reading such a key
+ * has.
+ */
+function compileUnitOverrides(
+  units: Record<string, 'px' | 'rem'> | undefined, collections: CollectionV5[],
+): UnitOverride[] {
+  if (!units) return [];
+  const out: UnitOverride[] = [];
   for (const key of Object.keys(units).sort(compareCodeUnits)) {
-    const slash = key.indexOf('/');
-    if (slash === -1 || key.slice(0, slash) !== collection.name) continue;
-    const glob = key.slice(slash + 1);
-    const escaped = glob.split('*').map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*');
-    if (new RegExp(`^${escaped}$`).test(token.name)) return units[key];
+    for (const collection of collections) {
+      if (!key.startsWith(`${collection.name}/`)) continue;
+      const glob = key.slice(collection.name.length + 1);
+      const escaped = glob.split('*').map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*');
+      out.push({ key, collectionId: collection.id, unit: units[key], glob: new RegExp(`^${escaped}$`) });
+    }
+  }
+  return out;
+}
+
+/** The first override, in key order, whose glob matches the token's Figma name within its collection. */
+function unitOverrideFor(p: Projection, token: TokenV5, collection: CollectionV5): 'px' | 'rem' | undefined {
+  for (const override of p.unitOverrides) {
+    if (override.collectionId === collection.id && override.glob.test(token.name)) return override.unit;
   }
   return undefined;
+}
+
+/**
+ * An override that changed nothing used to do so silently. Each key is
+ * checked against every token of the collections it names, independently of
+ * which tokens got a leaf, so an override aimed only at string tokens is
+ * still "matched" and the entry is about the key, not about a value.
+ */
+function reportUnmatchedUnitOverrides(p: Projection): void {
+  const units = p.options.units;
+  if (!units) return;
+  const tokensByCollection = new Map<string, TokenV5[]>();
+  for (const token of p.artifact.tokens) {
+    let list = tokensByCollection.get(token.collection_id);
+    if (list === undefined) {
+      list = [];
+      tokensByCollection.set(token.collection_id, list);
+    }
+    list.push(token);
+  }
+  for (const key of Object.keys(units).sort(compareCodeUnits)) {
+    const compiled = p.unitOverrides.filter((o) => o.key === key);
+    const matched = compiled.some((o) =>
+      (tokensByCollection.get(o.collectionId) ?? []).some((t) => o.glob.test(t.name)));
+    if (matched) continue;
+    const collection = compiled.length > 0 ? p.collectionById.get(compiled[0].collectionId) : undefined;
+    reportOnce(p, {
+      code: 'unit_override_unmatched', severity: 'info',
+      path: collection ? dtcgSegments(collection.name).segments.join('.') : key,
+      message: compiled.length === 0
+        ? 'A `dtcg.units` override in `speclayer.json` names no collection in this artifact, so it changed nothing; the key is the collection\'s full name, a `/`, and a glob over token names.'
+        : 'A `dtcg.units` override in `speclayer.json` names a collection, but its glob matches none of that collection\'s token names, so it changed nothing.',
+      details: {
+        override: key, unit: units[key],
+        reason: compiled.length === 0 ? 'no_such_collection' : 'no_matching_token',
+      },
+    });
+  }
 }
 
 /**
@@ -1247,6 +1308,7 @@ export function foundationDtcg(
   const p: Projection = {
     artifact,
     options: { values: options.values ?? 'standard', ...(options.units ? { units: options.units } : {}) },
+    unitOverrides: compileUnitOverrides(options.units, artifact.collections),
     derivedUnits: derivedUnits ?? new Map(),
     tokenById: new Map(artifact.tokens.map((t) => [t.id, t])),
     tokenIds: new Set(artifact.tokens.map((t) => t.id)),
@@ -1266,6 +1328,7 @@ export function foundationDtcg(
   omitGroupConflicts(p);
   reportDuplicateCodeSyntax(p);
   reportCollectionNameCollisions(p);
+  reportUnmatchedUnitOverrides(p);
 
   const { files, census, plans } = stabilizeAliasChains(p, artifact);
   const styles = styleFiles(p);

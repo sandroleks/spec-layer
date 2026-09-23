@@ -1470,3 +1470,35 @@ describe('determinism', () => {
     expect(Object.keys(a.meta)).toEqual(Object.keys(b.meta));
   });
 });
+
+describe('dtcg.units overrides', () => {
+  it('matches a collection whose name contains a slash by its whole name', () => {
+    const artifact = syntheticArtifact();
+    artifact.collections[0].name = 'Brand/Core';
+    const out = foundationDtcg(artifact, { units: { 'Brand/Core/number/*': 'px' } });
+    expect(leaf(out.files['brand-core.light.json'], 'Brand.Core.number.unknown-scope'))
+      .toMatchObject({ $type: 'dimension', $value: { value: 1.5, unit: 'px' } });
+    expect(out.report.filter((r) => r.code === 'unit_override_unmatched')).toEqual([]);
+  });
+
+  it('reports an override that names no collection, and one whose glob matches nothing', () => {
+    const out = foundationDtcg(syntheticArtifact(), {
+      units: { 'Nowhere/number/*': 'px', 'Primitives/no-such-token/*': 'rem' },
+    });
+    expect(out.report.filter((r) => r.code === 'unit_override_unmatched')).toEqual([
+      expect.objectContaining({
+        severity: 'info', path: 'Nowhere/number/*',
+        details: { override: 'Nowhere/number/*', unit: 'px', reason: 'no_such_collection' },
+      }),
+      expect.objectContaining({
+        severity: 'info', path: 'Primitives',
+        details: { override: 'Primitives/no-such-token/*', unit: 'rem', reason: 'no_matching_token' },
+      }),
+    ]);
+  });
+
+  it('reports nothing for an override that named a token', () => {
+    const out = foundationDtcg(syntheticArtifact(), { units: { 'Primitives/number/*': 'px' } });
+    expect(out.report.filter((r) => r.code === 'unit_override_unmatched')).toEqual([]);
+  });
+});

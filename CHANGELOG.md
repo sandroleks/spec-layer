@@ -613,6 +613,17 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   Token `$description` values, which come from Figma, are unchanged. A
   repository's pulled `tokens/` change on the next re-projection.
 
+- **`dtcg.units` overrides reach a collection whose name contains a slash,
+  and say when they did nothing.** The key `"Brand/Core/spacing/*"` was cut
+  at its first slash and compared to a collection called `Brand`, so a
+  collection named `Brand/Core` could never be overridden. The key is now
+  read as the collection's whole name followed by `/` and a glob. An
+  override that names no collection, or whose glob matches no token, is
+  reported in `report.json` as `unit_override_unmatched` (info) instead of
+  being ignored. The glob is compiled once per pull rather than once per
+  token per mode. `config_hash` is unchanged: it digests the overrides as
+  written.
+
 ### Added
 
 - **The CSS output reports every unitless number it emits.** A Figma variable
