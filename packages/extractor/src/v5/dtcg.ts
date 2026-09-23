@@ -995,7 +995,15 @@ function buildResolver(p: Projection, plans: FilePlan[], styleFileNames: string[
   };
 }
 
-/** Generated group descriptions become `$description` on the group they name. */
+/**
+ * Generated group descriptions are AI prose (`guidelines.origin` is always
+ * `'generated'`; Figma has no group descriptions), so they go under the
+ * spec-layer extension with a key that names their origin, never under
+ * `$description`, which a consumer reads as the author's own text. The
+ * Markdown projection labels the same prose as AI-written for the same
+ * reason. A group node never carries an extension of its own before this,
+ * so the block is written whole.
+ */
 function annotateGroups(p: Projection, tree: DtcgTree, collection: CollectionV5): void {
   const groups = p.artifact.guidelines?.group_descriptions[collection.name];
   if (!groups) return;
@@ -1008,7 +1016,7 @@ function annotateGroups(p: Projection, tree: DtcgTree, collection: CollectionV5)
       node = node[seg];
     }
     if (typeof node === 'object' && node !== null && !Array.isArray(node) && !('$value' in node)) {
-      node.$description = text;
+      node.$extensions = { [SPEC_LAYER_EXT]: { generated_description: text } };
     }
   }
 }

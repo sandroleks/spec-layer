@@ -1006,11 +1006,16 @@ describe('foundationDtcg resolver and document', () => {
     expect(Object.keys(r.modifiers)).toContain('a/b~c');
   });
 
-  it('puts generated group descriptions on the matching group', () => {
+  it('puts generated group descriptions under the spec-layer extension, never $description', () => {
     const annotated = syntheticArtifact();
     annotated.guidelines = { origin: 'generated', group_descriptions: { Primitives: { color: 'Brand ramps.' } } };
     const files = foundationDtcg(annotated).files;
-    expect(leaf(files['primitives.light.json'], 'Primitives.color')?.$description).toBe('Brand ramps.');
+    const group = leaf(files['primitives.light.json'], 'Primitives.color');
+    expect(group?.$description).toBeUndefined();
+    expect(group?.$extensions).toEqual({ 'com.spec-layer': { generated_description: 'Brand ramps.' } });
+    // A token's own $description is the designer's, and stays where it was.
+    expect(leaf(files['primitives.light.json'], 'Primitives.color.exact.red')?.$description)
+      .toBe('Exactly representable source channels.');
   });
 
   it('keeps annotating later groups after one folder is absent from a mode', () => {
@@ -1020,7 +1025,8 @@ describe('foundationDtcg resolver and document', () => {
       group_descriptions: { Primitives: { cycle: 'Cycles.', color: 'Brand ramps.' } },
     };
     const files = foundationDtcg(annotated).files;
-    expect(leaf(files['primitives.light.json'], 'Primitives.color')?.$description).toBe('Brand ramps.');
+    expect(leaf(files['primitives.light.json'], 'Primitives.color')?.$extensions)
+      .toEqual({ 'com.spec-layer': { generated_description: 'Brand ramps.' } });
     expect(leaf(files['primitives.light.json'], 'Primitives.cycle')).toBeUndefined();
   });
 

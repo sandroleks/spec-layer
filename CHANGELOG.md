@@ -603,6 +603,16 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   the upgrade can pass them. Closes CodeQL alerts 65 and 66
   (`js/polynomial-redos`).
 
+- **AI-written group descriptions in DTCG are marked as such.** A Foundation
+  doc's generated folder descriptions used to land in every DTCG token file
+  as the group's `$description`, the field a consumer reads as the author's
+  own text; the Markdown page marks the same prose as written by AI. They
+  now sit under `$extensions["com.spec-layer"].generated_description`, and no
+  token group carries a `$description` at all. The CLI skill guide and the
+  plugin's downloadable skill say so instead of describing the old field.
+  Token `$description` values, which come from Figma, are unchanged. A
+  repository's pulled `tokens/` change on the next re-projection.
+
 ### Added
 
 - **The CSS output reports every unitless number it emits.** A Figma variable

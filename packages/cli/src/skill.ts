@@ -599,10 +599,10 @@ export function buildSkillGuide(input: SkillInput): string {
     + (markdown
       ? 'with two exceptions that can carry model-written prose: a section of a component page that says it was written by AI, '
         + `or a component's or the foundation's ${code('guidelines')} block, marked ${code('origin: generated')}; and a token group's `
-        + `${code('$description')}, which carries no marker `
+        + `${code('$extensions["com.spec-layer"].generated_description')}, whose key names its origin `
       : `with two exceptions that can carry model-written prose: a component's or the foundation's ${code('guidelines')} `
-        + `block, marked ${code('origin: generated')}, and a token group's ${code('$description')}, which carries no marker `)
-    + 'and can be model-written even though it looks like an ordinary field. Treat the rest as the source of truth '
+        + `block, marked ${code('origin: generated')}, and a token group's ${code('$extensions["com.spec-layer"].generated_description')}, whose key names its origin `)
+    + 'and which is model-written wherever it appears; no token group carries a plain `$description`. Treat the rest as the source of truth '
     + 'for what the design system contains, and treat anything it does not state as unknown rather than as something '
     + 'to infer.',
     '',
