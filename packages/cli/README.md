@@ -65,7 +65,11 @@ Module 2025.10 files, rather than `ai/foundation.yaml`, needs 0.4.0 or later.
 need 0.7.0 or later. The `census` and `config_hash` blocks inside
 `resolver.json`, and the `transform` and `resolved` fields in
 `spec-layer.meta.json`, need 0.8.2 or later; an earlier version pulls the same
-files without those fields. Markdown component pages (`componentSpecsFormat`
+files without those fields. `fonts.json`, `pull --strict`, the report
+summary on stderr, and units derived from usage need 0.9.0 or later; 0.9.0
+also records `cliVersion` in the manifest, so the first pull after any CLI
+upgrade re-projects every file. The library version in `pull`, `status`, and
+`list` output needs 0.10.0 or later. Markdown component pages (`componentSpecsFormat`
 and `--component-format`) need 0.10.0 or later. An earlier version ignores the
 key, and refuses to pull into a `component-specs/` that already holds
 Markdown pages, so every CLI that pulls a repository using Markdown needs
@@ -87,16 +91,21 @@ copies, rewrites it to that path, where the files already are.
 |---|---|
 | `setup --id lib_... --key sl_...\|- [--out DIR] [--platform P]... [selection] [--component-format yaml\|md]` | Writes `speclayer.json`, stores the key in `speclayer.local.json`, then pulls. The command the plugin copies. |
 | `init --id lib_... [--out DIR] [--platform P]... [selection] [--component-format yaml\|md]` | Writes `speclayer.json` so later commands need no flags. No key, no network. |
-| `pull [--id lib_...] [--key sl_...\|-] [--platform P]... [selection] [--component-format yaml\|md]` | Fetches the library and writes it into `DIR` (default `.speclayer`). |
-| `status [--id lib_...] [--key sl_...\|-]` | Checks freshness without writing. Prints the library version when the service reports one. Exits `2` when the local copy is behind. |
-| `list` | Lists every artifact in the last pull, with its file path or `not written`. |
-| `show foundation [--canonical]` | Prints the Foundation's DTCG document to stdout. |
-| `show component NAME [--component-format yaml\|md] [--canonical]` | Prints one component's AI YAML or Markdown page to stdout. |
+| `pull [--id lib_...] [--key sl_...\|-] [--out DIR] [--platform P]... [selection] [--component-format yaml\|md] [--strict]` | Fetches the library and writes it into `DIR` (default `.speclayer`). |
+| `status [--id lib_...] [--key sl_...\|-] [--out DIR]` | Checks freshness without writing. Prints the library version when the service reports one. Exits `2` when the local copy is behind. |
+| `list [--out DIR]` | Lists every artifact in the last pull, with its file path or `not written`. |
+| `show foundation [--out DIR] [--canonical]` | Prints the Foundation's DTCG document to stdout. |
+| `show component NAME [--out DIR] [--component-format yaml\|md] [--canonical]` | Prints one component's AI YAML or Markdown page to stdout. |
 | `tools [--json]` | Lists every command with what it reaches, needs, and writes. |
-| `skill [--install] [--agent HOST]... [--platform P] [--json]` | Prints a guide for a coding agent, adapted to this repository and the last pull; `--install` writes it where the agent reads instructions. |
+| `skill [--install] [--agent HOST]... [--platform P]... [--out DIR] [--json]` | Prints a guide for a coding agent, adapted to this repository and the last pull; `--install` writes it where the agent reads instructions. |
 
-`--api URL` overrides the API origin (default `https://api.spec-layer.com`).
-It must be `https`; plain `http` is accepted only for `localhost`, `127.0.0.1`,
+`pull` prints a one-line count of the errors and warnings in
+`tokens/report.json` and `outputs/*.report.json` to stderr, and names each
+font family nothing in the repository loads. It still exits 0; `--strict`
+exits 1 when a report holds an error-severity entry, even on a cached pull.
+
+`--api URL`, or `SPEC_LAYER_API` in the environment, overrides the API origin
+(default `https://api.spec-layer.com`). It must be `https`; plain `http` is accepted only for `localhost`, `127.0.0.1`,
 or `[::1]`, since the pull key travels with every request.
 
 ## For a coding agent
@@ -126,12 +135,14 @@ The guide is built from three things and nothing else:
 - The tool list above.
 - **What the last pull wrote.** Every component with its file path, every
   token collection with its modes and default, the token files, the
-  `report.json` counts, and how many tokens landed as plain numbers because
-  their Figma scopes state no unit. Before a pull the guide says so and names
+  `report.json` counts, how many tokens landed as plain numbers because
+  their Figma scopes state no unit, and the fonts in `fonts.json` with whether
+  the repository loads each one. Before a pull the guide says so and names
   nothing.
 - **What the repository root says about the codebase.** Detection reads only
   the top level of the working directory (`package.json` dependency names,
-  build files, agent configuration directories) and names the file behind
+  build files, agent configuration directories), plus root-level `*.css`,
+  `index.html`, and `public/index.html` for the font check, and names the file behind
   every conclusion. A signal it cannot find is reported as absent, never
   guessed. The platform decides which Figma `code_syntax` key the guide points
   at (`WEB`, `iOS`, `ANDROID`; Flutter has none) and which token pipeline
@@ -160,7 +171,10 @@ unchanged.
 
 The dedicated files are replaced whole. The shared files (`AGENTS.md`,
 `GEMINI.md`) are yours: only the marked block is replaced, and a file without
-the markers gets the block appended. Re-run `skill --install` after a pull
+the markers gets the block appended; a file with only one marker, or with the
+end before the begin, is left untouched and the command exits 1. For Claude
+Code, `--install` also names any downloaded snapshot `components/`, `tokens/`,
+or `fonts.json` left beside `SKILL.md`. Re-run `skill --install` after a pull
 that adds components or when the codebase changes stack. The written files
 carry no key and are meant to be committed with the rest of the repository.
 
@@ -198,7 +212,9 @@ That stores an `include` block in `speclayer.json`:
 Selection flags on `pull` replace the stored selection for that run; they are
 never merged with it.
 
-The selection only decides which `component-specs/` files are written. `bundle.json`
+The selection decides which `component-specs/` files are written and whether
+the Foundation's files (`.speclayer/tokens/`, `fonts.json`, `outputs/`, and the
+`tokens/` CSS) are. `bundle.json`
 always holds the whole library, so `list` and `show` can answer for any
 artifact, written or not, and `status` compares one hash.
 
@@ -218,7 +234,8 @@ Markdown page per component instead:
 ```
 
 `setup` and `init` store `--component-format yaml|md`; `pull` and `show` use
-the flag for one run. The page is rendered from the published canonical
+the flag for one run. Without the flag, `show` follows `componentSpecsFormat`,
+then the last pull, and `show foundation` refuses `--component-format`. The page is rendered from the published canonical
 artifact at pull time, so every library already published gets it without a
 republish. It opens with front matter carrying the same `spec_layer` envelope
 the YAML does, with `profile: markdown`, and marks any AI-written section as
@@ -231,7 +248,7 @@ format, and the CSS output directory from `outputs` is unaffected too.
 `show` prints exactly one artifact and nothing else, so it pipes cleanly:
 
 ```bash
-npx spec-layer show component Button            # the compact AI YAML
+npx spec-layer show component Button            # YAML, or Markdown when componentSpecsFormat is md
 npx spec-layer show component Button --component-format md   # the Markdown page
 npx spec-layer show foundation --canonical      # the canonical v5 JSON artifact
 ```
@@ -247,7 +264,8 @@ command in that directory needs no key. On POSIX systems the file is written
 at mode `0600`; on Windows there is no equivalent permission bit, so it
 inherits whatever the directory allows.
 
-Commands that talk to the server resolve the key in this order:
+`pull` and `status` resolve the key in this order (`setup` takes `--key`, or
+`SPEC_LAYER_KEY` when no `--key` is given, and stores it):
 
 1. `--key sl_...`
 2. `SPEC_LAYER_KEY` in the environment
@@ -289,9 +307,10 @@ cases refuse:
 
 - `.gitignore` cannot be written.
 - git itself could not be run, anywhere inside a working tree.
-- the entry is in `.gitignore`, but git still does not ignore the file. That
-  almost always means `speclayer.local.json` is already tracked, and the CLI
-  names `git rm --cached speclayer.local.json` as the way out.
+- the entry is in `.gitignore`, but git still does not ignore the file. When
+  git confirms the file is already tracked, the CLI names
+  `git rm --cached speclayer.local.json`; otherwise it points at a rule
+  starting with `!` that re-includes it.
 
 git decides in every case. The entry sitting in `.gitignore` is not taken as
 proof, because `git check-ignore` does not report a tracked file as ignored no
@@ -302,7 +321,8 @@ matter what the ignore rules say.
 ```text
 .speclayer/
   bundle.json                the published bundle, verbatim
-  manifest.json              every artifact indexed by content hash and path, plus the selection, outputs, componentSpecsDir, componentSpecsFormat, and the library version when one was reported
+  manifest.json              every artifact indexed by content hash and path, plus the selection, outputs, componentSpecsDir, componentSpecsFormat, the dtcg options, the platforms, the CLI version that wrote it (cliVersion), and the library version when one was reported
+  fonts.json                 the font families and weights the typography styles use (when the Foundation is written)
   tokens/                    the Foundation as Design Tokens Format Module 2025.10 files
     <collection>.<mode>.json one file per collection and mode, rooted at the collection name
     styles.typography.json   text styles as typography composites (when present)
@@ -341,7 +361,8 @@ refuses an absolute path, the current directory, or a parent of it before it
 fetches or writes anything. `pull`, and so `setup`, also refuses a path that
 is a file, a symbolic link, or an existing non-empty directory spec-layer did
 not write, since the swap replaces that directory; that check runs when the
-pull writes, after the fetch. A name that merely begins with two dots, such
+pull writes, after the fetch, and for `setup` after `speclayer.json` and the
+key are stored, so fix the path and run `spec-layer pull`. A name that merely begins with two dots, such
 as `..cache`, is an ordinary directory and is accepted.
 
 `component-specs/` and `tokens/` are written in place, not swapped. `pull`
@@ -351,8 +372,10 @@ replaces or removes those, ignores dotfiles, and refuses to run when anything
 else is present. A repository that already uses a path can set
 `componentSpecsDir` or `outputs[].path`.
 
-When nothing changed since the last pull with the same selection, `pull`
-prints `Already up to date` and writes nothing. Every republish stamps a new
+When the library, the settings, and the CLI version are unchanged since the
+last pull, and every file it wrote is still on disk, `pull` prints
+`Already up to date` and writes nothing; it still prints the report summary.
+Upgrading the CLI re-projects once. Every republish stamps a new
 export id and time into the canonical artifacts, so `bundle.json` and
 `manifest.json` change on each republish even when the content did not. The
 `component-specs/` YAML files, the `.speclayer/tokens/` files, and the
@@ -373,7 +396,8 @@ export id and time into the canonical artifacts, so `bundle.json` and
 
 `values` is `standard` (the 2025.10 object forms, the default) or `legacy`
 (the string forms Style Dictionary 4 and Tokens Studio read today). `units`
-promotes a number whose Figma scopes state no unit to a dimension. Keys are a
+promotes a number whose Figma scopes state no unit to a dimension in `px` or
+`rem`. Keys are a
 collection name, a slash, and a glob over the variable name. An override that
 contradicts a stated scope is ignored and listed in `report.json`. Nothing is
 inferred from a name. Changing the `dtcg` block re-projects `tokens/` on the
@@ -429,7 +453,11 @@ A set, which has one mode by construction, writes one file named for the
 collection alone, at `:root`. A collection with modes writes one file per
 mode: the default mode's file sits at `:root`, every other mode's file under
 `[data-theme="<mode>"]`. Aliases stay as `var()`. A number whose Figma scopes
-state no unit stays a bare number. Nothing about a mode's name selects a
+state no unit stays a bare number unless the library's own usage states a
+length: a length-scoped token that aliases it, or a component binding such as
+`gap` or `height`. Each derived unit is listed in `.speclayer/tokens/report.json`
+as `unit_derived_from_usage`, and the file's header counts them. A `dtcg.units`
+entry outranks usage. Nothing about a mode's name selects a
 media query. To let the OS choose a theme, set that collection's selector to
 `:root` under `modes` and import the mode's file yourself under `@media
 (prefers-color-scheme: dark)`. The CLI never assumes that.
@@ -452,8 +480,10 @@ and delete the old file.
 }
 ```
 
-`setup` and `init` write this block from `--platform`, or from what they detect
-at the repository root, so the path is always on record. `pull` writes every
+`setup` and `init` write this block when a web platform is named with
+`--platform`, already configured, or detected at the repository root;
+otherwise no `outputs` block is written and `pull` writes no CSS until you pass
+`--platform web` or add one. `pull` writes every
 entry; `"outputs": []` writes none. `case` chooses how derived names are
 spelled: `kebab` (default), `camel`, `pascal`, `snake`, or `constant`. A name
 the designer declared as `code_syntax` in Figma is used verbatim and never
@@ -507,7 +537,7 @@ the current version.
 | Code | Meaning |
 |---|---|
 | `0` | Success, or `status` found the local copy up to date. |
-| `1` | Usage error, bad key or id, unknown component name, a network or server failure, or a file `skill --install` could not write. |
+| `1` | Usage error, bad key or id, unknown component name, a network or server failure, a file `skill --install` could not write, `pull --strict` with an error-severity report entry, `list` or `show` with no local pull, a refused output directory, or `setup` refusing to store the key. |
 | `2` | `status` only: the local copy is behind, or no local pull exists yet. |
 
 `status` is safe in CI: it writes nothing, and exit `2` is the signal to run

@@ -20,7 +20,7 @@ Body: `{ "cacheKey": "prose:v9:<tier>:<hash>...", "request": <shipped prose requ
 
 The proxy accepts only the two request contracts built by the extractor:
 component prose (`prose:v9:`) and Foundation group descriptions
-(`prose:v2:groups:`). Each carries the exact system prompt and few-shot
+(`prose:v3:groups:<tier>:`). Each carries the exact system prompt and few-shot
 messages the extractor ships, the fixed output limit, a bounded generated
 prompt, one `cache_control` breakpoint on the exemplar answer, and supported
 base64 image blocks. The request names no model: the proxy assigns
@@ -30,9 +30,10 @@ cache key names the tier the client believes it has (`pro` or `free`); a key
 whose tier disagrees with the proof is rejected with `400 tier mismatch` before
 any quota is reserved, so a Haiku draft is never replayed to a Pro user.
 
-The shipped 5.1.0 plugin's contract (`prose:v8:` and `prose:v1:groups:` keys
-naming `claude-haiku-4-5`, the v8 prompt bytes) stays accepted until the 6.0.0
-plugin is live. Remove that branch afterwards.
+The 5.1.0 plugin's contract (`prose:v8:` and `prose:v1:groups:` keys naming
+`claude-haiku-4-5`, the v8 prompt bytes) stays accepted after the 6.0.0
+release, because installed 5.1.0 plugins keep sending it until their users
+update. Remove that branch only once 5.1.0 traffic has stopped.
 
 Caller-defined Anthropic options, remote image URLs, extra fields, and bodies
 above 7 MB are rejected. The `cacheKey` doubles as the idempotency key: a retry
@@ -46,7 +47,9 @@ Errors: `400` bad request/allowlist, `400 {"error":"tier mismatch"}`, `401`
 unauthenticated or license not active,
 `402 {"error":"quota_exhausted","resetsAt":…}`,
 `409 {"error":"generation_pending"}` (another window is generating the same
-component), `429 {"error":"rate_limited","retryAfterMs":…}`, `502` upstream
+component), `413 {"error":"request_too_large"}` (body over 7 MB),
+`429 {"error":"rate_limited"}`, with `retryAfterMs` when the per-identity
+limit refused it, `502` upstream
 failure (quota not decremented), `502 {"error":"upstream_timeout"}` when
 Anthropic does not answer within 150 s (quota not decremented).
 
@@ -143,15 +146,19 @@ content identity (`libraryBundleContentHash`), which ignores each artifact's
 export id and timestamp, so a rebuild of unchanged sources matches even though
 its bytes differ; `bundleHash`, the sha256 of the stored bytes, is kept only
 for the pull `ETag`. Republishing content equal to the stored one returns
-`200 { libraryId, publishedAt, unchanged: true }` with no write and no count.
+`200 { libraryId, publishedAt, unchanged: true, version }` (plus
+`X-Library-Version` when the library has one) with no write and no count.
 The quota engine's 24-hour response cache still protects retries of a changed
-publish, keyed by the transition (stored content hash to new one) so a revert
-inside that window is a fresh reservation rather than a replay.
+publish, keyed by the stored publish time and the new content hash, so every
+committed write starts a new key and a revert inside that window is a fresh
+reservation rather than a replay.
 Successful publishes, the `unchanged` reply, and the quota refusals (402, 409, 429) carry `X-Tier` and the `X-Quota-*` headers for the publish allowance; other errors do not.
 
 Errors: `400` invalid JSON or bundle shape, `400
-{"error":"unsupported bundle version","version":"2.0.0"}`, `401` no identity,
-or a lapsed key with no Figma identity, `402
+{"error":"unsupported bundle version","version":"2.0.0"}`, `400` for an
+`invalid libraryId`, `invalid_note`, `invalid_bump`, or
+`invalid_initial_version`, `401` no identity, a lapsed key with no Figma
+identity, or a license check that could not reach Lemon Squeezy, `402
 {"error":"quota_exhausted","resetsAt":…}`, `403 {"error":"not_owner"}`,
 `403 {"error":"library_limit","limit":1,"owned":…,"existing":{"libraryId":…,"fileName":…}}`
 on free (`fileName` may be null, and `existing` is null when the library the
@@ -215,14 +222,16 @@ predates versioning answers an empty log. Errors: `401`, `404`, `429`.
   transition. Counted in a separate Durable Object per identity
   (`publish:<identity>`). Pull is not metered. A `dryRun` publish never
   reserves or counts.
-- Quota engine rate limit: 10 uncached generation reservations/min per
-  identity, both tiers.
+- Quota engine rate limit: 10 uncached reservations/min per identity and
+  profile (AI writing and publishing count separately), both tiers.
 - Request edge limiter: 60 prose requests/min and 60 quota reads/min per
   connecting IP, best-effort per isolate.
 - License status cached 24h; 5-day grace on Lemon Squeezy outages.
 
-Atomicity: one Durable Object per identity (`QuotaDO`) serializes all quota
-ops. The only server-side content storage is the 24h idempotency response
+Atomicity: one Durable Object per identity and profile (`QuotaDO`; the bare
+identity for AI writing, `publish:<identity>` for publishing) serializes that
+profile's quota ops. Apart from published libraries in KV (see the accepted
+risks), the only server-side content storage is the 24h idempotency response
 cache inside the DO, one storage key per committed response (`resp:<cacheKey>`)
 beside a small `engine` counter record, with the newest 500 responses retained
 per identity; prompts and prose are never logged. An `engine` value written
@@ -252,7 +261,8 @@ before this split is migrated to that layout the first time it is read.
   best-effort cost-abuse backstop, not a substitute for a Cloudflare WAF rule.
 - **Free identities are client-asserted.** `X-Figma-User` isn't
   authenticated; rotating it re-mints a free identity with a fresh boost
-  window, bounded per request by the model/max_tokens allowlist.
+  window, bounded per request by the fixed prompt and `max_tokens` checks, with
+the model assigned by the proxy for the tier (Haiku on free).
 - **Salt rotation resets free identities.** Changing `FIGMA_ID_SALT` renames
   every free identity's Durable Object: quotas reset and every user
   re-enters the boost window. Rotate only with that intent.
@@ -368,11 +378,12 @@ before this split is migrated to that layout the first time it is read.
 - **Deploy order.** The proxy ships before any plugin build that sends both
   headers. A bearer-only client keeps working: it proves the license identity
   that owns every library published so far.
-- **The deploy switchover can fail requests that are already in flight.**
-  The quota Durable Object is now called over RPC and has no `fetch`
-  handler, and the previous build called it with `fetch`. Until every
-  isolate still running the previous build has finished, that build's calls
-  to an upgraded object throw and answer 500. Most of those are one failed
+- **A deploy across the RPC switch can fail requests already in flight.**
+  The quota Durable Object has been called over RPC since #86 (deployed
+  2026-09-24) and has no `fetch` handler; builds before it called it with
+  `fetch`. During that deploy, until every isolate still running the older
+  build had finished, its calls to an upgraded object threw and answered 500,
+  and a rollback past #86 opens the same window again. Most of those are one failed
   request that a retry fixes, but two are worse. A prose request that
   reserved before the switch can fail at its commit after Anthropic has
   already answered, so the call is billed and the answer is neither cached

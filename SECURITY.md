@@ -39,6 +39,12 @@ retired and are not supported surfaces.
   identity rate limits, and never logs prompts, rendered images, generated
   text, or raw license keys. A 24-hour idempotency cache stores generated
   responses so retries do not consume quota twice.
+- Publishing a library is the one feature that stores design-system content.
+  The Worker keeps the published bundle so the `spec-layer` CLI can pull it,
+  and a pull needs a bearer pull key. The Worker stores only the key's SHA-256
+  digest, so rotating the key invalidates every copied setup command. The CLI
+  never talks to Figma; it can read the key from stdin with `--key -`, from
+  `SPEC_LAYER_KEY`, or from a gitignored `speclayer.local.json`.
 
 Treat private component names, text, token values, rendered images, Figma user
 identifiers, and license keys as sensitive. If a credential is committed or

@@ -5,12 +5,9 @@
 
 ## Verification
 
-- [ ] `npm run lint`
-- [ ] `npm run typecheck`
-- [ ] `npm test`
-- [ ] `npm run build:plugin`
-- [ ] `npm run check:proxy-dry-run`
+- [ ] `npm run check` (lint, typecheck, NUL scan, tests, plugin and CLI builds, CLI bundle smoke test, sandbox scan, proxy dry run), exit code read directly
 - [ ] `npm run audit`
+- [ ] `CHANGELOG.md` updated for a behaviour change, and the JSON Schema for a contract change
 - [ ] No API keys, license keys, private Figma links, customer data, or proprietary component exports are included.
 
 ## Screenshots or fixtures

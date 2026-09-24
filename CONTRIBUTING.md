@@ -22,7 +22,7 @@ your clone. If you installed with `--ignore-scripts`, run
 
 - Add or update automated tests for behavior changes. Bug fixes should include a regression test.
 - Run the complete quality gate before opening a pull request: `npm run check`.
-- Keep package boundaries intact: `extractor` owns pure transformation, `plugin` owns Figma I/O, and `proxy` owns the AI relay, quotas, and licensing.
+- Keep package boundaries intact: `extractor` owns pure transformation, `plugin` owns Figma I/O, `proxy` owns the AI relay, quotas, licensing, and published libraries, `cli` owns delivery into a repository and never extracts, and `brand` owns the shared tokens.
 - Do not commit environment files, API keys, license keys, or local credentials.
 - Use synthetic fixtures. Never submit private Figma file keys, customer names,
   rendered component images, proprietary tokens, or internal component data.
@@ -30,7 +30,7 @@ your clone. If you installed with `--ignore-scripts`, run
 
 ## Pull requests
 
-Explain the user-visible behavior, architectural tradeoffs, and verification performed. UI changes should include screenshots using synthetic content. Changes to the YAML brief are changes to the one public contract: update the golden fixtures and the compatibility notes in the same pull request.
+Explain the user-visible behavior, architectural tradeoffs, and verification performed. UI changes should include screenshots using synthetic content. The public contract is the Component and Foundation Context v5 JSON Schemas in `packages/extractor/src/v5/schema/`; YAML, Markdown, and DTCG are projections of it. A contract change updates the schema, the golden fixtures, and `CHANGELOG.md` in the same pull request, and ships under a new schema version, because `spec-layer.com/schemas/` never overwrites a published one.
 
 ## Dependency overrides
 
