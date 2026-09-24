@@ -565,6 +565,18 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   executable oracles in `redos.test.ts`. Output is unchanged for every line
   the upgrade can pass them. Closes CodeQL alerts 65 and 66
   (`js/polynomial-redos`).
+- **A Library refresh that fails now says so.** The main thread's Library
+  scan had no failure reply, so one throw (an unloaded page under dynamic
+  page access, a Section whose plugin data could not be read) left the
+  Library spinning with Refresh and Update disabled for the rest of the
+  session. The scan now returns what it read: rows collected before the
+  failure are posted as the Library, and a failure with no rows posts a
+  `libraryError` the panel shows. The registry self-heal runs only after a
+  complete scan, so a failed one can no longer prune docs it never reached.
+  A source read that is rejected rather than empty (usually an unloaded
+  page) no longer marks the row **Source missing**, matching what a failed
+  Foundation read already did. Detach and Delete reply even when the
+  registry write fails.
 
 ### Added
 

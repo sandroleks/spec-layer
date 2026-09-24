@@ -15,7 +15,6 @@ import {
   type FoundationVariableRow, type SerializedFoundation,
   type ProseV2,
 } from '@spec-layer/extractor';
-import { scopeIconKind } from './foundationIcon';
 import { buildDocFrames } from './docFrame';
 import { buildFoundationFrame, isColorRow } from './foundationFrame';
 import { emptyBrandTheme, resolveTheme, migrateBrandColors, type BrandTheme, type BrandColors } from './brandColors';
@@ -23,7 +22,7 @@ import { familiesWithRequiredStyles } from './fonts';
 import { isComponentFormat, storedComponentFormat } from './componentFormat';
 import {
   DOC_LINK_KEY, DOC_REGISTRY_KEY, DOC_PROSE_KEY, DOC_BASELINE_KEY,
-  parseDocLink, serializeDocLink, parseRegistry, serializeRegistry, addDoc, pruneRegistry,
+  parseDocLink, serializeDocLink, parseRegistry, serializeRegistry, addDoc, removeDoc, pruneRegistry,
   textContentHash, isFoundationLink, foundationScopeKey, retargetScope,
   serializeProse, parseProse, mergeFoundationGroupDescriptions,
   serializeBaseline, baselineFor,
@@ -32,6 +31,7 @@ import {
 import { readCanvasProse, mergeProse, collectGeneratedText, type ProseNodeLike } from './canvasProse';
 import { repaintPills } from './pillNode';
 import { pageOf, resolveRegistrySections } from './registryNodes';
+import { scanLibrary } from './libraryScan';
 import {
   PUBLISH_RECORD_KEY, parsePublishRecord, serializePublishRecord, pillState,
   type DocPublishRecord, type PillState,
@@ -697,7 +697,7 @@ figma.ui.onmessage = async (raw: unknown) => {
 
         // Register (idempotent), dropping the replaced doc's id if it changed.
         let reg = readRegistry();
-        if (existingId && existingId !== section.id) reg = { v: 1, docIds: reg.docIds.filter((id) => id !== existingId) };
+        if (existingId && existingId !== section.id) reg = removeDoc(reg, existingId);
         reg = addDoc(reg, section.id);
         writeRegistry(reg);
 
@@ -730,116 +730,52 @@ figma.ui.onmessage = async (raw: unknown) => {
     }
 
     case 'requestLibrary': {
-      const reg = readRegistry();
-      const entries: LibraryEntry[] = [];
-      const alive = new Set<string>();
       // Foundation drift needs one live extraction to answer every foundation
       // row, unlike component docs, which the UI checks one at a time via
-      // requestDrift. Lazy so a file with only component docs pays nothing.
-      // Caches both the success and the failure so it runs at most once here.
-      let foundationSpec: FoundationSpec | null = null;
-      let foundationExtractionFailed = false;
+      // requestDrift. scanLibrary calls this lazily and at most once, so a
+      // file with only component docs pays nothing. Resolves null on failure
+      // rather than rejecting: a foundation that cannot be read is a fact
+      // about those rows (badge unavailable), not a reason to drop the list.
       const liveFoundation = async (): Promise<FoundationSpec | null> => {
-        if (foundationSpec || foundationExtractionFailed) return foundationSpec;
         try {
           const { fileKey } = resolveFileKey(figma.fileKey, null);
           const dump = await serializeFoundation(
             createFoundationReader(figma.variables, figma), fileKey, new Date().toISOString(), figma.root.name,
           );
-          foundationSpec = buildFoundation(dump);
-        } catch {
-          foundationExtractionFailed = true;
+          return buildFoundation(dump);
+        } catch (err) {
+          console.error('[Spec Layer] foundation read failed during the library scan', err);
+          return null;
         }
-        return foundationSpec;
       };
-      for (const docId of reg.docIds) {
-        let node: BaseNode | null = null;
-        try { node = await figma.getNodeByIdAsync(docId); } catch { node = null; }
-        if (!node || node.type !== 'SECTION') continue; // pruned below
-        const section = node as SectionNode;
-        const data = parseDocLink(section.getPluginData(DOC_LINK_KEY));
-        if (!data) continue; // detached/foreign section still in the index → prune
-        // Mark alive before branching on kind, so the self-heal prune below
-        // never drops a valid doc's registry id regardless of which branch
-        // below builds its LibraryEntry.
-        alive.add(docId);
-        const selfEdited = textContentHash(collectGeneratedLane(section)) !== data.selfHash;
-        const page = pageOf(section);
-
-        if (isFoundationLink(data)) {
-          const title = section.name.replace(/^Foundations: /, '');
-          const live = await liveFoundation();
-          // A renamed collection still resolves by name: retarget the scope to
-          // its current id before hashing, so a re-created collection reads as
-          // "Update available" (true: the frame's rendered title changed) and
-          // not "Source missing" (false: the collection is still there).
-          // retargetScope only does this on an unambiguous single name match;
-          // if several live collections share the name it leaves the dead id in
-          // place, and the row reads as orphaned rather than silently binding
-          // to a collection that may have nothing to do with this doc.
-          const scope = live ? retargetScope(data.scope, live.collections) : data.scope;
-          const currentContentHash = live ? foundationContentHash(live, scope) : undefined;
-          // A scope that no longer resolves is orphaned. unitContent returns
-          // null for a deleted collection, and foundationContentHash turns that
-          // into a stable sentinel, so compare against unitContent directly
-          // rather than re-deriving the sentinel here. When extraction failed
-          // outright, give the doc the benefit of the doubt rather than
-          // reporting it missing on no evidence.
-          const sourceExists = live ? unitContent(live, scope) !== null : true;
-          entries.push({
-            docId,
-            kind: 'foundation',
-            label: `Foundations · ${title}`,
-            componentName: `Foundations · ${title}`,
-            pageName: page?.name ?? '',
-            sourceLabel: data.scope.target === 'collection'
-              ? data.scope.collectionName
-              : data.scope.target === 'textStyles' ? 'Text styles' : 'Effect styles',
-            generatedAt: data.generatedAt,
-            sourceNodeId: '',
-            sourceExists,
-            selfEdited,
-            storedContentHash: data.contentHash,
-            currentContentHash,
-            // Read from the retargeted scope, so a renamed collection keeps the
-            // icon its variables earn rather than falling back to `mixed`.
-            foundationIcon: scopeIconKind(live, scope),
-            // The RETARGETED scope, matching foundationIcon above: a renamed
-            // collection resolves to its live id, which is the id Copy has to
-            // match against the foundation dump the UI holds.
-            foundationScope: scope,
-          });
-          continue;
+      let entries: LibraryEntry[] = [];
+      let error: string | null = null;
+      try {
+        const reg = readRegistry();
+        const scan = await scanLibrary(reg.docIds, { getNodeByIdAsync: (id) => figma.getNodeByIdAsync(id), liveFoundation });
+        entries = scan.entries;
+        error = scan.error;
+        if (scan.error === null) {
+          // Self-heal: keep only ids that resolved to a real, still-linked doc.
+          // Only after a complete scan: a scan that stopped early never saw
+          // the docs after the failure, and pruning on its `alive` set would
+          // drop live docs from the registry.
+          const pruned = pruneRegistry(reg, scan.alive);
+          if (pruned.docIds.length !== reg.docIds.length) writeRegistry(pruned);
         }
-
-        let sourceNode: BaseNode | null = null;
-        try { sourceNode = await figma.getNodeByIdAsync(data.sourceNodeId); } catch { sourceNode = null; }
-        const sourceExists = sourceNode != null;
-        const sourcePage = sourceNode ? pageOf(sourceNode) : null;
-        const name = section.name.replace(/: Documentation$/, '');
-        entries.push({
-          docId,
-          kind: 'component',
-          label: name,
-          componentName: name,
-          pageName: page?.name ?? '',
-          // The source's page, and only that: a locator is worth showing only
-          // when it says something the row title does not. Falls back to the
-          // name when the source node is gone and there is no page to point at.
-          sourceLabel: sourcePage?.name || name,
-          generatedAt: data.generatedAt,
-          sourceNodeId: data.sourceNodeId,
-          sourceExists,
-          selfEdited,
-          storedContentHash: data.contentHash,
-          extractorVersion: data.extractorVersion,
-          includeHidden: data.config.includeHidden,
-        });
+      } catch (err) {
+        error = err instanceof Error ? err.message : String(err);
       }
-      // Self-heal: keep only ids that resolved to a real, still-linked doc.
-      const pruned = pruneRegistry(reg, alive);
-      if (pruned.docIds.length !== reg.docIds.length) writeRegistry(pruned);
-      figma.ui.postMessage({ type: 'library', entries } as MainToUi);
+      if (error !== null) console.error('[Spec Layer] library scan failed', error);
+      // Rows collected before a failure are still true rows, so they are
+      // posted as the library. Only a failure with nothing collected has
+      // nothing to show but its message. The UI ends its refreshing state on
+      // either reply, which is what this handler used to have no way to do.
+      if (entries.length > 0 || error === null) {
+        figma.ui.postMessage({ type: 'library', entries } as MainToUi);
+      } else {
+        figma.ui.postMessage({ type: 'libraryError', message: error } as MainToUi);
+      }
       break;
     }
 
@@ -1030,7 +966,7 @@ figma.ui.onmessage = async (raw: unknown) => {
             // tracking a Section that was still physically on the canvas: an
             // untracked duplicate, invisible to My Library and the self-heal
             // prune.
-            const reg: DocRegistry = { v: 1, docIds: readRegistry().docIds.filter((id) => id !== prior.id) };
+            const reg: DocRegistry = removeDoc(readRegistry(), prior.id);
             prior.remove();
             writeRegistry(addDoc(reg, section.id));
             replaced++;
@@ -1202,7 +1138,7 @@ figma.ui.onmessage = async (raw: unknown) => {
         // above): the new section is stamped and placed before the old one
         // goes, so a failure here never leaves the user having lost a good doc.
         let reg = readRegistry();
-        reg = { v: 1, docIds: reg.docIds.filter((id) => id !== prior.id) };
+        reg = removeDoc(reg, prior.id);
         prior.remove();
         writeRegistry(addDoc(reg, section.id));
 
@@ -1252,7 +1188,15 @@ figma.ui.onmessage = async (raw: unknown) => {
           (node as SectionNode).setPluginData(DOC_BASELINE_KEY, '');
         }
       } catch { /* gone already */ }
-      writeRegistry({ v: 1, docIds: readRegistry().docIds.filter((id) => id !== msg.docId) });
+      // Guarded like the read above: a registry write that throws must not
+      // swallow the reply, or the UI keeps a row it has already been told is
+      // gone and its menu stays disabled. The next Library scan prunes an id
+      // this write failed to drop.
+      try {
+        writeRegistry(removeDoc(readRegistry(), msg.docId));
+      } catch (err) {
+        console.error('[Spec Layer] could not update the doc registry after detaching', msg.docId, err);
+      }
       // Detaching a foundation doc wipes its link, so the merge below no
       // longer sees it: this is the inverse staleness case, where the UI's
       // cache must be told a description set is now GONE, not just told
@@ -1268,7 +1212,11 @@ figma.ui.onmessage = async (raw: unknown) => {
         const node = await figma.getNodeByIdAsync(msg.docId);
         if (node) node.remove();
       } catch { /* gone already */ }
-      writeRegistry({ v: 1, docIds: readRegistry().docIds.filter((id) => id !== msg.docId) });
+      try {
+        writeRegistry(removeDoc(readRegistry(), msg.docId));
+      } catch (err) {
+        console.error('[Spec Layer] could not update the doc registry after deleting', msg.docId, err);
+      }
       // Same inverse-staleness reasoning as detachDoc above: a removed
       // foundation doc's descriptions must stop being offered by Copy.
       const groupDescriptions = await liveFoundationGroupDescriptions();

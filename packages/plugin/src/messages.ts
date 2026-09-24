@@ -100,6 +100,11 @@ export type MainToUi =
   | { type: 'docFrameDone'; frameName: string; replaced: boolean }
   | { type: 'docFrameError'; message: string }
   | { type: 'library'; entries: LibraryEntry[] }
+  /** Reply for `requestLibrary` when the scan produced no rows before it
+   *  failed. A scan that fails after collecting rows replies `library` with
+   *  what it has. Either reply ends the UI's refreshing state, so no throw on
+   *  the main thread can leave Library spinning with Refresh disabled. */
+  | { type: 'libraryError'; message: string }
   /** Follows a `selection`: whether Create would replace an existing doc for
    *  that component, so the footer can say "Replace docs". Sent separately so
    *  the selection never waits on the registry scan. */
