@@ -17,7 +17,7 @@ import {
 import { OK_ARTIFACT, VALID_CASES, INVALID_CASES } from './fixtures';
 
 const schemaText = readFileSync(
-  'packages/extractor/src/v5/schema/foundation-5.1.0.json', 'utf8',
+  'packages/extractor/src/v5/schema/foundation-5.1.1.json', 'utf8',
 );
 const schema = JSON.parse(schemaText) as Record<string, unknown>;
 

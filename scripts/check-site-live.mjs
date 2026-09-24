@@ -32,7 +32,7 @@ const base = baseArg.replace(/\/$/, '');
 // extractor's own schema files are the committed bytes to compare against.
 // They are the source the site publishes, not a second copy of it.
 const SCHEMAS = [
-  ['/schemas/foundation-context/v5.json', 'packages/extractor/src/v5/schema/foundation-5.1.0.json'],
+  ['/schemas/foundation-context/v5.json', 'packages/extractor/src/v5/schema/foundation-5.1.1.json'],
   ['/schemas/component-context/v5.json', 'packages/extractor/src/v5/schema/component-5.2.0.json'],
 ];
 const MISSING_PATH = '/this-path-must-not-exist-' + Date.now();

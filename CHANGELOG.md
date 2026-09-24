@@ -248,12 +248,18 @@ path, where the files already are, and says so in one line.
   `completeness.styles` documents why it is `partial` or `unavailable` for
   any file with a style, a partial read, or a scoped export. Every committed
   golden validates, including a real synthetic artifact carrying diagnostics
-  and both style kinds. The schema is tightened in place with no version
-  bump: no artifact any released plugin has ever emitted changes or stops
-  validating. The live schema at
-  `spec-layer.com/schemas/foundation-context/v5.json` serves the old bytes
-  until the private site redeploys, so `npm run check:site-live` fails from
-  this change until that deploy; it is not part of `npm run check`.
+  and both style kinds. The tightened schema ships as Foundation Context
+  **5.1.1**, because the website keeps every published schema version
+  byte for byte: `spec-layer.com/schemas/foundation-context/5.1.0.json`
+  stays as it was, and `v5.json` follows 5.1.1. The plugin now writes
+  `schema_version: 5.1.1` into the envelope. The envelope sits outside
+  `content_hash`, so no Foundation artifact's identity moves; a library
+  bundle does hash it, so the first publish of an existing library from a
+  plugin carrying this records one patch version with no listed changes. An
+  artifact from a released plugin still says 5.1.0 and validates against
+  the 5.1.0 download, not `v5.json`. `spec-layer pull` accepts both, since
+  its check does not read the version. `npm run check:site-live` fails until
+  the private site deploys 5.1.1; it is not part of `npm run check`.
 - **The repository gates cover what they claimed to.** `npm run typecheck`
   now compiles `packages/proxy/test` and `packages/cli/test`; both had type
   errors that vitest's type stripping hid, all in test code.

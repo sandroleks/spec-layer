@@ -153,7 +153,7 @@ Module 2025.10 document; the checks below name fields at that top level and
 under its `$extensions["com.spec-layer"]` block.
 
 1. Copy an ordinary local file twice without editing it. Both copies must
-   have `"version": "2025.10"`, a `schema_version` of `5.1.0` under
+   have `"version": "2025.10"`, a `schema_version` of `5.1.1` under
    `$extensions["com.spec-layer"]`, and a matching `content_hash`; export
    ids and timestamps play no part in it. Every declared mode appears as its own
    resolver context (a single-mode collection is a `set` instead of a

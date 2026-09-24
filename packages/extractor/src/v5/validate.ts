@@ -1,7 +1,7 @@
 /**
  * Level 1 validation — spec §18 "Schema validity".
  *
- * A hand-written mirror of `schema/foundation-5.1.0.json`, kept separate
+ * A hand-written mirror of `schema/foundation-5.1.1.json`, kept separate
  * because the plugin sandbox cannot load `ajv` (see the module comment on
  * that schema file). The published schema is for consumers; this is what the
  * plugin itself runs. `test/v5/schemaParity.test.ts` is what keeps the two
