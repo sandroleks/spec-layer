@@ -234,6 +234,20 @@ describe('handleProse', () => {
     expect(retry.headers.get('X-Quota-Used')).toBe('1');
   });
 
+  it('releases the reservation when reading the answer fails for any other reason, so a retry is not left pending', async () => {
+    const brokenBody = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      text: () => { throw new TypeError('Network connection lost.'); },
+    }));
+    const d = deps({ fetcher: brokenBody as unknown as typeof fetch });
+    await expect(handleProse(proseReq(GOOD_BODY, { 'X-Figma-User': 'u1' }), d)).rejects.toThrow('Network connection lost.');
+    // Nothing was charged and nothing is pending: the retry runs.
+    const retry = await handleProse(proseReq(GOOD_BODY, { 'X-Figma-User': 'u1' }), { ...d, fetcher: deps().fetcher });
+    expect(retry.status).toBe(200);
+    expect(retry.headers.get('X-Quota-Used')).toBe('1');
+  });
+
   it('rejects a non-allowlisted upstream request', async () => {
     const bad = { ...GOOD_BODY, request: { ...GOOD_BODY.request, model: 'claude-opus-4-8' } };
     const res = await handleProse(proseReq(bad, { 'X-Figma-User': 'u1' }), deps());

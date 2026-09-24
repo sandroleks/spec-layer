@@ -431,7 +431,10 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   The proxy aborts the upstream call at 150 seconds and answers
   `502 upstream_timeout` with nothing charged; the reservation window is now
   180 seconds, so a generation can no longer outlive its reservation and let a
-  retry pay twice for one answer. Every proxy log line now carries the
+  retry pay twice for one answer. An answer whose body fails to arrive for
+  any other reason still answers 500, and now frees its reservation too, so
+  a retry runs at once instead of answering `409 generation_pending` for three
+  minutes. Every proxy log line now carries the
   request's ray id and route, and an upstream error carries Anthropic's
   request id.
 - **Publishes from one identity no longer race a library or the library
