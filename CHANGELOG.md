@@ -441,6 +441,11 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   from an omitted token is now omitted too, and reported `target_omitted`,
   instead of writing a reference to a path the export never declares.
 
+- **Copy for AI on a component no longer fails on a Foundation whose default
+  mode is undeclared.** The component copy read the token's value under the
+  collection's `default_mode_id` and crashed when that mode did not exist;
+  the Foundation's own `UNRESOLVED_REFERENCE` finding is carried instead.
+
 - **A style bound to an unscoped number no longer reports drift against
   itself.** A Figma variable with no unit-pinning scope is a bare number in
   the Foundation artifact, while a text style's font size or an effect's

@@ -467,6 +467,21 @@ describe('Component Context v5', () => {
     expect(unavailable.references.used[0].status).toBe('unavailable');
   });
 
+  it('copies a component whose foundation names a default mode it does not declare', () => {
+    const source = foundation();
+    source.collections[0].default_mode_id = 'CollectionID:space:no-such-mode';
+    const build = () => buildComponentArtifactV5(spec([rule(
+      'VariableID:base', 'space/base', 'variable', 'gap', 'CollectionID:space',
+    )]), { ...META, foundation: source });
+    expect(build).not.toThrow();
+    const artifact = build();
+    expect(artifact.references.used[0].status).toBe('resolved');
+    // The dangling default mode is the Foundation's finding, carried along, not a crash here.
+    expect(artifact.foundation_diagnostics).toContainEqual(expect.objectContaining({
+      code: 'UNRESOLVED_REFERENCE', entity_id: 'CollectionID:space',
+    }));
+  });
+
   it('reports a binding whose used reference was removed after construction', () => {
     const artifact = buildComponentArtifactV5(spec([rule(
       'VariableID:semantic', 'space/component', 'variable', 'gap', 'CollectionID:space',

@@ -546,7 +546,12 @@ function componentValidation(
       if (token === undefined) continue;
       const collection = collections.get(token.collection_id);
       if (collection === undefined) continue;
-      const value = resolvedValueOf(token.values[collection.default_mode_id]);
+      // A default mode the collection does not declare is a Level 2 finding
+      // on the Foundation (UNRESOLVED_REFERENCE), not a reason for the
+      // component copy to throw: the rule simply has no resolved number.
+      const canonical = token.values[collection.default_mode_id];
+      if (canonical === undefined) continue;
+      const value = resolvedValueOf(canonical);
       if (value?.type === 'number') resolved.set(rule.id, value.value);
       if (value?.type === 'dimension') resolved.set(rule.id, value.number);
     }
