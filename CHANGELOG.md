@@ -415,6 +415,11 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   `workers.dev` hostname that the zone's license rate rule never covered no
   longer serves the Worker; `api.spec-layer.com` is the only origin. Workers
   observability is on with every invocation sampled.
+- **Oversized bodies are refused as they stream in.** Publish and prose read
+  the request in chunks and stop at the first byte over the cap instead of
+  buffering the whole body first when no `Content-Length` was sent. The 413's
+  `size` is the declared length when there is one, else the byte count at the
+  cut.
 - **Publish and the snapshot download refuse a file with nothing in it.** The
   proxy accepts an empty bundle, so a file with no local variables or styles
   and no component docs used to publish anyway: a first publish created a

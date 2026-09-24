@@ -11,6 +11,7 @@ import { activateLicense, checkLicense, deactivateLicense, validateLicense, LICE
 import { quotaHeaders } from './quota';
 import type { QuotaProfile, QuotaSnapshot, ReserveResult, Tier } from './quota';
 import type { SlidingWindowLimiter } from './ratelimit';
+import { readBodyCapped } from './body';
 
 export { licenseIdentityId };
 export type { QuotaProfile };
@@ -53,7 +54,8 @@ interface ProseBody {
   request?: ProseRequest;
 }
 
-const MAX_PROXY_BODY_CHARS = 7_000_000;
+/** UTF-8 bytes of the request body; the base64 image is the bulk of it. */
+const MAX_PROXY_BODY_BYTES = 7_000_000;
 const MAX_IMAGE_BASE64_CHARS = 6_500_000;
 const MAX_PROMPT_CHARS = 100_000;
 const BODY_FIELDS = new Set(['cacheKey', 'request']);
@@ -228,13 +230,11 @@ export async function handleProse(req: Request, deps: HandlerDeps): Promise<Resp
   const identity = identityFromHeaders(req.headers, deps.salt);
   if (!identity) return json(401, { error: 'unauthenticated' });
 
-  const declaredLength = Number(req.headers.get('content-length') ?? 0);
-  if (declaredLength > MAX_PROXY_BODY_CHARS) return json(413, { error: 'request_too_large' });
-  let rawBody: string;
-  try { rawBody = await req.text(); } catch { return json(400, { error: 'invalid body' }); }
-  if (rawBody.length > MAX_PROXY_BODY_CHARS) return json(413, { error: 'request_too_large' });
+  const read = await readBodyCapped(req, MAX_PROXY_BODY_BYTES);
+  if (read.kind === 'too_large') return json(413, { error: 'request_too_large' });
+  if (read.kind === 'unreadable') return json(400, { error: 'invalid body' });
   let body: ProseBody;
-  try { body = JSON.parse(rawBody) as ProseBody; } catch { return json(400, { error: 'invalid json' }); }
+  try { body = JSON.parse(new TextDecoder().decode(read.bytes)) as ProseBody; } catch { return json(400, { error: 'invalid json' }); }
   const invalid = validateProseBody(body);
   if (invalid) return json(400, { error: invalid });
   const cacheKey = body.cacheKey as string;

@@ -11,6 +11,7 @@ import { callerProofs, licenseIdentityId } from './identity';
 import { checkLicense, type LibraryStore, type LicenseReason } from './license';
 import { quotaHeaders } from './quota';
 import type { HandlerDeps } from './handlers';
+import { readBodyCapped } from './body';
 import type { Tier } from './quota';
 
 /** UTF-8 bytes of the request body. Every size check here uses the same unit. */
@@ -243,17 +244,14 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
   // publish budget below is charged only once the body says which it is.
   if (!deps.requestLimiter.allow(`libreq:${ip}`, deps.now())) return json(429, { error: 'rate_limited' });
 
-  const declared = Number(req.headers.get('content-length') ?? 0);
-  if (declared > MAX_BUNDLE_BYTES) {
-    return json(413, { error: 'bundle_too_large', size: declared, limit: MAX_BUNDLE_BYTES });
+  const read = await readBodyCapped(req, MAX_BUNDLE_BYTES);
+  if (read.kind === 'too_large') {
+    return json(413, { error: 'bundle_too_large', size: read.size, limit: MAX_BUNDLE_BYTES });
   }
-  let bytes: ArrayBuffer;
-  try { bytes = await req.arrayBuffer(); } catch { return json(400, { error: 'invalid body' }); }
-  if (bytes.byteLength > MAX_BUNDLE_BYTES) {
-    return json(413, { error: 'bundle_too_large', size: bytes.byteLength, limit: MAX_BUNDLE_BYTES });
-  }
+  if (read.kind === 'unreadable') return json(400, { error: 'invalid body' });
+  const bodyBytes = read.bytes.byteLength;
   let body: { libraryId?: unknown; bundle?: unknown; dryRun?: unknown; bump?: unknown; note?: unknown; initialVersion?: unknown };
-  try { body = JSON.parse(new TextDecoder().decode(bytes)) as typeof body; } catch { return json(400, { error: 'invalid json' }); }
+  try { body = JSON.parse(new TextDecoder().decode(read.bytes)) as typeof body; } catch { return json(400, { error: 'invalid json' }); }
 
   // A dry run opens the Publish screen every time it is shown, not just when
   // the publisher commits, so it must not spend the same 20/min publish
@@ -429,7 +427,7 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
         note, contentHash, bundleHash, parsed, diff,
       });
       const next: LibraryMeta = {
-        ...meta, publishedAt, bundleHash, contentHash, size: bytes.byteLength, fileName, version: record.version,
+        ...meta, publishedAt, bundleHash, contentHash, size: bodyBytes, fileName, version: record.version,
         // Plants the Figma-identity fallback on a library that predates it,
         // the next time its real owner (who still holds whatever proved
         // ownership just now) publishes with a Figma identity present.
@@ -441,7 +439,7 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
       await store.put(metaKey(libraryId), JSON.stringify(next));
       await Promise.all(bundlesToPrune(written).map((version) => store.delete(versionBundleKey(libraryId as string, version))));
       await quota.commit(cacheKey, JSON.stringify({ libraryId, publishedAt, version: record.version }));
-      deps.log('library_publish', { libraryId, size: bytes.byteLength, version: record.version, bump: record.bump });
+      deps.log('library_publish', { libraryId, size: bodyBytes, version: record.version, bump: record.bump });
       return respond(200, {
         libraryId, publishedAt, version: record.version, bump: record.bump, minimumBump: record.minimumBump,
       }, { 'X-Library-Version': record.version });
@@ -454,7 +452,7 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
     });
     const created: LibraryMeta = {
       licenseId: caller.tierIdentity, publishedAt, bundleHash, contentHash,
-      size: bytes.byteLength, fileName, version: record.version,
+      size: bodyBytes, fileName, version: record.version,
       ...(caller.figmaIdentity ? { figmaOwnerHash: caller.figmaIdentity } : {}),
     };
     await writeVersion(store, id, stored, { v: 1, records: [] }, record);
@@ -465,7 +463,7 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
     ]);
     // The replay body never carries the pull key: it is handed out exactly once.
     await quota.commit(cacheKey, JSON.stringify({ libraryId: id, publishedAt, version: record.version }));
-    deps.log('library_publish', { libraryId: id, size: bytes.byteLength, created: true, version: record.version });
+    deps.log('library_publish', { libraryId: id, size: bodyBytes, created: true, version: record.version });
     return respond(201, {
       libraryId: id, pullKey, publishedAt, version: record.version, bump: record.bump, minimumBump: record.minimumBump,
     }, { 'X-Library-Version': record.version });

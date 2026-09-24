@@ -152,7 +152,9 @@ or a lapsed key with no Figma identity, `402
 `403 {"error":"library_limit","limit":1,"existing":{"libraryId":…,"fileName":…}}`
 on free (`fileName` may be null; Pro gets `limit: 10` and no `existing`),
 `404` unknown `libraryId`, `409 {"error":"publish_pending"}`, `413
-{"error":"bundle_too_large","size":…,"limit":5000000}`, `429` rate limited.
+{"error":"bundle_too_large","size":…,"limit":5000000}` (`size` is the declared
+`Content-Length` when there is one, else the byte count at which the streamed read
+was cut, which is over the limit and at most the body's length), `429` rate limited.
 
 ### `GET /v1/libraries/:libraryId`
 
@@ -305,8 +307,9 @@ cache inside the DO; prompts and prose are never logged.
 - **Every publish request first spends one token of the 60/min per-IP request
   budget before its body is read, so malformed or oversized bodies are
   throttled.** A real publish then spends the 20/min publish budget and a dry
-  run a second request token. The content-length cap bounds what one request
-  can make the Worker read.
+  run a second request token. The body is read in chunks and dropped at the
+  first byte over the cap, header or no header, so the cap bounds what one
+  request can make the Worker hold in memory.
 
 ## Bindings & secrets
 

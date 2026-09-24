@@ -453,7 +453,9 @@ describe('handlePublish', () => {
     expect(res.status).toBe(413);
     const body = await res.json() as { error: string; size: number; limit: number };
     expect(body.error).toBe('bundle_too_large');
-    expect(body.size).toBe(byteLength(JSON.stringify({ bundle: bigBundle })));
+    // No Content-Length: `size` is the byte count where the read was cut, past the cap and never past the body.
+    expect(body.size).toBeGreaterThan(MAX_BUNDLE_BYTES);
+    expect(body.size).toBeLessThanOrEqual(byteLength(JSON.stringify({ bundle: bigBundle })));
     expect(body.limit).toBe(MAX_BUNDLE_BYTES);
   });
 
@@ -478,7 +480,7 @@ describe('handlePublish', () => {
     });
     const res2 = await handlePublish(noHeader, d);
     expect(res2.status).toBe(413);
-    expect(((await res2.json()) as { size: number }).size).toBe(byteLength(payload));
+    expect(((await res2.json()) as { size: number }).size).toBeGreaterThan(MAX_BUNDLE_BYTES);
   });
 
   it('rejects an unsupported bundle version', async () => {
