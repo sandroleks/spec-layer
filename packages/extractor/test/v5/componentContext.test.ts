@@ -467,6 +467,26 @@ describe('Component Context v5', () => {
     expect(unavailable.references.used[0].status).toBe('unavailable');
   });
 
+  it('resolves each reference kind against the foundation by id, and names absence per kind', () => {
+    const source = foundation();
+    const artifact = buildComponentArtifactV5(spec([
+      rule('VariableID:base', 'space/base', 'variable', 'gap', 'CollectionID:space'),
+      rule('VariableID:nope', 'space/nope', 'variable', 'gap', 'CollectionID:space'),
+      rule('StyleID:text', 'Body/Regular', 'text-style', 'typography'),
+      rule('StyleID:text-nope', 'Body/Nope', 'text-style', 'typography'),
+      rule('StyleID:effect', 'Elevation/Card', 'effect-style', 'effects'),
+      rule('StyleID:effect-nope', 'Elevation/Nope', 'effect-style', 'effects'),
+    ]), { ...META, foundation: source });
+    expect(artifact.references.used.map((r) => [r.source_id, r.status])).toEqual([
+      ['VariableID:base', 'resolved'],
+      ['VariableID:nope', 'not_in_snapshot'],
+      ['StyleID:text', 'resolved'],
+      ['StyleID:text-nope', 'not_in_snapshot'],
+      ['StyleID:effect', 'resolved'],
+      ['StyleID:effect-nope', 'not_in_snapshot'],
+    ]);
+  });
+
   it('copies a component whose foundation names a default mode it does not declare', () => {
     const source = foundation();
     source.collections[0].default_mode_id = 'CollectionID:space:no-such-mode';
