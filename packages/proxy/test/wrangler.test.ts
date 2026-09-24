@@ -1,3 +1,7 @@
+/// <reference types="node" />
+// The one proxy test that reads a file needs node types. The reference adds
+// them to whichever program includes this file, which is the test typecheck,
+// never the Worker build (tsconfig `types` names the Workers runtime only).
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
