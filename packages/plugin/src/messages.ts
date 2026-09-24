@@ -106,9 +106,10 @@ export type MainToUi =
   | { type: 'library'; entries: LibraryEntry[]; incomplete?: true }
   /** Reply for `requestLibrary` when the scan produced no rows before it
    *  failed. A scan that fails after collecting rows replies `library` with
-   *  `incomplete: true` instead. Either reply ends the UI's refreshing state,
-   *  so no throw on the main thread can leave Library spinning with Refresh
-   *  disabled. */
+   *  `incomplete: true` instead. Either way the main thread always replies,
+   *  so no throw there goes unanswered. The UI does not handle this message
+   *  yet: until it does, a failure with no rows still leaves Library showing
+   *  as refreshing. */
   | { type: 'libraryError'; message: string }
   /** Follows a `selection`: whether Create would replace an existing doc for
    *  that component, so the footer can say "Replace docs". Sent separately so

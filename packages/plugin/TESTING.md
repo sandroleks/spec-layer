@@ -73,9 +73,10 @@ requests carry token names and resolved values without an image.
    it was moved to, the toast says it was updated, and the component screen
    still shows the component: the page switch that places the rebuilt
    Section must not empty the panel. Then start a Foundation build and, while
-   it runs, click **Create docs** on a component. The toast says another
-   build is still running, and the finished Foundation docs carry the brand
-   theme, not the component doc's leftovers.
+   it runs, try **Create docs** on a component. No component build starts
+   (the panel refuses a second build before asking the canvas for one), and
+   the finished Foundation docs carry the brand theme, not the component
+   doc's leftovers.
 7. Start a Foundation build with enough collections selected that it takes a
    few seconds, and while it runs, select a different component on the page
    you are viewing. Once the toast says the build finished, confirm the

@@ -408,16 +408,15 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   without it. Your written sections are kept. The Library row says so, and if
   your AI allowance runs out part-way it says that too rather than reporting a
   clean rebuild.
-- Registry lookups across the Library, publish, and build paths are issued
-  together instead of one round trip per documented section, with the same
-  results in the same order.
+- **Registry lookups are issued together, output unchanged.** The Library,
+  publish, and build paths look up every documented section at once instead
+  of one round trip per section, with the same results in the same order.
 - **A doc build reads each variable collection and each previewed node
   once.** Every placed instance asked Figma for its component's collections
   again, one after another, and the frame-width pass read every matrix cell
   that the matrix then read a second time to instance it. Both now go
   through a cache that lives for one build, and a component's collections
   are read together. Same documents, fewer round trips on large matrices.
-
 - **Repainting pills uses native Figma filtering, output unchanged.** The pill
   repaint now uses `findAllWithCriteria` so Figma filters frames by pluginData
   key natively, instead of evaluating a predicate once per node across the bridge.
@@ -575,14 +574,16 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   executable oracles in `redos.test.ts`. Output is unchanged for every line
   the upgrade can pass them. Closes CodeQL alerts 65 and 66
   (`js/polynomial-redos`).
-- **A Library refresh that fails now says so.** The main thread's Library
-  scan had no failure reply, so one throw (an unloaded page under dynamic
-  page access, a Section whose plugin data could not be read) left the
-  Library spinning with Refresh and Update disabled for the rest of the
-  session. The scan now returns what it read: rows collected before the
-  failure are posted as the Library, and a failure with no rows posts a
-  `libraryError` the panel shows. The registry self-heal runs only after a
-  complete scan, so a failed one can no longer prune docs it never reached.
+- **A Library refresh that fails part-way shows what it read.** The main
+  thread's Library scan had no failure reply, so one throw (an unloaded page
+  under dynamic page access, a Section whose plugin data could not be read)
+  left the Library spinning with Refresh and Update disabled for the rest of
+  the session. The scan now returns what it read: rows collected before the
+  failure are posted as the Library. A failure with no rows now gets a
+  `libraryError` reply instead of no reply at all, but the panel does not
+  act on it yet, so that case still shows as refreshing until the next
+  build's change. The registry self-heal runs only after a complete scan,
+  so a failed one can no longer prune docs it never reached.
   A registry read that is rejected rather than empty is no longer pruned
   either, for the same reason. A source read that is rejected rather than
   empty (usually an unloaded page) no longer marks the row **Source
@@ -596,8 +597,8 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   variable's, collection's and style's publish status, one call each, and
   the Library scan, Create docs, Update docs and the change-list read all
   did it although none of them shows or exports it (only Copy for AI and
-  Publish do, and they still read it). At a few thousand variables that was
-  most of each read. The change list for a drifted Foundation row now
+  Publish do, and they still read it). On a large file that is a lot of
+  calls saved on every read. The change list for a drifted Foundation row now
   compares against the read the Library badge came from instead of reading
   the file again, so the list and the badge can no longer describe two
   different moments.
