@@ -129,6 +129,28 @@ describe('QuotaEngine idempotency', () => {
     expect(e.reserve('pro', 'k0', T0 + (MAX_RETAINED_RESPONSES + 2) * 60_000).kind).toBe('proceed');
   });
 
+  it('commit never reports its own key as evicted when it prunes a stale entry for it', () => {
+    const e = new QuotaEngine();
+    e.reserve('pro', 'k', T0);
+    e.commit('k', T0);
+    e.commit('k', T0 + RESPONSE_TTL_MS + 1); // prunes the old 'k', then re-adds it
+    expect(e.takeEvicted()).toEqual([]);
+    expect(e.reserve('pro', 'k', T0 + RESPONSE_TTL_MS + 2)).toEqual({ kind: 'cached' });
+  });
+
+  it('caps a pre-split blob at MAX_RETAINED_RESPONSES on load, keeping the newest, without evicting unwritten bodies', () => {
+    const responses: Record<string, { body: string; at: number }> = {};
+    for (let i = 0; i < MAX_RETAINED_RESPONSES + 2; i += 1) responses[`k${i}`] = { body: `{"n":${i}}`, at: T0 + i };
+    const e = new QuotaEngine(JSON.stringify({ firstSeen: T0, boostUsed: 0, months: {}, reservations: {}, recent: [], responses }));
+    const lifted = e.drainLegacyBodies().map((l) => l.cacheKey);
+    expect(lifted).toHaveLength(MAX_RETAINED_RESPONSES);
+    expect(lifted).not.toContain('k0');
+    expect(lifted).not.toContain('k1');
+    expect(lifted).toContain(`k${MAX_RETAINED_RESPONSES + 1}`);
+    expect(e.takeEvicted()).toEqual([]);
+    expect(Object.keys((JSON.parse(e.toJSON()) as { responses: object }).responses)).toHaveLength(MAX_RETAINED_RESPONSES);
+  });
+
   it('forgetResponse removes one entry and reports it once', () => {
     const e = new QuotaEngine();
     e.reserve('pro', 'k', T0);

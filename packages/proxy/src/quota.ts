@@ -114,6 +114,15 @@ export class QuotaEngine {
         this.s.responses[cacheKey] = { at: entry.at };
       }
     }
+    if (this.legacy.length > 0) {
+      // Hold the retention cap from the migration on, so it never writes more
+      // than MAX_RETAINED_RESPONSES bodies. A lifted body the cap drops was
+      // never written under its own key, so it is not handed on for deletion.
+      this.capResponses();
+      const dropped = new Set(this.legacy.map((l) => l.cacheKey).filter((k) => this.s.responses[k] === undefined));
+      this.legacy = this.legacy.filter((l) => !dropped.has(l.cacheKey));
+      this.evicted = this.evicted.filter((k) => !dropped.has(k));
+    }
   }
 
   toJSON(): string { return JSON.stringify(this.s); }
@@ -214,6 +223,9 @@ export class QuotaEngine {
     this.prune(now);
     delete this.s.reservations[cacheKey];
     this.s.responses[cacheKey] = { at: now };
+    // A stale entry for this same key, pruned just above, must not make the
+    // store delete the body this commit is about to write.
+    this.evicted = this.evicted.filter((k) => k !== cacheKey);
     this.capResponses();
     if (this.inBoost(now)) this.s.boostUsed += 1;
     const mk = monthKey(now);

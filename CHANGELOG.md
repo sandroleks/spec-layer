@@ -431,7 +431,9 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   written before the split is migrated the first time it is read. Before, a
   Pro identity with a day of generations could push the single value past
   the storage limit and get a 500 on every quota operation until entries
-  aged out.
+  aged out. Rolling the proxy back past this change breaks cached replays
+  for up to 24 hours while counters are unaffected, so a fix should roll
+  forward.
 - **Publish and the snapshot download refuse a file with nothing in it.** The
   proxy accepts an empty bundle, so a file with no local variables or styles
   and no component docs used to publish anyway: a first publish created a

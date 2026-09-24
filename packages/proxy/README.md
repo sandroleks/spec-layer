@@ -307,6 +307,19 @@ before this split is migrated to that layout the first time it is read.
 - **Deploy order.** The proxy ships before any plugin build that sends both
   headers. A bearer-only client keeps working: it proves the license identity
   that owns every library published so far.
+- **Rolling back past the quota storage split breaks cached replays for up
+  to 24 hours; prefer rolling forward.** Once a quota Durable Object has been
+  read by this build, its `engine` record keeps only `{ at }` for each
+  committed response and the body sits under `resp:<cacheKey>`. An older
+  build reads the body from `engine`, finds none, and answers a retry of any
+  key committed in the last 24 hours with a cached result that has no body:
+  prose returns an empty 200 the plugin cannot parse, and a publish replay
+  fails with a 500. Counters, reservations and the boost window are read the
+  same by both builds and survive a rollback. The `resp:*` keys an older
+  build leaves behind are never read by it and are harmless, though a key
+  whose index entry that build drops is never deleted afterwards. The breakage
+  ends on its own as those entries age past 24 hours, so a fix should roll
+  forward rather than back.
 - **Every publish request first spends one token of the 60/min per-IP request
   budget before its body is read, so malformed or oversized bodies are
   throttled.** A real publish then spends the 20/min publish budget and a dry

@@ -1,15 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { QuotaStore, ENGINE_KEY, responseKey, type DoStorageLike } from '../src/quotaStore';
 import { QUOTA_PROFILES, MAX_RETAINED_RESPONSES, RESPONSE_TTL_MS } from '../src/quota';
+import { MemDoStorage } from './quotaHarness';
 
 const T0 = Date.parse('2026-07-01T00:00:00Z');
-
-class MemDoStorage implements DoStorageLike {
-  map = new Map<string, unknown>();
-  async get<T = unknown>(key: string): Promise<T | undefined> { return this.map.get(key) as T | undefined; }
-  async put<T>(key: string, value: T): Promise<void> { this.map.set(key, value); }
-  async delete(key: string): Promise<boolean> { return this.map.delete(key); }
-}
 
 const engineRecord = (storage: MemDoStorage) => JSON.parse(storage.map.get(ENGINE_KEY) as string) as { responses: Record<string, unknown> };
 
@@ -110,6 +104,38 @@ describe('QuotaStore', () => {
     expect(await store.reserve('free', 'a', T0)).toEqual({ kind: 'cached', body: '{"id":"a"}' });
     expect(await store.reserve('free', 'b', T0)).toEqual({ kind: 'cached', body: '{"id":"b"}' });
     expect((await store.snapshot('free', T0)).used).toBe(3);
+  });
+
+  it('migrates at most MAX_RETAINED_RESPONSES bodies, the newest, and deletes nothing it did not write', async () => {
+    const responses: Record<string, { body: string; at: number }> = {};
+    for (let i = 0; i < MAX_RETAINED_RESPONSES + 2; i += 1) responses[`k${i}`] = { body: `{"n":${i}}`, at: T0 - 10_000 + i };
+    const storage = new MemDoStorage();
+    storage.map.set(ENGINE_KEY, JSON.stringify({ firstSeen: T0 - 10_000, boostUsed: 0, months: {}, reservations: {}, recent: [], responses }));
+    const writes: string[] = [];
+    const watched: DoStorageLike = {
+      get: (key) => storage.get(key),
+      put: async (key, value) => { writes.push(key); await storage.put(key, value); },
+      delete: async (key) => { writes.push(`delete ${key}`); return storage.delete(key); },
+    };
+    await new QuotaStore(watched, QUOTA_PROFILES.ai).snapshot('pro', T0);
+    expect(writes.filter((w) => w.startsWith('delete'))).toEqual([]);
+    expect(writes.filter((w) => w.startsWith('resp:'))).toHaveLength(MAX_RETAINED_RESPONSES);
+    expect(storage.map.has(responseKey('k0'))).toBe(false);
+    expect(storage.map.has(responseKey('k1'))).toBe(false);
+    expect(storage.map.get(responseKey('k2'))).toBe('{"n":2}');
+    expect(Object.keys(engineRecord(storage).responses)).toHaveLength(MAX_RETAINED_RESPONSES);
+    expect(writes[writes.length - 1]).toBe(ENGINE_KEY); // the counter record is written last
+  });
+
+  it('a commit that prunes a stale entry for its own key keeps the body it writes', async () => {
+    const storage = new MemDoStorage();
+    const store = new QuotaStore(storage, QUOTA_PROFILES.ai);
+    await store.reserve('pro', 'k', T0);
+    await store.commit('pro', 'k', '{"v":1}', T0);
+    // No reserve in between, so the commit's own prune finds the stale entry.
+    await store.commit('pro', 'k', '{"v":2}', T0 + RESPONSE_TTL_MS + 1);
+    expect(storage.map.get(responseKey('k'))).toBe('{"v":2}');
+    expect(await store.reserve('pro', 'k', T0 + RESPONSE_TTL_MS + 2)).toEqual({ kind: 'cached', body: '{"v":2}' });
   });
 
   it('reserves afresh when the index remembers a body that is gone, instead of answering with nothing', async () => {
