@@ -4,7 +4,7 @@ import { load } from 'js-yaml';
 import { describe, expect, it } from 'vitest';
 import { toYaml, type YamlValue } from '../../src/yaml';
 import {
-  canonicalJson, foundationAiContext, type FoundationArtifactV5, type StyleProperty,
+  canonicalJson, foundationAiContext, valueText, type FoundationArtifactV5, type StyleProperty,
 } from '../../src/v5';
 
 const FIXTURE_PATH = fileURLToPath(new URL(
@@ -335,5 +335,15 @@ describe('foundationAiContext', () => {
     const compactYaml = toYaml(foundationAiContext(full) as unknown as YamlValue);
     expect(Buffer.byteLength(compactYaml)).toBeLessThan(Buffer.byteLength(canonicalYaml) * 0.55);
     expect(compactYaml.split('\n').length).toBeLessThan(canonicalYaml.split('\n').length * 0.55);
+  });
+});
+
+describe('valueText', () => {
+  it('reads through the typed envelope instead of printing [object Object]', () => {
+    expect(valueText({ type: 'dimension', value: { number: 16, unit: 'px' } })).toBe('16px');
+    expect(valueText({ type: 'color', value: { hex: '#ff0000', alpha: 0.5 } })).toBe('#ff0000 alpha 0.5');
+    expect(valueText({ type: 'number', value: 16 })).toBe('16');
+    expect(valueText({ number: 1.5, unit: 'rem' })).toBe('1.5rem');
+    expect(valueText(null)).toBe('unknown');
   });
 });

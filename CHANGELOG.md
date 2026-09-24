@@ -634,6 +634,10 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   CommonMark reads as a heading or a nested list. Part names now get the
   same leading-marker escape as the component description.
 
+- **A drift message never prints `[object Object]`.** `valueText` now reads
+  through the typed envelope a value carries when its type differs from its
+  token's, so a dimension or colour inside it renders as `16px` or its hex.
+
 ### Added
 
 - **The CSS output reports every unitless number it emits.** A Figma variable
