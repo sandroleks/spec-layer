@@ -109,23 +109,48 @@ export interface Manifest {
   artifacts: ManifestArtifact[];
 }
 
+const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+
+type StoredArtifact = ManifestArtifact & { aiPath?: string | null };
+
+/**
+ * The fields every CLI since 0.1.0 wrote, and the artifact rows. Optional
+ * blocks (`selection`, `dtcg`, `outputs`, ...) are read as written; their
+ * readers already tolerate absence. `path` may be absent (0.5.0 wrote
+ * `aiPath`), null (not written), or a string.
+ */
+function isManifestShape(v: unknown): v is Manifest & { artifacts: StoredArtifact[] } {
+  if (!isRecord(v)) return false;
+  if (typeof v.libraryId !== 'string' || typeof v.publishedAt !== 'string'
+    || typeof v.bundleHash !== 'string' || typeof v.extractorVersion !== 'string') return false;
+  if (v.pluginVersion !== undefined && v.pluginVersion !== null && typeof v.pluginVersion !== 'string') return false;
+  if (!Array.isArray(v.artifacts)) return false;
+  const pathLike = (p: unknown): boolean => p === undefined || p === null || typeof p === 'string';
+  return v.artifacts.every((a) => isRecord(a)
+    && (a.kind === 'foundation' || a.kind === 'component')
+    && typeof a.name === 'string' && typeof a.contentHash === 'string'
+    && pathLike(a.path) && pathLike(a.aiPath));
+}
+
 export function readManifest(outDir: string): Manifest | null {
   const path = join(outDir, 'manifest.json');
   if (!existsSync(path)) return null;
+  let parsed: unknown;
   try {
-    const parsed = JSON.parse(readFileSync(path, 'utf8')) as Manifest & {
-      artifacts: Array<ManifestArtifact & { aiPath?: string | null }>;
-    };
-    // CLI 0.5.0 and earlier wrote the field as aiPath. Read it as path so
-    // list, skill, and status keep working until the next pull rewrites it.
-    parsed.artifacts = parsed.artifacts.map((artifact) => {
-      const { aiPath, ...rest } = artifact as ManifestArtifact & { aiPath?: string | null };
-      return {
-        ...rest, path: rest.path ?? aiPath ?? null,
-      } as ManifestArtifact;
-    });
-    return parsed;
-  } catch { return null; }
+    parsed = JSON.parse(readFileSync(path, 'utf8'));
+  } catch {
+    return null;
+  }
+  // Not the shape this CLI writes: treat it as no pull. Every reader then
+  // says "run spec-layer pull", and the next pull rewrites the file. Reading
+  // fields off an arbitrary object let list print undefined and pull compare
+  // against a hash that was not a string.
+  if (!isManifestShape(parsed)) return null;
+  // CLI 0.5.0 and earlier wrote the field as aiPath. Read it as path so
+  // list, skill, and status keep working until the next pull rewrites it.
+  const artifacts: ManifestArtifact[] = (parsed.artifacts as StoredArtifact[])
+    .map(({ aiPath, ...rest }) => ({ ...rest, path: rest.path ?? aiPath ?? null }));
+  return { ...parsed, artifacts };
 }
 
 /** The whole bundle as last pulled, or null when nothing was pulled. */

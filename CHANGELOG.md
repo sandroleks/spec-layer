@@ -424,6 +424,11 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
 
 ### Fixed
 
+- **A malformed `manifest.json` reads as no pull.** The file was cast to the
+  manifest type without a check, so a hand-edited or truncated manifest could
+  make `list` print `undefined` cells or `pull` compare a hash that was not a
+  string. Every command now reports `No local pull found. Run spec-layer
+  pull.`, and the next pull rewrites the file.
 - **`--id` is checked against the shape the plugin issues.** `init` and
   `setup` refuse an id that is not `lib_` followed by 24 hex characters, with
   one sentence, before writing `speclayer.json` or the key. On the wire the id

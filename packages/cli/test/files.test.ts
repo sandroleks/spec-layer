@@ -129,6 +129,25 @@ describe('writeBundleFiles', () => {
     expect(manifest?.artifacts.some((a) => 'aiPath' in a)).toBe(false);
   });
 
+  it('reads a malformed manifest as no pull, never as a partial object', () => {
+    mkdirSync(outDir, { recursive: true });
+    const base = { libraryId: 'lib_old', publishedAt: '2026-09-01T00:00:00.000Z', bundleHash: 'h', pluginVersion: null, extractorVersion: '2' };
+    const bodies: string[] = [
+      '[]',
+      '{"libraryId": 1}',
+      JSON.stringify({ ...base, artifacts: 'nope' }),
+      JSON.stringify({ ...base, bundleHash: 7, artifacts: [] }),
+      JSON.stringify({ ...base, artifacts: [{ kind: 'widget', name: 'x', contentHash: 'c', path: null }] }),
+      JSON.stringify({ ...base, artifacts: [{ kind: 'component', name: 'x', contentHash: 'c', path: 3 }] }),
+    ];
+    for (const body of bodies) {
+      writeFileSync(join(outDir, 'manifest.json'), body);
+      expect(readManifest(outDir), body).toBeNull();
+    }
+    writeFileSync(join(outDir, 'manifest.json'), JSON.stringify({ ...base, artifacts: [] }));
+    expect(readManifest(outDir)?.libraryId).toBe('lib_old');
+  });
+
   it('replaces a CRLF-checked-out brief already on disk in component-specs/', () => {
     // A Git for Windows checkout with core.autocrlf=true turns the CLI's own
     // committed briefs into `spec_layer:\r\n  kind: component`; the marker
