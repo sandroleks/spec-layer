@@ -1,0 +1,16 @@
+{
+  "Typography": {
+    "type": {
+      "size": {
+        "label": {
+          "$type": "dimension",
+          "$value": {
+            "unit": "px",
+            "value": 16
+          },
+          "$description": "Font size for control labels."
+        }
+      }
+    }
+  }
+}

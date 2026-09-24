@@ -1,0 +1,576 @@
+{
+  "fileKey": "REFFILE",
+  "fileName": "Reference Design System",
+  "extractedAt": "2026-09-24T00:00:00.000Z",
+  "externals": [],
+  "unavailableSources": [],
+  "collections": [
+    {
+      "id": "VariableCollectionId:ref/color",
+      "name": "Color",
+      "modes": [
+        {
+          "modeId": "ModeID:ref/light",
+          "name": "Light"
+        },
+        {
+          "modeId": "ModeID:ref/dark",
+          "name": "Dark"
+        }
+      ],
+      "defaultModeId": "ModeID:ref/light",
+      "variables": [
+        {
+          "id": "VariableID:ref/brand-200",
+          "name": "brand/200",
+          "resolvedType": "COLOR",
+          "description": "Brand blue, lightest step used on dark surfaces.",
+          "codeSyntax": {
+            "WEB": "--brand-200"
+          },
+          "scopes": [],
+          "valuesByMode": {
+            "ModeID:ref/light": {
+              "r": 0.7294117647058823,
+              "g": 0.7843137254901961,
+              "b": 1,
+              "a": 1
+            },
+            "ModeID:ref/dark": {
+              "r": 0.7294117647058823,
+              "g": 0.7843137254901961,
+              "b": 1,
+              "a": 1
+            }
+          }
+        },
+        {
+          "id": "VariableID:ref/brand-300",
+          "name": "brand/300",
+          "resolvedType": "COLOR",
+          "description": "Brand blue for actions on dark surfaces.",
+          "codeSyntax": {
+            "WEB": "--brand-300"
+          },
+          "scopes": [],
+          "valuesByMode": {
+            "ModeID:ref/light": {
+              "r": 0.5686274509803921,
+              "g": 0.6549019607843137,
+              "b": 1,
+              "a": 1
+            },
+            "ModeID:ref/dark": {
+              "r": 0.5686274509803921,
+              "g": 0.6549019607843137,
+              "b": 1,
+              "a": 1
+            }
+          }
+        },
+        {
+          "id": "VariableID:ref/brand-600",
+          "name": "brand/600",
+          "resolvedType": "COLOR",
+          "description": "Brand blue for actions on light surfaces.",
+          "codeSyntax": {
+            "WEB": "--brand-600"
+          },
+          "scopes": [],
+          "valuesByMode": {
+            "ModeID:ref/light": {
+              "r": 0.23137254901960785,
+              "g": 0.3568627450980392,
+              "b": 0.8588235294117647,
+              "a": 1
+            },
+            "ModeID:ref/dark": {
+              "r": 0.23137254901960785,
+              "g": 0.3568627450980392,
+              "b": 0.8588235294117647,
+              "a": 1
+            }
+          }
+        },
+        {
+          "id": "VariableID:ref/brand-700",
+          "name": "brand/700",
+          "resolvedType": "COLOR",
+          "description": "Brand blue, one step darker than 600.",
+          "codeSyntax": {
+            "WEB": "--brand-700"
+          },
+          "scopes": [],
+          "valuesByMode": {
+            "ModeID:ref/light": {
+              "r": 0.21176470588235294,
+              "g": 0.30980392156862746,
+              "b": 0.7803921568627451,
+              "a": 1
+            },
+            "ModeID:ref/dark": {
+              "r": 0.21176470588235294,
+              "g": 0.30980392156862746,
+              "b": 0.7803921568627451,
+              "a": 1
+            }
+          }
+        },
+        {
+          "id": "VariableID:ref/neutral-0",
+          "name": "neutral/0",
+          "resolvedType": "COLOR",
+          "description": "White.",
+          "codeSyntax": {
+            "WEB": "--neutral-0"
+          },
+          "scopes": [],
+          "valuesByMode": {
+            "ModeID:ref/light": {
+              "r": 1,
+              "g": 1,
+              "b": 1,
+              "a": 1
+            },
+            "ModeID:ref/dark": {
+              "r": 1,
+              "g": 1,
+              "b": 1,
+              "a": 1
+            }
+          }
+        },
+        {
+          "id": "VariableID:ref/neutral-200",
+          "name": "neutral/200",
+          "resolvedType": "COLOR",
+          "description": "Light grey for quiet fills.",
+          "codeSyntax": {
+            "WEB": "--neutral-200"
+          },
+          "scopes": [],
+          "valuesByMode": {
+            "ModeID:ref/light": {
+              "r": 0.9137254901960784,
+              "g": 0.9254901960784314,
+              "b": 0.9372549019607843,
+              "a": 1
+            },
+            "ModeID:ref/dark": {
+              "r": 0.9137254901960784,
+              "g": 0.9254901960784314,
+              "b": 0.9372549019607843,
+              "a": 1
+            }
+          }
+        },
+        {
+          "id": "VariableID:ref/neutral-400",
+          "name": "neutral/400",
+          "resolvedType": "COLOR",
+          "description": "Mid grey for borders on light surfaces.",
+          "codeSyntax": {
+            "WEB": "--neutral-400"
+          },
+          "scopes": [],
+          "valuesByMode": {
+            "ModeID:ref/light": {
+              "r": 0.6784313725490196,
+              "g": 0.7098039215686275,
+              "b": 0.7411764705882353,
+              "a": 1
+            },
+            "ModeID:ref/dark": {
+              "r": 0.6784313725490196,
+              "g": 0.7098039215686275,
+              "b": 0.7411764705882353,
+              "a": 1
+            }
+          }
+        },
+        {
+          "id": "VariableID:ref/neutral-700",
+          "name": "neutral/700",
+          "resolvedType": "COLOR",
+          "description": "Dark grey for borders and fills on dark surfaces.",
+          "codeSyntax": {
+            "WEB": "--neutral-700"
+          },
+          "scopes": [],
+          "valuesByMode": {
+            "ModeID:ref/light": {
+              "r": 0.28627450980392155,
+              "g": 0.3137254901960784,
+              "b": 0.3411764705882353,
+              "a": 1
+            },
+            "ModeID:ref/dark": {
+              "r": 0.28627450980392155,
+              "g": 0.3137254901960784,
+              "b": 0.3411764705882353,
+              "a": 1
+            }
+          }
+        },
+        {
+          "id": "VariableID:ref/neutral-900",
+          "name": "neutral/900",
+          "resolvedType": "COLOR",
+          "description": "Near black.",
+          "codeSyntax": {
+            "WEB": "--neutral-900"
+          },
+          "scopes": [],
+          "valuesByMode": {
+            "ModeID:ref/light": {
+              "r": 0.12941176470588237,
+              "g": 0.1450980392156863,
+              "b": 0.1607843137254902,
+              "a": 1
+            },
+            "ModeID:ref/dark": {
+              "r": 0.12941176470588237,
+              "g": 0.1450980392156863,
+              "b": 0.1607843137254902,
+              "a": 1
+            }
+          }
+        },
+        {
+          "id": "VariableID:ref/action-primary",
+          "name": "color/action/primary",
+          "resolvedType": "COLOR",
+          "description": "Fill for the leading action in a view.",
+          "codeSyntax": {
+            "WEB": "--color-action-primary"
+          },
+          "scopes": [
+            "FRAME_FILL",
+            "SHAPE_FILL",
+            "TEXT_FILL"
+          ],
+          "valuesByMode": {
+            "ModeID:ref/light": {
+              "type": "VARIABLE_ALIAS",
+              "id": "VariableID:ref/brand-600"
+            },
+            "ModeID:ref/dark": {
+              "type": "VARIABLE_ALIAS",
+              "id": "VariableID:ref/brand-300"
+            }
+          }
+        },
+        {
+          "id": "VariableID:ref/action-primary-hover",
+          "name": "color/action/primary-hover",
+          "resolvedType": "COLOR",
+          "description": "Fill for the leading action while a pointer is over it.",
+          "codeSyntax": {
+            "WEB": "--color-action-primary-hover"
+          },
+          "scopes": [
+            "FRAME_FILL",
+            "SHAPE_FILL"
+          ],
+          "valuesByMode": {
+            "ModeID:ref/light": {
+              "type": "VARIABLE_ALIAS",
+              "id": "VariableID:ref/brand-700"
+            },
+            "ModeID:ref/dark": {
+              "type": "VARIABLE_ALIAS",
+              "id": "VariableID:ref/brand-200"
+            }
+          }
+        },
+        {
+          "id": "VariableID:ref/action-disabled",
+          "name": "color/action/disabled",
+          "resolvedType": "COLOR",
+          "description": "Fill and content color for an action that is unavailable.",
+          "codeSyntax": {
+            "WEB": "--color-action-disabled"
+          },
+          "scopes": [
+            "FRAME_FILL",
+            "SHAPE_FILL",
+            "TEXT_FILL"
+          ],
+          "valuesByMode": {
+            "ModeID:ref/light": {
+              "type": "VARIABLE_ALIAS",
+              "id": "VariableID:ref/neutral-200"
+            },
+            "ModeID:ref/dark": {
+              "type": "VARIABLE_ALIAS",
+              "id": "VariableID:ref/neutral-700"
+            }
+          }
+        },
+        {
+          "id": "VariableID:ref/text-on-action",
+          "name": "color/text/on-action",
+          "resolvedType": "COLOR",
+          "description": "Text and icon color on top of an action fill.",
+          "codeSyntax": {
+            "WEB": "--color-text-on-action"
+          },
+          "scopes": [
+            "SHAPE_FILL",
+            "TEXT_FILL"
+          ],
+          "valuesByMode": {
+            "ModeID:ref/light": {
+              "type": "VARIABLE_ALIAS",
+              "id": "VariableID:ref/neutral-0"
+            },
+            "ModeID:ref/dark": {
+              "type": "VARIABLE_ALIAS",
+              "id": "VariableID:ref/neutral-900"
+            }
+          }
+        },
+        {
+          "id": "VariableID:ref/border-subtle",
+          "name": "color/border/subtle",
+          "resolvedType": "COLOR",
+          "description": "Quiet border for outlined controls.",
+          "codeSyntax": {
+            "WEB": "--color-border-subtle"
+          },
+          "scopes": [
+            "STROKE_COLOR"
+          ],
+          "valuesByMode": {
+            "ModeID:ref/light": {
+              "type": "VARIABLE_ALIAS",
+              "id": "VariableID:ref/neutral-400"
+            },
+            "ModeID:ref/dark": {
+              "type": "VARIABLE_ALIAS",
+              "id": "VariableID:ref/neutral-700"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "VariableCollectionId:ref/spacing",
+      "name": "Spacing",
+      "modes": [
+        {
+          "modeId": "ModeID:ref/spacing",
+          "name": "Default"
+        }
+      ],
+      "defaultModeId": "ModeID:ref/spacing",
+      "variables": [
+        {
+          "id": "VariableID:ref/space-100",
+          "name": "space/100",
+          "resolvedType": "FLOAT",
+          "description": "Smallest spacing step.",
+          "codeSyntax": {
+            "WEB": "--space-100"
+          },
+          "scopes": [
+            "GAP"
+          ],
+          "valuesByMode": {
+            "ModeID:ref/spacing": 4
+          }
+        },
+        {
+          "id": "VariableID:ref/space-200",
+          "name": "space/200",
+          "resolvedType": "FLOAT",
+          "description": "Small spacing step.",
+          "codeSyntax": {
+            "WEB": "--space-200"
+          },
+          "scopes": [
+            "GAP"
+          ],
+          "valuesByMode": {
+            "ModeID:ref/spacing": 8
+          }
+        },
+        {
+          "id": "VariableID:ref/space-300",
+          "name": "space/300",
+          "resolvedType": "FLOAT",
+          "description": "Medium spacing step.",
+          "codeSyntax": {
+            "WEB": "--space-300"
+          },
+          "scopes": [
+            "GAP"
+          ],
+          "valuesByMode": {
+            "ModeID:ref/spacing": 12
+          }
+        },
+        {
+          "id": "VariableID:ref/space-400",
+          "name": "space/400",
+          "resolvedType": "FLOAT",
+          "description": "Large spacing step.",
+          "codeSyntax": {
+            "WEB": "--space-400"
+          },
+          "scopes": [
+            "GAP"
+          ],
+          "valuesByMode": {
+            "ModeID:ref/spacing": 16
+          }
+        }
+      ]
+    },
+    {
+      "id": "VariableCollectionId:ref/radius",
+      "name": "Radius",
+      "modes": [
+        {
+          "modeId": "ModeID:ref/radius",
+          "name": "Default"
+        }
+      ],
+      "defaultModeId": "ModeID:ref/radius",
+      "variables": [
+        {
+          "id": "VariableID:ref/radius-200",
+          "name": "radius/200",
+          "resolvedType": "FLOAT",
+          "description": "Radius primitive. Not scoped, so it is aliased rather than applied directly.",
+          "codeSyntax": {
+            "WEB": "--radius-200"
+          },
+          "scopes": [],
+          "valuesByMode": {
+            "ModeID:ref/radius": 8
+          }
+        },
+        {
+          "id": "VariableID:ref/radius-full",
+          "name": "radius/full",
+          "resolvedType": "FLOAT",
+          "description": "Pill radius primitive.",
+          "codeSyntax": {
+            "WEB": "--radius-full"
+          },
+          "scopes": [],
+          "valuesByMode": {
+            "ModeID:ref/radius": 9999
+          }
+        },
+        {
+          "id": "VariableID:ref/radius-control",
+          "name": "radius/control",
+          "resolvedType": "FLOAT",
+          "description": "Corner radius for buttons and other controls.",
+          "codeSyntax": {
+            "WEB": "--radius-control"
+          },
+          "scopes": [
+            "CORNER_RADIUS"
+          ],
+          "valuesByMode": {
+            "ModeID:ref/radius": {
+              "type": "VARIABLE_ALIAS",
+              "id": "VariableID:ref/radius-200"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "VariableCollectionId:ref/typography",
+      "name": "Typography",
+      "modes": [
+        {
+          "modeId": "ModeID:ref/type",
+          "name": "Default"
+        }
+      ],
+      "defaultModeId": "ModeID:ref/type",
+      "variables": [
+        {
+          "id": "VariableID:ref/type-size-label",
+          "name": "type/size/label",
+          "resolvedType": "FLOAT",
+          "description": "Font size for control labels.",
+          "codeSyntax": {
+            "WEB": "--type-size-label"
+          },
+          "scopes": [
+            "FONT_SIZE"
+          ],
+          "valuesByMode": {
+            "ModeID:ref/type": 16
+          }
+        }
+      ]
+    }
+  ],
+  "textStyles": [
+    {
+      "id": "S:ref/label-large",
+      "name": "Label/Large",
+      "description": "Labels on buttons and other controls.",
+      "fontFamily": "Inter",
+      "fontStyle": "Semi Bold",
+      "fontSize": 16,
+      "lineHeight": {
+        "unit": "PIXELS",
+        "value": 24
+      },
+      "letterSpacing": {
+        "unit": "PIXELS",
+        "value": 0
+      },
+      "paragraphSpacing": 0,
+      "paragraphIndent": 0,
+      "textCase": "ORIGINAL",
+      "textDecoration": "NONE",
+      "boundVariables": {
+        "fontSize": "type/size/label"
+      },
+      "bindingIds": {
+        "fontSize": "VariableID:ref/type-size-label"
+      },
+      "source": {
+        "remote": false,
+        "publishStatus": "CURRENT"
+      }
+    }
+  ],
+  "effectStyles": [
+    {
+      "id": "S:ref/elevation-1",
+      "name": "Elevation/1",
+      "description": "Resting lift for a raised surface.",
+      "effects": [
+        {
+          "type": "drop-shadow",
+          "visible": true,
+          "blendMode": "NORMAL",
+          "color": {
+            "hex": "#000000",
+            "alpha": 0.16
+          },
+          "offset": {
+            "x": 0,
+            "y": 1
+          },
+          "radius": 3,
+          "spread": 0
+        }
+      ],
+      "source": {
+        "remote": false,
+        "publishStatus": "CURRENT"
+      }
+    }
+  ]
+}

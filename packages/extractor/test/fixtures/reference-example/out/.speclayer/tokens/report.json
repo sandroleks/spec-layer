@@ -1,0 +1,26 @@
+[
+  {
+    "code": "unit_derived_from_usage",
+    "severity": "info",
+    "path": "Radius.radius.200",
+    "message": "This token's own variable states no unit, so px was taken from how the library uses it: Radius.radius.control aliases it and is scoped `CORNER_RADIUS`.",
+    "details": {
+      "id": "VariableID:ref/radius-200",
+      "unit": "px",
+      "via": "alias-scope",
+      "source": "Radius.radius.control",
+      "reason": "CORNER_RADIUS"
+    }
+  },
+  {
+    "code": "unit_not_expressible",
+    "severity": "info",
+    "path": "Typography styles.Label.Large",
+    "message": "The line height is a measured value, but DTCG `lineHeight` is a unitless multiplier of the font size; the measured value is kept under `$extensions[\"com.spec-layer\"]`, and `$value` has no `lineHeight`.",
+    "details": {
+      "property": "lineHeight",
+      "unit": "px",
+      "number": 24
+    }
+  }
+]

@@ -1,0 +1,167 @@
+{
+  "Color": {
+    "brand": {
+      "200": {
+        "$type": "color",
+        "$value": {
+          "alpha": 1,
+          "colorSpace": "srgb",
+          "components": [
+            0.7294118,
+            0.7843137,
+            1
+          ],
+          "hex": "#bac8ff"
+        },
+        "$description": "Brand blue, lightest step used on dark surfaces."
+      },
+      "300": {
+        "$type": "color",
+        "$value": {
+          "alpha": 1,
+          "colorSpace": "srgb",
+          "components": [
+            0.5686275,
+            0.654902,
+            1
+          ],
+          "hex": "#91a7ff"
+        },
+        "$description": "Brand blue for actions on dark surfaces."
+      },
+      "600": {
+        "$type": "color",
+        "$value": {
+          "alpha": 1,
+          "colorSpace": "srgb",
+          "components": [
+            0.2313725,
+            0.3568627,
+            0.8588235
+          ],
+          "hex": "#3b5bdb"
+        },
+        "$description": "Brand blue for actions on light surfaces."
+      },
+      "700": {
+        "$type": "color",
+        "$value": {
+          "alpha": 1,
+          "colorSpace": "srgb",
+          "components": [
+            0.2117647,
+            0.3098039,
+            0.7803922
+          ],
+          "hex": "#364fc7"
+        },
+        "$description": "Brand blue, one step darker than 600."
+      }
+    },
+    "color": {
+      "action": {
+        "disabled": {
+          "$type": "color",
+          "$value": "{Color.neutral.200}",
+          "$description": "Fill and content color for an action that is unavailable."
+        },
+        "primary": {
+          "$type": "color",
+          "$value": "{Color.brand.600}",
+          "$description": "Fill for the leading action in a view."
+        },
+        "primary-hover": {
+          "$type": "color",
+          "$value": "{Color.brand.700}",
+          "$description": "Fill for the leading action while a pointer is over it."
+        }
+      },
+      "border": {
+        "subtle": {
+          "$type": "color",
+          "$value": "{Color.neutral.400}",
+          "$description": "Quiet border for outlined controls."
+        }
+      },
+      "text": {
+        "on-action": {
+          "$type": "color",
+          "$value": "{Color.neutral.0}",
+          "$description": "Text and icon color on top of an action fill."
+        }
+      }
+    },
+    "neutral": {
+      "0": {
+        "$type": "color",
+        "$value": {
+          "alpha": 1,
+          "colorSpace": "srgb",
+          "components": [
+            1,
+            1,
+            1
+          ],
+          "hex": "#ffffff"
+        },
+        "$description": "White."
+      },
+      "200": {
+        "$type": "color",
+        "$value": {
+          "alpha": 1,
+          "colorSpace": "srgb",
+          "components": [
+            0.9137255,
+            0.9254902,
+            0.9372549
+          ],
+          "hex": "#e9ecef"
+        },
+        "$description": "Light grey for quiet fills."
+      },
+      "400": {
+        "$type": "color",
+        "$value": {
+          "alpha": 1,
+          "colorSpace": "srgb",
+          "components": [
+            0.6784314,
+            0.7098039,
+            0.7411765
+          ],
+          "hex": "#adb5bd"
+        },
+        "$description": "Mid grey for borders on light surfaces."
+      },
+      "700": {
+        "$type": "color",
+        "$value": {
+          "alpha": 1,
+          "colorSpace": "srgb",
+          "components": [
+            0.2862745,
+            0.3137255,
+            0.3411765
+          ],
+          "hex": "#495057"
+        },
+        "$description": "Dark grey for borders and fills on dark surfaces."
+      },
+      "900": {
+        "$type": "color",
+        "$value": {
+          "alpha": 1,
+          "colorSpace": "srgb",
+          "components": [
+            0.1294118,
+            0.145098,
+            0.1607843
+          ],
+          "hex": "#212529"
+        },
+        "$description": "Near black."
+      }
+    }
+  }
+}

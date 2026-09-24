@@ -22,6 +22,11 @@ coverage/
 # library id, never the pull key) — this repo is the publisher, not a consumer.
 .speclayer/
 speclayer.json
+# Exception: the reference example's committed golden mirrors a real pull's
+# repo layout, `.speclayer/` included, so the documentation site has real
+# bytes to copy from. This is fixture output, not a local working pull.
+!packages/extractor/test/fixtures/reference-example/out/.speclayer/
+!packages/extractor/test/fixtures/reference-example/out/.speclayer/**
 
 # Copied from the root LICENSE by packages/cli/build.mjs so the npm tarball
 # carries it; the root file is the only source.

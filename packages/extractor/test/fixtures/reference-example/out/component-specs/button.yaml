@@ -1,0 +1,454 @@
+spec_layer:
+  kind: component
+  version: 5
+  profile: ai
+  content_hash: sha256:c040465fd51c44d110c00540ea5b356abe5d373f30e8a7acdfd97ceddf01ca9c
+  foundation_hash: sha256:c94a75e9f0d78969dcd512ea58b367370ed1790c733e780e62fb481a9aa5afcb
+  source: { provider: figma, file_name: Reference Design System }
+source: { node_id: 20:100, node_name: Button, component_key: ref-button }
+component:
+  name: Button
+  description: Triggers an action in place. Pick the visual weight with Style and the footprint with Size.
+  related: [Icon]
+api:
+  variants:
+    Size: { options: [Medium, Large], default: Medium }
+    Style: { options: [Filled, Outlined], default: Filled }
+  states: [hover, disabled]
+  booleans: { Show icon: { default: true } }
+  slots: { Label: { type: text, default: Button } }
+anatomy:
+  - part: icon-slot
+    path: Container/icon-slot
+    type: FRAME
+    children:
+      - part: icon
+        path: Container/icon-slot/icon
+        type: INSTANCE
+        component: Icon
+  - { part: label, path: Container/label, type: TEXT }
+layout:
+  scope: default_variant
+  items:
+    - path: Container
+      summary: horizontal, padding 8/12/8/12, gap 8, radius 8
+      values: { radius: 8, gap: 8 }
+    - { path: Container/icon-slot, summary: "horizontal, padding 2/2/2/2" }
+references:
+  used:
+    - source_id: VariableID:ref/space-300
+      name: space/300
+      kind: variable
+      remote: false
+      collection_id: VariableCollectionId:ref/spacing
+      status: resolved
+    - source_id: VariableID:ref/space-400
+      name: space/400
+      kind: variable
+      remote: false
+      collection_id: VariableCollectionId:ref/spacing
+      status: resolved
+    - source_id: VariableID:ref/space-200
+      name: space/200
+      kind: variable
+      remote: false
+      collection_id: VariableCollectionId:ref/spacing
+      status: resolved
+    - source_id: VariableID:ref/action-primary
+      name: color/action/primary
+      kind: variable
+      remote: false
+      collection_id: VariableCollectionId:ref/color
+      status: resolved
+    - source_id: VariableID:ref/action-primary-hover
+      name: color/action/primary-hover
+      kind: variable
+      remote: false
+      collection_id: VariableCollectionId:ref/color
+      status: resolved
+    - source_id: VariableID:ref/action-disabled
+      name: color/action/disabled
+      kind: variable
+      remote: false
+      collection_id: VariableCollectionId:ref/color
+      status: resolved
+    - source_id: VariableID:ref/radius-control
+      name: radius/control
+      kind: variable
+      remote: false
+      collection_id: VariableCollectionId:ref/radius
+      status: resolved
+    - source_id: S:ref/elevation-1
+      name: Elevation/1
+      kind: effect-style
+      remote: false
+      status: resolved
+    - source_id: VariableID:ref/border-subtle
+      name: color/border/subtle
+      kind: variable
+      remote: false
+      collection_id: VariableCollectionId:ref/color
+      status: resolved
+    - source_id: VariableID:ref/text-on-action
+      name: color/text/on-action
+      kind: variable
+      remote: false
+      collection_id: VariableCollectionId:ref/color
+      status: resolved
+    - source_id: S:ref/label-large
+      name: Label/Large
+      kind: text-style
+      remote: false
+      status: resolved
+  bindings:
+    - path: Container
+      property: padding-x
+      source_id: VariableID:ref/space-300
+      kind: variable
+      when: { Size: [Medium] }
+    - path: Container
+      property: padding-x
+      source_id: VariableID:ref/space-400
+      kind: variable
+      when: { Size: [Large] }
+    - path: Container
+      property: padding-y
+      source_id: VariableID:ref/space-200
+      kind: variable
+      when: { Size: [Medium] }
+    - path: Container
+      property: padding-y
+      source_id: VariableID:ref/space-300
+      kind: variable
+      when: { Size: [Large] }
+    - path: Container
+      property: fill
+      source_id: VariableID:ref/action-primary
+      kind: variable
+      when: { Style: [Filled], hover: ["False"], disabled: ["False"] }
+    - path: Container
+      property: fill
+      source_id: VariableID:ref/action-primary-hover
+      kind: variable
+      when: { Style: [Filled], hover: ["True"] }
+    - path: Container
+      property: fill
+      source_id: VariableID:ref/action-disabled
+      kind: variable
+      when: { Style: [Filled], disabled: ["True"] }
+    - path: Container
+      property: border-radius
+      source_id: VariableID:ref/radius-control
+      kind: variable
+    - path: Container
+      property: gap
+      source_id: VariableID:ref/space-200
+      kind: variable
+    - path: Container
+      property: effects
+      source_id: S:ref/elevation-1
+      kind: effect-style
+      when: { Style: [Filled], hover: ["True"] }
+    - path: Container
+      property: border
+      source_id: VariableID:ref/border-subtle
+      kind: variable
+      when: { Style: [Outlined] }
+    - paths: [Container/icon-slot/icon, Container/label]
+      property: fill
+      source_id: VariableID:ref/text-on-action
+      kind: variable
+      when: { Style: [Filled] }
+    - paths: [Container/icon-slot/icon, Container/label]
+      property: fill
+      source_id: VariableID:ref/action-primary
+      kind: variable
+      when: { Style: [Outlined], disabled: ["False"] }
+    - paths: [Container/icon-slot/icon, Container/label]
+      property: fill
+      source_id: VariableID:ref/action-disabled
+      kind: variable
+      when: { Style: [Outlined], disabled: ["True"] }
+    - path: Container/label
+      property: typography
+      source_id: S:ref/label-large
+      kind: text-style
+  foundation:
+    dependency_hash: sha256:9019ce3768ca6d58324843365df447b233ef8c6ad4e53550ccb809899a19d405
+    completeness: { collections: complete, styles: partial, unavailable_sources: [] }
+    collections:
+      - name: Color
+        source_id: VariableCollectionId:ref/color
+        default_mode: Light
+        modes: [Light, Dark]
+        tokens:
+          - name: brand/200
+            source_id: VariableID:ref/brand-200
+            type: color
+            description: Brand blue, lightest step used on dark surfaces.
+            code_syntax: { WEB: "--brand-200" }
+            values: { Light: "#bac8ff", Dark: "#bac8ff" }
+          - name: brand/300
+            source_id: VariableID:ref/brand-300
+            type: color
+            description: Brand blue for actions on dark surfaces.
+            code_syntax: { WEB: "--brand-300" }
+            values: { Light: "#91a7ff", Dark: "#91a7ff" }
+          - name: brand/600
+            source_id: VariableID:ref/brand-600
+            type: color
+            description: Brand blue for actions on light surfaces.
+            code_syntax: { WEB: "--brand-600" }
+            values: { Light: "#3b5bdb", Dark: "#3b5bdb" }
+          - name: brand/700
+            source_id: VariableID:ref/brand-700
+            type: color
+            description: Brand blue, one step darker than 600.
+            code_syntax: { WEB: "--brand-700" }
+            values: { Light: "#364fc7", Dark: "#364fc7" }
+          - name: neutral/0
+            source_id: VariableID:ref/neutral-0
+            type: color
+            description: White.
+            code_syntax: { WEB: "--neutral-0" }
+            values: { Light: "#ffffff", Dark: "#ffffff" }
+          - name: neutral/200
+            source_id: VariableID:ref/neutral-200
+            type: color
+            description: Light grey for quiet fills.
+            code_syntax: { WEB: "--neutral-200" }
+            values: { Light: "#e9ecef", Dark: "#e9ecef" }
+          - name: neutral/400
+            source_id: VariableID:ref/neutral-400
+            type: color
+            description: Mid grey for borders on light surfaces.
+            code_syntax: { WEB: "--neutral-400" }
+            values: { Light: "#adb5bd", Dark: "#adb5bd" }
+          - name: neutral/700
+            source_id: VariableID:ref/neutral-700
+            type: color
+            description: Dark grey for borders and fills on dark surfaces.
+            code_syntax: { WEB: "--neutral-700" }
+            values: { Light: "#495057", Dark: "#495057" }
+          - name: neutral/900
+            source_id: VariableID:ref/neutral-900
+            type: color
+            description: Near black.
+            code_syntax: { WEB: "--neutral-900" }
+            values: { Light: "#212529", Dark: "#212529" }
+          - name: color/action/primary
+            source_id: VariableID:ref/action-primary
+            type: color
+            description: Fill for the leading action in a view.
+            scopes: [FRAME_FILL, SHAPE_FILL, TEXT_FILL]
+            code_syntax: { WEB: "--color-action-primary" }
+            values:
+              Light: { alias: Color/brand/600 @ Light, resolved: "#3b5bdb" }
+              Dark: { alias: Color/brand/300 @ Dark, resolved: "#91a7ff" }
+          - name: color/action/primary-hover
+            source_id: VariableID:ref/action-primary-hover
+            type: color
+            description: Fill for the leading action while a pointer is over it.
+            scopes: [FRAME_FILL, SHAPE_FILL]
+            code_syntax: { WEB: "--color-action-primary-hover" }
+            values:
+              Light: { alias: Color/brand/700 @ Light, resolved: "#364fc7" }
+              Dark: { alias: Color/brand/200 @ Dark, resolved: "#bac8ff" }
+          - name: color/action/disabled
+            source_id: VariableID:ref/action-disabled
+            type: color
+            description: Fill and content color for an action that is unavailable.
+            scopes: [FRAME_FILL, SHAPE_FILL, TEXT_FILL]
+            code_syntax: { WEB: "--color-action-disabled" }
+            values:
+              Light: { alias: Color/neutral/200 @ Light, resolved: "#e9ecef" }
+              Dark: { alias: Color/neutral/700 @ Dark, resolved: "#495057" }
+          - name: color/text/on-action
+            source_id: VariableID:ref/text-on-action
+            type: color
+            description: Text and icon color on top of an action fill.
+            scopes: [SHAPE_FILL, TEXT_FILL]
+            code_syntax: { WEB: "--color-text-on-action" }
+            values:
+              Light: { alias: Color/neutral/0 @ Light, resolved: "#ffffff" }
+              Dark: { alias: Color/neutral/900 @ Dark, resolved: "#212529" }
+          - name: color/border/subtle
+            source_id: VariableID:ref/border-subtle
+            type: color
+            description: Quiet border for outlined controls.
+            scopes: [STROKE_COLOR]
+            code_syntax: { WEB: "--color-border-subtle" }
+            values:
+              Light: { alias: Color/neutral/400 @ Light, resolved: "#adb5bd" }
+              Dark: { alias: Color/neutral/700 @ Dark, resolved: "#495057" }
+      - name: Spacing
+        source_id: VariableCollectionId:ref/spacing
+        default_mode: Default
+        modes: [Default]
+        tokens:
+          - name: space/200
+            source_id: VariableID:ref/space-200
+            type: dimension
+            description: Small spacing step.
+            scopes: [GAP]
+            code_syntax: { WEB: "--space-200" }
+            values: { Default: { number: 8, unit: px } }
+          - name: space/300
+            source_id: VariableID:ref/space-300
+            type: dimension
+            description: Medium spacing step.
+            scopes: [GAP]
+            code_syntax: { WEB: "--space-300" }
+            values: { Default: { number: 12, unit: px } }
+          - name: space/400
+            source_id: VariableID:ref/space-400
+            type: dimension
+            description: Large spacing step.
+            scopes: [GAP]
+            code_syntax: { WEB: "--space-400" }
+            values: { Default: { number: 16, unit: px } }
+      - name: Radius
+        source_id: VariableCollectionId:ref/radius
+        default_mode: Default
+        modes: [Default]
+        tokens:
+          - name: radius/200
+            source_id: VariableID:ref/radius-200
+            type: number
+            description: Radius primitive. Not scoped, so it is aliased rather than applied directly.
+            code_syntax: { WEB: "--radius-200" }
+            values: { Default: 8 }
+          - name: radius/control
+            source_id: VariableID:ref/radius-control
+            type: dimension
+            description: Corner radius for buttons and other controls.
+            scopes: [CORNER_RADIUS]
+            code_syntax: { WEB: "--radius-control" }
+            values:
+              Default:
+                alias: Radius/radius/200 @ Default
+                resolved: { number: 8, unit: px }
+      - name: Typography
+        source_id: VariableCollectionId:ref/typography
+        default_mode: Default
+        modes: [Default]
+        tokens:
+          - name: type/size/label
+            source_id: VariableID:ref/type-size-label
+            type: dimension
+            description: Font size for control labels.
+            scopes: [FONT_SIZE]
+            code_syntax: { WEB: "--type-size-label" }
+            values: { Default: { number: 16, unit: px } }
+    styles:
+      typography:
+        - name: Label/Large
+          source_id: S:ref/label-large
+          source: { remote: false }
+          description: Labels on buttons and other controls.
+          properties:
+            font_family: { type: font_family, value: Inter }
+            font_weight: { type: number, value: 600 }
+            font_size:
+              alias: Typography/type/size/label
+              resolved: { type: dimension, value: { number: 16, unit: px } }
+            line_height: { type: dimension, value: { number: 24, unit: px } }
+            letter_spacing: { type: dimension, value: { number: 0, unit: px } }
+            paragraph_spacing: { type: dimension, value: { number: 0, unit: px } }
+            paragraph_indent: { type: dimension, value: { number: 0, unit: px } }
+            text_case: original
+            text_decoration: none
+      effects:
+        - name: Elevation/1
+          source_id: S:ref/elevation-1
+          source: { remote: false }
+          mode: null
+          effects:
+            - type: drop_shadow
+              visible: true
+              blend_mode: normal
+              color: { hex: "#000000", alpha: 0.16 }
+              offset_x: { number: 0, unit: px }
+              offset_y: { number: 1, unit: px }
+              blur: { number: 3, unit: px }
+              spread: { number: 0, unit: px }
+    validation:
+      - id: unit-metadata-unavailable
+        severity: warning
+        path: Radius/radius/200
+        message: The numeric value is kept as a bare number because its scopes [] state no unit or more than one, so a consumer cannot use it as a length.
+    issue_counts: { warning: { UNIT_METADATA_UNAVAILABLE: 1 } }
+unbound:
+  - path: Container/icon-slot
+    property: padding
+    issue: hardcoded-value
+    value: 2
+validation:
+  - id: unbound-value
+    severity: warning
+    path: Container/icon-slot
+    property: padding
+    message: padding is a hardcoded 2 rather than a bound token.
+guidelines:
+  origin: generated
+  definition: |-
+    A button triggers an action in place, such as saving a form or confirming a choice.
+
+    Its visual weight tells people which action the view expects next, so keep one leading
+    action per view and let the rest sit quieter.
+  accessibility: |-
+    ### Keyboard
+
+    - **Activation:** `Enter` and `Space` both activate a button. A link activates on `Enter`
+      alone, which is one reason not to swap the two.
+    - **Focus:** the design file records no focus state. Add a visible focus ring in code; it
+      is required, not optional.
+
+    ### Pointer and touch
+
+    - **Hover:** the hover state only exists for a pointer. Never put information in it that
+      a touch or keyboard user would miss.
+    - **Target size:** the design file records padding and line height, not a final height.
+      Check in code that every size stays at least 24 by 24px.
+
+    ### Screen readers
+
+    - **Accessible name:** the visible label is the accessible name. A button that shows only
+      its icon needs an explicit label in code, which the design file cannot carry.
+    - **Disabled:** a disabled button drops out of the tab order, so nobody hears why it is
+      unavailable. Say why next to it.
+  interactions: |-
+    - **Hover:** a Filled button moves to `color/action/primary-hover` and lifts with the
+      `Elevation/1` shadow. An Outlined button records no hover change.
+    - **Disabled:** a Filled button moves to `color/action/disabled`; an Outlined button keeps
+      its border and moves its label and icon to `color/action/disabled`.
+    - **Pressed and focus:** neither is recorded. Choose them in code and apply them to every
+      button.
+  variants_summary: |-
+    Two axes vary the look, and two switches record state.
+
+    - **Style:** Filled for the single leading action, Outlined for a secondary action.
+    - **Size:** Medium for most layouts, Large where the button leads a sparse view.
+    - **hover** and **disabled:** switches rather than one State axis, so each state is a
+      condition a binding can name.
+  anatomy_summary: |-
+    The component itself is the container: it carries the fill or border, the corner radius,
+    the padding and the gap. Inside it sit an icon slot and a text label.
+  design_considerations: |-
+    - **Tokens, not values:** fill, border, radius, padding and gap are all bound to tokens,
+      so a change to the foundation reaches every button.
+    - **The icon slot is the exception:** its 2px padding is a literal, so a spacing change
+      will not reach it.
+    - **One leading action:** two Filled buttons side by side make the leading action unclear.
+  content_considerations: |-
+    - **Verb first:** write the label as an action in one to three words, such as "Save" or
+      "Add item", never a bare "OK".
+    - **Length:** allow for labels to grow by a third in translation.
+  dos:
+    - "**Use the Filled style for the single most important action in a view.** Its weight tells people where to go next."
+    - "**Keep labels short and verb first** (\"Save\", \"Add item\"). People can then scan the action without reading a sentence."
+    - "**Pair the icon with the label, not instead of it.** An icon on its own needs an accessible name the design file cannot carry."
+  donts:
+    - "**Don't place two Filled buttons side by side.** Competing leading actions make it unclear which one matters."
+    - "**Don't use a button for plain navigation.** Screen readers announce links and buttons differently, so use a link (`<a>`) when it only goes somewhere."
+    - "**Don't disable a button without saying why.** A disabled control gives no reason and drops out of the tab order."

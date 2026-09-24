@@ -1,0 +1,152 @@
+{
+  "Color.brand.200": {
+    "name": "--brand-200",
+    "source": "code_syntax",
+    "file": "color.light.css"
+  },
+  "Color.brand.300": {
+    "name": "--brand-300",
+    "source": "code_syntax",
+    "file": "color.light.css"
+  },
+  "Color.brand.600": {
+    "name": "--brand-600",
+    "source": "code_syntax",
+    "file": "color.light.css"
+  },
+  "Color.brand.700": {
+    "name": "--brand-700",
+    "source": "code_syntax",
+    "file": "color.light.css"
+  },
+  "Color.color.action.disabled": {
+    "name": "--color-action-disabled",
+    "source": "code_syntax",
+    "file": "color.light.css"
+  },
+  "Color.color.action.primary": {
+    "name": "--color-action-primary",
+    "source": "code_syntax",
+    "file": "color.light.css"
+  },
+  "Color.color.action.primary-hover": {
+    "name": "--color-action-primary-hover",
+    "source": "code_syntax",
+    "file": "color.light.css"
+  },
+  "Color.color.border.subtle": {
+    "name": "--color-border-subtle",
+    "source": "code_syntax",
+    "file": "color.light.css"
+  },
+  "Color.color.text.on-action": {
+    "name": "--color-text-on-action",
+    "source": "code_syntax",
+    "file": "color.light.css"
+  },
+  "Color.neutral.0": {
+    "name": "--neutral-0",
+    "source": "code_syntax",
+    "file": "color.light.css"
+  },
+  "Color.neutral.200": {
+    "name": "--neutral-200",
+    "source": "code_syntax",
+    "file": "color.light.css"
+  },
+  "Color.neutral.400": {
+    "name": "--neutral-400",
+    "source": "code_syntax",
+    "file": "color.light.css"
+  },
+  "Color.neutral.700": {
+    "name": "--neutral-700",
+    "source": "code_syntax",
+    "file": "color.light.css"
+  },
+  "Color.neutral.900": {
+    "name": "--neutral-900",
+    "source": "code_syntax",
+    "file": "color.light.css"
+  },
+  "Effect styles.Elevation.1": {
+    "name": "--effect-styles-elevation-1",
+    "source": "derived",
+    "file": "effect-styles.css"
+  },
+  "Radius.radius.200": {
+    "name": "--radius-200",
+    "source": "code_syntax",
+    "file": "radius.css"
+  },
+  "Radius.radius.control": {
+    "name": "--radius-control",
+    "source": "code_syntax",
+    "file": "radius.css"
+  },
+  "Radius.radius.full": {
+    "name": "--radius-full",
+    "source": "code_syntax",
+    "file": "radius.css"
+  },
+  "Spacing.space.100": {
+    "name": "--space-100",
+    "source": "code_syntax",
+    "file": "spacing.css"
+  },
+  "Spacing.space.200": {
+    "name": "--space-200",
+    "source": "code_syntax",
+    "file": "spacing.css"
+  },
+  "Spacing.space.300": {
+    "name": "--space-300",
+    "source": "code_syntax",
+    "file": "spacing.css"
+  },
+  "Spacing.space.400": {
+    "name": "--space-400",
+    "source": "code_syntax",
+    "file": "spacing.css"
+  },
+  "Typography styles.Label.Large.fontFamily": {
+    "name": "--typography-styles-label-large-font-family",
+    "source": "derived",
+    "file": "typography-styles.css"
+  },
+  "Typography styles.Label.Large.fontSize": {
+    "name": "--typography-styles-label-large-font-size",
+    "source": "derived",
+    "file": "typography-styles.css"
+  },
+  "Typography styles.Label.Large.fontWeight": {
+    "name": "--typography-styles-label-large-font-weight",
+    "source": "derived",
+    "file": "typography-styles.css"
+  },
+  "Typography styles.Label.Large.letterSpacing": {
+    "name": "--typography-styles-label-large-letter-spacing",
+    "source": "derived",
+    "file": "typography-styles.css"
+  },
+  "Typography styles.Label.Large.lineHeight": {
+    "name": "--typography-styles-label-large-line-height",
+    "source": "derived",
+    "file": "typography-styles.css"
+  },
+  "Typography styles.Label.Large.textDecoration": {
+    "name": "--typography-styles-label-large-text-decoration",
+    "source": "derived",
+    "file": "typography-styles.css"
+  },
+  "Typography styles.Label.Large.textTransform": {
+    "name": "--typography-styles-label-large-text-transform",
+    "source": "derived",
+    "file": "typography-styles.css"
+  },
+  "Typography.type.size.label": {
+    "name": "--type-size-label",
+    "source": "code_syntax",
+    "file": "typography.css"
+  }
+}
