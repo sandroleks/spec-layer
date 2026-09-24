@@ -161,7 +161,10 @@ without clobbering each other:
   by prefix to name what an identity already publishes. The library ceiling
   itself is settled in the identity's publish Durable Object, which counts
   committed creates and in-flight create reservations atomically; the
-  listing is eventually consistent and only ever adds to that count. A
+  listing is eventually consistent and can only raise that count (the
+  object takes the larger of the two), never lower it. Changed publishes to
+  one library take a lock in the same object and are refused when the
+  library head they read is older than the last one it committed. A
   legacy `libowner:<licenseId>` array is expanded into these records the
   first time that license publishes.
 

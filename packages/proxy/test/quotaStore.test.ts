@@ -62,7 +62,7 @@ describe('QuotaStore', () => {
     expect(migrated).toEqual({
       ...legacy,
       responses: { a: { at: T0 - 2000 }, b: { at: T0 - 1500 } },
-      locks: {}, pendingCreates: {}, libraries: 0,
+      locks: {}, pendingCreates: {}, libraries: 0, heads: {},
     });
 
     // A second read of the migrated record performs no write at all.

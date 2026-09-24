@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { QuotaEngine, BOOST_LIMIT, BOOST_WINDOW_MS, MONTHLY_LIMIT, RESERVATION_TTL_MS, RESPONSE_TTL_MS, RATE_LIMIT_PER_MIN, PRO_SOFT_THRESHOLD, QUOTA_PROFILES, PUBLISH_MONTHLY_LIMIT, MAX_RETAINED_RESPONSES, quotaObjectName } from '../src/quota';
+import { QuotaEngine, BOOST_LIMIT, BOOST_WINDOW_MS, MONTHLY_LIMIT, RESERVATION_TTL_MS, RESPONSE_TTL_MS, HEAD_TTL_MS, RATE_LIMIT_PER_MIN, PRO_SOFT_THRESHOLD, QUOTA_PROFILES, PUBLISH_MONTHLY_LIMIT, MAX_RETAINED_RESPONSES, quotaObjectName } from '../src/quota';
 
 const T0 = Date.parse('2026-07-01T00:00:00Z');
 const DAY = 864e5;
@@ -227,6 +227,39 @@ describe('QuotaEngine publish profile', () => {
 });
 
 describe('QuotaEngine locks and create slots', () => {
+  it('a reserve whose base matches the recorded head proceeds, and one that read an older head is pending', () => {
+    const e = new QuotaEngine(undefined, QUOTA_PROFILES.publish);
+    expect(e.reserve('pro', 'publish:lib_1:100->a', T0, { lock: 'publish:lib_1', base: 100 }).kind).toBe('proceed');
+    e.commit('publish:lib_1:100->a', T0 + 1, { head: { lock: 'publish:lib_1', at: 200 } });
+    // Read before that commit: its base is the head the commit replaced.
+    expect(e.reserve('pro', 'publish:lib_1:100->b', T0 + 2, { lock: 'publish:lib_1', base: 100 })).toEqual({ kind: 'pending' });
+    // Read after it: the base is the recorded head.
+    expect(e.reserve('pro', 'publish:lib_1:200->b', T0 + 3, { lock: 'publish:lib_1', base: 200 }).kind).toBe('proceed');
+  });
+
+  it('accepts any base when no head is recorded, and a base newer than the recorded one', () => {
+    const e = new QuotaEngine(undefined, QUOTA_PROFILES.publish);
+    // Nothing committed under this lock yet (a library from before heads existed).
+    expect(e.reserve('pro', 'publish:lib_1:5->a', T0, { lock: 'publish:lib_1', base: 5 }).kind).toBe('proceed');
+    e.commit('publish:lib_1:5->a', T0 + 1, { head: { lock: 'publish:lib_1', at: 200 } });
+    // Another identity wrote at 300: a read that has seen it is not stale.
+    expect(e.reserve('pro', 'publish:lib_1:300->b', T0 + 2, { lock: 'publish:lib_1', base: 300 }).kind).toBe('proceed');
+    // Another library's head is independent.
+    expect(e.reserve('pro', 'publish:lib_2:1->a', T0 + 3, { lock: 'publish:lib_2', base: 1 }).kind).toBe('proceed');
+  });
+
+  it('records a head only on commit, never on release, and forgets it after HEAD_TTL_MS', () => {
+    const e = new QuotaEngine(undefined, QUOTA_PROFILES.publish);
+    e.reserve('pro', 'publish:lib_1:100->a', T0, { lock: 'publish:lib_1', base: 100 });
+    e.release('publish:lib_1:100->a');
+    expect((JSON.parse(e.toJSON()) as { heads: Record<string, unknown> }).heads).toEqual({});
+    expect(e.reserve('pro', 'publish:lib_1:100->b', T0 + 1, { lock: 'publish:lib_1', base: 100 }).kind).toBe('proceed');
+    e.commit('publish:lib_1:100->b', T0 + 2, { head: { lock: 'publish:lib_1', at: 200 } });
+    const later = new QuotaEngine(e.toJSON(), QUOTA_PROFILES.publish);
+    expect(later.reserve('pro', 'publish:lib_1:100->c', T0 + 3, { lock: 'publish:lib_1', base: 100 })).toEqual({ kind: 'pending' });
+    expect(later.reserve('pro', 'publish:lib_1:100->c', T0 + 2 + HEAD_TTL_MS, { lock: 'publish:lib_1', base: 100 }).kind).toBe('proceed');
+  });
+
   it('a live lock held by another cache key answers pending until it is released', () => {
     const e = new QuotaEngine(undefined, QUOTA_PROFILES.publish);
     expect(e.reserve('pro', 'publish:lib_1:a->h1', T0, { lock: 'publish:lib_1' }).kind).toBe('proceed');

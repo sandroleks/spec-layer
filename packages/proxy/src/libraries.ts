@@ -417,10 +417,15 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
   // the same library while this one is writing answers 409 instead of
   // assigning the same version. The lock remembers which cache key holds it
   // and never refuses that key, so a retry of this same publish meets only
-  // its own reservation, as before. A create takes a slot in the identity's
-  // library count, which the Durable Object settles atomically.
-  const reserved = await quota.reserve(caller.tier, cacheKey, libraryId
-    ? { lock: `publish:${libraryId}` }
+  // its own reservation, as before. Everything above was decided from the
+  // head this handler read (the meta, the log, the diff), so the reserve
+  // also carries that head: when a writer has committed a newer one since,
+  // this publish is stale and answers 409 too, instead of forking the version
+  // and dropping that writer's log record. A create takes a slot in the
+  // identity's library count, which the Durable Object settles atomically.
+  const lock = libraryId ? `publish:${libraryId}` : null;
+  const reserved = await quota.reserve(caller.tier, cacheKey, lock !== null && meta
+    ? { lock, base: Date.parse(meta.publishedAt) }
     : { create: { limit: LIBRARY_LIMITS[caller.tier], listed: listed.length } });
   switch (reserved.kind) {
     case 'cached': {
@@ -445,12 +450,12 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
     default:
       return json(500, { error: 'internal' });
   }
-  if (reserved.kind === 'proceed' && reserved.flagged) {
-    deps.log('fair_use_flag', { identityId: caller.tierIdentity, tier: caller.tier, surface: 'publish' });
-  }
-
   try {
-    if (libraryId && meta) {
+    // Inside the try: a logger that throws must still release the reservation.
+    if (reserved.kind === 'proceed' && reserved.flagged) {
+      deps.log('fair_use_flag', { identityId: caller.tierIdentity, tier: caller.tier, surface: 'publish' });
+    }
+    if (libraryId && meta && lock !== null) {
       const record = versionRecord({
         version: resolution.version, publishedAt, bump: resolution.bump, minimumBump: resolution.minimumBump,
         note, contentHash, bundleHash, parsed, diff,
@@ -467,7 +472,9 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
       const written = await writeVersion(store, libraryId, stored, log, record);
       await store.put(metaKey(libraryId), JSON.stringify(next));
       await Promise.all(bundlesToPrune(written).map((version) => store.delete(versionBundleKey(libraryId as string, version))));
-      const snap = await quota.commit(caller.tier, cacheKey, JSON.stringify({ libraryId, publishedAt, version: record.version }));
+      const snap = await quota.commit(caller.tier, cacheKey, JSON.stringify({ libraryId, publishedAt, version: record.version }), {
+        head: { lock, at: Date.parse(publishedAt) },
+      });
       deps.log('library_publish', { libraryId, size: bodyBytes, version: record.version, bump: record.bump });
       return json(200, {
         libraryId, publishedAt, version: record.version, bump: record.bump, minimumBump: record.minimumBump,

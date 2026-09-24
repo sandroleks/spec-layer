@@ -416,14 +416,19 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
 
 ### Fixed
 
-- **Two publishes cannot race the same library or the library ceiling.** A
-  changed publish holds a per-library lock in the publisher's quota object
-  until its writes commit, so a concurrent changed publish answers
-  `409 publish_pending` instead of both assigning the same version and
-  leaving the meta and bundle from different writers. The library ceiling is
-  counted in that same object, so two concurrent creates no longer both pass
-  an eventually consistent KV listing, and a create is counted even when its
-  writes take longer than its reservation lives. When the refused create's
+- **Publishes from one identity no longer race a library or the library
+  ceiling.** A changed publish holds a per-library lock in the publisher's
+  quota object until its writes commit, and that object checks the library
+  state the publish read against the last one it saw written. A concurrent
+  changed publish, or one that read the library before another publish
+  finished, answers `409 publish_pending` instead of assigning the same
+  version, dropping the other publish from the version history, or leaving
+  the meta and bundle from different writers. The library ceiling is counted
+  in that same object, so two concurrent creates no longer both pass an
+  eventually consistent KV listing, and a create is counted even when its
+  writes take longer than its reservation lives. Publishes under two
+  different identities, and a publish that runs past its two-minute
+  reservation, are not covered; the proxy README lists these limits. When the refused create's
   library has not reached the listing yet, `library_limit.existing` is
   `null`. A create refused only because another create by the same identity
   is still in flight answers `409 publish_pending`, since that one may yet

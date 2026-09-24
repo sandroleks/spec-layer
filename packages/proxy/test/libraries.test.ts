@@ -381,6 +381,49 @@ describe('handlePublish', () => {
     expect(after.headers.get('X-Library-Version')).toBe('1.1.0');
   });
 
+  it('refuses a changed publish whose reads came before another writer committed, and keeps that writer\'s record', async () => {
+    let t = Date.parse('2026-07-01T00:00:00Z');
+    const quotas = memQuota(() => t);
+    // Parks the next reserve until released, after the handler has read the
+    // meta, the log and the bundle and resolved its version.
+    let park: { parked: () => void; go: Promise<void> } | null = null;
+    const quotaFor: HandlerDeps['quotaFor'] = (id, profile) => {
+      const q = quotas(id, profile);
+      return {
+        ...q,
+        reserve: async (tier, cacheKey, opts) => {
+          const held = park;
+          park = null;
+          if (held) { held.parked(); await held.go; }
+          return q.reserve(tier, cacheKey, opts);
+        },
+      };
+    };
+    const d = deps({ now: () => t, quotaFor });
+    const { libraryId, headers } = await freeLibrary(d);
+    t += 60_000;
+    let go!: () => void;
+    const parked = new Promise<void>((resolve) => {
+      park = { parked: resolve, go: new Promise<void>((r) => { go = r; }) };
+    });
+    const b = handlePublish(publishReq({ libraryId, bundle: BUNDLE_DESCRIBED }, headers), d);
+    await parked;
+    t += 1_000;
+    const a = await handlePublish(publishReq({ libraryId, bundle: BUNDLE_WITH_CARD }, headers), d);
+    expect(a.status).toBe(200);
+    expect(a.headers.get('X-Library-Version')).toBe('1.1.0');
+    go();
+    const blocked = await b;
+    expect(blocked.status).toBe(409);
+    expect(await blocked.json()).toEqual({ error: 'publish_pending' });
+    const log = JSON.parse(await d.libraryStore.get(versionsKey(libraryId)) as string) as VersionLog;
+    expect(log.records.map((r) => r.version)).toEqual(['1.1.0', '1.0.0']);
+    expect(await d.libraryStore.get(`lib:${libraryId}:bundle`)).toBe(JSON.stringify(BUNDLE_WITH_CARD));
+    // A fresh read of the new head publishes normally.
+    const retry = await handlePublish(publishReq({ libraryId, bundle: BUNDLE_DESCRIBED }, headers), d);
+    expect(retry.status).toBe(200);
+  });
+
   it('a dry run and an unchanged republish take no lock', async () => {
     const d = deps();
     const { libraryId, headers } = await freeLibrary(d);
@@ -786,6 +829,26 @@ describe('handlePublish', () => {
     expect(res.status).toBe(201);
     expect(res.headers.get('X-Quota-Limit')).toBe('unlimited');
     expect(log).toHaveBeenCalledWith('fair_use_flag', expect.objectContaining({ tier: 'pro' }));
+  });
+
+  it('releases the reservation when the fair-use log throws', async () => {
+    let fail = true;
+    const log = (event: string) => {
+      if (event === 'fair_use_flag' && fail) { fail = false; throw new Error('log sink down'); }
+    };
+    const t = Date.parse('2026-07-01T00:00:00Z');
+    const d = deps({ now: () => t, quotaFor: memQuota(() => t), log });
+    await seedPro(d);
+    const engine = d.quotaFor(`lic:${sha256(UUID_KEY)}`, 'publish');
+    for (let i = 0; i < PRO_SOFT_THRESHOLD; i += 1) await engine.commit('pro', `seed${i}`, '{}');
+    // Nine listed libraries leave room for one create: a slot the throw kept
+    // would turn the next create into 409 publish_pending.
+    const licenseId = `lic:${sha256(UUID_KEY)}`;
+    for (let i = 0; i < LIBRARY_LIMITS.pro - 1; i += 1) {
+      await d.libraryStore.put(`libowner:${licenseId}:lib_${String(i).padStart(24, '0')}`, '1');
+    }
+    await expect(handlePublish(publishReq({ bundle: BUNDLE }), d)).rejects.toThrow('log sink down');
+    expect((await handlePublish(publishReq({ bundle: BUNDLE }), d)).status).toBe(201);
   });
 
   it('does not count a create that fails validation', async () => {

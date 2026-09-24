@@ -6,6 +6,14 @@ export const RATE_LIMIT_PER_MIN = 10;
 export const RESERVATION_TTL_MS = 120_000;
 export const RESPONSE_TTL_MS = 24 * 3600_000;
 /**
+ * How long a committed library head is held against stale reads. It covers a
+ * publish that read the head before another writer committed (seconds) and a
+ * KV read that has not caught up with that commit (about a minute), with
+ * margin. Past it the head is forgotten, so a head recorded out of order (a
+ * publish that outlived its lock) can refuse writers for this long at most.
+ */
+export const HEAD_TTL_MS = 10 * 60_000;
+/**
  * How many committed responses one identity keeps for replay. Each body has
  * its own storage key (`resp:<cacheKey>`, see quotaStore.ts); this bounds the
  * index inside the engine record and the storage the identity holds. The
@@ -83,6 +91,16 @@ export interface ReserveOptions {
    */
   lock?: string;
   /**
+   * With `lock`: the library head the caller read before deciding what to
+   * write, as epoch ms (publish passes its meta's `publishedAt`). When a
+   * commit under this lock has recorded a newer head, the read was stale and
+   * this reserve is `pending`. No recorded head (a library this object has
+   * not committed yet, or one past HEAD_TTL_MS) accepts any base. A base newer
+   * than the recorded head is accepted: another identity wrote since, and
+   * this read has seen it.
+   */
+  base?: number;
+  /**
    * This reservation creates a library. Refused with `library_limit` once
    * the object's committed creates or the caller's listing (whichever knows
    * more), plus the creates still in flight, reach `limit`. The listing
@@ -100,6 +118,12 @@ export interface CommitOptions {
    * cache key, so a replayed commit never counts a second library.
    */
   create?: boolean;
+  /**
+   * The head this commit leaves behind under a lock, as epoch ms (publish
+   * passes the `publishedAt` it just wrote). Named explicitly rather than read
+   * from the lock, because a write that outlived its lock no longer holds it.
+   */
+  head?: { lock: string; at: number };
 }
 
 interface ResponseEntry { at: number }
@@ -117,11 +141,12 @@ interface State {
   locks: Record<string, { cacheKey: string; at: number }>;   // lock name -> the reservation holding it
   pendingCreates: Record<string, number>;      // cacheKey -> reservedAt, for create reservations only
   libraries: number;                           // creates committed through this object
+  heads: Record<string, { at: number; recordedAt: number }>;  // lock name -> the head its last commit wrote
 }
 
 const fresh = (): State => ({
   firstSeen: null, boostUsed: 0, months: {}, reservations: {}, responses: {}, recent: [],
-  locks: {}, pendingCreates: {}, libraries: 0,
+  locks: {}, pendingCreates: {}, libraries: 0, heads: {},
 });
 
 const monthKey = (now: number) => new Date(now).toISOString().slice(0, 7);
@@ -226,6 +251,9 @@ export class QuotaEngine {
     for (const [k, at] of Object.entries(this.s.pendingCreates)) {
       if (now - at >= RESERVATION_TTL_MS) delete this.s.pendingCreates[k];
     }
+    for (const [name, head] of Object.entries(this.s.heads)) {
+      if (now - head.recordedAt >= HEAD_TTL_MS) delete this.s.heads[name];
+    }
   }
 
   reserve(tier: Tier, cacheKey: string, now: number, opts: ReserveOptions = {}): EngineReserveResult {
@@ -249,6 +277,10 @@ export class QuotaEngine {
     if (opts.lock !== undefined) {
       const held = this.s.locks[opts.lock];
       if (held && held.cacheKey !== cacheKey && now - held.at < RESERVATION_TTL_MS) return { kind: 'pending' };
+      // A writer committed after this caller read the head: what it decided
+      // to write is based on a state that is gone.
+      const head = this.s.heads[opts.lock];
+      if (opts.base !== undefined && head !== undefined && opts.base < head.at) return { kind: 'pending' };
     }
     if (opts.create) {
       const owned = Math.max(opts.create.listed, this.s.libraries);
@@ -285,6 +317,7 @@ export class QuotaEngine {
     this.prune(now);
     this.settle(cacheKey);
     if (opts.create === true && !replayed) this.s.libraries += 1;
+    if (opts.head) this.s.heads[opts.head.lock] = { at: opts.head.at, recordedAt: now };
     this.s.responses[cacheKey] = { at: now };
     // A stale entry for this same key, pruned just above, must not make the
     // store delete the body this commit is about to write.

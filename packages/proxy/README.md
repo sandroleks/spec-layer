@@ -257,12 +257,19 @@ before this split is migrated to that layout the first time it is read.
   published library, and the pull keys cannot be recovered: only their
   SHA-256 digests were ever stored. Every affected user has to republish and
   redistribute a new setup command.
-- **Version writes are not atomic, but writers no longer interleave.** A
-  changed publish holds a per-library lock in the publisher's identity object
-  until its KV writes commit, so a second changed publish to the same library
-  answers 409 publish_pending instead of assigning the same version. A
-  publish still writes the current bundle, the per-version bundle, the
-  version log, then the meta, in that order. A stop
+- **Version writes are not atomic; writers from one identity are
+  serialized.** A changed publish holds a per-library lock in the
+  publisher's identity object until its KV writes commit, and its
+  reservation carries the library head it read (the meta's `publishedAt`).
+  That object records the head each commit writes and compares it inside
+  the reservation, so a second changed publish that read the library before
+  another commit (while it was diffing, or from a KV read that had not
+  caught up) answers 409 publish_pending instead of assigning the same
+  version and dropping the other record from the log. A recorded head is
+  held for `HEAD_TTL_MS` (ten minutes) and then forgotten, and a library
+  this object has never committed has no head to check against. A publish
+  still writes the current bundle, the per-version bundle, the version log,
+  then the meta, in that order. A stop
   between the log and the meta leaves a log record the meta does not carry;
   publish reads the current version from the log, so the next publish
   continues from the right number and rewrites the meta. Until then `pull`
@@ -278,8 +285,14 @@ before this split is migrated to that layout the first time it is read.
   create answers `409 publish_pending` until it lapses. A publish whose
   writes outlast it loses the lock and the slot while still writing, so a
   second writer can proceed in that window; its create is still counted
-  once it commits. The count only goes up: there is no delete route, and a
-  library removed from KV by hand still counts in its creator's object.
+  once it commits; if its head reaches the object out of order, later
+  publishes of that library from this identity can answer 409 until the head
+  expires. A commit that throws after the KV writes (the Durable Object call
+  fails) releases its reservation, or lets it expire, uncounted: for a
+  create, the library exists but the object never counted it, so a quick
+  retry before the listing catches up can create a second library past the
+  ceiling. The count only goes up: there is no delete route, and a library
+  removed from KV by hand still counts in its creator's object.
   What stays eventually consistent is the KV owner index: it names
   `existing`, and it is the only count for libraries created under another
   of the caller's identities, or before this counter existed.
