@@ -414,15 +414,20 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   proxy no longer calls back for it. Refusals are unchanged, and every
   response carries the same headers and body as before.
 
-- **The proxy's usage tracking can now briefly hold a lock and a limited
-  number of "new library" slots, ready for publish to use.** Nothing calls
-  either yet, so publishing and generating behave exactly as before; this is
-  the groundwork for making two changed publishes to the same library queue
-  instead of racing, and for making the free plan's one-library limit hold
-  even when the list of existing libraries has not caught up yet.
-
 ### Fixed
 
+- **Two publishes cannot race the same library or the library ceiling.** A
+  changed publish holds a per-library lock in the publisher's quota object
+  until its writes commit, so a concurrent changed publish answers
+  `409 publish_pending` instead of both assigning the same version and
+  leaving the meta and bundle from different writers. The library ceiling is
+  counted in that same object, so two concurrent creates no longer both pass
+  an eventually consistent KV listing, and a create is counted even when its
+  writes take longer than its reservation lives. When the refused create's
+  library has not reached the listing yet, `library_limit.existing` is
+  `null`. A create refused only because another create by the same identity
+  is still in flight answers `409 publish_pending`, since that one may yet
+  fail.
 - **The proxy answers from one origin.** `workers_dev` is off, so the
   `workers.dev` hostname that the zone's license rate rule never covered no
   longer serves the Worker; `api.spec-layer.com` is the only origin. Workers

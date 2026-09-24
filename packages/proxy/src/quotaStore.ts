@@ -1,6 +1,6 @@
 import {
   QuotaEngine, RESPONSE_TTL_MS,
-  type QuotaLimits, type QuotaSnapshot, type ReserveOptions, type ReserveResult, type Tier,
+  type CommitOptions, type QuotaLimits, type QuotaSnapshot, type ReserveOptions, type ReserveResult, type Tier,
 } from './quota';
 
 /**
@@ -74,9 +74,9 @@ export class QuotaStore {
   }
 
   /** Commits and returns the snapshot in the same hop, so a handler answers its headers without a second call. */
-  async commit(tier: Tier, cacheKey: string, body: string, now: number): Promise<QuotaSnapshot> {
+  async commit(tier: Tier, cacheKey: string, body: string, now: number, opts?: CommitOptions): Promise<QuotaSnapshot> {
     const engine = await this.load(now);
-    engine.commit(cacheKey, now);
+    engine.commit(cacheKey, now, opts);
     await this.storage.put(responseKey(cacheKey), body);
     await this.save(engine);
     return engine.snapshot(tier, now);

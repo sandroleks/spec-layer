@@ -255,7 +255,7 @@ describe('QuotaEngine locks and create slots', () => {
       .toEqual({ kind: 'library_limit', limit: 1, owned: 0 });
     e.release('publish:new:a');
     expect(e.reserve('free', 'publish:new:b', T0 + 2, { create: { limit: 1, listed: 0 } }).kind).toBe('proceed');
-    e.commit('publish:new:b', T0 + 3);
+    e.commit('publish:new:b', T0 + 3, { create: true });
     // Committed: the count is the object's own, whatever the listing says.
     expect(e.reserve('free', 'publish:new:c', T0 + 4, { create: { limit: 1, listed: 0 } }))
       .toEqual({ kind: 'library_limit', limit: 1, owned: 1 });
@@ -276,5 +276,23 @@ describe('QuotaEngine locks and create slots', () => {
     expect(e.reserve('free', 'publish:new:a', T0 + 2, { create: { limit: 1, listed: 0 } }).kind).toBe('proceed');
     const later = new QuotaEngine(e.toJSON(), QUOTA_PROFILES.publish);
     expect(later.reserve('free', 'publish:new:b', T0 + 2 + RESERVATION_TTL_MS, { create: { limit: 1, listed: 0 } }).kind).toBe('proceed');
+  });
+
+  it('counts a create from its commit marker even after the slot expired, and a replayed commit only once', () => {
+    const e = new QuotaEngine(undefined, QUOTA_PROFILES.publish);
+    const libraries = () => (JSON.parse(e.toJSON()) as { libraries: number }).libraries;
+    expect(e.reserve('free', 'publish:new:a', T0, { create: { limit: 1, listed: 0 } }).kind).toBe('proceed');
+    // The write outlived its reservation: commit prunes the slot before it settles.
+    const late = T0 + RESERVATION_TTL_MS + 1;
+    e.commit('publish:new:a', late, { create: true });
+    expect(libraries()).toBe(1);
+    expect(e.reserve('free', 'publish:new:b', late + 1, { create: { limit: 1, listed: 0 } }))
+      .toEqual({ kind: 'library_limit', limit: 1, owned: 1 });
+    e.commit('publish:new:a', late + 2, { create: true });
+    expect(libraries()).toBe(1);
+    // Without the marker a commit never counts a library, slot or no slot.
+    expect(e.reserve('free', 'publish:new:c', late + 3, { create: { limit: 5, listed: 0 } }).kind).toBe('proceed');
+    e.commit('publish:new:c', late + 4);
+    expect(libraries()).toBe(1);
   });
 });

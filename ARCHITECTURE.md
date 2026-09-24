@@ -157,10 +157,13 @@ without clobbering each other:
   their first republish is treated as changed.
 - `lib:<libraryId>:key` — sha256 of the current pull key (the key itself is
   never stored). Rotate writes only this record.
-- `libowner:<licenseId>:<libraryId>` — one record per owned library, counted
-  by prefix to enforce `LIBRARY_LIMITS`, so concurrent creates never
-  read-modify-write a shared list. A legacy `libowner:<licenseId>` array is
-  expanded into these records the first time that license publishes.
+- `libowner:<licenseId>:<libraryId>` — one record per owned library, listed
+  by prefix to name what an identity already publishes. The library ceiling
+  itself is settled in the identity's publish Durable Object, which counts
+  committed creates and in-flight create reservations atomically; the
+  listing is eventually consistent and only ever adds to that count. A
+  legacy `libowner:<licenseId>` array is expanded into these records the
+  first time that license publishes.
 
 The bundle envelope itself is defined once, in the extractor's
 `libraryBundle.ts` (`parseLibraryBundle`), and the plugin, the proxy, and the

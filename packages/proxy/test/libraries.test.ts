@@ -17,7 +17,7 @@ import {
 import { versionsKey, versionBundleKey, type VersionLog } from '../src/versions';
 import { hashFigmaId } from '../src/identity';
 import { SlidingWindowLimiter } from '../src/ratelimit';
-import { PRO_SOFT_THRESHOLD } from '../src/quota';
+import { PRO_SOFT_THRESHOLD, RESERVATION_TTL_MS } from '../src/quota';
 import { memQuota } from './quotaHarness';
 import type { HandlerDeps } from '../src/handlers';
 
@@ -314,6 +314,98 @@ describe('handlePublish', () => {
     const res = await handlePublish(publishReq({ bundle: BUNDLE }, { ...bearer(), ...figma() }), d);
     expect(res.status).toBe(403);
     expect((await res.json() as { limit: number }).limit).toBe(LIBRARY_LIMITS.pro);
+  });
+
+  it('refuses a second create even when the KV listing has not caught up, and says existing is unknown', async () => {
+    // KV `list` is eventually consistent: model a listing that never sees the first create.
+    class ForgetfulKV extends MemKV {
+      async list(_opts: { prefix: string }) { return { keys: [] as Array<{ name: string }> }; }
+    }
+    const d = deps({ libraryStore: new ForgetfulKV() });
+    const first = await handlePublish(publishReq({ bundle: BUNDLE }, figma()), d);
+    expect(first.status).toBe(201);
+    const second = await handlePublish(publishReq({ bundle: { ...BUNDLE, fileName: 'Second' } }, figma()), d);
+    expect(second.status).toBe(403);
+    expect(await second.json()).toEqual({ error: 'library_limit', limit: 1, owned: 1, existing: null });
+  });
+
+  it('counts a create whose writes outlive its reservation, so the ceiling still holds', async () => {
+    let t = Date.parse('2026-07-01T00:00:00Z');
+    // The listing never catches up and the meta write takes longer than the
+    // reservation lives, so by commit time the create slot has been pruned.
+    class SlowForgetfulKV extends MemKV {
+      async list(_opts: { prefix: string }) { return { keys: [] as Array<{ name: string }> }; }
+      async put(k: string, v: string, opts?: { expirationTtl?: number }) {
+        if (k.endsWith(':meta')) t += RESERVATION_TTL_MS + 1;
+        await super.put(k, v, opts);
+      }
+    }
+    const d = deps({ now: () => t, quotaFor: memQuota(() => t), libraryStore: new SlowForgetfulKV() });
+    expect((await handlePublish(publishReq({ bundle: BUNDLE }, figma()), d)).status).toBe(201);
+    const second = await handlePublish(publishReq({ bundle: { ...BUNDLE, fileName: 'Second' } }, figma()), d);
+    expect(second.status).toBe(403);
+    expect(await second.json()).toEqual({ error: 'library_limit', limit: 1, owned: 1, existing: null });
+  });
+
+  it('answers 409 publish_pending while another create by the same identity is still in flight', async () => {
+    // Refusing with library_limit here would claim a library that may never
+    // exist: the in-flight create can still fail. Pending says what is true.
+    const store = new MemKV();
+    const d = deps({ libraryStore: store });
+    const quota = d.quotaFor(`free:${hashFigmaId('u1', 'salt')}`, 'publish');
+    expect((await quota.reserve('free', 'publish:new:lib_000000000000000000000000', { create: { limit: 1, listed: 0 } })).kind).toBe('proceed');
+    const res = await handlePublish(publishReq({ bundle: BUNDLE }, figma()), d);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: 'publish_pending' });
+    expect(res.headers.get('X-Tier')).toBe('free');
+    expect(store.map.size).toBe(0);
+    await quota.release('publish:new:lib_000000000000000000000000');
+    expect((await handlePublish(publishReq({ bundle: BUNDLE }, figma()), d)).status).toBe(201);
+  });
+
+  it('answers 409 publish_pending while another writer holds this library, then proceeds once it lets go', async () => {
+    const d = deps();
+    const { libraryId, headers } = await freeLibrary(d);
+    const quota = d.quotaFor(`free:${hashFigmaId('u1', 'salt')}`, 'publish');
+    const other = await quota.reserve('free', `publish:${libraryId}:other-writer`, { lock: `publish:${libraryId}` });
+    expect(other.kind).toBe('proceed');
+    const blocked = await handlePublish(publishReq({ libraryId, bundle: BUNDLE_WITH_CARD }, headers), d);
+    expect(blocked.status).toBe(409);
+    expect(await blocked.json()).toEqual({ error: 'publish_pending' });
+    expect(blocked.headers.get('X-Tier')).toBe('free');
+    // Nothing was written or versioned while blocked.
+    expect(await d.libraryStore.get(`lib:${libraryId}:bundle`)).toBe(JSON.stringify(BUNDLE));
+    await quota.release(`publish:${libraryId}:other-writer`);
+    const after = await handlePublish(publishReq({ libraryId, bundle: BUNDLE_WITH_CARD }, headers), d);
+    expect(after.status).toBe(200);
+    expect(after.headers.get('X-Library-Version')).toBe('1.1.0');
+  });
+
+  it('a dry run and an unchanged republish take no lock', async () => {
+    const d = deps();
+    const { libraryId, headers } = await freeLibrary(d);
+    const quota = d.quotaFor(`free:${hashFigmaId('u1', 'salt')}`, 'publish');
+    await quota.reserve('free', `publish:${libraryId}:other-writer`, { lock: `publish:${libraryId}` });
+    expect((await handlePublish(publishReq({ libraryId, bundle: BUNDLE_WITH_CARD, dryRun: true }, headers), d)).status).toBe(200);
+    expect((await handlePublish(publishReq({ libraryId, bundle: BUNDLE }, headers), d)).status).toBe(200);
+  });
+
+  it('a write that fails frees its own lock, so the same publish can be retried at once', async () => {
+    class FailingKV extends MemKV {
+      failNext = false;
+      async put(k: string, v: string, opts?: { expirationTtl?: number }) {
+        if (this.failNext) { this.failNext = false; throw new Error('kv unavailable'); }
+        await super.put(k, v, opts);
+      }
+    }
+    const store = new FailingKV();
+    const d = deps({ libraryStore: store });
+    const { libraryId, headers } = await freeLibrary(d);
+    store.failNext = true;
+    await expect(handlePublish(publishReq({ libraryId, bundle: BUNDLE_WITH_CARD }, headers), d)).rejects.toThrow('kv unavailable');
+    const retry = await handlePublish(publishReq({ libraryId, bundle: BUNDLE_WITH_CARD }, headers), d);
+    expect(retry.status).toBe(200);
+    expect(retry.headers.get('X-Library-Version')).toBe('1.1.0');
   });
 
   it('republishes to an owned library without rotating the key', async () => {

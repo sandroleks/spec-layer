@@ -149,9 +149,14 @@ Errors: `400` invalid JSON or bundle shape, `400
 {"error":"unsupported bundle version","version":"2.0.0"}`, `401` no identity,
 or a lapsed key with no Figma identity, `402
 {"error":"quota_exhausted","resetsAt":…}`, `403 {"error":"not_owner"}`,
-`403 {"error":"library_limit","limit":1,"existing":{"libraryId":…,"fileName":…}}`
-on free (`fileName` may be null; Pro gets `limit: 10` and no `existing`),
-`404` unknown `libraryId`, `409 {"error":"publish_pending"}`, `413
+`403 {"error":"library_limit","limit":1,"owned":…,"existing":{"libraryId":…,"fileName":…}}`
+on free (`fileName` may be null, and `existing` is null when the library the
+count refers to has not reached the KV listing yet; Pro gets `limit: 10` and
+no `existing`), `404` unknown `libraryId`, `409 {"error":"publish_pending"}`
+(this same publish is still writing, another changed publish to the library
+holds its lock, or the identity's other creates still in flight fill the
+library limit, which is not reported as `library_limit` because they may yet
+fail), `413
 {"error":"bundle_too_large","size":…,"limit":5000000}` (`size` is the declared
 `Content-Length` when there is one, else the byte count at which the streamed read
 was cut, which is over the limit and at most the body's length), `429` rate limited.
@@ -252,12 +257,32 @@ before this split is migrated to that layout the first time it is read.
   published library, and the pull keys cannot be recovered: only their
   SHA-256 digests were ever stored. Every affected user has to republish and
   redistribute a new setup command.
-- **Version writes are not atomic.** A publish writes the current bundle, the
-  per-version bundle, the version log, then the meta, in that order. A stop
+- **Version writes are not atomic, but writers no longer interleave.** A
+  changed publish holds a per-library lock in the publisher's identity object
+  until its KV writes commit, so a second changed publish to the same library
+  answers 409 publish_pending instead of assigning the same version. A
+  publish still writes the current bundle, the per-version bundle, the
+  version log, then the meta, in that order. A stop
   between the log and the meta leaves a log record the meta does not carry;
   publish reads the current version from the log, so the next publish
   continues from the right number and rewrites the meta. Until then `pull`
   and `X-Library-Version` report the meta's older version.
+- **The publish lock and the library count are per identity, and they
+  expire.** The lock and the create slot live in the publisher's own quota
+  object, so two different identities racing on one library at the same
+  second (a Pro key on one device and the Figma-id-plus-pull-key proof on
+  another) are not serialized against each other; the same person on two
+  devices with the same key is. Both last as long as the reservation
+  (`RESERVATION_TTL_MS`, two minutes). A create that dies between
+  reservation and commit keeps its slot that long, so the identity's next
+  create answers `409 publish_pending` until it lapses. A publish whose
+  writes outlast it loses the lock and the slot while still writing, so a
+  second writer can proceed in that window; its create is still counted
+  once it commits. The count only goes up: there is no delete route, and a
+  library removed from KV by hand still counts in its creator's object.
+  What stays eventually consistent is the KV owner index: it names
+  `existing`, and it is the only count for libraries created under another
+  of the caller's identities, or before this counter existed.
 - **The diff runs inside the Worker.** Measured at 195 ms on a synthetic
   4.2 MB bundle of 300 components with 120 bindings each and 2000 tokens,
   above the 50 ms the design hoped for and far below the paid plan's 30 s
@@ -296,7 +321,9 @@ before this split is migrated to that layout the first time it is read.
   id is hashed with a server salt, but it is not a secret and nothing
   authenticates it. Each self-asserted identity therefore gets its own budget
   of 1 library and 10 publishes a month (the first publish counts), over up to 5 MB of KV that never
-  expires. A client that lies about `X-Figma-User` can shop for fresh buckets,
+  expires. The ceiling is settled in the identity's publish Durable Object,
+  so two concurrent creates from one identity cannot both pass; the KV owner
+  index only names what exists. A client that lies about `X-Figma-User` can shop for fresh buckets,
   and a lapsed Pro owner can do the same for its own library, because
   ownership passes on the key while the counter follows the Figma identity.
   What a lied-about header cannot do is write to someone else's library: a

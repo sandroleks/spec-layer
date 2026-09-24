@@ -92,6 +92,16 @@ export interface ReserveOptions {
   create?: { limit: number; listed: number };
 }
 
+export interface CommitOptions {
+  /**
+   * This commit finishes a create: count one library. The marker, not the
+   * reservation's create slot, is what counts, because a write that outlives
+   * `RESERVATION_TTL_MS` finds its slot already pruned. Counted once per
+   * cache key, so a replayed commit never counts a second library.
+   */
+  create?: boolean;
+}
+
 interface ResponseEntry { at: number }
 /** A response entry as a blob written before the split stored it: body inline. */
 interface LegacyResponseEntry extends ResponseEntry { body?: string }
@@ -259,21 +269,22 @@ export class QuotaEngine {
     return { kind: 'proceed' };
   }
 
-  /** Frees every lock and create slot this reservation holds. `commit` counts the create; `release` only frees it. */
-  private settle(cacheKey: string, committed: boolean): void {
+  /** Frees the reservation and every lock and create slot it holds. Counting a create is `commit`'s, from its marker. */
+  private settle(cacheKey: string): void {
     delete this.s.reservations[cacheKey];
     for (const [name, held] of Object.entries(this.s.locks)) {
       if (held.cacheKey === cacheKey) delete this.s.locks[name];
     }
-    if (this.s.pendingCreates[cacheKey] !== undefined) {
-      delete this.s.pendingCreates[cacheKey];
-      if (committed) this.s.libraries += 1;
-    }
+    delete this.s.pendingCreates[cacheKey];
   }
 
-  commit(cacheKey: string, now: number): void {
+  commit(cacheKey: string, now: number, opts: CommitOptions = {}): void {
+    // Read before the prune, so a replay of a commit older than the response
+    // TTL still reads as already counted.
+    const replayed = this.s.responses[cacheKey] !== undefined;
     this.prune(now);
-    this.settle(cacheKey, true);
+    this.settle(cacheKey);
+    if (opts.create === true && !replayed) this.s.libraries += 1;
     this.s.responses[cacheKey] = { at: now };
     // A stale entry for this same key, pruned just above, must not make the
     // store delete the body this commit is about to write.
@@ -285,7 +296,7 @@ export class QuotaEngine {
   }
 
   release(cacheKey: string): void {
-    this.settle(cacheKey, false);
+    this.settle(cacheKey);
   }
 
   snapshot(tier: Tier, now: number): QuotaSnapshot {

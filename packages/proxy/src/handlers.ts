@@ -9,7 +9,7 @@ import { identityFromHeaders, licenseIdentityId, callerProofs } from './identity
 import { handlePublish, handlePull, handleRotate, handleVersions } from './libraries';
 import { activateLicense, checkLicense, deactivateLicense, validateLicense, LICENSE_KEY_RE, LsUnreachable, type KVLike, type LicenseResult, type LibraryStore } from './license';
 import { quotaHeaders } from './quota';
-import type { QuotaProfile, QuotaSnapshot, ReserveOptions, ReserveResult, Tier } from './quota';
+import type { CommitOptions, QuotaProfile, QuotaSnapshot, ReserveOptions, ReserveResult, Tier } from './quota';
 import type { SlidingWindowLimiter } from './ratelimit';
 import { readBodyCapped } from './body';
 
@@ -19,7 +19,7 @@ export type { QuotaProfile };
 export interface QuotaClient {
   reserve(tier: Tier, cacheKey: string, opts?: ReserveOptions): Promise<ReserveResult>;
   /** Commits and returns the snapshot after it, so the success path costs one Durable Object hop. */
-  commit(tier: Tier, cacheKey: string, body: string): Promise<QuotaSnapshot>;
+  commit(tier: Tier, cacheKey: string, body: string, opts?: CommitOptions): Promise<QuotaSnapshot>;
   release(cacheKey: string): Promise<void>;
   snapshot(tier: Tier): Promise<QuotaSnapshot>;
 }

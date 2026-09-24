@@ -66,7 +66,8 @@ export interface LibraryMeta {
  *   lib:<id>:key                sha256 of the current pull key
  *   lib:<id>:versions           VersionLog, newest first (versions.ts)
  *   lib:<id>:bundle:<version>   that version's bundle bytes, newest ten kept
- *   libowner:<licenseId>:<id>   one record per owned library, counted by prefix
+ *   libowner:<licenseId>:<id>   one record per owned library, listed by prefix;
+ *                               the ceiling itself is counted in the quota object
  */
 const bundleKey = (id: string) => `lib:${id}:bundle`;
 const metaKey = (id: string) => `lib:${id}:meta`;
@@ -235,6 +236,24 @@ function versionRecord(input: {
   };
 }
 
+/**
+ * The 403 for a library ceiling, from the KV pre-check or from the Durable
+ * Object's create count. Free callers get `existing`, the first library the
+ * listing names, so the plugin can say which file already publishes; when the
+ * counter knows a library the eventually consistent listing has not surfaced
+ * yet, `existing` is null rather than a guess.
+ */
+async function libraryLimitResponse(
+  store: LibraryStore, tier: Tier, limit: number, owned: number, ids: string[],
+): Promise<Response> {
+  if (tier !== 'free') return json(403, { error: 'library_limit', limit, owned });
+  const first = ids[0];
+  if (first === undefined) return json(403, { error: 'library_limit', limit, owned, existing: null });
+  const existingRaw = await store.get(metaKey(first));
+  const existing = existingRaw ? (JSON.parse(existingRaw) as LibraryMeta) : null;
+  return json(403, { error: 'library_limit', limit, owned, existing: { libraryId: first, fileName: existing?.fileName ?? null } });
+}
+
 export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Response> {
   const ip = req.headers.get('CF-Connecting-IP') ?? 'unknown';
 
@@ -304,6 +323,8 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
 
   let libraryId: string | null = null;
   let meta: LibraryMeta | null = null;
+  /** Libraries the KV listing attributes to the caller. Only read for a create. */
+  let listed: string[] = [];
   if (body.libraryId !== undefined) {
     if (typeof body.libraryId !== 'string' || !LIBRARY_ID_RE.test(body.libraryId)) {
       return json(400, { error: 'invalid libraryId' });
@@ -313,21 +334,14 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
     libraryId = body.libraryId;
     meta = owned;
   } else {
-    const owned = await ownedLibraryIds(store, caller.owners);
+    // The listing is the fast path and names `existing`. It is eventually
+    // consistent, so the reservation below also asks the identity's Durable
+    // Object, which counts creates atomically, before anything is written.
+    // Usually one id on free, but a lapsed Pro license still owns every
+    // library it created, so `owned` says how many and names the first.
+    listed = await ownedLibraryIds(store, caller.owners);
     const limit = LIBRARY_LIMITS[caller.tier];
-    if (owned.length >= limit) {
-      if (caller.tier === 'free') {
-        // Usually exactly one id, but a lapsed Pro license still owns every
-        // library it created, so `owned` says how many and names the first.
-        const existingRaw = await store.get(metaKey(owned[0]));
-        const existing = existingRaw ? (JSON.parse(existingRaw) as LibraryMeta) : null;
-        return json(403, {
-          error: 'library_limit', limit, owned: owned.length,
-          existing: { libraryId: owned[0], fileName: existing?.fileName ?? null },
-        });
-      }
-      return json(403, { error: 'library_limit', limit, owned: owned.length });
-    }
+    if (listed.length >= limit) return libraryLimitResponse(store, caller.tier, limit, listed.length, listed);
   }
 
   // The same content already published to this exact target: no write, no quota
@@ -399,7 +413,15 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
   const cacheKey = libraryId
     ? `publish:${libraryId}:${meta?.publishedAt ?? 'none'}->${contentHash}`
     : `publish:new:${newId}`;
-  const reserved = await quota.reserve(caller.tier, cacheKey);
+  // An update also takes the library's lock, so a second changed publish to
+  // the same library while this one is writing answers 409 instead of
+  // assigning the same version. The lock remembers which cache key holds it
+  // and never refuses that key, so a retry of this same publish meets only
+  // its own reservation, as before. A create takes a slot in the identity's
+  // library count, which the Durable Object settles atomically.
+  const reserved = await quota.reserve(caller.tier, cacheKey, libraryId
+    ? { lock: `publish:${libraryId}` }
+    : { create: { limit: LIBRARY_LIMITS[caller.tier], listed: listed.length } });
   switch (reserved.kind) {
     case 'cached': {
       const prior = JSON.parse(reserved.body) as { libraryId: string; publishedAt: string; version?: string };
@@ -411,6 +433,13 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
       return respond(402, { error: 'quota_exhausted', resetsAt: reserved.resetsAt });
     case 'rate_limited':
       return respond(429, { error: 'rate_limited', retryAfterMs: reserved.retryAfterMs });
+    case 'library_limit':
+      // `owned` counts committed and listed libraries only. Below the limit,
+      // the ceiling is full of creates still in flight, any of which may yet
+      // fail: saying "already publishes" would claim a library that may never
+      // exist, so answer what is true, a publish in progress.
+      if (reserved.owned < reserved.limit) return respond(409, { error: 'publish_pending' });
+      return libraryLimitResponse(store, caller.tier, reserved.limit, reserved.owned, listed);
     case 'proceed':
       break;
     default:
@@ -462,7 +491,7 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
       store.put(`${ownerPrefix(caller.tierIdentity)}${id}`, publishedAt),
     ]);
     // The replay body never carries the pull key: it is handed out exactly once.
-    const snap = await quota.commit(caller.tier, cacheKey, JSON.stringify({ libraryId: id, publishedAt, version: record.version }));
+    const snap = await quota.commit(caller.tier, cacheKey, JSON.stringify({ libraryId: id, publishedAt, version: record.version }), { create: true });
     deps.log('library_publish', { libraryId: id, size: bodyBytes, created: true, version: record.version });
     return json(201, {
       libraryId: id, pullKey, publishedAt, version: record.version, bump: record.bump, minimumBump: record.minimumBump,
