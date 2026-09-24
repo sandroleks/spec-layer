@@ -62,18 +62,22 @@ export function buildPillNode(state: PillState): FrameNode {
 }
 
 /** The subset of SectionNode (and FrameNode) that repainting needs; a test can fake it. */
-export interface PillHost {
-  findAll(predicate: (node: SceneNode) => boolean): SceneNode[];
-}
+export type PillHost = Pick<ChildrenMixin, 'findAllWithCriteria'>;
 
 /**
  * Restyle every pill under `host` to `state`, in place. Loads the label's own
  * font first, because repainting happens outside a build and frameKit's fonts
  * may not be loaded. Returns how many pills were repainted; 0 on a doc that
  * predates pills, which is not an error.
+ *
+ * findAllWithCriteria is evaluated by Figma, not by a predicate called once
+ * per node across the bridge, and the pluginData filter returns only frames
+ * that carry the key at all; the value check below is the last word.
  */
 export async function repaintPills(host: PillHost, state: PillState): Promise<number> {
-  const pills = host.findAll((node) => node.type === 'FRAME' && node.getPluginData(PILL_KEY) === '1') as FrameNode[];
+  const pills = host
+    .findAllWithCriteria({ types: ['FRAME'], pluginData: { keys: [PILL_KEY] } })
+    .filter((node) => node.getPluginData(PILL_KEY) === '1');
   for (const pill of pills) {
     styleFrame(pill, state);
     const label = pill.children.find((child) => child.type === 'TEXT') as TextNode | undefined;

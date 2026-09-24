@@ -418,6 +418,10 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   through a cache that lives for one build, and a component's collections
   are read together. Same documents, fewer round trips on large matrices.
 
+- **Repainting pills uses native Figma filtering, output unchanged.** The pill
+  repaint now uses `findAllWithCriteria` so Figma filters frames by pluginData
+  key natively, instead of evaluating a predicate once per node across the bridge.
+
 ### Fixed
 
 - **Publish and the snapshot download refuse a file with nothing in it.** The
