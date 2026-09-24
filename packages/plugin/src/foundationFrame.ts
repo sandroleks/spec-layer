@@ -358,18 +358,26 @@ export function cellText(label: string, width: number, muted = false): FrameNode
 /** Figma's code-syntax platform keys as people read them; an unknown key is shown as stored. */
 export const PLATFORM_LABEL: Record<string, string> = { WEB: 'Web', iOS: 'iOS', ANDROID: 'Android' };
 
-function referenceChip(platform: string, identifier: string): FrameNode {
+function referenceChip(platform: string, identifier: string, width: number): FrameNode {
   const c = hstack(4);
   c.paddingTop = c.paddingBottom = 2;
   c.paddingLeft = c.paddingRight = 6;
   c.cornerRadius = radius(6);
   c.fills = solidFill(palette.chipBg);
   c.counterAxisAlignItems = 'CENTER';
+  // A chip hugs its text, so a long identifier used to run past the Name
+  // column and get clipped by the table. The chip is capped at the cell width
+  // and drops the identifier under the platform label when the two no longer
+  // fit side by side; the identifier wraps inside the chip's own inset. Both
+  // bounds derive from `width`: nothing here guesses how wide a label is.
+  c.maxWidth = width;
+  c.layoutWrap = 'WRAP';
   const label = makeText(PLATFORM_LABEL[platform] ?? platform, 'Regular', 10, palette.muted);
   label.textAutoResize = 'WIDTH_AND_HEIGHT';
   c.appendChild(label);
   const id = makeText(identifier, 'Medium', 11, palette.heading);
   id.textAutoResize = 'WIDTH_AND_HEIGHT';
+  id.maxWidth = Math.max(1, width - 12); // 6 + 6 chip padding
   c.appendChild(id);
   return c;
 }
@@ -379,13 +387,13 @@ function referenceChip(platform: string, identifier: string): FrameNode {
  * platform, in code-unit key order (the projection already sorted them). Null
  * when the variable defines none: no chip is ever derived from the token name.
  */
-export function referenceChips(codeSyntax: Record<string, string>): FrameNode | null {
+export function referenceChips(codeSyntax: Record<string, string>, width: number): FrameNode | null {
   const entries = Object.entries(codeSyntax);
   if (entries.length === 0) return null;
   const row = hstack(6);
   row.name = 'Code syntax';
   row.layoutWrap = 'WRAP';
-  for (const [platform, identifier] of entries) row.appendChild(referenceChip(platform, identifier));
+  for (const [platform, identifier] of entries) row.appendChild(referenceChip(platform, identifier, width));
   return row;
 }
 
@@ -393,7 +401,7 @@ export function referenceChips(codeSyntax: Record<string, string>): FrameNode | 
 export function nameCell(row: FoundationVariableRow, width: number): FrameNode {
   const cell = cellText(row.name, width);
   cell.itemSpacing = 6;
-  const chips = referenceChips(row.codeSyntax);
+  const chips = referenceChips(row.codeSyntax, width);
   if (chips) { cell.appendChild(chips); chips.layoutSizingHorizontal = 'FILL'; }
   return cell;
 }
@@ -525,7 +533,10 @@ function nameBlock(
     const desc = makeText(row.description, 'Regular', 11, palette.muted);
     block.appendChild(desc);
   }
-  const chips = referenceChips(row.codeSyntax);
+  // The single-mode column FILLs a row whose total width is fixed
+  // (swatchRowWidth), and that fill resolves to exactly NAME_MIN: there is no
+  // unbounded case here to guess at.
+  const chips = referenceChips(row.codeSyntax, width === 'fill' ? NAME_MIN : width);
   if (chips) block.appendChild(chips);
   return block;
 }
@@ -719,7 +730,12 @@ function buildSwatchList(
  */
 function labelledBlock(text: string, block: FrameNode): FrameNode {
   const group = vstack(10);
-  group.appendChild(makeText(text, 'Medium', 11, palette.muted));
+  const label = makeText(text, 'Medium', 11, palette.muted);
+  // The fixed labels are a word or two; a mode name is user-authored and
+  // unbounded. Capped at the prose measure so a long one wraps instead of
+  // widening the group past its block and out of the card.
+  label.maxWidth = PROSE_MEASURE;
+  group.appendChild(label);
   group.appendChild(block);
   return group;
 }
@@ -800,11 +816,16 @@ function tableRow(children: FrameNode[], divider: boolean): FrameNode {
   return row;
 }
 
-/** The footer note block. Shared by both exits from the frame builder. */
-function buildFooter(notes: string[]): FrameNode {
+/** The footer note block. Shared by both exits from the frame builder.
+ *  Exported for its sizing test. */
+export function buildFooter(notes: string[]): FrameNode {
   const footer = vstack(2);
   footer.name = 'Notes';
-  for (const n of notes) footer.appendChild(makeText(n, 'Regular', 10, palette.muted));
+  // The measure the contrast notes use. A long list of omitted mode names is
+  // the one footer line that can outrun the card; it used to run past the
+  // card edge and be clipped rather than wrap.
+  fixWidthHugHeight(footer, PROSE_MEASURE);
+  for (const n of notes) wrappingText(footer, n, 'Regular', 10, palette.muted);
   return footer;
 }
 

@@ -131,6 +131,13 @@ open: nothing should pop up on the canvas.
 6. If AI group descriptions are enabled, confirm a failed or refused AI
    request still creates deterministic Foundation Sections and reports that it
    went without descriptions.
+7. In a collection with a variable whose Web code syntax is longer than the
+   Name column (about forty characters), and a text-styles or effect-styles
+   source with more than four modes' worth of omitted names, generate the
+   docs. The code-syntax chip wraps inside its cell instead of running under
+   the next column, the "Modes not shown" footer line wraps at the prose
+   measure, and a long mode name used as a block label wraps rather than
+   widening the card.
 
 ### Foundation Context v5 Copy matrix
 

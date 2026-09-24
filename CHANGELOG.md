@@ -634,6 +634,12 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   value for the session. A library's id is recorded in the file even when
   its pull key could not be stored, so the next publish updates that
   library instead of creating another.
+- **Foundation docs wrap their long text.** A code-syntax chip, a footer
+  note listing omitted modes, and a block label carrying a long mode name
+  each ran past the card edge and were clipped. Chips are capped at their
+  column, notes take the same measure as the contrast notes, and labels
+  wrap at it. The text itself is unchanged, so no existing doc reports an
+  update for this.
 
 ### Added
 
