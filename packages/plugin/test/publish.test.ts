@@ -4,11 +4,12 @@ import { unzipSync } from 'fflate';
 import { extract, libraryBundleContentHash, specContentHash, type SerializedFoundation } from '@spec-layer/extractor';
 import type { PublishComponentSource, UiToMain } from '../src/messages';
 import {
-  agentSetupMessage, buildPublishArtifacts, buildPublishBundle, dryRunBundle, publishBundle, rotatePullKey, setupCommand,
+  agentSetupMessage, buildPublishArtifacts, buildPublishBundle, dryRunBundle, isBump, publishBundle, rotatePullKey, setupCommand,
   type PublishSources, type PublishSourcesMsg,
 } from '../src/ui/publish';
 import type { ProxyAuth } from '../src/ui/proxy';
 import { downloadBytes } from '../src/ui/download';
+import { publishHeaderMarkup } from '../src/ui/screens/publish';
 
 // The Node test environment has no Blob/document/URL, so downloadBytes'
 // real DOM contact would throw here. Keep the real zipFiles (it is pure and
@@ -91,6 +92,14 @@ function baseSources(overrides: Partial<PublishSources> = {}): PublishSources {
 }
 
 const HASH_RE = /^sha256:[0-9a-f]{64}$/;
+
+describe('isBump', () => {
+  it('accepts patch, minor, major and nothing else', () => {
+    expect(['patch', 'minor', 'major'].every(isBump)).toBe(true);
+    expect(isBump('Major')).toBe(false);
+    expect(isBump('')).toBe(false);
+  });
+});
 
 describe('buildPublishBundle', () => {
   it('builds a bundle with foundation and components sorted by code units', () => {
@@ -709,6 +718,8 @@ describe('publish controller', () => {
   });
 
   it('onPublishClick moves to collecting and requests sources', () => {
+    publish.onPublishInfo({ type: 'publishInfo', libraryId: null, pullKey: null, publishedAt: null, version: null });
+    repaintCount = 0; // isolate the click's own repaint from the identity seed's
     publish.onPublishClick(AUTH);
     expect(publish.publishState().status).toBe('collecting');
     expect(publish.publishState().message).toBeNull();
@@ -920,8 +931,11 @@ describe('publish controller', () => {
     expect(publish.publishState().version).toBe('1.4.2');
 
     // A dry-run proposal and a chosen bump both belong to lib_old; neither
-    // may survive the proxy reporting it gone.
-    publish.onPublishOpen();
+    // may survive the proxy reporting it gone. The create just left an idle
+    // "nothing changed since" proposal behind, which reopening Publish would
+    // now reuse rather than re-check, so ask for a fresh one explicitly
+    // instead of relying on onPublishOpen to skip straight past it.
+    publish.onPublishRecheck();
     const dryRunFetcher = vi.fn(async () => jsonResponse(200, {
       currentVersion: '1.4.2', unchanged: false, minimumBump: 'minor', proposedVersion: '1.5.0',
       counts: { major: 0, minor: 1, patch: 0 }, changes: [], changesTruncated: false,
@@ -1272,11 +1286,374 @@ describe('publish controller', () => {
     });
   });
 
+  it('reopening Publish keeps this session’s proposal instead of re-running the dry run', async () => {
+    publish.onPublishInfo({ type: 'publishInfo', libraryId: LIB, pullKey: KEY, publishedAt: null, version: '1.4.2' });
+    publish.onPublishOpen();
+    const fetcher = vi.fn(async () => jsonResponse(200, {
+      currentVersion: '1.4.2', unchanged: false, minimumBump: 'minor', proposedVersion: '1.5.0',
+      counts: { major: 0, minor: 1, patch: 0 }, changes: [], changesTruncated: false,
+    })) as unknown as typeof fetch;
+    await publish.onPublishSources(sourcesMsg(), AUTH, fetcher);
+    expect(sent).toHaveLength(1);
+
+    publish.onPublishOpen();
+    expect(sent).toHaveLength(1);
+    expect(publish.publishState()).toMatchObject({ status: 'idle', proposalStatus: 'idle' });
+    expect(publish.publishState().proposal?.proposedVersion).toBe('1.5.0');
+  });
+
+  it('Check again runs the dry run the publisher asked for', async () => {
+    publish.onPublishInfo({ type: 'publishInfo', libraryId: LIB, pullKey: KEY, publishedAt: null, version: '1.4.2' });
+    publish.onPublishOpen();
+    await publish.onPublishSources(sourcesMsg(), AUTH, vi.fn(async () => jsonResponse(500, {})) as unknown as typeof fetch);
+    expect(publish.publishState().proposalStatus).toBe('failed');
+    publish.onPublishRecheck();
+    expect(sent).toHaveLength(2);
+    expect(publish.publishState()).toMatchObject({ status: 'collecting', intent: 'dryRun', proposalStatus: 'loading' });
+  });
+
+  it('Check again does nothing without a library or while busy', () => {
+    publish.onPublishRecheck();
+    expect(sent).toEqual([]);
+    publish.onPublishInfo({ type: 'publishInfo', libraryId: LIB, pullKey: KEY, publishedAt: null, version: '1.4.2' });
+    publish.onPublishClick(AUTH);
+    publish.onPublishRecheck();
+    expect(sent).toEqual([{ type: 'requestPublishSources' }]);
+  });
+
+  /** A settled, idle proposal with a chosen bump: what onPublishOpen's reuse
+   *  shortcut would otherwise keep showing after any of the events below. */
+  async function settleAProposal(): Promise<void> {
+    publish.onPublishInfo({ type: 'publishInfo', libraryId: LIB, pullKey: KEY, publishedAt: null, version: '1.4.2' });
+    publish.onPublishOpen();
+    const fetcher = vi.fn(async () => jsonResponse(200, {
+      currentVersion: '1.4.2', unchanged: false, minimumBump: 'minor', proposedVersion: '1.5.0',
+      counts: { major: 0, minor: 1, patch: 0 }, changes: [], changesTruncated: false,
+    })) as unknown as typeof fetch;
+    await publish.onPublishSources(sourcesMsg(), AUTH, fetcher);
+    publish.onBumpChoice('major');
+    expect(publish.publishState()).toMatchObject({ proposalStatus: 'idle', chosenBump: 'major' });
+    expect(publish.publishState().proposal).not.toBeNull();
+  }
+
+  /**
+   * `invalidatePublishProposal` is the one shared primitive every event-class
+   * call site in ui-vnext.ts calls: docFrameDone and foundationDone (outside
+   * a Library batch), docDetached, docRemoved, docFrameError and
+   * foundationFrameError (when a render can leave a doc changed on canvas
+   * before failing), and finishLibraryOperation (a Library update batch that
+   * landed at least one doc). Each of those call sites is a one-line, guard
+   * only wire-up with no branching logic of its own to unit test in
+   * isolation, and (per this plan's own constraint) ui-vnext.ts cannot be
+   * imported from a test; a message-type-to-boolean table would not help
+   * either, since several of those sites gate the call on data the message
+   * type alone doesn't carry (`msg.created > 0`, "not part of a batch").
+   * Call-site coverage for all of them is verified by reading the code
+   * (documented per site in the fix reports), plus typecheck, the plugin
+   * build, and the real sandbox scan. This test covers the one thing that is
+   * unit-testable: what the shared primitive itself does once called.
+   */
+  it('invalidatePublishProposal clears the held proposal, its chosen bump, while idle', async () => {
+    await settleAProposal();
+    publish.invalidatePublishProposal();
+    expect(publish.publishState()).toMatchObject({ proposal: null, proposalStatus: 'idle', chosenBump: null });
+  });
+
+  it('bumps the generation even while busy, without touching the in-flight status', async () => {
+    publish.onPublishInfo({ type: 'publishInfo', libraryId: LIB, pullKey: KEY, publishedAt: null, version: '1.4.2' });
+    publish.onPublishClick(AUTH);
+    expect(publish.publishState().status).toBe('collecting');
+    const before = publish.publishState().proposalGeneration;
+    publish.invalidatePublishProposal();
+    // A publish already collecting sources ends with its own true answer
+    // (the outcome branches in onPublishSources), so clearing the proposal
+    // here would only be overwritten a moment later; the status is untouched
+    // either way. The generation still bumps, so a dry run's stale-reply
+    // check (not exercised by a publish intent) would see it if one were
+    // pending.
+    expect(publish.publishState().proposalGeneration).toBe(before + 1);
+    expect(publish.publishState().status).toBe('collecting');
+  });
+
+  it("the file's publish identity changing clears the held proposal", async () => {
+    await settleAProposal();
+    // A different library id lands while idle: the file's saved identity
+    // changed since (for example, another device republished it as a new
+    // library), so whatever this session computed against the old one can no
+    // longer answer for the new one.
+    publish.onPublishInfo({ type: 'publishInfo', libraryId: 'lib_other', pullKey: 'sl_other', publishedAt: null, version: '2.0.0' });
+    expect(publish.publishState()).toMatchObject({
+      libraryId: 'lib_other', proposal: null, proposalStatus: 'idle', chosenBump: null,
+    });
+  });
+
+  it('the same publish identity landing again leaves the held proposal alone', async () => {
+    await settleAProposal();
+    publish.onPublishInfo({ type: 'publishInfo', libraryId: LIB, pullKey: KEY, publishedAt: null, version: '1.4.2' });
+    expect(publish.publishState()).toMatchObject({ proposalStatus: 'idle', chosenBump: 'major' });
+    expect(publish.publishState().proposal).not.toBeNull();
+  });
+
+  it('publish, then invalidate, then reopen runs a dry run instead of reusing the stale proposal', async () => {
+    await settleAProposal();
+    publish.invalidatePublishProposal();
+    expect(publish.publishState().proposal).toBeNull();
+
+    publish.onPublishOpen();
+    expect(publish.publishState()).toMatchObject({ status: 'collecting', intent: 'dryRun', proposalStatus: 'loading' });
+    expect(sent.at(-1)).toEqual({ type: 'requestPublishSources' });
+  });
+
+  it('a dry run invalidated while its sources are still collecting is discarded, and a fresh one is requested', async () => {
+    publish.onPublishInfo({ type: 'publishInfo', libraryId: LIB, pullKey: KEY, publishedAt: null, version: '1.4.2' });
+    publish.onPublishOpen();
+    expect(sent).toEqual([{ type: 'requestPublishSources' }]);
+
+    // Something changes the file (a doc rebuild, say) while this collect is
+    // still in flight: the sources it is about to gather answer for the file
+    // as it stood before the change.
+    publish.invalidatePublishProposal();
+
+    const fetcher = vi.fn(async () => jsonResponse(200, {
+      currentVersion: '1.4.2', unchanged: false, minimumBump: 'minor', proposedVersion: '1.5.0',
+      counts: { major: 0, minor: 1, patch: 0 }, changes: [], changesTruncated: false,
+    })) as unknown as typeof fetch;
+    await publish.onPublishSources(sourcesMsg(), AUTH, fetcher);
+
+    // The stale reply never even reaches the point of diffing against the
+    // proxy: the dry-run POST itself was never made.
+    expect(fetcher).not.toHaveBeenCalled();
+    // A fresh collect was requested instead, and the screen keeps showing
+    // "Checking...", not a proposal computed from the discarded sources.
+    expect(sent).toEqual([{ type: 'requestPublishSources' }, { type: 'requestPublishSources' }]);
+    expect(publish.publishState()).toMatchObject({ status: 'collecting', intent: 'dryRun', proposalStatus: 'loading' });
+  });
+
+  it('a dry run invalidated while its own proxy call is in flight is discarded, and a fresh one is requested', async () => {
+    publish.onPublishInfo({ type: 'publishInfo', libraryId: LIB, pullKey: KEY, publishedAt: null, version: '1.4.2' });
+    publish.onPublishOpen();
+    expect(sent).toEqual([{ type: 'requestPublishSources' }]);
+
+    // A fetcher that does not resolve until this test says so, so the
+    // invalidation below lands between the sources reply (already being
+    // processed) and the dry-run POST resolving, not before either.
+    let resolveFetch: (value: Response) => void = () => {};
+    const fetcher = vi.fn(() => new Promise<Response>((resolve) => { resolveFetch = resolve; })) as unknown as typeof fetch;
+    const call = publish.onPublishSources(sourcesMsg(), AUTH, fetcher);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+
+    // Something changes the file while this dry run's own proxy call is
+    // still in flight.
+    publish.invalidatePublishProposal();
+    resolveFetch(jsonResponse(200, {
+      currentVersion: '1.4.2', unchanged: false, minimumBump: 'minor', proposedVersion: '1.5.0',
+      counts: { major: 0, minor: 1, patch: 0 }, changes: [], changesTruncated: false,
+    }));
+    await call;
+
+    // The stale answer never lands: fetcher was only ever called once (for
+    // the discarded attempt), not answered from.
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    // A fresh collect was requested instead of trusting it.
+    expect(sent).toEqual([{ type: 'requestPublishSources' }, { type: 'requestPublishSources' }]);
+    expect(publish.publishState()).toMatchObject({ status: 'collecting', intent: 'dryRun', proposalStatus: 'loading' });
+  });
+
+  it('a publish invalidated while its own upload is in flight keeps the result but drops the stale proposal', async () => {
+    publish.onPublishInfo({ type: 'publishInfo', libraryId: null, pullKey: null, publishedAt: null, version: null });
+    publish.onPublishClick(AUTH);
+
+    let resolveFetch: (value: Response) => void = () => {};
+    const fetcher = vi.fn(() => new Promise<Response>((resolve) => { resolveFetch = resolve; })) as unknown as typeof fetch;
+    const call = publish.onPublishSources(sourcesMsg(), AUTH, fetcher);
+    expect(publish.publishState().status).toBe('uploading');
+
+    // A doc changes elsewhere while this publish's own upload is in flight.
+    publish.invalidatePublishProposal();
+    resolveFetch(jsonResponse(201, {
+      libraryId: LIB, pullKey: KEY, publishedAt: '2026-09-01T00:00:01.000Z', version: '1.0.0',
+    }));
+    await call;
+
+    const finalState = publish.publishState();
+    // The publish result itself stands: it is the proxy's real answer to the
+    // bundle that was actually sent, whatever changed afterward.
+    expect(finalState).toMatchObject({ status: 'done', libraryId: LIB, pullKey: KEY, version: '1.0.0' });
+    expect(sent).toContainEqual({ type: 'setPublishInfo', libraryId: LIB, pullKey: KEY });
+    // But "nothing changed since 1.0.0" would be a guess about a file that
+    // changed after the bundle for this publish was built, so there is no
+    // proposal left to show as if it still applied.
+    expect(finalState.proposal).toBeNull();
+  });
+
+  it('a publish refused below the minimum while invalidated in flight keeps the refusal but proposes nothing', async () => {
+    publish.onPublishInfo({ type: 'publishInfo', libraryId: LIB, pullKey: KEY, publishedAt: null, version: '1.4.2' });
+    publish.onBumpChoice('patch');
+    publish.onPublishClick(AUTH);
+
+    let resolveFetch: (value: Response) => void = () => {};
+    const fetcher = vi.fn(() => new Promise<Response>((resolve) => { resolveFetch = resolve; })) as unknown as typeof fetch;
+    const call = publish.onPublishSources(sourcesMsg(), AUTH, fetcher);
+    expect(publish.publishState().status).toBe('uploading');
+
+    // A doc changes elsewhere while this publish's own upload is in flight.
+    publish.invalidatePublishProposal();
+    resolveFetch(jsonResponse(400, { error: 'bump_below_minimum', minimumBump: 'minor', proposedVersion: '1.5.0' }));
+    await call;
+
+    const finalState = publish.publishState();
+    // The refusal itself is the proxy's real answer to what was sent.
+    expect(finalState).toMatchObject({
+      status: 'error', message: 'These edits need at least a minor version change.', chosenBump: null,
+    });
+    // But its floor and "Next version 1.5.0" describe a bundle that no longer
+    // matches the file, so neither is shown as if it still applied.
+    expect(finalState.proposal).toBeNull();
+    expect(publish.nextVersionFor(finalState)).toBeNull();
+  });
+
+  it('a dry run marks its proposal as a check; a publish marks its proposal as the publish itself', async () => {
+    publish.onPublishInfo({ type: 'publishInfo', libraryId: LIB, pullKey: KEY, publishedAt: null, version: '1.4.2' });
+    publish.onPublishOpen();
+    const dryRunFetcher = vi.fn(async () => jsonResponse(200, {
+      currentVersion: '1.4.2', unchanged: false, minimumBump: 'minor', proposedVersion: '1.5.0',
+      counts: { major: 0, minor: 1, patch: 0 }, changes: [], changesTruncated: false,
+    })) as unknown as typeof fetch;
+    await publish.onPublishSources(sourcesMsg(), AUTH, dryRunFetcher);
+    expect(publish.publishState().proposalSource).toBe('check');
+
+    publish.onPublishClick(AUTH);
+    const publishFetcher = vi.fn(async () => jsonResponse(200, {
+      libraryId: LIB, publishedAt: '2026-09-01T00:00:02.000Z', version: '1.5.0',
+    })) as unknown as typeof fetch;
+    await publish.onPublishSources(
+      sourcesMsg({ publishInfo: { libraryId: LIB, pullKey: KEY, publishedAt: null, version: '1.4.2' } }),
+      AUTH,
+      publishFetcher,
+    );
+    expect(publish.publishState()).toMatchObject({ proposalSource: 'publish', proposal: { unchanged: true } });
+  });
+
   it('onPublishOpen without a library id proposes 1.0.0 locally and calls nothing', () => {
+    publish.onPublishInfo({ type: 'publishInfo', libraryId: null, pullKey: null, publishedAt: null, version: null });
     publish.onPublishOpen();
     expect(sent).toEqual([]);
     expect(publish.publishState().proposal).toEqual(publish.firstPublishProposal());
     expect(publish.publishState().initialVersion).toBe('1.0.0');
+  });
+
+  it('onPublishOpen before the publish identity is known proposes nothing and asks for it again', () => {
+    publish.onPublishOpen();
+    // requestPublishInfo is idempotent, so asking again here is how a lost or
+    // late first reply gets another chance, rather than leaving the pane
+    // waiting forever.
+    expect(sent).toEqual([{ type: 'requestPublishInfo' }]);
+    expect(publish.publishState()).toMatchObject({ infoKnown: false, proposal: null, proposalStatus: 'idle' });
+    expect(repaintCount).toBe(1);
+  });
+
+  it('onPublishOpen does not ask for the identity again once it is already known', () => {
+    publish.onPublishInfo({ type: 'publishInfo', libraryId: null, pullKey: null, publishedAt: null, version: null });
+    publish.onPublishOpen();
+    expect(sent).not.toContainEqual({ type: 'requestPublishInfo' });
+  });
+
+  it('onPublishClick does nothing before the publish identity is known', () => {
+    publish.onPublishClick(AUTH);
+    expect(sent).toEqual([]);
+    expect(publish.publishState()).toMatchObject({ status: 'idle', infoKnown: false });
+  });
+
+  it('a publishInfo reply marks the identity known even while a publish is in flight', () => {
+    publish.onPublishInfo({ type: 'publishInfo', libraryId: LIB, pullKey: KEY, publishedAt: null, version: '1.0.0' });
+    publish.onPublishClick(AUTH);
+    publish.onPublishInfo({ type: 'publishInfo', libraryId: 'lib_other', pullKey: 'sl_other', publishedAt: null, version: '2.0.0' });
+    // In flight, so the newly arrived identity is not seeded over the one the
+    // publish already started from (publishSources carries the truth once the
+    // collect completes), but the screen may now stop showing the neutral pill.
+    expect(publish.publishState()).toMatchObject({ infoKnown: true, libraryId: LIB, status: 'collecting' });
+  });
+
+  it('a publishInfo reply that lands during a download started before the identity keeps the identity', async () => {
+    // Download needs no identity, so it can start before publishInfo lands.
+    publish.onDownloadSkillClick('yaml');
+    publish.onPublishInfo({ type: 'publishInfo', libraryId: LIB, pullKey: KEY, publishedAt: '2026-09-01T00:00:00.000Z', version: '1.4.2' });
+    expect(publish.publishState()).toMatchObject({
+      infoKnown: true, libraryId: LIB, pullKey: KEY, version: '1.4.2', status: 'collecting',
+    });
+    // The download's own reply carries the same identity; it must not undo it.
+    await publish.onPublishSources(
+      sourcesMsg({ publishInfo: { libraryId: LIB, pullKey: KEY, publishedAt: '2026-09-01T00:00:00.000Z', version: '1.4.2' } }),
+      AUTH,
+      vi.fn() as unknown as typeof fetch,
+    );
+    expect(publish.publishState()).toMatchObject({
+      infoKnown: true, libraryId: LIB, pullKey: KEY, version: '1.4.2', status: 'idle',
+    });
+    expect(publishHeaderMarkup(publish.publishState())).toContain('Published');
+    expect(publishHeaderMarkup(publish.publishState())).not.toContain('Not published');
+    // Known now, so opening Publish stops asking for the identity again.
+    publish.onPublishOpen();
+    expect(sent).not.toContainEqual({ type: 'requestPublishInfo' });
+  });
+
+  it('a publishInfo reply that lands after a failed download keeps the identity', () => {
+    publish.onDownloadSkillClick('yaml');
+    publish.onPublishSourcesError('Section read failed');
+    expect(publish.publishState()).toMatchObject({ status: 'error', infoKnown: false });
+    publish.onPublishInfo({ type: 'publishInfo', libraryId: LIB, pullKey: KEY, publishedAt: null, version: '1.4.2' });
+    expect(publish.publishState()).toMatchObject({ infoKnown: true, libraryId: LIB, pullKey: KEY, version: '1.4.2' });
+  });
+
+  it('a download reply that arrives before any publishInfo takes the identity it carries', async () => {
+    publish.onDownloadSkillClick('yaml');
+    await publish.onPublishSources(
+      sourcesMsg({ publishInfo: { libraryId: LIB, pullKey: KEY, publishedAt: '2026-09-01T00:00:00.000Z', version: '1.4.2' } }),
+      AUTH,
+      vi.fn() as unknown as typeof fetch,
+    );
+    expect(publish.publishState()).toMatchObject({
+      infoKnown: true, libraryId: LIB, pullKey: KEY, lastPublishedAt: '2026-09-01T00:00:00.000Z', version: '1.4.2',
+    });
+    expect(sent.some((m) => m.type === 'setPublishInfo')).toBe(false);
+  });
+
+  it('a dry run whose bundle cannot be built fails the check instead of wedging in collecting', async () => {
+    publish.onPublishInfo({ type: 'publishInfo', libraryId: LIB, pullKey: KEY, publishedAt: null, version: '1.4.2' });
+    publish.onPublishOpen();
+    const fetcher = vi.fn() as unknown as typeof fetch;
+    await publish.onPublishSources(
+      sourcesMsg({ components: [{ docId: 'doc-broken', name: 'Broken', node: null as never, prose: null }] }),
+      AUTH,
+      fetcher,
+    );
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(publish.publishState()).toMatchObject({ status: 'idle', proposalStatus: 'failed', proposal: null, message: null });
+    // Not wedged: Check again starts a fresh dry run.
+    publish.onPublishRecheck();
+    expect(publish.publishState()).toMatchObject({ status: 'collecting', intent: 'dryRun' });
+  });
+
+  it('a publish whose bundle cannot be built ends in an honest error instead of wedging in uploading', async () => {
+    publish.onPublishInfo({ type: 'publishInfo', libraryId: LIB, pullKey: KEY, publishedAt: null, version: '1.4.2' });
+    publish.onPublishClick(AUTH);
+    const fetcher = vi.fn() as unknown as typeof fetch;
+    await publish.onPublishSources(
+      sourcesMsg({ components: [{ docId: 'doc-broken', name: 'Broken', node: null as never, prose: null }] }),
+      AUTH,
+      fetcher,
+    );
+    expect(fetcher).not.toHaveBeenCalled();
+    const state = publish.publishState();
+    expect(state.status).toBe('error');
+    expect(state.message).toMatch(
+      /^Couldn’t build the library from this file’s docs\. Nothing was published\. Try again, or reopen the plugin if it keeps happening\. \(.+\)$/,
+    );
+    expect(state.message).not.toContain('—');
+    expect(sent.some((m) => m.type === 'stampPublished' || m.type === 'setPublishInfo')).toBe(false);
+    // Not wedged: a fresh click is accepted.
+    publish.onPublishClick(AUTH);
+    expect(publish.publishState().status).toBe('collecting');
   });
 
   it('a failed dry run leaves publishing possible and says the minimum will apply', async () => {
@@ -1320,6 +1697,7 @@ describe('publish controller', () => {
   });
 
   it('sends initialVersion only on a first publish, and only when it is a semver', async () => {
+    publish.onPublishInfo({ type: 'publishInfo', libraryId: null, pullKey: null, publishedAt: null, version: null });
     publish.onInitialVersionInput('2.1.0');
     publish.onPublishClick(AUTH);
     let body: Record<string, unknown> = {};

@@ -398,8 +398,7 @@ if (view === 'foundations') {
     stateName === 'loading' ? { kind: 'loading' }
       : stateName === 'error' ? { kind: 'error', message: 'Could not read this file.' }
         : stateName === 'progress' ? { kind: 'generating', done: 2, total: 9 }
-          : stateName === 'result' ? { kind: 'result', created: 4, replaced: 5 }
-            : { kind: 'ready' };
+          : { kind: 'ready' };
   let foundationSelection = param('selection', 'all') === 'partial'
     ? {
         collections: FOUNDATION_SELECTION.collections.slice(0, 2),

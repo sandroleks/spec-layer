@@ -16,6 +16,7 @@ import type {
   LibraryRowStatus,
 } from '../viewModel/library';
 import { loadingRowsMarkup, progressMarkup, type ProgressPresentation } from './progress';
+import { esc } from '../escape';
 
 export type { LibraryFilter } from '../viewModel/library';
 
@@ -58,14 +59,21 @@ export interface LibraryScreenPresentation
    * clears it on the next refresh, filter change, or screen change.
    */
   revealedDocId?: string | null;
-}
-
-function esc(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+  /**
+   * The main thread could not read this file's docs (a `libraryError` reply).
+   * With no rows it replaces the empty state, because "No docs yet" would
+   * claim a fact the read never established; with rows from an earlier read
+   * it sits above them and says they may be out of date.
+   */
+  error?: string | null;
+  /**
+   * The scan behind the current rows stopped partway (a `library` reply with
+   * `incomplete: true`): the rows shown are real, but the scan may never have
+   * reached every doc. A plain note says so and offers Refresh; nothing here
+   * claims the library is up to date or fully in sync until a complete read
+   * clears this flag.
+   */
+  readIncomplete?: boolean;
 }
 
 function isUpdate(row: LibraryRowPresentation): boolean {
@@ -401,7 +409,83 @@ const EMPTY_ILLUSTRATION =
   '</g>' +
   '</svg>';
 
-function emptyMarkup(filter: LibraryFilter, hasRows: boolean): string {
+/**
+ * The read failed and nothing is on screen to keep. Names the failure and
+ * offers the same Refresh the footer has; nothing here claims the file has
+ * or lacks docs. `role="alert"` so a screen reader hears it once, on arrival.
+ */
+function errorMarkup(message: string): string {
+  return (
+    '<div class="sl-empty-state" role="alert">' +
+    '<strong>Couldn’t read the docs in this file</strong>' +
+    `<p>${esc(message)}</p>` +
+    '<button class="sl-button" data-tone="secondary" type="button" data-library-refresh>' +
+    `${icon('refresh', 15)}<span>Try again</span></button>` +
+    '</div>'
+  );
+}
+
+/**
+ * The read failed but the last successful read's rows are still listed.
+ * `message` is a caught error's own text: technical detail, so it goes last,
+ * in parentheses, without a trailing period of its own, and a blank one adds
+ * nothing rather than a bare "()".
+ */
+function errorBannerMarkup(message: string): string {
+  const detail = message.trim().replace(/\.$/, '');
+  return (
+    '<div class="sl-banner sl-library-error" data-tone="danger" role="alert">' +
+    `${icon('alertCircle', 16)}<span>Couldn’t re-read the docs in this file, so the list below may be out of date.` +
+    `${detail ? ` (${esc(detail)})` : ''}</span>` +
+    '</div>'
+  );
+}
+
+/**
+ * The scan behind the rows below stopped partway. Unlike errorBannerMarkup
+ * this is not a failed re-read of an existing list: it is the current read
+ * itself, incomplete, so it carries its own Refresh rather than pointing at
+ * a re-read that has not happened yet. `role="status"` because nothing here
+ * is as urgent as a read failure; it is a caveat on the rows underneath.
+ */
+function incompleteNoteMarkup(): string {
+  return (
+    '<div class="sl-banner sl-library-incomplete" data-tone="warning" role="status">' +
+    `${icon('alertCircle', 16)}` +
+    '<span>The scan stopped early, so this list may be missing some docs.</span>' +
+    '<button class="sl-button" data-tone="secondary" data-size="small" type="button" data-library-refresh>' +
+    `${icon('refresh', 14)}<span>Refresh</span></button>` +
+    '</div>'
+  );
+}
+
+/**
+ * The scan stopped before it collected a single row, and no earlier read left
+ * anything to fall back on either. Distinct from errorMarkup: nothing failed,
+ * so this never says the read "couldn't" happen, but it is just as wrong to
+ * show the illustrated "No docs yet" — that claims a fact an incomplete scan
+ * never established. `role="status"`, matching incompleteNoteMarkup's tone:
+ * this is a caveat on an in-progress read, not an alert.
+ */
+function incompleteEmptyMarkup(): string {
+  return (
+    '<div class="sl-empty-state" role="status">' +
+    '<strong>The scan stopped before it found any docs</strong>' +
+    '<p>That is not the same as this file having none. Refresh to read again.</p>' +
+    '<button class="sl-button" data-tone="secondary" type="button" data-library-refresh>' +
+    `${icon('refresh', 15)}<span>Refresh</span></button>` +
+    '</div>'
+  );
+}
+
+/**
+ * `incomplete` is true when a failed re-read or a partial scan means the
+ * current filter's empty subset cannot be trusted as a complete count (the
+ * banner above already says so; this keeps the claim below it honest too).
+ * Shared between the two filters: "None found" is the whole claim either can
+ * still honestly make, so there is no reason to say it two different ways.
+ */
+function emptyMarkup(filter: LibraryFilter, hasRows: boolean, incomplete: boolean): string {
   if (!hasRows) {
     // Two starts, the same two views the rail opens. Nothing here creates.
     return (
@@ -416,6 +500,14 @@ function emptyMarkup(filter: LibraryFilter, hasRows: boolean): string {
       `${icon('layoutGrid', 15)}<span>Document foundations</span></button>` +
       '</div>' +
       '</div>'
+    );
+  }
+  if (incomplete) {
+    return (
+      '<div class="sl-empty-state"><strong>None found in what could be read</strong>' +
+      '<p>The list above may still be missing docs, so this could change once a read finishes clean.</p>' +
+      '<button class="sl-button" data-tone="secondary" type="button" ' +
+      'data-library-filter="all">View all docs</button></div>'
     );
   }
   if (filter === 'updates') {
@@ -438,31 +530,46 @@ export function libraryHeaderMarkup(): string {
   return '<div class="sl-page-header-copy"><h1>Library</h1></div>';
 }
 
+/**
+ * The three filters' ids and labels, shared between the full paint (which
+ * builds the whole button) and patchLibraryDrift (which only rewrites a
+ * drawn button's count), so the two cannot drift apart on which id maps to
+ * which count.
+ */
+const LIBRARY_FILTERS: ReadonlyArray<{ id: LibraryFilter; label: string }> = [
+  { id: 'all', label: 'All' },
+  { id: 'updates', label: 'Updates' },
+  { id: 'sync', label: 'In sync' },
+];
+
+function libraryFilterCount(model: LibraryScreenPresentation, id: LibraryFilter): number {
+  switch (id) {
+    case 'updates': return model.counts.updates;
+    case 'sync': return model.counts.inSync;
+    case 'all': return model.counts.all;
+  }
+}
+
 export function libraryScrollMarkup(model: LibraryScreenPresentation): string {
   const busy = Boolean(
     model.refreshing ||
     model.updatingAll ||
     model.updatingDocId,
   );
-  const filters: Array<{ id: LibraryFilter; label: string; count: number }> = [
-    { id: 'all', label: 'All', count: model.counts.all },
-    { id: 'updates', label: 'Updates', count: model.counts.updates },
-    { id: 'sync', label: 'In sync', count: model.counts.inSync },
-  ];
 
   const filterMarkup =
     '<div class="sl-library-filters" role="group" aria-label="Library filters">' +
-    filters.map(({ id, label, count }) => (
+    LIBRARY_FILTERS.map(({ id, label }) => (
       `<button class="${model.filter === id ? 'is-selected' : ''}" type="button" ` +
       `data-library-filter="${id}" aria-pressed="${model.filter === id}">` +
-      `<span>${label}</span><small>${count}</small></button>`
+      `<span>${label}</span><small>${libraryFilterCount(model, id)}</small></button>`
     )).join('') +
     '</div>';
   const content = model.loading
     ? loadingRowsMarkup(5)
     : model.rows.length
       ? (
-        '<div class="sl-library-list">' +
+        `<div class="sl-library-list" data-busy="${busy}">` +
         model.rows.map((row) => libraryRowMarkup(
           row,
           model.menuDocId,
@@ -471,7 +578,15 @@ export function libraryScrollMarkup(model: LibraryScreenPresentation): string {
         )).join('') +
         '</div>'
       )
-      : emptyMarkup(model.filter, model.allRows.length > 0);
+      : model.error && model.allRows.length === 0
+        ? errorMarkup(model.error)
+        : model.readIncomplete && model.allRows.length === 0
+          ? incompleteEmptyMarkup()
+          : emptyMarkup(
+            model.filter,
+            model.allRows.length > 0,
+            Boolean(model.error) || Boolean(model.readIncomplete),
+          );
 
   const rebuilds = model.loading
     ? 0
@@ -479,7 +594,12 @@ export function libraryScrollMarkup(model: LibraryScreenPresentation): string {
   // Three filters counting zero sort nothing, so an empty Library drops them.
   const noDocs = !model.loading && model.allRows.length === 0;
   return (
-    rebuildBannerMarkup(rebuilds, busy || Boolean(model.checksIncomplete)) +
+    rebuildBannerMarkup(
+      rebuilds,
+      busy || Boolean(model.checksIncomplete) || Boolean(model.readIncomplete) || Boolean(model.error),
+    ) +
+    (model.error && model.allRows.length > 0 ? errorBannerMarkup(model.error) : '') +
+    (model.readIncomplete ? incompleteNoteMarkup() : '') +
     (noDocs ? '' : filterMarkup) +
     content
   );
@@ -505,13 +625,33 @@ export function libraryFooterMarkup(model: LibraryScreenPresentation): string {
    * count is already on the Updates filter beside it, and a label that changes
    * width as rows drift in and out made the button jump.
    */
+  // One shared boolean for the label and the disabled attribute below, so
+  // they cannot drift apart: a batch over rows a read couldn't vouch for is
+  // never claimed safe in one and refused in the other. `error` belongs here
+  // alongside `checksIncomplete`/`readIncomplete` for the same reason it
+  // already gates the rebuild banner — stale rows behind a failed re-read
+  // cannot be trusted to have the real update count either.
+  const batchUnreliable = Boolean(model.checksIncomplete) || Boolean(model.readIncomplete) || Boolean(model.error);
+  // "Up to date" is a completeness claim: every source check has landed,
+  // none failed, and every source still exists. `model.refreshing` already
+  // covers both an explicit refresh and rows still `pending` a check (see
+  // ui-vnext.ts), so while it is true a check is genuinely in flight and
+  // "Checking…" is the true label, ahead of "Refresh to retry" — a re-check
+  // already started is not the same as one that still needs asking for. A
+  // Library with an orphaned row has nothing left to update but is not up to
+  // date either, so it gets its own honest label instead of either claim.
+  const sourceMissing = model.allRows.some((row) => row.status === 'orphaned');
   const batchLabel = model.updatingAll
     ? 'Updating…'
-    : model.checksIncomplete
-      ? 'Refresh to retry'
-    : model.counts.updates > 0
-      ? 'Update all docs'
-      : 'Up to date';
+    : model.refreshing
+      ? 'Checking…'
+      : batchUnreliable
+        ? 'Refresh to retry'
+        : model.counts.updates > 0
+          ? 'Update all docs'
+          : sourceMissing
+            ? 'Nothing to update'
+            : 'Up to date';
   const progress = model.progress
     ? `<div class="sl-footer-progress">${progressMarkup(model.progress)}</div>`
     : '';
@@ -534,7 +674,7 @@ export function libraryFooterMarkup(model: LibraryScreenPresentation): string {
     (!model.loading && model.allRows.length === 0
       ? ''
       : '<button class="sl-button sl-library-update-all" data-tone="primary" ' +
-        `type="button" data-library-update-all${busy || model.checksIncomplete || model.counts.updates === 0 ? ' disabled' : ''}>` +
+        `type="button" data-library-update-all${busy || batchUnreliable || model.counts.updates === 0 ? ' disabled' : ''}>` +
         `${icon('fileCheck', 15)}<span>${batchLabel}</span></button>`) +
     '</div>'
   );
@@ -632,6 +772,11 @@ export function revealScrollTop(metrics: RevealMetrics): number {
   return Math.round(Math.min(Math.max(0, centred), lowest));
 }
 
+/** A docId inside a double-quoted attribute selector. */
+function cssString(value: string): string {
+  return value.replace(/["\\]/g, '\\$&');
+}
+
 /**
  * Brings one Library row into view and puts focus on it.
  *
@@ -643,7 +788,7 @@ export function revealScrollTop(metrics: RevealMetrics): number {
  * move.
  */
 export function revealLibraryRow(refs: ShellRefs, docId: string): void {
-  const selector = `.sl-library-row[data-doc-id="${docId.replace(/["\\]/g, '\\$&')}"]`;
+  const selector = `.sl-library-row[data-doc-id="${cssString(docId)}"]`;
   const row = refs.scroll.querySelector<HTMLElement>(selector);
   if (!row) return;
   refs.scroll.scrollTop = revealScrollTop({
@@ -661,6 +806,115 @@ export function revealLibraryRow(refs: ShellRefs, docId: string): void {
     ?? row.querySelector<HTMLElement>('[data-library-disclosure]')
     ?? row.querySelector<HTMLElement>('[data-library-menu]');
   target?.focus({ preventScroll: true });
+}
+
+/** The selector that re-finds a row control after its row is redrawn. */
+function rowControlSelector(element: Element): string | null {
+  if (element.matches('button.sl-library-jump')) return 'button.sl-library-jump';
+  if (element.matches('[data-library-disclosure]')) return '[data-library-disclosure]';
+  if (element.matches('[data-library-menu]')) return '[data-library-menu]';
+  if (element.matches('[data-library-menu-close]')) return '[data-library-menu-close]';
+  if (element.matches('[data-library-action]')) {
+    const action = (element as HTMLElement).dataset.libraryAction;
+    return action ? `[data-library-action="${cssString(action)}"]` : null;
+  }
+  return null;
+}
+
+/** The footer controls a patch can refocus after it replaces the footer. */
+const FOOTER_CONTROLS = ['[data-publish-open]', '[data-library-refresh]', '[data-library-update-all]'] as const;
+
+/** The selector that re-finds a footer control after the footer is redrawn. */
+function footerControlSelector(element: Element): string | null {
+  return FOOTER_CONTROLS.find((selector) => element.matches(selector)) ?? null;
+}
+
+/**
+ * Redraws only what one landed source check changed: the rows whose status
+ * moved (or, for the row whose overflow menu is open, whose busy-driven
+ * "Update this doc" item moved), the rebuild banner's disabled state, the
+ * three filter counts, and the footer. Every `driftSource` reply used to
+ * repaint the whole list, which for N rows is N paints of N rows and dropped
+ * focus each time. A row's controls, and the footer's, are re-found by
+ * selector after the redraw, so focus stays on the same control, and an open
+ * menu's on-screen position is recomputed after any row redraw, the way a
+ * full paint already does.
+ *
+ * Returns false when only a full paint is correct: the Library list is not on
+ * screen, it is loading, a filter other than All is on (a row's status
+ * decides whether it is listed at all), the drawn rows are not the model's
+ * rows, or the count of rows behind the rebuild banner changed (that needs
+ * the banner's own markup rebuilt, not just its disabled state, and is left
+ * to a full paint).
+ */
+export function patchLibraryDrift(refs: ShellRefs, model: LibraryScreenPresentation): boolean {
+  if (!refs.screen.classList.contains('sl-library-screen')) return false;
+  if (model.loading || model.filter !== 'all') return false;
+  const list = refs.scroll.querySelector<HTMLElement>('.sl-library-list');
+  if (!list) return false;
+  const rebuilds = model.allRows.filter((row) => row.status === 'rebuildNeeded').length;
+  const drawnRebuilds = list.querySelectorAll('[data-library-status="rebuildNeeded"]').length;
+  if (drawnRebuilds !== rebuilds) return false;
+
+  const drawn = new Map<string, HTMLElement>();
+  for (const article of list.querySelectorAll<HTMLElement>('.sl-library-row')) {
+    drawn.set(article.dataset.docId ?? '', article);
+  }
+  if (drawn.size !== model.rows.length || model.rows.some((row) => !drawn.has(row.docId))) return false;
+
+  const busy = Boolean(model.refreshing || model.updatingAll || model.updatingDocId);
+  // menuMarkup's overflow items are only rendered while the menu is open, and
+  // only the "Update this doc" item there depends on `busy`. A row whose own
+  // status did not move is otherwise left untouched, so if busy changed while
+  // its menu happens to be open, that row needs redrawing too, or the open
+  // menu keeps showing a disabled action a full paint would have re-enabled
+  // (or the reverse).
+  const busyChanged = list.dataset.busy !== String(busy);
+  let redrewAny = false;
+  for (const row of model.rows) {
+    const article = drawn.get(row.docId)!;
+    const status = article.querySelector('[data-library-status]')?.getAttribute('data-library-status');
+    const openMenuBusyMoved = busyChanged && model.menuDocId === row.docId;
+    if (status === row.status && !openMenuBusyMoved) continue;
+    const active = document.activeElement;
+    const focused = active && article.contains(active) ? rowControlSelector(active) : null;
+    article.outerHTML = libraryRowMarkup(row, model.menuDocId, busy, row.docId === model.revealedDocId);
+    redrewAny = true;
+    if (focused) {
+      list.querySelector<HTMLElement>(`.sl-library-row[data-doc-id="${cssString(row.docId)}"] ${focused}`)
+        ?.focus({ preventScroll: true });
+    }
+  }
+  list.dataset.busy = String(busy);
+
+  const rebuildButton = refs.scroll.querySelector<HTMLElement>('[data-library-rebuild-all]');
+  if (rebuildButton) {
+    const disabled = busy || Boolean(model.checksIncomplete) || Boolean(model.readIncomplete) || Boolean(model.error);
+    if (disabled) rebuildButton.setAttribute('disabled', '');
+    else rebuildButton.removeAttribute('disabled');
+  }
+
+  for (const button of refs.scroll.querySelectorAll<HTMLElement>('[data-library-filter]')) {
+    const id = button.dataset.libraryFilter as LibraryFilter | undefined;
+    if (!id) continue;
+    const small = button.querySelector('small');
+    if (small) small.textContent = String(libraryFilterCount(model, id));
+  }
+  // The footer is replaced wholesale, so a focused footer control is re-found
+  // by selector afterwards, the way a redrawn row's control is above. A
+  // control the new footer disables cannot take focus back, which is also
+  // what a full paint would do.
+  const activeElement = document.activeElement;
+  const footerFocus = activeElement && refs.footer.contains(activeElement)
+    ? footerControlSelector(activeElement)
+    : null;
+  refs.footer.innerHTML = libraryFooterMarkup(model);
+  if (footerFocus) refs.footer.querySelector<HTMLElement>(footerFocus)?.focus({ preventScroll: true });
+  // A redrawn row's menu, if open, loses the inline `top` placeOpenRowMenu
+  // set on the one it replaced; recompute it the way renderLibraryScreen
+  // already does after every full paint.
+  if (redrewAny) placeOpenRowMenu(refs);
+  return true;
 }
 
 export function renderLibraryScreen(

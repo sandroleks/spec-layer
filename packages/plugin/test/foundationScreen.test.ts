@@ -290,11 +290,6 @@ describe('foundation screen', () => {
       ALL,
     )).toContain('1 of 3');
     expect(foundationScrollMarkup(
-      { kind: 'result', created: 2, replaced: 1 },
-      SPEC,
-      ALL,
-    )).not.toContain('sl-banner');
-    expect(foundationScrollMarkup(
       { kind: 'error', message: 'Could not read this file.' },
       null,
       ALL,

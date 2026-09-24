@@ -21,14 +21,7 @@ import {
 import { FOUNDATION_ICON, icon, type IconName } from '../shell/icons';
 import type { ShellRefs } from '../shell/shell';
 import { loadingRowsMarkup, progressMarkup } from './progress';
-
-function esc(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
+import { esc } from '../escape';
 
 function checkbox(checked: boolean, mixed = false): string {
   return (

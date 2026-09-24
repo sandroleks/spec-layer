@@ -5,9 +5,9 @@ import {
 } from '@spec-layer/extractor';
 import {
   summarize, defaultSelection, toggleCollection, toggleMode, toggleTextStyles,
-  toggleEffectStyles, emptyStateLines, canGenerate,
+  toggleEffectStyles, canGenerate,
   frameCount, framesPerSource, selectAll, clearAll, allSelected,
-  fileSummary, collectionMeta, textStyleMeta, effectStyleMeta, FOUNDATION_CREATE_LABEL,
+  collectionMeta, textStyleMeta, effectStyleMeta, FOUNDATION_CREATE_LABEL,
   collectionIconKind, groupBriefs,
 } from '../src/ui/foundationState';
 
@@ -213,37 +213,6 @@ describe('canGenerate', () => {
   });
 });
 
-describe('emptyStateLines', () => {
-  it('reports a file with none of the three', () => {
-    expect(emptyStateLines(buildFoundation(dump({ collections: [] }))))
-      .toEqual(['This file has no local variable collections, text styles, or effect styles.']);
-  });
-
-  it('reports text styles only', () => {
-    expect(emptyStateLines(buildFoundation(dump({ collections: [], textStyles: [bodyStyle] }))))
-      .toEqual(['This file has no local variable collections.']);
-  });
-
-  it('reports collections only', () => {
-    expect(emptyStateLines(buildFoundation(dump())))
-      .toEqual(['This file has no local text styles.']);
-  });
-
-  it('warns when no collection holds a color variable', () => {
-    const d = dump({ textStyles: [bodyStyle] });
-    d.collections[0].variables[0] = {
-      id: 'x', name: 'space/4', resolvedType: 'FLOAT', description: '',
-      codeSyntax: {}, valuesByMode: { s1: 16, s2: 16 },
-    };
-    expect(emptyStateLines(buildFoundation(d)))
-      .toEqual(['No color variables found, so the docs will have no swatches.']);
-  });
-
-  it('says nothing when the file has both, including color', () => {
-    expect(emptyStateLines(buildFoundation(dump({ textStyles: [bodyStyle] })))).toEqual([]);
-  });
-});
-
 // ---------------------------------------------------------------------------
 // Frame counts. A large collection splits into one frame per top-level group,
 // so a two-row selection can produce five frames. The tab had no way to say so.
@@ -351,26 +320,6 @@ describe('select all / clear all', () => {
 });
 
 describe('panel copy', () => {
-  it('summarizes a file holding both kinds of source', () => {
-    const spec = buildFoundation(dump({ textStyles: [bodyStyle, bodyStyle] }));
-    expect(fileSummary(summarize(spec)))
-      .toBe('This file has 1 variable collection and 2 text styles.');
-  });
-
-  it('names only what the file actually has', () => {
-    const noStyles = buildFoundation(dump());
-    expect(fileSummary(summarize(noStyles))).toBe('This file has 1 variable collection.');
-
-    const noCollections = buildFoundation(
-      dump({ collections: [], textStyles: [bodyStyle] }));
-    expect(fileSummary(summarize(noCollections))).toBe('This file has 1 text style.');
-  });
-
-  it('says so plainly when there is nothing at all', () => {
-    const empty = buildFoundation(dump({ collections: [], textStyles: [] }));
-    expect(fileSummary(summarize(empty))).toBe('Nothing to document in this file yet.');
-  });
-
   it('mentions a split in the row meta as a doc total, and stays quiet about one doc', () => {
     const c = { id: 'x', name: 'P', variableCount: 170, modes: [{ modeId: 'm', name: 'V' }], iconKind: 'mixed' as const };
     expect(collectionMeta(c, 3)).toBe('170 variables · 1 mode · 3 docs');
@@ -414,10 +363,8 @@ describe('panel copy', () => {
   });
 
   it('contains no em dash anywhere in the panel copy', () => {
-    const spec = buildFoundation(dump({ textStyles: [bodyStyle] }));
     const c = { id: 'x', name: 'P', variableCount: 9, modes: [{ modeId: 'm', name: 'V' }], iconKind: 'mixed' as const };
     const strings = [
-      fileSummary(summarize(spec)),
       collectionMeta(c, 3),
       textStyleMeta(4, 2),
       FOUNDATION_CREATE_LABEL,
@@ -526,10 +473,5 @@ describe('effect styles selection', () => {
   it('writes the row meta like text styles', () => {
     expect(effectStyleMeta(1, 1)).toBe('1 style');
     expect(effectStyleMeta(4, 2)).toBe('4 styles · 2 docs');
-  });
-
-  it('names all three source kinds in the empty state', () => {
-    expect(emptyStateLines({ collections: [], textStyles: [], effectStyles: [] } as unknown as FoundationSpec))
-      .toEqual(['This file has no local variable collections, text styles, or effect styles.']);
   });
 });

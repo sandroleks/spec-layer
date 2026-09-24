@@ -10,10 +10,7 @@ import type { ShellRefs } from '../shell/shell';
 import type { HistoryState } from '../history';
 import { formatPublishedAt } from '../viewModel/allowance';
 import { groupChanges, bumpLabel, bumpExplanation, bumpTone, type HistoryCard } from '../viewModel/history';
-
-function esc(value: string): string {
-  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
+import { esc } from '../escape';
 
 export function historyHeaderMarkup(): string {
   return (

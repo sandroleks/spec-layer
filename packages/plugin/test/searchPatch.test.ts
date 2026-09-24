@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it } from 'vitest';
-import { globalSearchMarkup, patchGlobalSearch } from '../src/ui/screens/search';
+import { globalSearchMarkup, patchGlobalSearch, setSearchActive } from '../src/ui/screens/search';
 import {
   buildSearchModel,
   type SearchDocument,
@@ -93,5 +93,31 @@ describe('patchGlobalSearch', () => {
     document.body.append(root);
     expect(patchGlobalSearch(root, buildSearchModel(DOCUMENTS))).toBe(false);
     expect(root.innerHTML).toBe('');
+  });
+});
+
+describe('setSearchActive', () => {
+  it('moves the active row and the input pointer without touching the list', () => {
+    const root = mount();
+    const list = root.querySelector('.sl-global-search-results');
+    const first = root.querySelector('#sl-global-search-result-0');
+
+    setSearchActive(root, 1);
+
+    expect(root.querySelector('.sl-global-search-results')).toBe(list);
+    expect(root.querySelector('#sl-global-search-result-0')).toBe(first);
+    expect(first?.classList.contains('is-active')).toBe(false);
+    expect(first?.getAttribute('aria-selected')).toBe('false');
+    const second = root.querySelector('#sl-global-search-result-1');
+    expect(second?.classList.contains('is-active')).toBe(true);
+    expect(second?.getAttribute('aria-selected')).toBe('true');
+    expect(root.querySelector('[data-global-search-input]')?.getAttribute('aria-activedescendant'))
+      .toBe('sl-global-search-result-1');
+  });
+
+  it('drops the pointer when no row matches the index', () => {
+    const root = mount('nothing-matches');
+    setSearchActive(root, 0);
+    expect(root.querySelector('[data-global-search-input]')?.hasAttribute('aria-activedescendant')).toBe(false);
   });
 });

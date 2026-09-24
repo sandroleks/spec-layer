@@ -4,7 +4,7 @@ import {
 } from '@spec-layer/extractor';
 import { resolveStatus, type DocBaseline } from '../../docLink';
 import type { FoundationIconKind } from '../../foundationIcon';
-import type { LibraryEntry } from '../../messages';
+import type { DocSourceIntent, LibraryEntry } from '../../messages';
 
 /**
  * Drift is resolved independently from library enumeration. `unavailable`
@@ -27,6 +27,24 @@ export type LibraryRowStatus =
   | 'unavailable';
 
 export type LibraryFilter = 'all' | 'updates' | 'sync';
+
+export function isLibraryFilter(value: string): value is LibraryFilter {
+  return value === 'all' || value === 'updates' || value === 'sync';
+}
+
+/**
+ * Which `requestDocSource` intent a queued Library update carries.
+ *
+ * Decided when the run starts, from the drift the row had then, and stored on
+ * the queue entry. It used to be read at dispatch time from `libraryDrift`,
+ * which `startLibraryDriftChecks()` clears when the `library` reply to a
+ * refresh lands: opening the Library mid-batch turned every
+ * remaining stale-version rebuild into a plain update, and the AI top-up the
+ * banner promised silently never ran.
+ */
+export function libraryUpdateIntent(drift: LibraryDriftState | undefined): DocSourceIntent {
+  return drift === 'staleVersion' ? 'rebuild' : 'update';
+}
 
 /**
  * Where an expanded row's change list stands. `idle` is every row that is not
