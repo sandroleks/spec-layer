@@ -296,6 +296,21 @@ describe('api origin scheme', () => {
     }
     expect(resolveOptions('/some/cwd', { api: 'https://api.example.com/' }, {}, none).api).toBe('https://api.example.com');
   });
+
+  it('names the input the refused origin came from', () => {
+    const refusal = (flags: { api?: string }, env: Record<string, string>): string => {
+      try {
+        resolveOptions('/some/cwd', flags, env, none);
+      } catch (err) {
+        return (err as Error).message;
+      }
+      throw new Error('expected a refusal');
+    };
+    expect(refusal({}, { SPEC_LAYER_API: 'http://api.example.com' })).toMatch(/^SPEC_LAYER_API must use https/);
+    expect(refusal({}, { SPEC_LAYER_API: 'api.example.com' })).toMatch(/^SPEC_LAYER_API must be an origin/);
+    expect(refusal({ api: 'http://api.example.com' }, { SPEC_LAYER_API: 'https://ok.example.com' })).toMatch(/^--api must use https/);
+    expect(refusal({ api: 'api.example.com' }, {})).toMatch(/^--api must be an origin/);
+  });
 });
 
 describe('resolveOptions key sources', () => {

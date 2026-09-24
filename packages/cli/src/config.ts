@@ -76,17 +76,18 @@ const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
  * travels in the Authorization header of every request, so plain http is
  * refused except to this machine, where a local proxy build is the only
  * thing listening. A trailing slash is dropped: it would build "//v1/..."
- * paths the proxy router 404s on.
+ * paths the proxy router 404s on. `source` names the input the value came
+ * from, so a refusal points at the flag or the variable that holds it.
  */
-export function apiOrigin(value: string): string {
+export function apiOrigin(value: string, source: '--api' | 'SPEC_LAYER_API' = '--api'): string {
   let url: URL;
   try {
     url = new URL(value);
   } catch {
-    throw new Error(`--api must be an origin such as ${DEFAULT_API}, not "${value}".`);
+    throw new Error(`${source} must be an origin such as ${DEFAULT_API}, not "${value}".`);
   }
   if (url.protocol !== 'https:' && !(url.protocol === 'http:' && LOOPBACK_HOSTS.has(url.hostname))) {
-    throw new Error(`--api must use https, since the pull key travels with every request. Plain http is allowed only for localhost. Got "${value}".`);
+    throw new Error(`${source} must use https, since the pull key travels with every request. Plain http is allowed only for localhost. Got "${value}".`);
   }
   return value.replace(/\/+$/, '');
 }
@@ -296,7 +297,7 @@ export function resolveOptions(
     libraryId,
     outDir,
     componentSpecsDir: config?.componentSpecsDir ?? DEFAULT_COMPONENT_SPECS_DIR,
-    api: apiOrigin(flags.api ?? env.SPEC_LAYER_API ?? DEFAULT_API),
+    api: apiOrigin(flags.api ?? env.SPEC_LAYER_API ?? DEFAULT_API, flags.api === undefined ? 'SPEC_LAYER_API' : '--api'),
     key: supplied ?? storedKey,
     ...(config?.componentSpecsFormat ? { componentSpecsFormat: config.componentSpecsFormat } : {}),
     ...(config?.include ? { include: config.include } : {}),

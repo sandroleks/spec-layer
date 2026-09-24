@@ -386,10 +386,14 @@ export async function runSetup(
 
   // Pass the key through rather than relying on a re-read of what was just
   // written, so the pull cannot disagree with the file.
-  const code = await runPull(cwd, { ...flags, key }, env, io, fetcher);
+  const outcome: PullOutcome = { retryable: false };
+  const code = await pullWith(cwd, { ...flags, key }, env, io, fetcher, outcome);
   if (code !== 0) {
     // Everything before the pull is on disk, so the reader should not redo it.
-    io.err('Setup is stored. Run spec-layer pull to retry.');
+    // Said only when a bare retry can help: after a 401, a 404, a refused
+    // directory, or a --strict report, the line above already says what to
+    // change, and a retry suggestion would contradict it.
+    if (outcome.retryable) io.err('Setup is stored. Run spec-layer pull to retry.');
     return code;
   }
   // The setup command is what a developer hands a coding agent, so the agent's
@@ -533,6 +537,19 @@ function publishedPhrase(version: string | null | undefined, publishedAt: string
 export async function runPull(
   cwd: string, flags: Flags, env: Record<string, string | undefined>, io: Io, fetcher?: typeof fetch,
 ): Promise<number> {
+  return pullWith(cwd, flags, env, io, fetcher, { retryable: false });
+}
+
+/** What runSetup needs to know about a failed pull beyond its exit code. */
+interface PullOutcome {
+  /** Set when the fetch failed in a way the same request can get past: the network, the timeout, or a 5xx. */
+  retryable: boolean;
+}
+
+async function pullWith(
+  cwd: string, flags: Flags, env: Record<string, string | undefined>, io: Io, fetcher: typeof fetch | undefined,
+  outcome: PullOutcome,
+): Promise<number> {
   const manifestAt = manifestReader();
   const opts = resolved(cwd, flags, env, io, manifestAt);
   if (!opts) return 1;
@@ -603,14 +620,17 @@ export async function runPull(
   });
   if (result.kind === 'error') {
     io.err(result.message);
+    outcome.retryable = result.retryable;
     return 1;
   }
   if (result.kind === 'not_modified') {
     if (!etag) {
       // The request carried no If-None-Match, so this 304 answers a question
       // that was never asked. Calling it success would report files that do
-      // not exist, or were judged stale above, as current.
-      io.err(`${opts.api} answered 304 Not Modified to a request that sent no If-None-Match, so there is nothing to keep and nothing was written. Run spec-layer pull again.`);
+      // not exist, or were judged stale above, as current. Files from an
+      // earlier pull can still be on disk (a changed selection or CLI sends
+      // no hash either), so the message does not say there are none.
+      io.err(`${opts.api} answered 304 Not Modified to a request that sent no If-None-Match, so it cannot be treated as current. Nothing was written, and files from an earlier pull, if any, are unchanged. Run spec-layer pull again.`);
       return 1;
     }
     io.out(`Already up to date ${publishedPhrase(result.version ?? manifest?.version, manifest?.publishedAt ?? 'unknown')}.`);

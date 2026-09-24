@@ -1336,7 +1336,10 @@ describe('runPull safety and freshness', () => {
 
     expect(code).toBe(1);
     expect(headerOf(fetcher, 'If-None-Match')).toBeUndefined();
-    expect(io.errLines.join('\n')).toContain('304 Not Modified');
+    expect(io.errLines).toEqual([
+      'https://api.spec-layer.com answered 304 Not Modified to a request that sent no If-None-Match, so it cannot be treated as current. '
+      + 'Nothing was written, and files from an earlier pull, if any, are unchanged. Run spec-layer pull again.',
+    ]);
     expect(io.outLines.join('\n')).not.toContain('Already up to date');
     expect(existsSync(join(cwd, '.speclayer'))).toBe(false);
   });
@@ -1595,7 +1598,27 @@ describe('runSetup', () => {
     expect(await runSetup(cwd, { id: LIB, key: KEY }, {}, io, stub401())).toBe(1);
     expect(stored().key).toBe(KEY);
     expect(readConfig(cwd)).toMatchObject({ libraryId: LIB });
-    expect(io.errLines.at(-1)).toBe('Setup is stored. Run spec-layer pull to retry.');
+    // A retry cannot fix a revoked key, so nothing contradicts the advice to
+    // run setup again from the Publish screen.
+    expect(io.errLines.at(-1)).toMatch(/rotated or revoked/);
+    expect(io.errLines.join('\n')).not.toContain('spec-layer pull');
+  });
+
+  it('suggests a retry after a network, timeout, or 5xx failure, and only then', async () => {
+    gitInit();
+    const RETRY = 'Setup is stored. Run spec-layer pull to retry.';
+    const down = vi.fn(async () => { throw new Error('network down'); }) as unknown as typeof fetch;
+    const status = (code: number) => vi.fn(async () => new Response(null, { status: code })) as unknown as typeof fetch;
+    for (const [label, fetcher] of [['network', down], ['503', status(503)]] as const) {
+      const io = makeIo();
+      expect(await runSetup(cwd, { id: LIB, key: KEY }, {}, io, fetcher), label).toBe(1);
+      expect(io.errLines.at(-1), label).toBe(RETRY);
+    }
+    for (const [label, fetcher] of [['403', status(403)], ['404', status(404)]] as const) {
+      const io = makeIo();
+      expect(await runSetup(cwd, { id: LIB, key: KEY }, {}, io, fetcher), label).toBe(1);
+      expect(io.errLines, label).not.toContain(RETRY);
+    }
   });
 
   /**

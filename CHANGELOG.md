@@ -27,9 +27,10 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
 
 The CLI hardening in this section ships as 0.11.0, a minor release because
 `--key -` is a new option and because three inputs the CLI used to accept are
-now refused: an absolute or parent `--out`, a plain-http `--api` to anything
-but localhost, and an `--id` that is not the shape the plugin issues. A
-repository on 0.10.0 re-projects once on its first pull with 0.11.0 through
+now refused: an absolute `--out`, a plain-http `--api` to anything but
+localhost, and an `--id` that is not the shape the plugin issues. A parent
+`--out` was already refused when the pull wrote; it is now refused before
+anything is fetched or written. A repository on 0.10.0 re-projects once on its first pull with 0.11.0 through
 the `manifest.cliVersion` check and gets byte-identical files. One kind of
 repository needs a step: earlier versions recorded `init --out /abs/x` in
 `speclayer.json` as-is and wrote every pull to `abs/x` inside the working
@@ -41,7 +42,10 @@ path, where the files already are, and says so in one line.
 
 - **The `spec-layer` tarball carries `LICENSE`.** The CLI build copies the
   repository's MIT license into the package directory, where npm always
-  includes it, and the bundle check fails when it is missing.
+  includes it, and the bundle check fails when it is missing. The bundle
+  check now also runs `tools --json` and `show component` from the built
+  artifact against a synthetic bundle, so a bundle that builds but cannot run
+  a command fails it.
 - **`--key -` reads the pull key from stdin.** A key on the command line is
   visible to shell history and to `ps` while the command runs. `setup`,
   `pull`, and `status` (the commands that resolve a key at all) now take
@@ -438,8 +442,11 @@ path, where the files already are, and says so in one line.
 
 - **`setup` says what survived a failed pull.** The config, the ignore entry,
   and the key are written before the pull, so a network or key failure left a
-  complete setup with an error as the last line. It now ends with `Setup is
-  stored. Run spec-layer pull to retry.`
+  complete setup with an error as the last line. When the fetch failed on the
+  network, timed out, or got a 5xx, it now ends with `Setup is stored. Run
+  spec-layer pull to retry.` After any other failure, such as a revoked key
+  or an unpublished library, it adds nothing, since a bare retry cannot help
+  and the error above already says what to do.
 - **The CLI names the Publish screen.** Four messages and two README lines
   sent the reader to a "Library screen" for the setup command and for key
   rotation; both live on the plugin's Publish screen, which `tools` already
@@ -453,8 +460,8 @@ path, where the files already are, and says so in one line.
   `AGENTS.md` or `GEMINI.md` holding `<!-- spec-layer:begin -->` without its
   end marker got a second block appended, and the next run replaced everything
   from the first marker to the new end, deleting the text in between. The file
-  is now left untouched and the command says which marker is missing or out
-  of order.
+  is now left untouched, and the command says both markers must be present,
+  in order, or both absent.
 - **A malformed `manifest.json` reads as no pull.** The file was cast to the
   manifest type without a check, so a hand-edited or truncated manifest could
   make `list` print `undefined` cells or `pull` compare a hash that was not a
@@ -476,26 +483,34 @@ path, where the files already are, and says so in one line.
   last pull's hash only when every file that pull wrote is still on disk and
   would be written the same way again. A server that answered 304 to a request
   carrying no hash was reported as `Already up to date` with nothing on disk to
-  be up to date. It now exits 1 and says what happened.
+  be up to date. It now exits 1, says nothing was written, and says that files
+  from an earlier pull, if any, are unchanged.
 - **A stalled server no longer hangs `spec-layer pull` or `status`.** Every
   request now carries a 30 second timeout that covers the headers and the
-  body, and a timeout is reported as `No response from <api> within 30
-  seconds.` A response body that cannot be read is reported in one sentence
+  body, and a timeout is reported as `<api> did not finish answering within
+  30 seconds.`, which is true whether the server never answered or a slow
+  body was still arriving. The limit is fixed, so a bundle that takes longer
+  than 30 seconds to download fails. A response body that cannot be read is reported in one sentence
   too; it used to escape as a stack trace.
 - **`spec-layer` refuses an output directory it would have mishandled.** An
   absolute `--out` was joined under the working directory and written there
   while every message named the absolute path; `--out` that names a file
   surfaced a raw `ENOTDIR`; and a directory whose name merely begins with two
-  dots (`..cache`) was refused as a parent. `pull`, `setup`, `init`, `list`,
-  `show`, and `skill` now refuse an absolute path, `.`, a parent, or a file
-  with one sentence before touching the network or writing `speclayer.json`,
-  and `..cache` is accepted. The same rule applies to `componentSpecsDir` and
+  dots (`..cache`) was refused as a parent. `pull`, `setup`, `init`,
+  `status`, `list`, `show`, and `skill` now refuse an absolute path, `.`, or a
+  parent with one sentence before touching the network or writing
+  `speclayer.json`, and `..cache` is accepted. A path that is a file is
+  refused in one sentence too, but only when the pull writes, which is after
+  the fetch, and for `setup` after `speclayer.json` and the key are written;
+  `status`, `list`, `show`, and `skill` only read, and report no local pull
+  there. The same rule applies to `componentSpecsDir` and
   `outputs[].path`, which share the check. A refusal names `--out` or
   `speclayer.json` `"outDir"`, whichever the value came from.
 - **`--api` and `SPEC_LAYER_API` must be https.** The pull key travels in the
   Authorization header of every request, and a plain `http://` origin sent it
   in the clear. Only `localhost`, `127.0.0.1`, and `[::1]` may use http, for a
-  local proxy build.
+  local proxy build. The refusal names `--api` or `SPEC_LAYER_API`, whichever
+  held the value.
 - **Publish and the snapshot download refuse a file with nothing in it.** The
   proxy accepts an empty bundle, so a file with no local variables or styles
   and no component docs used to publish anyway: a first publish created a

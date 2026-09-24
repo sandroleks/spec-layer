@@ -69,10 +69,11 @@ files without those fields. Markdown component pages (`componentSpecsFormat`
 and `--component-format`) need 0.10.0 or later. An earlier version ignores the
 key, and refuses to pull into a `component-specs/` that already holds
 Markdown pages, so every CLI that pulls a repository using Markdown needs
-0.10.0. `--key -` needs 0.11.0 or later; 0.11.0 also refuses an absolute or
-parent `--out`, a plain-http `--api` to anything but localhost, and an `--id`
-that is not the shape the plugin issues, all of which earlier versions
-accepted. Earlier versions recorded an absolute `--out` in `speclayer.json`
+0.10.0. `--key -` needs 0.11.0 or later; 0.11.0 also refuses an absolute
+`--out`, a plain-http `--api` to anything but localhost, and an `--id` that is
+not the shape the plugin issues, all of which earlier versions accepted. A
+parent `--out` was refused before too, when the pull wrote; 0.11.0 refuses it
+before anything is fetched or written. Earlier versions recorded an absolute `--out` in `speclayer.json`
 as-is and wrote every pull to that path inside the working directory, so
 `outDir: "/abs/x"` meant `abs/x`. 0.11.0 refuses that value and names the
 relative path to change it to; `setup` with no `--out`, the command the plugin
@@ -115,8 +116,8 @@ npx spec-layer skill --install
 ```
 
 `setup` names this command as the next step after a successful pull, and the
-plugin's Publish screen has a **Copy for an AI agent** button that copies the
-setup command already followed by it.
+plugin's Publish screen has an **AI agent setup** block whose Copy button
+copies the setup command already followed by it.
 
 The guide is built from three things and nothing else:
 
@@ -263,7 +264,8 @@ npx spec-layer setup --id lib_... --key -      # then paste the key and press En
 ```
 
 The first non-empty line is the key. Nothing arriving is an error, not an
-empty key.
+empty key. A key you paste at the prompt shows on screen as you paste it,
+though it still stays out of shell history and `ps`.
 
 Treat the key as a secret: it grants read access to the published bundle.
 `speclayer.local.json` is gitignored, never printed by any command, and never
@@ -332,10 +334,12 @@ output directory and rename into place, so an interrupted pull never leaves a
 half-written output directory and never removes a directory it did not
 create. A pull killed mid-write can leave that staging directory behind; it
 holds nothing the next pull needs and is safe to delete. The output directory
-is a relative path inside the working directory: `pull`, `setup`, and `init`
-refuse an absolute path, the current directory, a parent of it, a path that is
-a file, or an existing non-empty directory spec-layer did not write, since the
-swap replaces that directory. A name that merely begins with two dots, such as
+is a relative path inside the working directory: every command but `tools`
+refuses an absolute path, the current directory, or a parent of it before it
+fetches or writes anything. `pull`, and so `setup`, also refuses a path that is a file,
+or an existing non-empty directory spec-layer did not write, since the swap
+replaces that directory; that check runs when the pull writes, after the
+fetch. A name that merely begins with two dots, such as
 `..cache`, is an ordinary directory and is accepted.
 
 `component-specs/` and `tokens/` are written in place, not swapped. `pull`

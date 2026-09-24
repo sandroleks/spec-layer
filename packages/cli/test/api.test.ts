@@ -109,7 +109,7 @@ describe('fetchBundle', () => {
 
     const result = await fetchBundle({ api: 'https://api.example.com', libraryId: 'lib_1', key: 'sl_secret', fetcher, timeoutMs: 20 });
 
-    expect(result).toEqual({ kind: 'error', message: 'No response from https://api.example.com within 0.02 seconds.' });
+    expect(result).toEqual({ kind: 'error', message: 'https://api.example.com did not finish answering within 0.02 seconds.', retryable: true });
     const [, init] = (fetcher as unknown as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit];
     expect(init.signal).toBeInstanceOf(AbortSignal);
   });
@@ -128,7 +128,19 @@ describe('fetchBundle', () => {
 
     const result = await fetchBundle({ api: 'https://api.example.com', libraryId: 'lib_1', key: 'sl_secret', fetcher });
 
-    expect(result).toEqual({ kind: 'error', message: 'The response from https://api.example.com could not be read.' });
+    expect(result).toEqual({ kind: 'error', message: 'The response from https://api.example.com could not be read.', retryable: true });
+  });
+
+  it('marks only a network, timeout, or 5xx failure as worth retrying', async () => {
+    const withStatus = (status: number) => vi.fn(async () => new Response(null, { status })) as unknown as typeof fetch;
+    const retryable = async (fetcher: typeof fetch): Promise<unknown> => {
+      const result = await fetchBundle({ api: 'https://api.example.com', libraryId: 'lib_1', key: 'sl_secret', fetcher });
+      return (result as { retryable?: unknown }).retryable;
+    };
+    for (const status of [500, 502, 503, 504]) expect(await retryable(withStatus(status)), String(status)).toBe(true);
+    for (const status of [400, 401, 403, 404, 429]) expect(await retryable(withStatus(status)), String(status)).toBe(false);
+    const down = vi.fn(async () => { throw new Error('network down'); }) as unknown as typeof fetch;
+    expect(await retryable(down)).toBe(true);
   });
 
   it('URL-encodes the library id, so an id with a slash cannot change the path', async () => {
