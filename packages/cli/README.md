@@ -526,8 +526,8 @@ bump, never lower it.
 |---|---|
 | A component, property, option, variant axis, state, anatomy part, collection, mode, token, or style removed or renamed | major |
 | Any of those added | minor |
-| A binding, layout or effect value, token value, or style value changed, or a binding added or removed | patch |
-| A property's kind or default, or a part's type or visibility toggle, changed | patch |
+| A binding, layout or effect value, or token value added, removed, or changed, or a style value changed | patch |
+| A property's kind or default, a part's type or visibility toggle, a variant axis's default, or a token's type, collection, or scope, changed | patch |
 
 Pinned pulls (`pull --version`) are not available yet: `pull` always fetches
 the current version.
