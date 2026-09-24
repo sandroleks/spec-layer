@@ -12,7 +12,9 @@ import { buildBrand } from '../brand/build.mjs';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 // Fail the contrast gate before replacing any plugin artifact.
 await buildBrand();
-const dist = resolve(__dirname, 'dist');
+// PLUGIN_OUT_DIR lets a test build into a scratch directory instead of
+// replacing the developer's dist/. Relative values resolve against this file.
+const dist = resolve(__dirname, process.env.PLUGIN_OUT_DIR ?? 'dist');
 mkdirSync(dist, { recursive: true });
 
 const pkg = JSON.parse(readFileSync(resolve(__dirname, 'package.json'), 'utf-8'));

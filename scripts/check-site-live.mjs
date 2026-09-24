@@ -37,23 +37,23 @@ const SCHEMAS = [
 ];
 const MISSING_PATH = '/this-path-must-not-exist-' + Date.now();
 
-async function fetchText(url) {
+async function fetchBytes(url) {
   try {
     const res = await fetch(url, { redirect: 'follow' });
-    return { url, status: res.status, contentType: res.headers.get('content-type') || '', body: await res.text() };
+    return { url, status: res.status, contentType: res.headers.get('content-type') || '', body: Buffer.from(await res.arrayBuffer()) };
   } catch (err) {
     const reason = err instanceof Error ? (err.cause instanceof Error ? err.cause.message : err.message) : String(err);
-    return { url, status: 0, contentType: '', body: '', error: `${url}: could not be fetched (${reason})` };
+    return { url, status: 0, contentType: '', body: Buffer.alloc(0), error: `${url}: could not be fetched (${reason})` };
   }
 }
 
 const problems = [];
 for (const [path, committed] of SCHEMAS) {
-  const live = await fetchText(base + path);
+  const live = await fetchBytes(base + path);
   if (live.error) { problems.push(live.error); continue; }
-  problems.push(...evaluateSchema({ ...live, expected: readFileSync(resolve(repoRoot, committed), 'utf8') }));
+  problems.push(...evaluateSchema({ ...live, expected: readFileSync(resolve(repoRoot, committed)) }));
 }
-const missing = await fetchText(base + MISSING_PATH);
+const missing = await fetchBytes(base + MISSING_PATH);
 if (missing.error) problems.push(missing.error);
 else problems.push(...evaluateNotFound({ url: missing.url, status: missing.status }));
 
