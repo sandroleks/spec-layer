@@ -1,6 +1,4 @@
-export const BOOST_LIMIT = 20;
-export const BOOST_WINDOW_MS = 30 * 864e5;
-export const MONTHLY_LIMIT = 10;
+export const MONTHLY_LIMIT = 20;
 export const PRO_SOFT_THRESHOLD = 1000;
 export const RATE_LIMIT_PER_MIN = 10;
 /** Longer than `UPSTREAM_TIMEOUT_MS` in handlers.ts, so a reservation never lapses while its generation is still running. */
@@ -25,22 +23,18 @@ export const MAX_RETAINED_RESPONSES = 500;
 export const PUBLISH_MONTHLY_LIMIT = 10;
 
 export interface QuotaLimits {
-  /** null disables the first-sight boost window. */
-  boostLimit: number | null;
-  boostWindowMs: number;
   monthlyLimit: number;
 }
 
 export type QuotaProfile = 'ai' | 'publish';
 
 /**
- * Two things the engine counts, with different shapes. AI writing has a boost
- * because a new user tries many components at once. Publishing is a whole-file
- * action a few times a week, so a flat monthly number is the honest one.
+ * Two things the engine counts, each a flat number per UTC calendar month.
+ * They are counted separately, so writing prose never spends a publish.
  */
 export const QUOTA_PROFILES: Record<QuotaProfile, QuotaLimits> = {
-  ai: { boostLimit: BOOST_LIMIT, boostWindowMs: BOOST_WINDOW_MS, monthlyLimit: MONTHLY_LIMIT },
-  publish: { boostLimit: null, boostWindowMs: 0, monthlyLimit: PUBLISH_MONTHLY_LIMIT },
+  ai: { monthlyLimit: MONTHLY_LIMIT },
+  publish: { monthlyLimit: PUBLISH_MONTHLY_LIMIT },
 };
 
 /**
@@ -144,8 +138,6 @@ interface LegacyResponseEntry extends ResponseEntry { body?: string }
 export interface LegacyBody { cacheKey: string; body: string; at: number }
 
 interface State {
-  firstSeen: number | null;
-  boostUsed: number;
   months: Record<string, number>;              // 'YYYY-MM' -> committed count
   reservations: Record<string, number>;        // cacheKey -> reservedAt
   responses: Record<string, ResponseEntry>;    // cacheKey -> committed at; the body is under its own storage key
@@ -157,7 +149,7 @@ interface State {
 }
 
 const fresh = (): State => ({
-  firstSeen: null, boostUsed: 0, months: {}, reservations: {}, responses: {}, recent: [],
+  months: {}, reservations: {}, responses: {}, recent: [],
   locks: {}, pendingCreates: {}, libraries: 0, heads: {},
 });
 
@@ -175,6 +167,11 @@ export class QuotaEngine {
 
   constructor(json?: string, private limits: QuotaLimits = QUOTA_PROFILES.ai) {
     this.s = json ? { ...fresh(), ...(JSON.parse(json) as State) } : fresh();
+    // A blob written while AI writing had a first-sight boost window carries
+    // its two fields. Nothing reads them now, so they are dropped on load.
+    const retired = this.s as State & { firstSeen?: unknown; boostUsed?: unknown };
+    delete retired.firstSeen;
+    delete retired.boostUsed;
     // A blob written before the split carries each body inline. Lift them out
     // so the counter stays small; the store writes them under their own keys.
     for (const [cacheKey, entry] of Object.entries(this.s.responses as Record<string, LegacyResponseEntry>)) {
@@ -224,24 +221,7 @@ export class QuotaEngine {
     for (const key of keys.slice(0, keys.length - MAX_RETAINED_RESPONSES)) this.forgetResponse(key);
   }
 
-  // A never-seen identity is treated as starting its boost window "now" so
-  // that a quota peek (GET /v1/quota before any generation) reports boost
-  // limits rather than falling through to the monthly rules.
-  private inBoost(now: number): boolean {
-    if (this.limits.boostLimit === null) return false;
-    const first = this.s.firstSeen ?? now;
-    return now < first + this.limits.boostWindowMs;
-  }
-
   private freeUsage(now: number): { used: number; limit: number; resetsAt: string } {
-    const first = this.s.firstSeen ?? now;
-    if (this.inBoost(now) && this.limits.boostLimit !== null) {
-      return {
-        used: this.s.boostUsed,
-        limit: this.limits.boostLimit,
-        resetsAt: new Date(first + this.limits.boostWindowMs).toISOString(),
-      };
-    }
     return {
       used: this.s.months[monthKey(now)] ?? 0,
       limit: this.limits.monthlyLimit,
@@ -270,7 +250,6 @@ export class QuotaEngine {
 
   reserve(tier: Tier, cacheKey: string, now: number, opts: ReserveOptions = {}): EngineReserveResult {
     this.prune(now);
-    if (this.s.firstSeen === null) this.s.firstSeen = now;
     // Idempotent retry: a committed generation within 24h is served from cache.
     const hit = this.s.responses[cacheKey];
     if (hit && now - hit.at < RESPONSE_TTL_MS) return { kind: 'cached' };
@@ -335,7 +314,6 @@ export class QuotaEngine {
     // store delete the body this commit is about to write.
     this.evicted = this.evicted.filter((k) => k !== cacheKey);
     this.capResponses();
-    if (this.inBoost(now)) this.s.boostUsed += 1;
     const mk = monthKey(now);
     this.s.months[mk] = (this.s.months[mk] ?? 0) + 1;
   }

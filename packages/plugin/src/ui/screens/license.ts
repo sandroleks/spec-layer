@@ -134,8 +134,9 @@ function planCard(model: LicenseScreenModel): string {
   // Says it once. Pro has no monthly cap, but PRO_SOFT_THRESHOLD and the
   // per-minute rate limit still apply, so "unlimited" is the word voice rule 6
   // tells us not to use here. The file counts are the proxy's LIBRARY_LIMITS
-  // (1 free, 10 Pro). The free line names no AI or publish number: the AI
-  // allowance changes after the first 30 days, and the meter carries it.
+  // (1 free, 10 Pro). The free line names no AI or publish number: the proxy
+  // owns those limits and can change them without a plugin release, and the
+  // meter carries the number it reports.
   const detail = isPro
     ? 'Up to 10 published Figma files, no monthly cap on AI writing or publishing'
     : isUnknown

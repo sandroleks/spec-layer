@@ -6,6 +6,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed
+
+- Free AI writing is now a flat 20 generations per UTC calendar month. It
+  was 20 in the first 30 days after first use and then 10 a month; the
+  first-sight boost window is gone from the proxy's quota engine, and its
+  two stored fields (`firstSeen`, `boostUsed`) are dropped when a counter
+  loads. Every generation was already counted by month, so a free user
+  keeps this month's count and moves straight to the new limit, with no
+  migration. This is a proxy change only: the plugin reads the limit from
+  the proxy's quota headers, so no plugin release is needed. Publishing
+  limits are unchanged.
+
 ## [6.0.0] - 2026-09-24
 
 Plugin 6.0.0 is a major release because every existing document asks to be

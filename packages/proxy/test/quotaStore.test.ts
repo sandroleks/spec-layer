@@ -29,17 +29,17 @@ describe('QuotaStore', () => {
   });
 
   it('migrates a pre-split engine blob once: bodies move to their keys, expired ones are dropped', async () => {
+    const month = new Date(T0).toISOString().slice(0, 7);
     const storage = new MemDoStorage();
     storage.map.set(ENGINE_KEY, JSON.stringify({
-      firstSeen: T0 - 2 * RESPONSE_TTL_MS, boostUsed: 2, months: {}, reservations: {}, recent: [],
+      firstSeen: T0 - 2 * RESPONSE_TTL_MS, boostUsed: 2, months: { [month]: 2 }, reservations: {}, recent: [],
       responses: {
         fresh: { body: '{"id":"fresh"}', at: T0 - 1000 },
         stale: { body: '{"id":"stale"}', at: T0 - RESPONSE_TTL_MS - 1 },
       },
     }));
     const store = new QuotaStore(storage, QUOTA_PROFILES.ai);
-    // A read is enough to migrate, and the counter survives it: still in the
-    // boost window, so `used` is the stored boostUsed.
+    // A read is enough to migrate, and the month's counter survives it.
     expect((await store.snapshot('free', T0)).used).toBe(2);
     expect(storage.map.get(responseKey('fresh'))).toBe('{"id":"fresh"}');
     expect(storage.map.has(responseKey('stale'))).toBe(false);
@@ -59,8 +59,9 @@ describe('QuotaStore', () => {
     const store = new QuotaStore(storage, QUOTA_PROFILES.ai);
     await store.snapshot('free', T0);
     const migrated = JSON.parse(storage.map.get(ENGINE_KEY) as string) as Record<string, unknown>;
+    const { firstSeen: _firstSeen, boostUsed: _boostUsed, ...kept } = legacy;
     expect(migrated).toEqual({
-      ...legacy,
+      ...kept,
       responses: { a: { at: T0 - 2000 }, b: { at: T0 - 1500 } },
       locks: {}, pendingCreates: {}, libraries: 0, heads: {},
     });
@@ -80,7 +81,7 @@ describe('QuotaStore', () => {
 
   it('a migration cut off before the engine write leaves the legacy record intact and completes on the next read', async () => {
     const legacy = {
-      firstSeen: T0 - 1000, boostUsed: 3, months: {}, reservations: {}, recent: [],
+      firstSeen: T0 - 1000, boostUsed: 3, months: { [new Date(T0).toISOString().slice(0, 7)]: 3 }, reservations: {}, recent: [],
       responses: { a: { body: '{"id":"a"}', at: T0 - 2000 }, b: { body: '{"id":"b"}', at: T0 - 1500 } },
     };
     const storage = new MemDoStorage();

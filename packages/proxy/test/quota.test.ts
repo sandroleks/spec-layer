@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { QuotaEngine, BOOST_LIMIT, BOOST_WINDOW_MS, MONTHLY_LIMIT, RESERVATION_TTL_MS, RESPONSE_TTL_MS, HEAD_TTL_MS, RATE_LIMIT_PER_MIN, PRO_SOFT_THRESHOLD, QUOTA_PROFILES, PUBLISH_MONTHLY_LIMIT, MAX_RETAINED_RESPONSES, quotaObjectName } from '../src/quota';
+import { QuotaEngine, MONTHLY_LIMIT, RESERVATION_TTL_MS, RESPONSE_TTL_MS, HEAD_TTL_MS, RATE_LIMIT_PER_MIN, PRO_SOFT_THRESHOLD, QUOTA_PROFILES, PUBLISH_MONTHLY_LIMIT, MAX_RETAINED_RESPONSES, quotaObjectName } from '../src/quota';
 
 const T0 = Date.parse('2026-07-01T00:00:00Z');
 const DAY = 864e5;
@@ -25,27 +25,36 @@ function burn(e: QuotaEngine, n: number, at: number, prefix = 'k') {
 }
 
 describe('QuotaEngine free tier', () => {
-  it('allows 20 in the 30-day boost window, then exhausts', () => {
+  it('allows 20 per calendar month from first sight, then exhausts', () => {
     const e = new QuotaEngine();
-    burn(e, BOOST_LIMIT, T0);
+    expect(MONTHLY_LIMIT).toBe(20);
+    burn(e, MONTHLY_LIMIT, T0);
     const r = e.reserve('free', 'k-over', T0 + DAY);
-    expect(r.kind).toBe('exhausted');
-    if (r.kind === 'exhausted') {
-      expect(r.resetsAt).toBe(new Date(T0 + BOOST_WINDOW_MS).toISOString());
-    }
+    expect(r).toEqual({ kind: 'exhausted', resetsAt: '2026-08-01T00:00:00.000Z' });
   });
 
-  it('after the boost window, allows 10 per calendar month', () => {
+  it('starts each UTC calendar month at zero', () => {
     const e = new QuotaEngine();
-    burn(e, 5, T0);                       // firstSeen = T0, some boost usage
-    const aug = Date.parse('2026-08-15T00:00:00Z'); // boost over
+    burn(e, 5, T0);
+    const aug = Date.parse('2026-08-15T00:00:00Z');
+    expect(e.snapshot('free', aug)).toMatchObject({ used: 0, limit: MONTHLY_LIMIT, remaining: MONTHLY_LIMIT });
     burn(e, MONTHLY_LIMIT, aug, 'm');
     const r = e.reserve('free', 'm-over', aug + DAY);
-    expect(r.kind).toBe('exhausted');
-    if (r.kind === 'exhausted') expect(r.resetsAt).toBe('2026-09-01T00:00:00.000Z');
-    // new month resets
+    expect(r).toEqual({ kind: 'exhausted', resetsAt: '2026-09-01T00:00:00.000Z' });
     const sep = Date.parse('2026-09-02T00:00:00Z');
     expect(e.reserve('free', 'sep-1', sep).kind).toBe('proceed');
+  });
+
+  it('counts a blob written during the retired boost window by its month, and drops the boost fields', () => {
+    const month = new Date(T0).toISOString().slice(0, 7);
+    const e = new QuotaEngine(JSON.stringify({
+      firstSeen: T0 - DAY, boostUsed: 15, months: { [month]: 15 }, reservations: {}, responses: {}, recent: [],
+    }));
+    expect(e.snapshot('free', T0)).toEqual({
+      tier: 'free', used: 15, limit: MONTHLY_LIMIT, remaining: MONTHLY_LIMIT - 15, resetsAt: '2026-08-01T00:00:00.000Z',
+    });
+    expect(e.toJSON()).not.toContain('firstSeen');
+    expect(e.toJSON()).not.toContain('boostUsed');
   });
 
   it('only commit decrements; an un-committed reserve does not count', () => {
@@ -54,7 +63,7 @@ describe('QuotaEngine free tier', () => {
     e.release('a', T0);
     const s = e.snapshot('free', T0 + 1);
     expect(s.used).toBe(0);
-    expect(s.limit).toBe(BOOST_LIMIT);
+    expect(s.limit).toBe(MONTHLY_LIMIT);
   });
 
   it('serializes and rehydrates', () => {
@@ -196,7 +205,7 @@ describe('QuotaEngine rate limit + pro', () => {
 });
 
 describe('QuotaEngine publish profile', () => {
-  it('has no boost window: the monthly limit applies from first sight', () => {
+  it('applies the monthly limit from first sight', () => {
     const e = new QuotaEngine(undefined, QUOTA_PROFILES.publish);
     const snap = e.snapshot('free', T0);
     expect(snap.limit).toBe(PUBLISH_MONTHLY_LIMIT);
@@ -220,9 +229,9 @@ describe('QuotaEngine publish profile', () => {
     expect(again.snapshot('free', T0 + 3 * 60_000).used).toBe(3);
   });
 
-  it('the ai profile is the default and keeps the boost window', () => {
-    expect(QUOTA_PROFILES.ai).toEqual({ boostLimit: BOOST_LIMIT, boostWindowMs: BOOST_WINDOW_MS, monthlyLimit: MONTHLY_LIMIT });
-    expect(new QuotaEngine().snapshot('free', T0).limit).toBe(BOOST_LIMIT);
+  it('the ai profile is the default and has its own monthly limit', () => {
+    expect(QUOTA_PROFILES.ai).toEqual({ monthlyLimit: MONTHLY_LIMIT });
+    expect(new QuotaEngine().snapshot('free', T0).limit).toBe(MONTHLY_LIMIT);
   });
 });
 

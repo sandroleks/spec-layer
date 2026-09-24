@@ -84,13 +84,13 @@ import {
  * Each fixture must actually render the tone it is named after. LOW_REMAINING
  * is 5, so a "normal" fixture needs more than 5 remaining: 4 of 5 would render
  * amber and quietly invalidate every visual check made against it. Limits track
- * the real free tier, MONTHLY_LIMIT = 10.
+ * the real free tier, MONTHLY_LIMIT = 20.
  */
 const ALLOWANCES: Record<string, AllowanceState> = {
   loading: { kind: 'loading' },
-  normal: { kind: 'free', remaining: 8, limit: 10, resetsAt: '2026-08-01T00:00:00Z' },
-  low: { kind: 'free', remaining: 4, limit: 10, resetsAt: '2026-08-01T00:00:00Z' },
-  exhausted: { kind: 'free', remaining: 0, limit: 10, resetsAt: '2026-08-01T00:00:00Z' },
+  normal: { kind: 'free', remaining: 16, limit: 20, resetsAt: '2026-08-01T00:00:00Z' },
+  low: { kind: 'free', remaining: 4, limit: 20, resetsAt: '2026-08-01T00:00:00Z' },
+  exhausted: { kind: 'free', remaining: 0, limit: 20, resetsAt: '2026-08-01T00:00:00Z' },
   pro: { kind: 'pro' },
   unknown: { kind: 'unknown', message: 'Couldn’t check your plan' },
 };
