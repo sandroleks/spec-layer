@@ -255,7 +255,48 @@
     "type": "color",
     "scopes": [
       "FRAME_FILL"
-    ]
+    ],
+    "omitted": true,
+    "values": {
+      "Light": {
+        "kind": "alias",
+        "reference": {
+          "target_id": "VariableID:external-readable",
+          "target_collection_id": "CollectionID:external-core",
+          "target_path": [
+            "color",
+            "shared"
+          ],
+          "external": true,
+          "source_library_name": "Deprecated Core"
+        },
+        "resolved": {
+          "status": "unresolved",
+          "reason": "source_library_unavailable",
+          "value": null,
+          "chain": []
+        }
+      },
+      "Dark": {
+        "kind": "alias",
+        "reference": {
+          "target_id": "VariableID:external-readable",
+          "target_collection_id": "CollectionID:external-core",
+          "target_path": [
+            "color",
+            "shared"
+          ],
+          "external": true,
+          "source_library_name": "Deprecated Core"
+        },
+        "resolved": {
+          "status": "unresolved",
+          "reason": "source_library_unavailable",
+          "value": null,
+          "chain": []
+        }
+      }
+    }
   },
   "Semantic.color.legacy.unreadable": {
     "id": "VariableID:external-owner-unreadable",
@@ -263,7 +304,40 @@
     "type": "color",
     "scopes": [
       "FRAME_FILL"
-    ]
+    ],
+    "omitted": true,
+    "values": {
+      "Light": {
+        "kind": "alias",
+        "reference": {
+          "target_id": "VariableID:external-unreadable",
+          "target_collection_id": null,
+          "target_path": [],
+          "external": true
+        },
+        "resolved": {
+          "status": "unresolved",
+          "reason": "source_library_unavailable",
+          "value": null,
+          "chain": []
+        }
+      },
+      "Dark": {
+        "kind": "alias",
+        "reference": {
+          "target_id": "VariableID:external-unreadable",
+          "target_collection_id": null,
+          "target_path": [],
+          "external": true
+        },
+        "resolved": {
+          "status": "unresolved",
+          "reason": "source_library_unavailable",
+          "value": null,
+          "chain": []
+        }
+      }
+    }
   },
   "Semantic.color.surface.primary": {
     "id": "VariableID:chain-owner",

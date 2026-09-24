@@ -199,31 +199,34 @@ const referenceKey = (reference: Pick<RefIdentity, 'kind' | 'id'>): string =>
 
 const bindingKey = (binding: ComponentBindingV5): string => canonicalJson(binding);
 
-function entityExists(
-  foundation: FoundationArtifactV5,
-  reference: RefIdentity,
-): boolean {
-  if (reference.kind === 'variable') {
-    return foundation.tokens.some((token) => token.id === reference.id);
-  }
-  if (reference.kind === 'text-style') {
-    return foundation.styles.typography.some((style) => style.id === reference.id);
-  }
-  if (reference.kind === 'effect-style') {
-    return foundation.styles.effects.some((style) => style.id === reference.id);
-  }
+/** The Foundation's entity ids by kind, built once per copy so every
+ *  reference is a set lookup rather than a scan of the token list. */
+interface FoundationIndex { tokens: Set<string>; typography: Set<string>; effects: Set<string> }
+
+function indexFoundation(foundation: FoundationArtifactV5): FoundationIndex {
+  return {
+    tokens: new Set(foundation.tokens.map((token) => token.id)),
+    typography: new Set(foundation.styles.typography.map((style) => style.id)),
+    effects: new Set(foundation.styles.effects.map((style) => style.id)),
+  };
+}
+
+function entityExists(index: FoundationIndex, reference: RefIdentity): boolean {
+  if (reference.kind === 'variable') return index.tokens.has(reference.id);
+  if (reference.kind === 'text-style') return index.typography.has(reference.id);
+  if (reference.kind === 'effect-style') return index.effects.has(reference.id);
   return false;
 }
 
 function referenceStatus(
   reference: RefIdentity,
-  foundation: FoundationArtifactV5 | undefined,
+  foundation: { artifact: FoundationArtifactV5; index: FoundationIndex } | undefined,
 ): ComponentReferenceStatus {
   if (reference.kind === 'paint-style') return 'not_extracted';
   if (reference.remote) return 'external';
   if (foundation === undefined) return 'no_foundation';
-  if (entityExists(foundation, reference)) return 'resolved';
-  if (foundation.completeness.unavailable_sources.includes(reference.id)) return 'unavailable';
+  if (entityExists(foundation.index, reference)) return 'resolved';
+  if (foundation.artifact.completeness.unavailable_sources.includes(reference.id)) return 'unavailable';
   return 'not_in_snapshot';
 }
 
@@ -235,6 +238,7 @@ function referencesOf(
   const usedKeys = new Set<string>();
   const bindings: ComponentBindingV5[] = [];
   const bindingKeys = new Set<string>();
+  const indexed = foundation ? { artifact: foundation, index: indexFoundation(foundation) } : undefined;
 
   const addUsed = (reference: RefIdentity): void => {
     const key = referenceKey(reference);
@@ -246,7 +250,7 @@ function referencesOf(
       kind: reference.kind,
       remote: reference.remote,
       ...(reference.collectionId ? { collection_id: reference.collectionId } : {}),
-      status: referenceStatus(reference, foundation),
+      status: referenceStatus(reference, indexed),
     });
   };
   const addBinding = (binding: ComponentBindingV5): void => {
@@ -546,7 +550,12 @@ function componentValidation(
       if (token === undefined) continue;
       const collection = collections.get(token.collection_id);
       if (collection === undefined) continue;
-      const value = resolvedValueOf(token.values[collection.default_mode_id]);
+      // A default mode the collection does not declare is a Level 2 finding
+      // on the Foundation (UNRESOLVED_REFERENCE), not a reason for the
+      // component copy to throw: the rule simply has no resolved number.
+      const canonical = token.values[collection.default_mode_id];
+      if (canonical === undefined) continue;
+      const value = resolvedValueOf(canonical);
       if (value?.type === 'number') resolved.set(rule.id, value.value);
       if (value?.type === 'dimension') resolved.set(rule.id, value.number);
     }

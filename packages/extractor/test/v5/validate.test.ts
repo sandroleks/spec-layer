@@ -519,4 +519,14 @@ describe('validateLevel2', () => {
     expect(found.some((d) => d.code === 'ALIAS_CYCLE')).toBe(false);
     expect(found.some((d) => d.code === 'UNRESOLVED_ALIAS')).toBe(true);
   });
+
+  it('replays every hop of a complete 300-link chain from every root without a finding', () => {
+    // The 5,000-link fixture records one hop per token and claims resolution,
+    // so its replay stops at the second hop. This one records the whole
+    // chain from every root, so `checkChainTruth` walks the full depth from
+    // each of the 300 roots (about 45,000 hops in all). The replay is
+    // O(roots x depth) and not memoized; that is accepted at this size.
+    const found = validateLevel2(artifactWithChainOfLength(300, { completeChains: true }));
+    expect(found.filter((d) => d.code === 'UNRESOLVED_ALIAS' || d.code === 'ALIAS_CYCLE')).toEqual([]);
+  });
 });

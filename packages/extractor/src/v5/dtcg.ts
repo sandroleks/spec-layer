@@ -33,7 +33,7 @@ export type DtcgTree = { [key: string]: DtcgJson };
 
 export type DtcgReportCode =
   | 'segment_split' | 'name_escaped' | 'path_collision' | 'type_not_expressible'
-  | 'unit_not_expressible' | 'unit_override_conflicts_with_scope'
+  | 'unit_not_expressible' | 'unit_override_conflicts_with_scope' | 'unit_override_unmatched'
   | 'mode_selection_not_expressible' | 'value_omitted' | 'effect_not_expressible'
   | 'duplicate_code_syntax' | 'collection_name_collision' | 'binding_dropped'
   | 'alias_type_mismatch' | 'unit_derived_from_usage';
@@ -158,6 +158,12 @@ const RESERVED_FILE_NAMES: readonly string[] = [
   'resolver.json', 'spec-layer.meta.json', 'report.json',
 ];
 
+/** The set names the resolver writes for styles. A collection label must never
+ *  land on one: a single-mode collection named "Typography styles" would
+ *  otherwise share a `sets` entry with the typography file, and whichever
+ *  was written last would win. */
+const RESERVED_SET_NAMES: readonly string[] = ['Typography styles', 'Effect styles'];
+
 /** `<collection>.<mode>.json`, with `-2`, `-3` on a slug collision with an
  *  already taken or reserved name. */
 export function fileNameFor(
@@ -271,6 +277,9 @@ export function sortTree(value: DtcgJson): DtcgJson {
 interface Projection {
   artifact: FoundationArtifactV5;
   options: { values: DtcgValueStyle; units?: Record<string, 'px' | 'rem'> };
+  /** `options.units` compiled once, in key order. Not part of `options`, so
+   *  `config_hash` still digests exactly what the repository wrote. */
+  unitOverrides: UnitOverride[];
   /** Units derived from stated usage, keyed by token id. Deliberately NOT part
    *  of `options`: `config_hash` digests the repository's configuration, and
    *  this is read off the published library, not configured. */
@@ -291,6 +300,13 @@ interface Projection {
   /** token id -> segments including the collection head. */
   segmentsById: Map<string, string[]>;
   omittedIds: Set<string>;
+  /** token id -> the ids of the modes of its own collection in which it writes
+   *  no leaf, for a token that writes one in at least one other mode. Filled
+   *  by `findDeadTokens`; empty before it runs. A reference may point at such a
+   *  token only from a file that declares it: the same mode of the same
+   *  collection, never across collections, and never from a style, since a
+   *  resolver can load either beside any context of the target's collection. */
+  deadModesById: Map<string, ReadonlySet<string>>;
   /** The subset of `omittedIds` dropped because two tokens reached one DTCG
    *  path. Their sidecar keys carry the token id, since the path does not
    *  identify them. */
@@ -355,15 +371,64 @@ function indexPaths(p: Projection): void {
       p.pathById.set(tokens[0].id, path);
       continue;
     }
-    for (const token of tokens) {
-      p.omittedIds.add(token.id);
-      p.collidedIds.add(token.id);
+    // By id, not artifact order, so the entries and each `ids` list come out
+    // the same however the file lists the colliding tokens.
+    const ids = tokens.map((t) => t.id).sort(compareCodeUnits);
+    for (const id of ids) {
+      p.omittedIds.add(id);
+      p.collidedIds.add(id);
       reportOnce(p, {
         code: 'path_collision', severity: 'error', path,
         message: `${tokens.length} tokens map to this DTCG path; all of them were omitted so that none replaces another.`,
-        details: { id: token.id, ids: tokens.map((t) => t.id) },
+        details: { id, ids: [...ids] },
       });
     }
+  }
+}
+
+/**
+ * A token whose DTCG path is a proper prefix of a surviving token's path
+ * would have to be a leaf and a group at once. DTCG has no such node, and
+ * `setLeaf` would otherwise nest the longer path inside the shorter one's
+ * leaf, or let the shorter one replace the group, depending on which token
+ * the artifact listed first. The token AT the prefix is omitted, so the
+ * output is the same in either order and the tokens beneath it keep their
+ * group; the sidecar keeps the omitted token's values like any other omitted
+ * token. Runs after `omitInexpressibleTypes`, so a descendant DTCG has no
+ * type for never creates a group. That only holds for a type omission: this
+ * runs before `stabilizeAliasChains` decides which survivors never actually
+ * write a leaf, so a descendant that turns out to be dead by that later,
+ * value-dependent reckoning can still make its own ancestor a group here --
+ * the two checks answer different questions (can this path structurally hold
+ * both a leaf and a group, versus does this token's value ever resolve) and
+ * are not run to a joint fixed point.
+ */
+function omitGroupConflicts(p: Projection): void {
+  const survivors = [...p.pathById.keys()].filter((id) => !p.omittedIds.has(id));
+  const descendantsByPrefix = new Map<string, string[]>();
+  for (const id of survivors) {
+    const segments = p.segmentsById.get(id) ?? [];
+    for (let length = 1; length < segments.length; length += 1) {
+      const prefix = segments.slice(0, length).join('.');
+      let list = descendantsByPrefix.get(prefix);
+      if (list === undefined) {
+        list = [];
+        descendantsByPrefix.set(prefix, list);
+      }
+      list.push(id);
+    }
+  }
+  for (const id of survivors) {
+    const path = p.pathById.get(id);
+    if (path === undefined) continue;
+    const descendants = descendantsByPrefix.get(path);
+    if (descendants === undefined) continue;
+    p.omittedIds.add(id);
+    reportOnce(p, {
+      code: 'path_collision', severity: 'error', path,
+      message: `${descendants.length} token${descendants.length === 1 ? ' nests' : 's nest'} under this DTCG path, which makes it a group; the token whose own path this is was omitted, because a DTCG node cannot carry a $value and child tokens at once, and keeping either would depend on which token the artifact listed first.`,
+      details: { id, ids: [id, ...[...descendants].sort(compareCodeUnits)], reason: 'group' },
+    });
   }
 }
 
@@ -371,18 +436,77 @@ function modeName(collection: CollectionV5, modeId: string): string {
   return collection.modes.find((m) => m.id === modeId)?.name ?? modeId;
 }
 
-/** `Collection/glob` -> matcher over a token's Figma name within that collection. */
-function unitOverrideFor(p: Projection, token: TokenV5, collection: CollectionV5): 'px' | 'rem' | undefined {
-  const units = p.options.units;
-  if (!units) return undefined;
+interface UnitOverride { key: string; collectionId: string; unit: 'px' | 'rem'; glob: RegExp }
+
+/**
+ * `Collection/glob` overrides, compiled once per projection rather than once
+ * per token per mode. A key names a collection by its FULL name followed by
+ * `/`, so a collection whose own name contains a slash is matched whole
+ * instead of being cut at its first slash. A key that begins with two
+ * collection names followed by `/`, as `Brand/Core/spacing/*` does for
+ * collections `Brand` and `Brand/Core`, compiles once for each, since the key
+ * alone does not say which one was meant.
+ */
+function compileUnitOverrides(
+  units: Record<string, 'px' | 'rem'> | undefined, collections: CollectionV5[],
+): UnitOverride[] {
+  if (!units) return [];
+  const out: UnitOverride[] = [];
   for (const key of Object.keys(units).sort(compareCodeUnits)) {
-    const slash = key.indexOf('/');
-    if (slash === -1 || key.slice(0, slash) !== collection.name) continue;
-    const glob = key.slice(slash + 1);
-    const escaped = glob.split('*').map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*');
-    if (new RegExp(`^${escaped}$`).test(token.name)) return units[key];
+    for (const collection of collections) {
+      if (!key.startsWith(`${collection.name}/`)) continue;
+      const glob = key.slice(collection.name.length + 1);
+      const escaped = glob.split('*').map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*');
+      out.push({ key, collectionId: collection.id, unit: units[key], glob: new RegExp(`^${escaped}$`) });
+    }
+  }
+  return out;
+}
+
+/** The first override, in key order, whose glob matches the token's Figma name within its collection. */
+function unitOverrideFor(p: Projection, token: TokenV5, collection: CollectionV5): 'px' | 'rem' | undefined {
+  for (const override of p.unitOverrides) {
+    if (override.collectionId === collection.id && override.glob.test(token.name)) return override.unit;
   }
   return undefined;
+}
+
+/**
+ * An override that changed nothing used to do so silently. Each key is
+ * checked against every token of the collections it names, independently of
+ * which tokens got a leaf, so an override aimed only at string tokens is
+ * still "matched" and the entry is about the key, not about a value.
+ */
+function reportUnmatchedUnitOverrides(p: Projection): void {
+  const units = p.options.units;
+  if (!units) return;
+  const tokensByCollection = new Map<string, TokenV5[]>();
+  for (const token of p.artifact.tokens) {
+    let list = tokensByCollection.get(token.collection_id);
+    if (list === undefined) {
+      list = [];
+      tokensByCollection.set(token.collection_id, list);
+    }
+    list.push(token);
+  }
+  for (const key of Object.keys(units).sort(compareCodeUnits)) {
+    const compiled = p.unitOverrides.filter((o) => o.key === key);
+    const matched = compiled.some((o) =>
+      (tokensByCollection.get(o.collectionId) ?? []).some((t) => o.glob.test(t.name)));
+    if (matched) continue;
+    const collection = compiled.length > 0 ? p.collectionById.get(compiled[0].collectionId) : undefined;
+    reportOnce(p, {
+      code: 'unit_override_unmatched', severity: 'info',
+      path: collection ? dtcgSegments(collection.name).segments.join('.') : key,
+      message: compiled.length === 0
+        ? 'A `dtcg.units` override in `speclayer.json` names no collection in this artifact, so it changed nothing; the key is the collection\'s full name, a `/`, and a glob over token names.'
+        : 'A `dtcg.units` override in `speclayer.json` names a collection, but its glob matches none of that collection\'s token names, so it changed nothing.',
+      details: {
+        override: key, unit: units[key],
+        reason: compiled.length === 0 ? 'no_such_collection' : 'no_matching_token',
+      },
+    });
+  }
 }
 
 /**
@@ -418,12 +542,15 @@ function reportPathOf(p: Projection, token: TokenV5): string {
  *
  * Every call site that projects a literal passes one of these, including the
  * two that project a chain TERMINAL rather than the token whose leaf is being
- * built. Those two reach tokens the mode loop never builds a leaf for -- an
- * omitted or collided terminal is skipped there -- and without this the unit
- * they derive for it would reach the output with no entry naming it, which is
- * the one thing a derived unit may never do. `reportOnce` keys on the entry's
- * own contents, so the ordinary case, where the terminal's own leaf reports
- * the same fact, still yields exactly one entry.
+ * built (`aliasLeafType`, `terminalOwnType`). In the final build those two
+ * run only for an alias whose direct target writes a leaf in every mode a
+ * resolver can pair with it, so each hop, the terminal included, writes its
+ * own leaf in the mode the chain passes through, and that leaf reports the
+ * same fact; `reportOnce` keys on the entry's own contents, so the two yield
+ * exactly one entry. The owner is passed there anyway: should a chain ever
+ * disagree with the references it was recorded from, a unit derived for the
+ * terminal still reaches the output with an entry naming it, never without
+ * one.
  */
 function ownerFor(p: Projection, token: TokenV5): ProjectedOwner {
   const path = reportPathOf(p, token);
@@ -566,11 +693,12 @@ function modeLabels(collection: CollectionV5): Map<string, string> {
   return new Map(collection.modes.map((m) => [m.id, counts.get(m.name) === 1 ? m.name : `${m.name} [${m.id}]`]));
 }
 
-/** Collection labels unique across the artifact, by the same rule as modes.
- *  Two Figma collections may share a display name, and keying the resolver by
- *  the bare name would drop one of them. */
+/** Collection labels unique across the artifact, by the same rule as modes,
+ *  and never equal to a reserved style set name. Two Figma collections may
+ *  share a display name, and keying the resolver by the bare name would drop
+ *  one of them. */
 function collectionLabels(collections: CollectionV5[]): Map<string, string> {
-  const counts = new Map<string, number>();
+  const counts = new Map<string, number>(RESERVED_SET_NAMES.map((name) => [name, 1]));
   for (const c of collections) counts.set(c.name, (counts.get(c.name) ?? 0) + 1);
   return new Map(collections.map(
     (c) => [c.id, counts.get(c.name) === 1 ? c.name : `${c.name} [${c.id}]`],
@@ -600,6 +728,15 @@ function reportCollectionNameCollisions(p: Projection): void {
         details: { id: collection.id, ids: collections.map((c) => c.id) },
       });
     }
+  }
+  for (const collection of p.artifact.collections) {
+    if (!RESERVED_SET_NAMES.includes(collection.name)) continue;
+    reportOnce(p, {
+      code: 'collection_name_collision', severity: 'warning',
+      path: collectionLabelOf(p, collection),
+      message: `"${collection.name}" is the name this export gives its own style set, so the resolver labels the collection by its name followed by its id in brackets.`,
+      details: { id: collection.id, reserved: collection.name },
+    });
   }
 }
 
@@ -660,12 +797,13 @@ function reportDuplicateCodeSyntax(p: Projection): void {
   for (const [key, tokens] of owners) {
     if (tokens.length < 2) continue;
     const [platform, identifier] = JSON.parse(key) as [string, string];
+    const ids = tokens.map((t) => t.id).sort(compareCodeUnits);
     for (const token of tokens) {
       reportOnce(p, {
         code: 'duplicate_code_syntax', severity: 'warning',
         path: p.pathById.get(token.id) ?? p.segmentsById.get(token.id)?.join('.') ?? token.name,
         message: `${tokens.length} tokens declare the ${platform} identifier \`${identifier}\`, so the identifier alone does not say which token is meant; each token keeps it as declared.`,
-        details: { id: token.id, platform, identifier, ids: tokens.map((t) => t.id) },
+        details: { id: token.id, platform, identifier, ids: [...ids] },
       });
     }
   }
@@ -677,15 +815,31 @@ function reportDuplicateCodeSyntax(p: Projection): void {
 
 const SPEC_LAYER_EXT = 'com.spec-layer';
 
-/** A binding whose target this export does not carry: the resolved literal is
- *  written instead. `target_omitted` when the artifact holds the token and the
- *  projection dropped it, `target_unavailable` when the artifact never had it. */
+/**
+ * The path a style may reference for `targetId`, or `undefined` when a
+ * reference would not resolve everywhere. A style file is a set the resolver
+ * loads beside whichever context of the target's collection it selects, so
+ * the target must write a leaf in every mode of that collection, not merely
+ * survive.
+ */
+function styleTargetPath(p: Projection, targetId: string): string | undefined {
+  if (p.omittedIds.has(targetId) || p.deadModesById.has(targetId)) return undefined;
+  return p.pathById.get(targetId);
+}
+
+/** A binding whose target this export does not carry in every mode: the
+ *  resolved literal is written instead. `target_omitted` when the artifact
+ *  holds the token and the projection dropped it, in every mode or in some,
+ *  `target_unavailable` when the artifact never had it. */
 function reportBindingDropped(
   p: Projection, path: string, property: string, targetId: string,
 ): void {
+  const partly = !p.omittedIds.has(targetId) && p.deadModesById.has(targetId);
   reportOnce(p, {
     code: 'binding_dropped', severity: 'warning', path,
-    message: `The \`${property}\` property is bound to a token this export does not carry, so the resolved value is written as a literal; \`details.reason\` says whether that token was omitted here or was never in the artifact.`,
+    message: partly
+      ? `The \`${property}\` property is bound to a token that has no value in at least one mode of its collection, and a resolver can load this style beside any of them, so the resolved value is written as a literal.`
+      : `The \`${property}\` property is bound to a token this export does not carry, so the resolved value is written as a literal; \`details.reason\` says whether that token was omitted here or was never in the artifact.`,
     details: {
       property, target_id: targetId,
       reason: p.tokenIds.has(targetId) ? 'target_omitted' : 'target_unavailable',
@@ -700,7 +854,7 @@ function styleMember(
 ): { value: DtcgJson } | { extension: DtcgJson } | null {
   if (property.source.kind === 'alias' && property.source.target_id !== null) {
     const targetId = property.source.target_id;
-    const target = p.omittedIds.has(targetId) ? undefined : p.pathById.get(targetId);
+    const target = styleTargetPath(p, targetId);
     if (target !== undefined) return { value: `{${target}}` };
     reportBindingDropped(p, path, name, targetId);
   }
@@ -765,7 +919,7 @@ function typographyLeaf(p: Projection, style: TypographyStyleV5, path: string): 
       const boundTo = property.source.kind === 'alias' ? property.source.target_id : null;
       let targetExported = false;
       if (property.resolved.unit === '%' && boundTo !== null) {
-        targetExported = !p.omittedIds.has(boundTo) && p.pathById.get(boundTo) !== undefined;
+        targetExported = styleTargetPath(p, boundTo) !== undefined;
         if (!targetExported) reportBindingDropped(p, path, name, boundTo);
       }
       if (property.resolved.unit === '%' && !targetExported) {
@@ -828,7 +982,7 @@ function effectLeaf(p: Projection, style: EffectStyleV5, path: string): DtcgTree
     const shadow: DtcgTree = {};
     for (const [field, name] of SHADOW_FIELDS) {
       const boundId = bindings.get(`effects[${index}].${field}`);
-      const boundPath = boundId !== undefined && !p.omittedIds.has(boundId) ? p.pathById.get(boundId) : undefined;
+      const boundPath = boundId !== undefined ? styleTargetPath(p, boundId) : undefined;
       if (boundPath !== undefined) {
         shadow[name] = `{${boundPath}}`;
         continue;
@@ -866,9 +1020,26 @@ function styleFiles(p: Projection): Record<string, DtcgTree> {
     if (styles.length === 0) return;
     const tree: DtcgTree = {};
     const seen = new Map<string, string>();
+    // Every proper prefix of every style path in this file. A style whose own
+    // path is one of them is a group here and cannot also be a leaf.
+    const groupPaths = new Set<string>();
+    for (const style of styles) {
+      const segments = [root, ...dtcgSegments(style.name).segments];
+      for (let length = 1; length < segments.length; length += 1) {
+        groupPaths.add(segments.slice(0, length).join('.'));
+      }
+    }
     for (const style of styles) {
       const segments = [root, ...dtcgSegments(style.name).segments];
       const path = segments.join('.');
+      if (groupPaths.has(path)) {
+        reportOnce(p, {
+          code: 'path_collision', severity: 'error', path,
+          message: 'Other styles nest under this DTCG path, which makes it a group; the style whose own path this is was omitted, because a DTCG node cannot carry a $value and child tokens at once.',
+          details: { id: style.id, reason: 'group' },
+        });
+        continue;
+      }
       const other = seen.get(path);
       if (other !== undefined) {
         reportOnce(p, {
@@ -932,7 +1103,14 @@ function buildResolver(p: Projection, plans: FilePlan[], styleFileNames: string[
   };
 }
 
-/** Generated group descriptions become `$description` on the group they name. */
+/**
+ * Figma has no group descriptions, so every one is AI-written
+ * (`guidelines.origin` is always `'generated'`). They go under the
+ * spec-layer extension with a key that names their origin, never under
+ * `$description`, which a consumer reads as the author's own text. A group
+ * node never carries an extension of its own before this, so the block is
+ * written whole.
+ */
 function annotateGroups(p: Projection, tree: DtcgTree, collection: CollectionV5): void {
   const groups = p.artifact.guidelines?.group_descriptions[collection.name];
   if (!groups) return;
@@ -945,7 +1123,7 @@ function annotateGroups(p: Projection, tree: DtcgTree, collection: CollectionV5)
       node = node[seg];
     }
     if (typeof node === 'object' && node !== null && !Array.isArray(node) && !('$value' in node)) {
-      node.$description = text;
+      node.$extensions = { [SPEC_LAYER_EXT]: { generated_description: text } };
     }
   }
 }
@@ -1022,40 +1200,52 @@ function styleCensus(tree: DtcgTree): DtcgCensusEntry {
   return { tokens: a.tokens, types: histogram(a.types), descriptions: { present: a.present, missing: a.missing } };
 }
 
-/**
- * `derivedUnits` is optional because only a caller holding the whole library
- * can produce it: the evidence lives in the component artifacts, and this
- * projection sees the Foundation alone. Omitting it projects exactly as
- * before.
- */
-export function foundationDtcg(
-  artifact: FoundationArtifactV5, options: DtcgOptions = {}, derivedUnits?: UsageUnitMap,
-): DtcgExport {
-  const p: Projection = {
-    artifact,
-    options: { values: options.values ?? 'standard', ...(options.units ? { units: options.units } : {}) },
-    derivedUnits: derivedUnits ?? new Map(),
-    tokenById: new Map(artifact.tokens.map((t) => [t.id, t])),
-    tokenIds: new Set(artifact.tokens.map((t) => t.id)),
-    collectionById: new Map(artifact.collections.map((c) => [c.id, c])),
-    collectionLabelById: collectionLabels(artifact.collections),
-    modeLabelsById: new Map(artifact.collections.map((c) => [c.id, modeLabels(c)])),
-    pathById: new Map(),
-    segmentsById: new Map(),
-    omittedIds: new Set(),
-    collidedIds: new Set(),
-    report: [],
-    reportKeys: new Set(),
-    factsById: new Map(),
-  };
-  indexPaths(p);
-  omitInexpressibleTypes(p);
-  reportDuplicateCodeSyntax(p);
-  reportCollectionNameCollisions(p);
+interface TokenFilesResult {
+  files: Record<string, DtcgTree>;
+  census: Record<string, DtcgCensusEntry>;
+  plans: FilePlan[];
+  /** token id -> the ids of the modes in which it wrote a non-null leaf this
+   *  attempt. A survivor absent here wrote nothing anywhere, and one missing a
+   *  mode of its collection has no leaf in that mode's file: an alias chain
+   *  reaches either even when nothing about its OWN path was ever in
+   *  question. */
+  aliveModesById: Map<string, Set<string>>;
+}
 
+const NO_DEAD_CHAIN_IDS: ReadonlySet<string> = new Set();
+
+/**
+ * One full attempt at every collection's token files, for a given
+ * `omittedIds`. Resets `p.factsById` first: a fact an earlier, less-informed
+ * attempt recorded against an id this attempt now omits must not linger into
+ * the meta this attempt produces, since `metaEntry` only re-checks `omitted`,
+ * not whether the fact itself is still current.
+ *
+ * `deadChainIds` names the subset of `omittedIds` that has no decision
+ * function of its own to explain it (unlike a path collision, a type DTCG
+ * cannot express, or a group conflict, each of which reports itself the
+ * moment it adds a token to `omittedIds`): a token found dead by
+ * `findDeadTokens` is omitted only because nothing it can reach ever
+ * writes a leaf, and `tokenLeaf` is the only thing that can say why, mode by
+ * mode. Passing it empty (`findDeadTokens`'s own use) skips every current
+ * member of `omittedIds` without asking why -- correct there, since that
+ * call is a side-effect-free liveness probe, not a report. Passing the real
+ * set (`stabilizeAliasChains`'s one authoritative call) still skips every
+ * OTHER omission, whose reason already exists, but calls `tokenLeaf` for
+ * each dead-chain id anyway, purely so the report it earns reflects the
+ * FINAL, fully-settled `omittedIds` rather than whatever a discarded, less-
+ * informed attempt would have said. A token dead in only some modes is not
+ * in `omittedIds` at all, so `tokenLeaf` runs for it in every mode and
+ * reports each empty one itself.
+ */
+function buildTokenFiles(
+  p: Projection, artifact: FoundationArtifactV5, deadChainIds: ReadonlySet<string> = NO_DEAD_CHAIN_IDS,
+): TokenFilesResult {
+  p.factsById = new Map();
   const files: Record<string, DtcgTree> = {};
   const plans: FilePlan[] = [];
   const census: Record<string, DtcgCensusEntry> = {};
+  const aliveModesById = new Map<string, Set<string>>();
   const taken = new Set<string>(RESERVED_FILE_NAMES);
   for (const collection of artifact.collections) {
     for (const mode of collection.modes) {
@@ -1063,13 +1253,24 @@ export function foundationDtcg(
       const a = newAccumulator();
       for (const token of artifact.tokens) {
         if (token.collection_id !== collection.id) continue;
-        if (p.omittedIds.has(token.id)) {
+        if (p.omittedIds.has(token.id) && !deadChainIds.has(token.id)) {
           a.omitted += 1;
           if (p.collidedIds.has(token.id)) a.collided += 1;
           continue;
         }
         const leaf = tokenLeaf(p, token, collection, mode.id);
-        if (!leaf) continue;
+        if (!leaf) {
+          // A dead-chain id reaches here to earn its report, not a leaf: it
+          // stays counted as omitted, the same as the skip branch above.
+          if (p.omittedIds.has(token.id)) a.omitted += 1;
+          continue;
+        }
+        let aliveModes = aliveModesById.get(token.id);
+        if (aliveModes === undefined) {
+          aliveModes = new Set();
+          aliveModesById.set(token.id, aliveModes);
+        }
+        aliveModes.add(mode.id);
         setLeaf(tree, p.segmentsById.get(token.id) ?? [], leaf);
         a.tokens += 1;
         bump(a.types, typeof leaf.$type === 'string' ? leaf.$type : 'unknown');
@@ -1094,12 +1295,152 @@ export function foundationDtcg(
       census[file] = censusEntry(a);
     }
   }
+  return { files, census, plans, aliveModesById };
+}
+
+/** What the liveness search found beyond the omissions already decided. */
+interface DeadTokens {
+  /** Survivors that write no leaf in any mode: they join `omittedIds`. */
+  deadChainIds: Set<string>;
+  /** Survivors that write a leaf in some modes but not others, by token id,
+   *  naming the modes of their own collection whose file lacks them. */
+  deadModesById: Map<string, Set<string>>;
+}
+
+/**
+ * Finds, to a fixed point, every (token, mode) pair in which a survivor
+ * writes no leaf, entirely against a throwaway shadow of `p`: a shadow
+ * `omittedIds` (seeded from the real one, then grown locally), a shadow
+ * `deadModesById`, and a shadow `report`/`reportKeys`/`factsById` that
+ * nothing outside this function ever reads. A pair is dead for a reason of
+ * its own (no value in that mode, an unresolvable alias) or because the
+ * reference it would write points at a pair that is dead (`tokenLeaf` reads
+ * the shadow `deadModesById` for that), so each attempt can uncover more,
+ * and a token dead in every mode joins `omittedIds`, keeping the sidecar's
+ * `omitted: true` meaning "writes nothing anywhere". Deadness only grows, so
+ * the search ends.
+ *
+ * A token that only looks alive because an earlier attempt has not yet
+ * caught its target -- the exact shape of the bug this whole mechanism exists
+ * for -- would otherwise leave a report behind (an `alias_type_mismatch` from
+ * a literal fallback a later attempt drops, a `mode_selection_not_expressible`
+ * promising a reference that a later attempt never keeps) that describes an
+ * attempt the real, final build never makes. Running the search here, where
+ * nothing is kept but the dead ids and modes themselves, is what keeps the
+ * real `p.report` describing only the one build `stabilizeAliasChains`
+ * actually commits to. Mirrors how `outputs/css.ts` shrinks `alive` to a
+ * fixed point: every attempt is a full, independent rebuild via
+ * `buildTokenFiles`, never an incremental patch, so a token is re-judged from
+ * scratch each time.
+ */
+function findDeadTokens(p: Projection, artifact: FoundationArtifactV5): DeadTokens {
+  const shadowOmitted = new Set(p.omittedIds);
+  const shadowDeadModes = new Map<string, Set<string>>();
+  const shadow: Projection = {
+    ...p, omittedIds: shadowOmitted, deadModesById: shadowDeadModes,
+    report: [], reportKeys: new Set(), factsById: new Map(),
+  };
+  const survivors = [...p.pathById.keys()].sort(compareCodeUnits);
+  for (;;) {
+    const attempt = buildTokenFiles(shadow, artifact);
+    let grew = false;
+    for (const id of survivors) {
+      if (shadowOmitted.has(id)) continue;
+      const alive = attempt.aliveModesById.get(id);
+      if (alive === undefined) {
+        shadowOmitted.add(id);
+        grew = true;
+        continue;
+      }
+      const token = p.tokenById.get(id);
+      const collection = token ? p.collectionById.get(token.collection_id) : undefined;
+      const deadModes = (collection?.modes ?? []).map((m) => m.id).filter((m) => !alive.has(m));
+      if (deadModes.length === 0) continue;
+      let known = shadowDeadModes.get(id);
+      if (known === undefined) {
+        known = new Set();
+        shadowDeadModes.set(id, known);
+      }
+      for (const modeId of deadModes) {
+        if (known.has(modeId)) continue;
+        known.add(modeId);
+        grew = true;
+      }
+    }
+    if (!grew) break;
+  }
+  const deadChainIds = new Set<string>();
+  for (const id of shadowOmitted) if (!p.omittedIds.has(id)) deadChainIds.add(id);
+  const deadModesById = new Map<string, Set<string>>();
+  for (const [id, modes] of shadowDeadModes) if (!shadowOmitted.has(id)) deadModesById.set(id, modes);
+  return { deadChainIds, deadModesById };
+}
+
+/**
+ * Grows the real `omittedIds` and `deadModesById` to the fixed point
+ * `findDeadTokens` finds, then makes exactly one authoritative, reporting
+ * build with them -- the only call in this file that writes into the real
+ * `p.report`/`p.factsById` for token files. A survivor whose every mode
+ * aliases another survivor can still write no leaf anywhere, or none in one
+ * mode's file, when that target is itself unwritable there: without the
+ * search, `tokenLeaf` would see only whether the DIRECT target id is
+ * omitted, so a token two or more hops from an omitted one, or one whose
+ * target lacks the mode being written, would keep a reference to a path its
+ * file never declares, and whatever aliases THAT would keep going the same
+ * way.
+ */
+function stabilizeAliasChains(p: Projection, artifact: FoundationArtifactV5): TokenFilesResult {
+  const { deadChainIds, deadModesById } = findDeadTokens(p, artifact);
+  for (const id of deadChainIds) p.omittedIds.add(id);
+  p.deadModesById = deadModesById;
+  return buildTokenFiles(p, artifact, deadChainIds);
+}
+
+/**
+ * `derivedUnits` is optional because only a caller holding the whole library
+ * can produce it: the evidence lives in the component artifacts, and this
+ * projection sees the Foundation alone. Omitting it projects exactly as
+ * before.
+ */
+export function foundationDtcg(
+  artifact: FoundationArtifactV5, options: DtcgOptions = {}, derivedUnits?: UsageUnitMap,
+): DtcgExport {
+  const p: Projection = {
+    artifact,
+    options: { values: options.values ?? 'standard', ...(options.units ? { units: options.units } : {}) },
+    unitOverrides: compileUnitOverrides(options.units, artifact.collections),
+    derivedUnits: derivedUnits ?? new Map(),
+    tokenById: new Map(artifact.tokens.map((t) => [t.id, t])),
+    tokenIds: new Set(artifact.tokens.map((t) => t.id)),
+    collectionById: new Map(artifact.collections.map((c) => [c.id, c])),
+    collectionLabelById: collectionLabels(artifact.collections),
+    modeLabelsById: new Map(artifact.collections.map((c) => [c.id, modeLabels(c)])),
+    pathById: new Map(),
+    segmentsById: new Map(),
+    omittedIds: new Set(),
+    deadModesById: new Map(),
+    collidedIds: new Set(),
+    report: [],
+    reportKeys: new Set(),
+    factsById: new Map(),
+  };
+  indexPaths(p);
+  omitInexpressibleTypes(p);
+  omitGroupConflicts(p);
+  reportDuplicateCodeSyntax(p);
+  reportCollectionNameCollisions(p);
+  reportUnmatchedUnitOverrides(p);
+
+  const { files, census, plans } = stabilizeAliasChains(p, artifact);
   const styles = styleFiles(p);
   Object.assign(files, styles);
   for (const [file, tree] of Object.entries(styles)) census[file] = styleCensus(tree);
   const resolver = buildResolver(p, plans, Object.keys(styles).sort(compareCodeUnits));
+  // The details break the last tie, so two entries on one path, code and
+  // mode (two colliding tokens, two segment notes) never keep source order.
   p.report.sort((a, b) => compareCodeUnits(a.path, b.path)
-    || compareCodeUnits(a.code, b.code) || compareCodeUnits(a.mode ?? '', b.mode ?? ''));
+    || compareCodeUnits(a.code, b.code) || compareCodeUnits(a.mode ?? '', b.mode ?? '')
+    || compareCodeUnits(canonicalJson(a.details), canonicalJson(b.details)));
 
   const meta: Record<string, DtcgMetaEntry> = {};
   for (const token of artifact.tokens) {
@@ -1184,10 +1525,23 @@ function tokenLeaf(p: Projection, token: TokenV5, collection: CollectionV5, mode
     }
     const targetId = value.reference.target_id;
     const targetPath = targetId !== null && !p.omittedIds.has(targetId) ? p.pathById.get(targetId) : undefined;
-    if (targetPath === undefined) {
+    const target = targetId !== null ? p.tokenById.get(targetId) : undefined;
+    const sameCollection = target !== undefined && target.collection_id === token.collection_id;
+    // A token alive in some modes is not omitted, but a reference to it
+    // resolves only where its leaf is loaded: the same mode's file within one
+    // collection, and every context of its collection from another, since a
+    // resolver may pair this file with any of them.
+    const targetDeadModes = targetId !== null ? p.deadModesById.get(targetId) : undefined;
+    const partlyWritten = targetPath !== undefined && targetDeadModes !== undefined
+      && (sameCollection ? targetDeadModes.has(modeId) : targetDeadModes.size > 0);
+    if (targetPath === undefined || partlyWritten) {
       reportOnce(p, {
         code: 'value_omitted', severity: 'warning', path, mode,
-        message: 'The alias target was itself omitted from this export; no value was written, since a reference to it would not resolve.',
+        message: !partlyWritten
+          ? 'The alias target was itself omitted from this export; no value was written, since a reference to it would not resolve.'
+          : sameCollection
+            ? 'The alias target has no value in this mode, so this mode\'s file does not declare it; no value was written, since a reference to it would not resolve.'
+            : 'The alias target has no value in at least one mode of its own collection, and a resolver can select any of them; no value was written, since a reference to it would not resolve in every context.',
         details: {
           id: token.id, reason: 'target_omitted',
           target_path: value.reference.target_path.join('/'),
@@ -1197,28 +1551,6 @@ function tokenLeaf(p: Projection, token: TokenV5, collection: CollectionV5, mode
         },
       });
       return null;
-    }
-    const target = targetId !== null ? p.tokenById.get(targetId) : undefined;
-    const hop = value.resolved.chain[0];
-    if (target && hop && target.collection_id !== token.collection_id) {
-      const targetCollection = p.collectionById.get(target.collection_id);
-      // A single-mode target set resolves the same way in every context, so
-      // nothing is lost. Only a multi-mode target can resolve differently
-      // under the consumer's contexts than Figma did.
-      // Compared by display NAME, because that is the mode policy Figma applied;
-      // reported by LABEL, so the entry names a resolver context that exists.
-      if (targetCollection !== undefined && targetCollection.modes.length > 1
-        && modeName(targetCollection, hop.mode_id) !== modeName(collection, modeId)) {
-        const hopMode = modeLabelOf(p, targetCollection, hop.mode_id);
-        reportOnce(p, {
-          code: 'mode_selection_not_expressible', severity: 'info', path, mode,
-          message: `Figma resolved this alias through the target's "${hopMode}" mode, but a DTCG resolver picks the target's mode from the consumer's context, so the result can differ; the reference is kept, and \`details.resolved\` holds the value Figma resolved.`,
-          details: {
-            id: token.id, target_id: targetId ?? '', target_mode: hopMode,
-            resolved: asJson(value.resolved.value),
-          },
-        });
-      }
     }
     const typed = aliasLeafType(p, token, value.resolved.chain, value.resolved.value);
     if ('omit' in typed) {
@@ -1248,6 +1580,29 @@ function tokenLeaf(p: Projection, token: TokenV5, collection: CollectionV5, mode
       const transform = literalTransform(value.resolved.value, token.scopes);
       if (transform !== null) recordFact(p, token.id, mode, transform);
       return { $type: typed.$type, $value: typed.$value, ...description };
+    }
+    // Only here is the reference actually kept, so only here may the report
+    // say so; an omission or a literal fallback above states its own reason.
+    const hop = value.resolved.chain[0];
+    if (target && hop && !sameCollection) {
+      const targetCollection = p.collectionById.get(target.collection_id);
+      // A single-mode target set resolves the same way in every context, so
+      // nothing is lost. Only a multi-mode target can resolve differently
+      // under the consumer's contexts than Figma did.
+      // Compared by display NAME, because that is the mode policy Figma applied;
+      // reported by LABEL, so the entry names a resolver context that exists.
+      if (targetCollection !== undefined && targetCollection.modes.length > 1
+        && modeName(targetCollection, hop.mode_id) !== modeName(collection, modeId)) {
+        const hopMode = modeLabelOf(p, targetCollection, hop.mode_id);
+        reportOnce(p, {
+          code: 'mode_selection_not_expressible', severity: 'info', path, mode,
+          message: `Figma resolved this alias through the target's "${hopMode}" mode, but a DTCG resolver picks the target's mode from the consumer's context, so the result can differ; the reference is kept, and \`details.resolved\` holds the value Figma resolved.`,
+          details: {
+            id: token.id, target_id: target.id, target_mode: hopMode,
+            resolved: asJson(value.resolved.value),
+          },
+        });
+      }
     }
     recordFact(p, token.id, mode, 'alias', typed.$value);
     return { $type: typed.$type, $value: `{${targetPath}}`, ...description };
