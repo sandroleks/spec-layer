@@ -2,18 +2,19 @@ import { parseArgs } from 'node:util';
 import {
   runInit, runSetup, runPull, runStatus, runList, runShow, runTools, runSkill, type Flags, type Io,
 } from './commands';
+import { resolveKeyFromStdin } from './stdin';
 
 const USAGE = `spec-layer <command>
 
 Commands:
-  setup   --id lib_... --key sl_... [--out DIR] [selection] [--platform P]... [--component-format F]
+  setup   --id lib_... --key sl_...|- [--out DIR] [selection] [--platform P]... [--component-format F]
                                                  store the key, then pull
   init    --id lib_... [--out DIR] [selection] [--platform P]... [--component-format F]
                                                  write speclayer.json
-  pull    [--id lib_...] [--key sl_...] [selection] [--platform P]... [--component-format F] [--strict]
+  pull    [--id lib_...] [--key sl_...|-] [selection] [--platform P]... [--component-format F] [--strict]
                                                  fetch the library into DIR (default .speclayer); the foundation lands as DTCG under DIR/tokens/;
                                                  --strict exits 1 when tokens/report.json or an outputs/*.report.json holds an error-severity entry, even on a cached pull (default exit stays 0)
-  status  [--id lib_...] [--key sl_...]          check freshness; exits 2 when behind
+  status  [--id lib_...] [--key sl_...|-]        check freshness; exits 2 when behind
   list                                           list every artifact in the last pull
   show    foundation | component NAME [--component-format F] [--canonical]
                                                  print one artifact (foundation: the DTCG document; component: its AI YAML or Markdown; --canonical for JSON)
@@ -27,10 +28,11 @@ Selection (setup, pull and init; flags replace the include block in speclayer.js
   --component NAME                 write only this component (repeatable, matched by slug)
 
 Options:
-  --api URL   override the API origin (default https://api.spec-layer.com)
+  --api URL   override the API origin (default https://api.spec-layer.com); https only, except http to localhost
   --platform web|ios|android|flutter   the target this repo builds for (repeatable); applies to setup, init, pull, and skill; setup and init store it, pull uses it for the run
   --component-format yaml|md   how component-specs/ is written and show prints a component (default yaml); setup and init store it, pull and show use it for the run
-The pull key comes from --key, SPEC_LAYER_KEY, or speclayer.local.json written by setup.`;
+The pull key comes from --key, SPEC_LAYER_KEY, or speclayer.local.json written by setup.
+--key - reads it from stdin (a pipe, or a paste followed by Enter), so the key stays out of shell history.`;
 
 const io: Io = {
   out: (l) => console.log(l),
@@ -68,8 +70,18 @@ async function main(): Promise<number> {
   }
 
   const command = positionals[0];
+
   const cwd = process.cwd();
   try {
+    // Inside the try, so a stdin failure resolveKeyFromStdin did not turn
+    // into a sentence itself still gets the last-resort net below.
+    const stdinKey = await resolveKeyFromStdin(command, values.key, process.stdin);
+    if (stdinKey.error !== null) {
+      io.err(stdinKey.error);
+      return 1;
+    }
+    if (stdinKey.key !== null) values = { ...values, key: stdinKey.key };
+
     if (command === 'setup') return await runSetup(cwd, values, process.env, io);
     if (command === 'init') return runInit(cwd, values, io);
     if (command === 'pull') return await runPull(cwd, values, process.env, io);

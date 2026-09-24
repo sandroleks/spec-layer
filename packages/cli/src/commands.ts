@@ -3,8 +3,8 @@ import { join, resolve } from 'node:path';
 import type { DtcgOptions } from '@spec-layer/extractor';
 import { parseBundle, type BundleV1 } from './bundle';
 import {
-  readConfig, resolveOptions, writeConfig, DEFAULT_OUT_DIR, DEFAULT_COMPONENT_SPECS_DIR, DEFAULT_COMPONENT_FORMAT,
-  COMPONENT_FORMATS, isComponentFormat, type CliConfig, type ComponentFormat, type ResolvedOptions,
+  readConfig, resolveOptions, resolveOutDir, legacyOutDir, writeConfig, DEFAULT_COMPONENT_SPECS_DIR, DEFAULT_COMPONENT_FORMAT,
+  COMPONENT_FORMATS, isComponentFormat, isLibraryId, type CliConfig, type ComponentFormat, type ResolvedOptions,
 } from './config';
 import { fetchBundle } from './api';
 import { componentMarkdownPage, readLocalBundle, readManifest, slugify, writeBundleFiles, type Manifest } from './files';
@@ -134,9 +134,21 @@ function missingFormatNote(platforms: Platform[]): string {
 
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
+/**
+ * The value is never echoed: a swapped `--id sl_... --key lib_...` would put
+ * the pull key in a terminal scrollback or a CI log, and no command prints it.
+ */
+const badLibraryId = (id: string): string =>
+  '--id must be "lib_" followed by 24 hex characters, as the plugin shows it.'
+  + (id.startsWith('sl_') ? ' That looks like the pull key; pass it with --key.' : '');
+
 export function runInit(cwd: string, flags: Flags, io: Io): number {
   if (!flags.id) {
     io.err('spec-layer init needs --id lib_... (shown in the plugin after publishing).');
+    return 1;
+  }
+  if (!isLibraryId(flags.id)) {
+    io.err(badLibraryId(flags.id));
     return 1;
   }
   let include: Selection | null;
@@ -152,7 +164,13 @@ export function runInit(cwd: string, flags: Flags, io: Io): number {
   if (format === null) return 1;
   const { platforms, source } = resolvePlatforms(cwd, fromFlags, null);
   const outputs = defaultOutputs(platforms);
-  const outDir = flags.out ?? DEFAULT_OUT_DIR;
+  let outDir: string;
+  try {
+    outDir = resolveOutDir(cwd, flags.out, undefined);
+  } catch (err) {
+    io.err(errorText(err));
+    return 1;
+  }
   writeConfig(cwd, {
     libraryId: flags.id, outDir, componentSpecsDir: DEFAULT_COMPONENT_SPECS_DIR,
     ...(format ? { componentSpecsFormat: format } : {}),
@@ -178,6 +196,16 @@ function resolved(
   cwd: string, flags: Flags, env: Record<string, string | undefined>, io: Io,
   manifestAt: (outDir: string) => Manifest | null,
 ): (ResolvedOptions & { libraryId: string; key: string }) | null {
+  // A flag --id is shape-checked before any message can name it or any
+  // request can carry it: a pull key pasted as --id would otherwise be printed
+  // by the stored-key message below, or sent in the request URL when swapped
+  // with --key. After this, a flag id in opts.libraryId always has the shape.
+  // An id from speclayer.json is not checked: earlier versions wrote it
+  // unchecked, and refusing a shape they accepted would break that repository.
+  if (flags.id !== undefined && !isLibraryId(flags.id)) {
+    io.err(badLibraryId(flags.id));
+    return null;
+  }
   let opts: ResolvedOptions;
   try {
     opts = resolveOptions(cwd, flags, env, (outDir) => manifestAt(outDir)?.libraryId ?? null);
@@ -201,8 +229,8 @@ function resolved(
   if (!opts.key) {
     io.err(opts.storedKeyFor
       ? `The key in ${CREDENTIALS_NAME} was issued for library ${opts.storedKeyFor}, not `
-        + `${opts.libraryId}. Run the setup command from the plugin's Library screen.`
-      : 'No pull key. Run the setup command from the plugin\'s Library screen, '
+        + `${opts.libraryId}. Run the setup command from the plugin's Publish screen.`
+      : 'No pull key. Run the setup command from the plugin\'s Publish screen, '
         + 'or set SPEC_LAYER_KEY.');
     return null;
   }
@@ -212,7 +240,7 @@ function resolved(
 /** Output directory for the local-only commands, which need neither id nor key. */
 function resolvedOutDir(cwd: string, flags: Flags, io: Io): string | null {
   try {
-    return join(cwd, flags.out ?? readConfig(cwd)?.outDir ?? DEFAULT_OUT_DIR);
+    return join(cwd, resolveOutDir(cwd, flags.out, readConfig(cwd)?.outDir));
   } catch (err) {
     io.err(errorText(err));
     return null;
@@ -246,6 +274,10 @@ export async function runSetup(
     io.err('spec-layer setup needs --id lib_... (shown in the plugin after publishing).');
     return 1;
   }
+  if (!isLibraryId(flags.id)) {
+    io.err(badLibraryId(flags.id));
+    return 1;
+  }
   const key = flags.key ?? env.SPEC_LAYER_KEY;
   if (!key) {
     io.err('spec-layer setup needs --key sl_..., or SPEC_LAYER_KEY in the environment.');
@@ -276,7 +308,27 @@ export async function runSetup(
   if (fromFlags === null) return 1;
   const format = componentFormatFromFlags(flags, io);
   if (format === null) return 1;
-  const outDir = flags.out ?? existing?.outDir ?? DEFAULT_OUT_DIR;
+  // 0.10.0 and earlier recorded an absolute --out unchecked and wrote every
+  // pull to it joined under the working directory. With no --out, setup
+  // records that relative path instead, which is where the files already are,
+  // so the plugin's command keeps working. This is the only stored value any
+  // command rewrites on its own.
+  let configOutDir = existing?.outDir;
+  let legacyFrom: string | null = null;
+  if (flags.out === undefined && configOutDir !== undefined) {
+    const legacy = legacyOutDir(cwd, configOutDir);
+    if (legacy !== null) {
+      legacyFrom = configOutDir;
+      configOutDir = legacy;
+    }
+  }
+  let outDir: string;
+  try {
+    outDir = resolveOutDir(cwd, flags.out, configOutDir);
+  } catch (err) {
+    io.err(errorText(err));
+    return 1;
+  }
   const componentSpecsDir = existing?.componentSpecsDir ?? DEFAULT_COMPONENT_SPECS_DIR;
   const keptInclude = include ?? existing?.include ?? null;
   const keptDtcg = existing?.dtcg ?? null;
@@ -296,6 +348,9 @@ export async function runSetup(
     ...(existing?.outputs !== undefined || outputs.length > 0 ? { outputs } : {}),
   });
   io.out(`Wrote speclayer.json (library ${flags.id}, output ${outDir}${platforms.length > 0 ? `, platforms ${platforms.join(', ')}` : ''}).`);
+  if (legacyFrom !== null) {
+    io.out(`speclayer.json "outDir" was ${JSON.stringify(legacyFrom)}, which earlier versions wrote to ${outDir} inside this directory. It now reads "${outDir}", so the files stay where they are.`);
+  }
 
   const ignored = ensureIgnored(cwd, CREDENTIALS_NAME);
   switch (ignored.kind) {
@@ -309,7 +364,9 @@ export async function runSetup(
       return 1;
     case 'still-not-ignored':
       io.err(`${ignored.line} is listed in .gitignore, but git still does not ignore it, so the key was not written.`);
-      io.err(`The most likely reason is that ${ignored.line} is already tracked. Run this, then run the command again:\ngit rm --cached ${ignored.line}`);
+      io.err(ignored.tracked
+        ? `git confirms ${ignored.line} is already tracked, which is why the ignore rule has no effect. Run this, then run the command again:\ngit rm --cached ${ignored.line}`
+        : `git does not report ${ignored.line} as tracked either. Look for a rule that re-includes it (a line starting with "!") in .gitignore or the global excludes file, remove it, then run the command again.`);
       return 1;
     case 'created':
       io.out(`Created .gitignore with ${CREDENTIALS_NAME}.`);
@@ -339,8 +396,16 @@ export async function runSetup(
 
   // Pass the key through rather than relying on a re-read of what was just
   // written, so the pull cannot disagree with the file.
-  const code = await runPull(cwd, { ...flags, key }, env, io, fetcher);
-  if (code !== 0) return code;
+  const outcome: PullOutcome = { retryable: false };
+  const code = await pullWith(cwd, { ...flags, key }, env, io, fetcher, outcome);
+  if (code !== 0) {
+    // Everything before the pull is on disk, so the reader should not redo it.
+    // Said only when a bare retry can help: after a 401, a 404, a refused
+    // directory, or a --strict report, the line above already says what to
+    // change, and a retry suggestion would contradict it.
+    if (outcome.retryable) io.err('Setup is stored. Run spec-layer pull to retry.');
+    return code;
+  }
   // The setup command is what a developer hands a coding agent, so the agent's
   // first sight of this tool is this output. Point it at the guide that says
   // what landed and how to read it, rather than leaving it to open bundle.json.
@@ -482,6 +547,19 @@ function publishedPhrase(version: string | null | undefined, publishedAt: string
 export async function runPull(
   cwd: string, flags: Flags, env: Record<string, string | undefined>, io: Io, fetcher?: typeof fetch,
 ): Promise<number> {
+  return pullWith(cwd, flags, env, io, fetcher, { retryable: false });
+}
+
+/** What runSetup needs to know about a failed pull beyond its exit code. */
+interface PullOutcome {
+  /** Set when the fetch failed in a way the same request can get past: the network, the timeout, or a 5xx. */
+  retryable: boolean;
+}
+
+async function pullWith(
+  cwd: string, flags: Flags, env: Record<string, string | undefined>, io: Io, fetcher: typeof fetch | undefined,
+  outcome: PullOutcome,
+): Promise<number> {
   const manifestAt = manifestReader();
   const opts = resolved(cwd, flags, env, io, manifestAt);
   if (!opts) return 1;
@@ -552,9 +630,19 @@ export async function runPull(
   });
   if (result.kind === 'error') {
     io.err(result.message);
+    outcome.retryable = result.retryable;
     return 1;
   }
   if (result.kind === 'not_modified') {
+    if (!etag) {
+      // The request carried no If-None-Match, so this 304 answers a question
+      // that was never asked. Calling it success would report files that do
+      // not exist, or were judged stale above, as current. Files from an
+      // earlier pull can still be on disk (a changed selection or CLI sends
+      // no hash either), so the message does not say there are none.
+      io.err(`${opts.api} answered 304 Not Modified to a request that sent no If-None-Match, so it cannot be treated as current. Nothing was written, and files from an earlier pull, if any, are unchanged. Run spec-layer pull again.`);
+      return 1;
+    }
     io.out(`Already up to date ${publishedPhrase(result.version ?? manifest?.version, manifest?.publishedAt ?? 'unknown')}.`);
     // A 304 for a Foundation pull is granted only once both report files are
     // confirmed present on disk (foundationFilesOnDisk and outputFilesOnDisk
@@ -773,8 +861,11 @@ export function runTools(flags: Flags, io: Io): number {
 /** Everything `skill` says, gathered once so --json, printing, and --install agree. */
 function collectSkillInput(cwd: string, flags: Flags, io: Io): SkillInput | null {
   let config: CliConfig | null = null;
-  try { config = readConfig(cwd); } catch (err) { io.err(errorText(err)); return null; }
-  const outDir = flags.out ?? config?.outDir ?? DEFAULT_OUT_DIR;
+  let outDir: string;
+  try {
+    config = readConfig(cwd);
+    outDir = resolveOutDir(cwd, flags.out, config?.outDir);
+  } catch (err) { io.err(errorText(err)); return null; }
   const profile = detectRepo(cwd);
   const fromFlags = platformsFromFlags(flags, io);
   if (fromFlags === null) return null;

@@ -9,7 +9,7 @@ export type IgnoreResult =
   | { kind: 'not-a-repo' }
   | { kind: 'refused'; line: string }
   | { kind: 'no-git'; line: string }
-  | { kind: 'still-not-ignored'; line: string };
+  | { kind: 'still-not-ignored'; line: string; tracked: boolean };
 
 const COMMENT = '# Spec Layer pull key, not for committing';
 
@@ -117,6 +117,11 @@ export function ensureIgnored(cwd: string, fileName: string): IgnoreResult {
   }
 
   const recheck = git(cwd, ['check-ignore', '-q', fileName]);
-  if (!recheck.ranGit || recheck.status !== 0) return { kind: 'still-not-ignored', line: fileName };
+  if (!recheck.ranGit || recheck.status !== 0) {
+    // `ls-files --error-unmatch` exits 0 only for a tracked path, so the
+    // caller can state the cause git confirmed rather than the likeliest one.
+    const tracked = git(cwd, ['ls-files', '--error-unmatch', '--', fileName]);
+    return { kind: 'still-not-ignored', line: fileName, tracked: tracked.ranGit && tracked.status === 0 };
+  }
   return existed ? { kind: 'added' } : { kind: 'created' };
 }

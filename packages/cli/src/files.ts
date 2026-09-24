@@ -1,5 +1,5 @@
-import { mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync, renameSync, existsSync } from 'node:fs';
-import { join, dirname, relative, resolve, isAbsolute, sep } from 'node:path';
+import { lstatSync, mkdirSync, mkdtempSync, chmodSync, writeFileSync, readFileSync, readdirSync, rmSync, renameSync, existsSync } from 'node:fs';
+import { join, dirname, relative, resolve, sep } from 'node:path';
 import {
   CSS_HEADER_PREFIX, CSS_INDEX_FILE, COMPONENT_MARKDOWN_MARKER, COMPONENT_YAML_MARKER, componentMarkdown, componentSlugs,
   dtcgExportFiles, fontRequirements, foundationDtcg, slugify, usageUnits, validateLevel1,
@@ -7,8 +7,8 @@ import {
 } from '@spec-layer/extractor';
 import type { Platform } from './detect';
 import { outputId, outputPathProblem, renderOutput, type OutputConfig } from './outputs';
-import { visibleDirProblem, writeVisibleDir } from './visibleDir';
-import { DEFAULT_COMPONENT_FORMAT, DEFAULT_COMPONENT_SPECS_DIR, type ComponentFormat } from './config';
+import { pathInside, visibleDirProblem, writeVisibleDir } from './visibleDir';
+import { DEFAULT_COMPONENT_FORMAT, DEFAULT_COMPONENT_SPECS_DIR, OUT_DIR_RULE, isComponentFormat, type ComponentFormat } from './config';
 import { parseBundle, type BundleV1 } from './bundle';
 import { DEFAULT_SELECTION, selectComponents, type Selection } from './selection';
 import { cliVersion } from './version';
@@ -19,13 +19,12 @@ import { cliVersion } from './version';
 export { slugify };
 
 /**
- * The first two lines of every component brief the extractor emits, now
- * defined once in the extractor beside the Markdown projection's. Kept under
- * this name so existing callers are unchanged. Nothing is prepended to a
- * brief; the marker is what the plugin already writes, so the file stays
- * byte-identical to Copy for AI.
+ * The first two lines of every component brief the extractor emits, defined
+ * in the extractor beside the Markdown projection's marker. Nothing is
+ * prepended to a brief; the marker is what the plugin already writes, so the
+ * file stays byte-identical to Copy for AI.
  */
-export const COMPONENT_SPEC_MARKER = COMPONENT_YAML_MARKER;
+const COMPONENT_SPEC_MARKER = COMPONENT_YAML_MARKER;
 
 /**
  * The visible component-specs/ directory is owned by either format's opening
@@ -109,23 +108,68 @@ export interface Manifest {
   artifacts: ManifestArtifact[];
 }
 
+const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+
+type StoredArtifact = ManifestArtifact & { aiPath?: string | null };
+
+const isString = (v: unknown): v is string => typeof v === 'string';
+const optional = (v: unknown, check: (x: unknown) => boolean): boolean => v === undefined || check(v);
+
+/** `{ foundation, components }` as every CLI since 0.2.0 wrote it; `components` is null for every component. */
+const isStoredSelection = (v: unknown): boolean => isRecord(v)
+  && typeof v.foundation === 'boolean'
+  && (v.components === null || (Array.isArray(v.components) && v.components.every(isString)));
+
+/** One outputs[] entry as parseOutput produced it, since 0.6.0: the four named strings, plus the optional overrides. */
+const isStoredOutput = (v: unknown): boolean => isRecord(v)
+  && isString(v.platform) && isString(v.format) && isString(v.path) && isString(v.case)
+  && optional(v.root, isString) && optional(v.modeSelector, isString)
+  && optional(v.modes, (m) => isRecord(m) && Object.values(m).every(isString));
+
+/**
+ * The fields every CLI since 0.1.0 wrote, and the artifact rows. Each optional
+ * field a later read uses is checked for its type when present, so a hand edit
+ * reads as no pull rather than crashing `pull`, `list`, or `skill`; absence is
+ * fine for all of them, since no CLI before 0.7.0 wrote the newer ones. `path`
+ * may be absent (0.5.0 wrote `aiPath`), null (not written), or a string.
+ */
+function isManifestShape(v: unknown): v is Manifest & { artifacts: StoredArtifact[] } {
+  if (!isRecord(v)) return false;
+  if (typeof v.libraryId !== 'string' || typeof v.publishedAt !== 'string'
+    || typeof v.bundleHash !== 'string' || typeof v.extractorVersion !== 'string') return false;
+  if (v.pluginVersion !== undefined && v.pluginVersion !== null && typeof v.pluginVersion !== 'string') return false;
+  if (!optional(v.version, isString) || !optional(v.cliVersion, isString)
+    || !optional(v.selection, isStoredSelection) || !optional(v.dtcg, isRecord)
+    || !optional(v.platforms, (p) => Array.isArray(p) && p.every(isString))
+    || !optional(v.outputs, (o) => Array.isArray(o) && o.every(isStoredOutput))
+    || !optional(v.componentSpecsDir, isString) || !optional(v.componentSpecsFormat, isComponentFormat)) return false;
+  if (!Array.isArray(v.artifacts)) return false;
+  const pathLike = (p: unknown): boolean => p === undefined || p === null || typeof p === 'string';
+  return v.artifacts.every((a) => isRecord(a)
+    && (a.kind === 'foundation' || a.kind === 'component')
+    && typeof a.name === 'string' && typeof a.contentHash === 'string'
+    && pathLike(a.path) && pathLike(a.aiPath));
+}
+
 export function readManifest(outDir: string): Manifest | null {
   const path = join(outDir, 'manifest.json');
   if (!existsSync(path)) return null;
+  let parsed: unknown;
   try {
-    const parsed = JSON.parse(readFileSync(path, 'utf8')) as Manifest & {
-      artifacts: Array<ManifestArtifact & { aiPath?: string | null }>;
-    };
-    // CLI 0.5.0 and earlier wrote the field as aiPath. Read it as path so
-    // list, skill, and status keep working until the next pull rewrites it.
-    parsed.artifacts = parsed.artifacts.map((artifact) => {
-      const { aiPath, ...rest } = artifact as ManifestArtifact & { aiPath?: string | null };
-      return {
-        ...rest, path: rest.path ?? aiPath ?? null,
-      } as ManifestArtifact;
-    });
-    return parsed;
-  } catch { return null; }
+    parsed = JSON.parse(readFileSync(path, 'utf8'));
+  } catch {
+    return null;
+  }
+  // Not the shape this CLI writes: treat it as no pull. Every reader then
+  // says "run spec-layer pull", and the next pull rewrites the file. Reading
+  // fields off an arbitrary object let list print undefined and pull compare
+  // against a hash that was not a string.
+  if (!isManifestShape(parsed)) return null;
+  // CLI 0.5.0 and earlier wrote the field as aiPath. Read it as path so
+  // list, skill, and status keep working until the next pull rewrites it.
+  const artifacts: ManifestArtifact[] = (parsed.artifacts as StoredArtifact[])
+    .map(({ aiPath, ...rest }) => ({ ...rest, path: rest.path ?? aiPath ?? null }));
+  return { ...parsed, artifacts };
 }
 
 /** The whole bundle as last pulled, or null when nothing was pulled. */
@@ -141,20 +185,37 @@ export function readLocalBundle(outDir: string): BundleV1 | null {
 
 /**
  * The swap below deletes outDir wholesale, so refuse anything that is not a
- * directory of our own: the working directory or one of its parents, or an
- * existing non-empty directory that holds no manifest from a previous pull.
+ * directory of our own: the working directory or one of its parents, a file,
+ * or an existing non-empty directory that holds no manifest from a previous
+ * pull. resolveOutDir in config.ts already refused the first case for every
+ * command; this is the last line of defence, with the same sentence.
  */
 function assertReplaceable(outDir: string, cwd: string): void {
-  const rel = relative(resolve(cwd), resolve(outDir));
-  if (rel === '' || rel.startsWith('..') || isAbsolute(rel)) {
-    throw new Error('The output directory must sit inside the current directory, not be "." or a parent of it.');
+  const root = resolve(cwd);
+  const abs = resolve(outDir);
+  if (abs === root || !pathInside(root, abs)) throw new Error(OUT_DIR_RULE);
+  // lstat, not existsSync: a link, dangling or not, is the link itself here.
+  const stat = lstatSync(abs, { throwIfNoEntry: false });
+  if (!stat) return;
+  // The swap renames a fresh directory onto outDir, which would replace a
+  // link rather than write through it (0.10.0 did exactly that), so refuse
+  // and say what is there.
+  if (stat.isSymbolicLink()) {
+    throw new Error(
+      `${outDir} is a symbolic link, and spec-layer pull replaces its output directory rather than writing through a link. `
+      + 'Point --out or "outDir" in speclayer.json at a real directory, or replace the link with the directory it points to.',
+    );
   }
-  if (existsSync(outDir) && !existsSync(join(outDir, 'manifest.json')) && readdirSync(outDir).length > 0) {
+  // readdirSync on a file throws a raw ENOTDIR; say what is there instead.
+  if (!stat.isDirectory()) {
+    throw new Error(`${outDir} exists and is not a directory. Choose another path or remove the file.`);
+  }
+  if (!existsSync(join(abs, 'manifest.json')) && readdirSync(abs).length > 0) {
     throw new Error(`${outDir} exists and was not written by spec-layer pull. Choose an empty or new directory.`);
   }
 }
 
-/** Stage the record into <outDir>.partial, swap, then write the visible directories. A failed pull never half-writes. */
+/** Stage the record into a fresh <outDir>.partial-XXXXXX, swap, then write the visible directories. A failed pull never half-writes. */
 export function writeBundleFiles(opts: {
   outDir: string; cwd: string; raw: string; bundle: BundleV1; libraryId: string; publishedAt: string; bundleHash: string;
   version?: string | null;
@@ -194,8 +255,18 @@ export function writeBundleFiles(opts: {
     briefs[`${slugs[i]}.yaml`] = component.ai;
   });
 
-  const staging = `${opts.outDir}.partial`;
-  rmSync(staging, { recursive: true, force: true });
+  // A directory this call creates, so the cleanup below only ever removes
+  // what this call made. A fixed `<outDir>.partial` was deleted recursively
+  // whether or not spec-layer had put it there. The parent must exist first:
+  // `--out build/spec` on a fresh checkout has no `build/` yet.
+  mkdirSync(dirname(resolve(opts.outDir)), { recursive: true });
+  const staging = mkdtempSync(`${resolve(opts.outDir)}.partial-`);
+  // mkdtempSync always creates its directory at mode 0700 (Node applies that
+  // regardless of umask, to keep a temp directory private by default), but
+  // this one is renamed onto opts.outDir, so it must come out with the same
+  // mode a plain mkdirSync would have given: readable by whoever the umask
+  // allows, not owner-only. chmod it to what mkdirSync's default would be.
+  chmodSync(staging, 0o777 & ~process.umask());
   const written: string[] = [];
   const deliverables: Array<{ output: OutputConfig; files: Record<string, string> }> = [];
   const json = (v: unknown) => `${JSON.stringify(v, null, 2)}\n`;

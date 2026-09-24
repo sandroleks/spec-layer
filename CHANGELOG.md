@@ -25,8 +25,39 @@ byte-identical files. The plugin's Markdown setup command depends on it: CLI
 0.9.0 does not know `--component-format`, prints its usage, and exits 1, so a
 plugin build carrying it must not reach the listing before 0.10.0 is on npm.
 
+The CLI hardening in this section ships as 0.11.0, a minor release because
+`--key -` is a new option and because four inputs the CLI used to accept are
+now refused: an absolute `--out`, an output directory that is a symbolic
+link, a plain-http `--api` to anything but localhost, and an `--id` that is
+not the shape the plugin issues. A parent `--out` was already refused when
+the pull wrote; it is now refused before anything is fetched or written. A
+repository on 0.10.0 re-projects once on its first pull with 0.11.0 through
+the `manifest.cliVersion` check and gets byte-identical files. One kind of
+repository needs a step: earlier versions recorded `init --out /abs/x` in
+`speclayer.json` as-is and wrote every pull to `abs/x` inside the working
+directory, so 0.11.0 refuses that `outDir` with the relative path to change it
+to, and `setup` with no `--out`, the plugin's command, rewrites it to that
+path, where the files already are, and says so in one line.
+
 ### Added
 
+- **The `spec-layer` tarball carries `LICENSE`.** The CLI build copies the
+  repository's MIT license into the package directory, where npm always
+  includes it, and the bundle check fails when it is missing. The bundle
+  check now also runs `tools --json` and `show component` from the built
+  artifact against a synthetic bundle, so a bundle that builds but cannot run
+  a command fails it.
+- **`--key -` reads the pull key from stdin.** A key on the command line is
+  visible to shell history and to `ps` while the command runs. `setup`,
+  `pull`, and `status` (the commands that resolve a key at all) now take
+  `--key -` and read the first non-empty line from stdin, from a pipe or a
+  paste followed by Enter, so the pasted command never holds the secret; a
+  real terminal gets a short prompt on stderr first, so the wait does not
+  look like a hang. Every other command ignores `--key` entirely, so
+  `--key -` there is inert rather than a stray block on stdin.
+  `SPEC_LAYER_KEY` remains the way for CI. Nothing arriving is an error
+  rather than an empty key, and a stdin that cannot be read, such as a
+  closed descriptor, is refused in one sentence rather than a stack trace.
 - **A self-describing DTCG output** (CLI 0.8.2, on npm since 2026-09-10; the
   plugin's clipboard side of it landed after the `v5.1.0` tag in #59 and #60
   and has not been in a tagged plugin release). The document extension now
@@ -491,6 +522,88 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
 
 ### Fixed
 
+- **`setup` says what survived a failed pull.** The config, the ignore entry,
+  and the key are written before the pull, so a network or key failure left a
+  complete setup with an error as the last line. When the fetch failed on the
+  network, timed out, or got a 5xx, it now ends with `Setup is stored. Run
+  spec-layer pull to retry.` After any other failure, such as a revoked key
+  or an unpublished library, it adds nothing, since a bare retry cannot help
+  and the error above already says what to do.
+- **The CLI names the Publish screen.** Four messages and two README lines
+  sent the reader to a "Library screen" for the setup command and for key
+  rotation; both live on the plugin's Publish screen, which `tools` already
+  named. Every surface now agrees.
+- **`setup` states the cause git confirmed when the key file stays
+  unignored.** It guessed "most likely already tracked" and named `git rm
+  --cached`. It now asks `git ls-files --error-unmatch`, gives that command
+  only when the file is tracked, and otherwise points at a re-including `!`
+  rule.
+- **`spec-layer skill --install` refuses a shared file with one marker.** An
+  `AGENTS.md` or `GEMINI.md` holding `<!-- spec-layer:begin -->` without its
+  end marker got a second block appended, and the next run replaced everything
+  from the first marker to the new end, deleting the text in between. The file
+  is now left untouched, and the command says both markers must be present,
+  in order, or both absent.
+- **A malformed `manifest.json` reads as no pull.** The file was cast to the
+  manifest type without a check, so a hand-edited or truncated manifest could
+  make `list` print `undefined` cells or `pull` compare a hash that was not a
+  string. Every command now reports `No local pull found. Run spec-layer
+  pull.`, and the next pull rewrites the file. Each optional field a later
+  read uses is checked too when present, so an `outputs` that is not a list
+  or a `componentSpecsDir` that is not a string reads the same way instead of
+  crashing `pull`; every shape an earlier CLI wrote still reads.
+- **`--id` is checked against the shape the plugin issues.** `init`, `setup`,
+  `pull`, and `status` refuse an `--id` that is not `lib_` followed by 24 hex
+  characters, with one sentence, before writing `speclayer.json` or the key
+  and before any request. The sentence never repeats the value, so a pull key
+  swapped into `--id` stays out of the terminal, CI logs, and the request URL,
+  and a value starting with `sl_` is pointed at `--key`. `pull --id sl_...`
+  used to print the key in full when a stored key belonged to another
+  library. An id read from `speclayer.json` is not checked, since earlier
+  versions wrote it unchecked. On the wire the id is URL-encoded, so a stray
+  slash cannot change the request path.
+- **`spec-layer pull` no longer deletes a directory it did not create.** The
+  record was staged in a fixed `.speclayer.partial`, which the pull removed
+  recursively first, whatever was there. Staging now happens in a fresh
+  `.speclayer.partial-XXXXXX` made by that run, so only that run's own
+  directory is ever removed.
+- **A 304 the CLI did not ask for is an error.** `spec-layer pull` sends the
+  last pull's hash only when every file that pull wrote is still on disk and
+  would be written the same way again. A server that answered 304 to a request
+  carrying no hash was reported as `Already up to date` with nothing on disk to
+  be up to date. It now exits 1, says nothing was written, and says that files
+  from an earlier pull, if any, are unchanged.
+- **A stalled server no longer hangs `spec-layer pull` or `status`.** Every
+  request now carries a 30 second timeout that covers the headers and the
+  body, and a timeout is reported as `<api> did not finish answering within
+  30 seconds.`, which is true whether the server never answered or a slow
+  body was still arriving. The limit is fixed, so a bundle that takes longer
+  than 30 seconds to download fails. A response body that cannot be read is
+  reported in one sentence too; it used to escape as a stack trace.
+- **`spec-layer` refuses an output directory it would have mishandled.** An
+  absolute `--out` was joined under the working directory and written there
+  while every message named the absolute path; `--out` that names a file
+  surfaced a raw `ENOTDIR`; and a directory whose name merely begins with two
+  dots (`..cache`) was refused as a parent. `pull`, `setup`, `init`,
+  `status`, `list`, `show`, and `skill` now refuse an absolute path, `.`, or a
+  parent with one sentence before touching the network or writing
+  `speclayer.json`, and `..cache` is accepted. A path that is a file is
+  refused in one sentence too, but only when the pull writes, which is after
+  the fetch, and for `setup` after `speclayer.json` and the key are written;
+  `status`, `list`, `show`, and `skill` only read, and report no local pull
+  there. The same rule applies to `componentSpecsDir` and
+  `outputs[].path`, which share the check. A refusal names `--out` or
+  `speclayer.json` `"outDir"`, whichever the value came from. An output
+  directory that is a symbolic link is now refused when the pull writes, with
+  a sentence that says it is a link: 0.10.0 followed the link and then
+  replaced it with a real directory, and the swap cannot write through one.
+  Point the output directory at a real directory, or replace the link with
+  the directory it points to.
+- **`--api` and `SPEC_LAYER_API` must be https.** The pull key travels in the
+  Authorization header of every request, and a plain `http://` origin sent it
+  in the clear. Only `localhost`, `127.0.0.1`, and `[::1]` may use http, for a
+  local proxy build. The refusal names `--api` or `SPEC_LAYER_API`, whichever
+  held the value.
 - **An Anthropic call that hangs is cut off before its reservation expires.**
   The proxy aborts the upstream call at 150 seconds and answers
   `502 upstream_timeout` with nothing charged; the reservation window is now

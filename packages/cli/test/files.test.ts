@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtempSync, mkdirSync, rmSync, existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, existsSync, readFileSync, readdirSync, writeFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -65,6 +65,9 @@ function makeBundle(overrides: Partial<BundleV1> = {}): BundleV1 {
   };
 }
 
+/** Every staging directory left beside outDir; a clean run leaves none. */
+const stagingLeftovers = (dir: string): string[] => readdirSync(dir).filter((n) => n.startsWith('.speclayer.partial'));
+
 // twoComponents() carries the stub foundation from makeBundle(), which fails
 // validateLevel1 (it is only a content-hash stub, not a real v5 artifact), so
 // every writeBundleFiles call using it must deselect the foundation.
@@ -124,6 +127,79 @@ describe('writeBundleFiles', () => {
     const manifest = readManifest(outDir);
     expect(manifest?.artifacts.map((a) => a.path)).toEqual(['tokens/resolver.json', null]);
     expect(manifest?.artifacts.some((a) => 'aiPath' in a)).toBe(false);
+  });
+
+  it('reads a malformed manifest as no pull, never as a partial object', () => {
+    mkdirSync(outDir, { recursive: true });
+    const base = { libraryId: 'lib_old', publishedAt: '2026-09-01T00:00:00.000Z', bundleHash: 'h', pluginVersion: null, extractorVersion: '2' };
+    const bodies: string[] = [
+      '[]',
+      '{"libraryId": 1}',
+      JSON.stringify({ ...base, artifacts: 'nope' }),
+      JSON.stringify({ ...base, bundleHash: 7, artifacts: [] }),
+      JSON.stringify({ ...base, artifacts: [{ kind: 'widget', name: 'x', contentHash: 'c', path: null }] }),
+      JSON.stringify({ ...base, artifacts: [{ kind: 'component', name: 'x', contentHash: 'c', path: 3 }] }),
+    ];
+    for (const body of bodies) {
+      writeFileSync(join(outDir, 'manifest.json'), body);
+      expect(readManifest(outDir), body).toBeNull();
+    }
+    writeFileSync(join(outDir, 'manifest.json'), JSON.stringify({ ...base, artifacts: [] }));
+    expect(readManifest(outDir)?.libraryId).toBe('lib_old');
+  });
+
+  it('reads an optional field of the wrong type as no pull, so a hand edit cannot crash a later read', () => {
+    mkdirSync(outDir, { recursive: true });
+    const base = {
+      libraryId: 'lib_old', publishedAt: '2026-09-01T00:00:00.000Z', bundleHash: 'h', pluginVersion: null, extractorVersion: '2', artifacts: [],
+    };
+    const output = { platform: 'web', format: 'css', path: 'tokens', case: 'kebab' };
+    const wrong: Array<Record<string, unknown>> = [
+      { version: 3 },
+      { cliVersion: false },
+      { selection: 'all' },
+      { selection: { foundation: 'yes', components: null } },
+      { selection: { foundation: true } },
+      { selection: { foundation: true, components: [1] } },
+      { dtcg: 'legacy' },
+      { platforms: 'web' },
+      { platforms: [1] },
+      { outputs: 'tokens' },
+      { outputs: [null] },
+      { outputs: [{ ...output, path: 4 }] },
+      { outputs: [{ ...output, platform: undefined }] },
+      { outputs: [{ ...output, modes: 'dark' }] },
+      { outputs: [{ ...output, modeSelector: 1 }] },
+      { componentSpecsDir: ['component-specs'] },
+      { componentSpecsFormat: 'markdown' },
+    ];
+    for (const extra of wrong) {
+      writeFileSync(join(outDir, 'manifest.json'), JSON.stringify({ ...base, ...extra }));
+      expect(readManifest(outDir), JSON.stringify(extra)).toBeNull();
+    }
+  });
+
+  it('still reads every optional field as 0.7.0 to 0.10.0 wrote it', () => {
+    mkdirSync(outDir, { recursive: true });
+    const written = {
+      libraryId: 'lib_aaaaaaaaaaaaaaaaaaaaaaaa', publishedAt: '2026-09-01T00:00:00.000Z', bundleHash: 'h',
+      pluginVersion: '5.1.0', extractorVersion: '2', cliVersion: '0.10.0', version: '1.2.0',
+      selection: { foundation: true, components: ['Button'] },
+      dtcg: { values: 'legacy', units: { 'Primitives/number/*': 'px' } },
+      platforms: ['web'],
+      outputs: [{
+        platform: 'web', format: 'css', path: 'tokens', case: 'kebab', root: ':root',
+        modeSelector: '[data-theme="{mode}"]', modes: { Theme: '.dark' },
+      }],
+      componentSpecsDir: 'component-specs', componentSpecsFormat: 'md',
+      artifacts: [{ kind: 'component', name: 'Button', contentHash: 'c', path: 'component-specs/button.md' }],
+    };
+    writeFileSync(join(outDir, 'manifest.json'), JSON.stringify(written));
+    expect(readManifest(outDir)).toEqual(written);
+    // 0.7.0 to 0.9.x wrote no componentSpecsFormat, and a selection with every component.
+    const { componentSpecsFormat: _format, ...older } = written;
+    writeFileSync(join(outDir, 'manifest.json'), JSON.stringify({ ...older, selection: { foundation: false, components: null } }));
+    expect(readManifest(outDir)?.selection).toEqual({ foundation: false, components: null });
   });
 
   it('replaces a CRLF-checked-out brief already on disk in component-specs/', () => {
@@ -279,7 +355,7 @@ describe('writeBundleFiles', () => {
       libraryId: 'lib-1', publishedAt: '2026-09-01T00:00:00.000Z', bundleHash: 'h'.repeat(64),
     });
     expect(existsSync(join(tmpDir, 'component-specs/button.yaml'))).toBe(true);
-    expect(existsSync(`${outDir}.partial`)).toBe(false);
+    expect(stagingLeftovers(tmpDir)).toEqual([]);
 
     const bundle2 = makeBundle({
       foundation: null,
@@ -298,7 +374,41 @@ describe('writeBundleFiles', () => {
     // New files are present.
     expect(existsSync(join(tmpDir, 'component-specs/card.yaml'))).toBe(true);
     // No staging dir left behind.
-    expect(existsSync(`${outDir}.partial`)).toBe(false);
+    expect(stagingLeftovers(tmpDir)).toEqual([]);
+  });
+
+  it('never deletes a directory it did not create, even one named like its old staging area', () => {
+    mkdirSync(`${outDir}.partial`);
+    writeFileSync(`${outDir}.partial/mine.txt`, 'keep');
+    const bundle = makeBundle({ foundation: null });
+
+    writeBundleFiles({
+      outDir, cwd: tmpDir, raw: JSON.stringify(bundle), bundle,
+      libraryId: 'lib-1', publishedAt: '2026-09-01T00:00:00.000Z', bundleHash: 'h'.repeat(64),
+    });
+
+    expect(readFileSync(`${outDir}.partial/mine.txt`, 'utf8')).toBe('keep');
+    expect(existsSync(join(outDir, 'manifest.json'))).toBe(true);
+    expect(readdirSync(tmpDir).filter((n) => n.startsWith('.speclayer.partial-'))).toEqual([]);
+  });
+
+  it.skipIf(process.platform === 'win32')('leaves the output directory with the same permissions a plain mkdirSync would give', () => {
+    // mkdtempSync creates its directory at mode 0700 regardless of umask, to
+    // keep a fresh temp directory private by default. That directory is
+    // renamed onto outDir here, so it must come out with the ordinary mode a
+    // ready-to-read output directory has, not owner-only. A sibling made with
+    // a plain mkdirSync in the same parent is the reference for what that
+    // ordinary mode is under whatever umask this machine runs with.
+    const bundle = makeBundle({ foundation: null });
+    writeBundleFiles({
+      outDir, cwd: tmpDir, raw: JSON.stringify(bundle), bundle,
+      libraryId: 'lib-1', publishedAt: '2026-09-01T00:00:00.000Z', bundleHash: 'h'.repeat(64),
+    });
+
+    const reference = join(tmpDir, 'plain-mkdir-reference');
+    mkdirSync(reference);
+
+    expect(statSync(outDir).mode & 0o777).toBe(statSync(reference).mode & 0o777);
   });
 
   it('skips the foundation file when foundation is null', () => {
@@ -341,12 +451,9 @@ describe('writeBundleFiles', () => {
     const originalResolverContent = readFileSync(join(outDir, 'tokens/resolver.json'), 'utf8');
 
     // Force the mid-staging write of tokens/resolver.json to fail, simulating a disk
-    // error partway through. Directory pre-seeding cannot inject this: writeBundleFiles
-    // unconditionally rmSync's the .partial staging dir as its very first step, so any
-    // conflict planted there ahead of time is wiped out before it can matter (verified:
-    // pre-creating <outDir>.partial/tokens/resolver.json as a directory does not trigger
-    // the catch branch, because it never survives that leading rmSync). Failing exactly
-    // one write instead requires intercepting the fs call itself, via the vi.mock above.
+    // error partway through. The staging directory is a fresh mkdtemp beside outDir,
+    // so nothing can be pre-seeded into it; failing exactly one write requires
+    // intercepting the fs call itself, via the vi.mock above.
     const bundle2 = makeBundle({
       foundation: realFoundation(),
       components: [
@@ -365,7 +472,7 @@ describe('writeBundleFiles', () => {
     }
 
     // Staging directory was cleaned up by the catch branch.
-    expect(existsSync(`${outDir}.partial`)).toBe(false);
+    expect(stagingLeftovers(tmpDir)).toEqual([]);
     // The prior successful outDir is untouched: neither deleted nor half-overwritten.
     // The visible component-specs/ directory was never touched either, because the
     // failure happens while staging the swapped record, before the visible
@@ -809,7 +916,7 @@ describe('writeBundleFiles component format', () => {
       'The published component context for Button could not be rendered as Markdown. Republish from the plugin, then pull again.',
     );
     expect(existsSync(outDir)).toBe(false);
-    expect(existsSync(`${outDir}.partial`)).toBe(false);
+    expect(stagingLeftovers(tmpDir)).toEqual([]);
     expect(existsSync(join(tmpDir, 'component-specs'))).toBe(false);
   });
 

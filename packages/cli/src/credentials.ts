@@ -12,7 +12,7 @@ export interface StoredKey { libraryId: string; key: string }
 
 const unreadable = () => new Error(
   `${CREDENTIALS_NAME} cannot be read. Delete it, then run the setup command `
-  + `from the plugin's Library screen.`,
+  + `from the plugin's Publish screen.`,
 );
 
 /**

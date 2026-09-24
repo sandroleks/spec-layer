@@ -33,7 +33,7 @@ const PULL_EXITS = {
 export const TOOLS: readonly Tool[] = [
   {
     name: 'setup',
-    usage: 'spec-layer setup --id lib_... --key sl_... [--out DIR] [--platform web|ios|android|flutter]... [--component-format yaml|md] [--only foundation|components] [--component NAME]...',
+    usage: 'spec-layer setup --id lib_... --key sl_...|- [--out DIR] [--platform web|ios|android|flutter]... [--component-format yaml|md] [--only foundation|components] [--component NAME]...',
     summary: 'Records the library id, stores the pull key in a gitignored speclayer.local.json, then pulls.',
     when: 'Once, with the command the plugin\'s Publish screen hands out. Re-run it after the key is rotated.',
     network: true, needsKey: true,
@@ -55,7 +55,7 @@ export const TOOLS: readonly Tool[] = [
   },
   {
     name: 'pull',
-    usage: 'spec-layer pull [--id lib_...] [--key sl_...] [--out DIR] [--platform web|ios|android|flutter]... [--component-format yaml|md] [--only foundation|components] [--component NAME]... [--strict]',
+    usage: 'spec-layer pull [--id lib_...] [--key sl_...|-] [--out DIR] [--platform web|ios|android|flutter]... [--component-format yaml|md] [--only foundation|components] [--component NAME]... [--strict]',
     summary: 'Fetches the published library and writes the record under the output directory (default .speclayer/), the briefs under componentSpecsDir (YAML, or Markdown when componentSpecsFormat or --component-format says md), and the token files under outputs[].path. Prints a severity summary to stderr, even on a cached pull, when tokens/report.json or an outputs/*.report.json holds an error or warning.',
     when: 'After setup, whenever status says the local copy is behind, or after changing the include, dtcg, outputs, componentSpecsDir, or componentSpecsFormat settings. Add --strict in CI to fail the build on an error-severity report entry.',
     network: true, needsKey: true,
@@ -68,7 +68,7 @@ export const TOOLS: readonly Tool[] = [
   },
   {
     name: 'status',
-    usage: 'spec-layer status [--id lib_...] [--key sl_...] [--out DIR]',
+    usage: 'spec-layer status [--id lib_...] [--key sl_...|-] [--out DIR]',
     summary: 'Checks whether the local pull is current without writing anything.',
     when: 'Before reading the pulled files, or in CI; exit 2 means run pull.',
     network: true, needsKey: true,
@@ -114,11 +114,11 @@ export const TOOLS: readonly Tool[] = [
 ];
 
 export const GLOBAL_FLAGS: ReadonlyArray<{ flag: string; summary: string }> = [
-  { flag: '--api URL', summary: 'Override the API origin (default https://api.spec-layer.com). Also SPEC_LAYER_API.' },
-  { flag: '--out DIR', summary: 'Output directory (default .speclayer, or the outDir in speclayer.json).' },
+  { flag: '--api URL', summary: 'Override the API origin (default https://api.spec-layer.com). Also SPEC_LAYER_API. https only, except http to localhost.' },
+  { flag: '--out DIR', summary: 'Output directory (default .speclayer, or the outDir in speclayer.json). A relative path inside the working directory; pull replaces it wholesale.' },
 ];
 
-export const KEY_RESOLUTION = 'The pull key resolves from --key, then SPEC_LAYER_KEY, then speclayer.local.json written by setup. No command ever prints it.';
+export const KEY_RESOLUTION = 'The pull key resolves from --key, then SPEC_LAYER_KEY, then speclayer.local.json written by setup. --key - reads it from stdin so it stays out of shell history. No command ever prints it.';
 
 export function toolsText(): string {
   const lines: string[] = ['spec-layer commands', ''];

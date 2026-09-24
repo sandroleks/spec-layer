@@ -1,13 +1,8 @@
-import {
-  LibraryBundleError, parseLibraryBundle,
-  type LibraryBundleArtifact, type LibraryBundleComponent, type LibraryBundleV1,
-} from '@spec-layer/extractor';
+import { LibraryBundleError, parseLibraryBundle, type LibraryBundleV1 } from '@spec-layer/extractor';
 
 // The wire shape is defined once in the extractor and inlined here at build
 // time, so the plugin, the proxy, and this CLI cannot disagree about it. The
 // CLI still never re-derives v5 output; this is envelope parsing only.
-export type ArtifactLike = LibraryBundleArtifact;
-export type BundleEntry = LibraryBundleComponent;
 export type BundleV1 = LibraryBundleV1;
 
 export function parseBundle(raw: string): BundleV1 {

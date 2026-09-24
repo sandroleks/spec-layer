@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtempSync, mkdirSync, rmSync, existsSync, readFileSync, readdirSync, writeFileSync, chmodSync } from 'node:fs';
+import {
+  mkdtempSync, mkdirSync, rmSync, existsSync, readFileSync, readdirSync, writeFileSync, chmodSync, lstatSync, symlinkSync,
+} from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
@@ -12,7 +14,7 @@ import { buildComponentV5GoldenArtifact } from '../../extractor/test/fixtures/co
 import {
   runInit, runSetup, runPull, runStatus, runList, runShow, runTools, runSkill, type Io,
 } from '../src/commands';
-import { readConfig } from '../src/config';
+import { OUT_FLAG_RULE, readConfig } from '../src/config';
 import { readIndexImports } from '../src/outputs';
 
 function makeIo(): Io & { outLines: string[]; errLines: string[]; writes: string[] } {
@@ -190,10 +192,10 @@ describe('runInit', () => {
   it('writes speclayer.json from --id and prints where the key comes from', () => {
     const io = makeIo();
 
-    const code = runInit(cwd, { id: 'lib_abc' }, io);
+    const code = runInit(cwd, { id: 'lib_abcabcabcabcabcabcabcabc' }, io);
 
     expect(code).toBe(0);
-    expect(readConfig(cwd)).toEqual({ libraryId: 'lib_abc', outDir: '.speclayer', componentSpecsDir: 'component-specs' });
+    expect(readConfig(cwd)).toEqual({ libraryId: 'lib_abcabcabcabcabcabcabcabc', outDir: '.speclayer', componentSpecsDir: 'component-specs' });
     expect(io.outLines.join('\n')).toMatch(/spec-layer setup/);
   });
 
@@ -207,14 +209,47 @@ describe('runInit', () => {
     expect(existsSync(join(cwd, 'speclayer.json'))).toBe(false);
   });
 
+  it('refuses an --out outside the working directory and writes nothing', () => {
+    const io = makeIo();
+
+    const code = runInit(cwd, { id: 'lib_abcabcabcabcabcabcabcabc', out: '../elsewhere' }, io);
+
+    expect(code).toBe(1);
+    expect(io.errLines).toEqual([OUT_FLAG_RULE]);
+    expect(io.errLines[0]).toContain('--out');
+    expect(existsSync(join(cwd, 'speclayer.json'))).toBe(false);
+  });
+
+  it('refuses an id that is not lib_ plus 24 hex characters, before writing anything', () => {
+    for (const id of ['lib_abc', 'lib_ABCABCABCABCABCABCABCABC', 'abcabcabcabcabcabcabcabc', 'lib_abcabcabcabcabcabcabcabc/x']) {
+      const io = makeIo();
+      expect(runInit(cwd, { id }, io), id).toBe(1);
+      expect(io.errLines.join('\n')).toContain('24 hex characters');
+      expect(io.errLines.join('\n'), id).not.toContain(id);
+    }
+    expect(existsSync(join(cwd, 'speclayer.json'))).toBe(false);
+  });
+
+  it('never echoes a pull key passed as --id, and points it at --key', () => {
+    const key = `sl_${'a'.repeat(48)}`;
+    const io = makeIo();
+
+    expect(runInit(cwd, { id: key }, io)).toBe(1);
+
+    expect(io.errLines.join('\n')).not.toContain(key);
+    expect(io.errLines).toEqual([
+      '--id must be "lib_" followed by 24 hex characters, as the plugin shows it. That looks like the pull key; pass it with --key.',
+    ]);
+  });
+
   it('--platform web writes platforms and the default output, and prints where it lands', () => {
     const io = makeIo();
 
-    const code = runInit(cwd, { id: 'lib_abc', platform: ['web'] }, io);
+    const code = runInit(cwd, { id: 'lib_abcabcabcabcabcabcabcabc', platform: ['web'] }, io);
 
     expect(code).toBe(0);
     expect(readConfig(cwd)).toEqual({
-      libraryId: 'lib_abc', outDir: '.speclayer', componentSpecsDir: 'component-specs', platforms: ['web'],
+      libraryId: 'lib_abcabcabcabcabcabcabcabc', outDir: '.speclayer', componentSpecsDir: 'component-specs', platforms: ['web'],
       outputs: [{ platform: 'web', format: 'css', path: 'tokens', case: 'kebab' }],
     });
     expect(io.outLines).toContain('Token files for web: tokens/ (css, kebab names), written by the next pull.');
@@ -223,7 +258,7 @@ describe('runInit', () => {
   it('--platform ios names the missing format and writes no output entry', () => {
     const io = makeIo();
 
-    const code = runInit(cwd, { id: 'lib_abc', platform: ['ios'] }, io);
+    const code = runInit(cwd, { id: 'lib_abcabcabcabcabcabcabcabc', platform: ['ios'] }, io);
 
     expect(code).toBe(0);
     expect(readConfig(cwd)).not.toHaveProperty('outputs');
@@ -234,30 +269,30 @@ describe('runInit', () => {
     writeFileSync(join(cwd, 'Package.swift'), '// swift-tools-version:5.9\n');
     const io = makeIo();
 
-    const code = runInit(cwd, { id: 'lib_abc' }, io);
+    const code = runInit(cwd, { id: 'lib_abcabcabcabcabcabcabcabc' }, io);
 
     expect(code).toBe(0);
-    expect(readConfig(cwd)).toEqual({ libraryId: 'lib_abc', outDir: '.speclayer', componentSpecsDir: 'component-specs', platforms: ['ios'] });
+    expect(readConfig(cwd)).toEqual({ libraryId: 'lib_abcabcabcabcabcabcabcabc', outDir: '.speclayer', componentSpecsDir: 'component-specs', platforms: ['ios'] });
     expect(readConfig(cwd)).not.toHaveProperty('outputs');
     expect(io.outLines).toContain('No token files exist yet for ios: no output format is available for that platform. Web has css.');
   });
 
   it('--component-format md writes componentSpecsFormat', () => {
-    const code = runInit(cwd, { id: 'lib_abc', 'component-format': 'md' }, makeIo());
+    const code = runInit(cwd, { id: 'lib_abcabcabcabcabcabcabcabc', 'component-format': 'md' }, makeIo());
     expect(code).toBe(0);
     expect(readConfig(cwd)).toEqual({
-      libraryId: 'lib_abc', outDir: '.speclayer', componentSpecsDir: 'component-specs', componentSpecsFormat: 'md',
+      libraryId: 'lib_abcabcabcabcabcabcabcabc', outDir: '.speclayer', componentSpecsDir: 'component-specs', componentSpecsFormat: 'md',
     });
   });
 
   it('--component-format yaml is written too, because it was asked for', () => {
-    expect(runInit(cwd, { id: 'lib_abc', 'component-format': 'yaml' }, makeIo())).toBe(0);
+    expect(runInit(cwd, { id: 'lib_abcabcabcabcabcabcabcabc', 'component-format': 'yaml' }, makeIo())).toBe(0);
     expect(readConfig(cwd)?.componentSpecsFormat).toBe('yaml');
   });
 
   it('refuses an unknown --component-format before writing anything', () => {
     const io = makeIo();
-    expect(runInit(cwd, { id: 'lib_abc', 'component-format': 'markdown' }, io)).toBe(1);
+    expect(runInit(cwd, { id: 'lib_abcabcabcabcabcabcabcabc', 'component-format': 'markdown' }, io)).toBe(1);
     expect(io.errLines).toEqual(['--component-format takes yaml or md, not "markdown".']);
     expect(existsSync(join(cwd, 'speclayer.json'))).toBe(false);
   });
@@ -273,7 +308,7 @@ describe('runPull', () => {
   });
 
   it('pulls and writes files with config present', async () => {
-    runInit(cwd, { id: 'lib_abc' }, makeIo());
+    runInit(cwd, { id: 'lib_abcabcabcabcabcabcabcabc' }, makeIo());
     const io = makeIo();
 
     const code = await runPull(cwd, {}, { SPEC_LAYER_KEY: 'sl_secret' }, io, stub200());
@@ -291,7 +326,7 @@ describe('runPull', () => {
   it('works bare with --id and --key (no config), then status resolves id from the manifest', async () => {
     const pullIo = makeIo();
 
-    const pullCode = await runPull(cwd, { id: 'lib_abc', key: 'sl_secret' }, {}, pullIo, stub200());
+    const pullCode = await runPull(cwd, { id: 'lib_abcabcabcabcabcabcabcabc', key: 'sl_secret' }, {}, pullIo, stub200());
 
     expect(pullCode).toBe(0);
     expect(existsSync(join(cwd, 'speclayer.json'))).toBe(false);
@@ -305,18 +340,18 @@ describe('runPull', () => {
     expect(statusCode).toBe(0);
     expect(fetcher).toHaveBeenCalledTimes(1);
     const [url] = (fetcher as unknown as ReturnType<typeof vi.fn>).mock.calls[0] as [string];
-    expect(url).toBe('https://api.spec-layer.com/v1/libraries/lib_abc');
+    expect(url).toBe('https://api.spec-layer.com/v1/libraries/lib_abcabcabcabcabcabcabcabc');
   });
 
   it('errors without a key', async () => {
-    runInit(cwd, { id: 'lib_abc' }, makeIo());
+    runInit(cwd, { id: 'lib_abcabcabcabcabcabcabcabc' }, makeIo());
     const io = makeIo();
 
     const code = await runPull(cwd, {}, {}, io);
 
     expect(code).toBe(1);
     expect(io.errLines.join('\n')).toBe(
-      'No pull key. Run the setup command from the plugin\'s Library screen, or set SPEC_LAYER_KEY.',
+      'No pull key. Run the setup command from the plugin\'s Publish screen, or set SPEC_LAYER_KEY.',
     );
   });
 
@@ -342,7 +377,7 @@ describe('runPull', () => {
   });
 
   it('propagates api errors with exit 1 and no partial directory', async () => {
-    runInit(cwd, { id: 'lib_abc' }, makeIo());
+    runInit(cwd, { id: 'lib_abcabcabcabcabcabcabcabc' }, makeIo());
     const io = makeIo();
 
     const code = await runPull(cwd, {}, { SPEC_LAYER_KEY: 'sl_secret' }, io, stub401());
@@ -350,11 +385,11 @@ describe('runPull', () => {
     expect(code).toBe(1);
     expect(io.errLines.join('\n')).toMatch(/rotated or revoked/);
     expect(existsSync(join(cwd, '.speclayer'))).toBe(false);
-    expect(existsSync(join(cwd, '.speclayer.partial'))).toBe(false);
+    expect(readdirSync(cwd).filter((n) => n.startsWith('.speclayer.partial'))).toEqual([]);
   });
 
   it('re-pull with unchanged content leaves identical bytes', async () => {
-    runInit(cwd, { id: 'lib_abc' }, makeIo());
+    runInit(cwd, { id: 'lib_abcabcabcabcabcabcabcabc' }, makeIo());
 
     await runPull(cwd, {}, { SPEC_LAYER_KEY: 'sl_secret' }, makeIo(), stub200());
     const beforeBundle = readFileSync(join(cwd, '.speclayer/bundle.json'), 'utf8');
@@ -372,7 +407,7 @@ describe('runPull', () => {
   });
 
   it('prints the version beside the publish date and stores it in the manifest', async () => {
-    runInit(cwd, { id: 'lib_abc' }, makeIo());
+    runInit(cwd, { id: 'lib_abcabcabcabcabcabcabcabc' }, makeIo());
     const io = makeIo();
     await runPull(cwd, {}, { SPEC_LAYER_KEY: 'sl_secret' }, io, stub200(JSON.stringify(GOOD_BUNDLE), '2026-09-01T00:00:00.000Z', '1.5.0'));
     expect(io.outLines.join('\n')).toMatch(/\(v1\.5\.0, published 2026-09-01T00:00:00\.000Z\)/);
@@ -381,7 +416,7 @@ describe('runPull', () => {
   });
 
   it('keeps the current form when the proxy sends no version', async () => {
-    runInit(cwd, { id: 'lib_abc' }, makeIo());
+    runInit(cwd, { id: 'lib_abcabcabcabcabcabcabcabc' }, makeIo());
     const io = makeIo();
     await runPull(cwd, {}, { SPEC_LAYER_KEY: 'sl_secret' }, io, stub200());
     expect(io.outLines.join('\n')).toMatch(/\(published 2026-09-01T00:00:00\.000Z\)\./);
@@ -401,7 +436,7 @@ describe('runStatus', () => {
   });
 
   it('reports up to date on 304 with exit 0', async () => {
-    runInit(cwd, { id: 'lib_abc' }, makeIo());
+    runInit(cwd, { id: 'lib_abcabcabcabcabcabcabcabc' }, makeIo());
     await runPull(cwd, {}, { SPEC_LAYER_KEY: 'sl_secret' }, makeIo(), stub200());
     const io = makeIo();
 
@@ -412,7 +447,7 @@ describe('runStatus', () => {
   });
 
   it('reports behind on 200 with exit 2 and names the remote publishedAt', async () => {
-    runInit(cwd, { id: 'lib_abc' }, makeIo());
+    runInit(cwd, { id: 'lib_abcabcabcabcabcabcabcabc' }, makeIo());
     await runPull(cwd, {}, { SPEC_LAYER_KEY: 'sl_secret' }, makeIo(), stub200(JSON.stringify(GOOD_BUNDLE), '2026-09-01T00:00:00.000Z'));
     const io = makeIo();
 
@@ -426,7 +461,7 @@ describe('runStatus', () => {
   });
 
   it('reports no local pull with exit 2 when manifest is missing', async () => {
-    runInit(cwd, { id: 'lib_abc' }, makeIo());
+    runInit(cwd, { id: 'lib_abcabcabcabcabcabcabcabc' }, makeIo());
     const io = makeIo();
 
     const code = await runStatus(cwd, {}, { SPEC_LAYER_KEY: 'sl_secret' }, io);
@@ -446,7 +481,7 @@ describe('runStatus', () => {
   });
 
   it('names the version when up to date and when behind', async () => {
-    runInit(cwd, { id: 'lib_abc' }, makeIo());
+    runInit(cwd, { id: 'lib_abcabcabcabcabcabcabcabc' }, makeIo());
     await runPull(cwd, {}, { SPEC_LAYER_KEY: 'sl_secret' }, makeIo(), stub200(JSON.stringify(GOOD_BUNDLE), '2026-09-01T00:00:00.000Z', '1.5.0'));
     const upToDate = makeIo();
     expect(await runStatus(cwd, {}, { SPEC_LAYER_KEY: 'sl_secret' }, upToDate, stub304('1.5.0'))).toBe(0);
@@ -472,7 +507,7 @@ describe('runPull with a selection', () => {
   let cwd: string;
   beforeEach(() => {
     cwd = mkdtempSync(join(tmpdir(), 'sl-cli-sel-'));
-    runInit(cwd, { id: 'lib_abc' }, makeIo());
+    runInit(cwd, { id: 'lib_abcabcabcabcabcabcabcabc' }, makeIo());
   });
   afterEach(() => {
     rmSync(cwd, { recursive: true, force: true });
@@ -513,7 +548,7 @@ describe('runPull with a selection', () => {
   });
 
   it('uses the include block from speclayer.json when no flag is given, and a flag replaces it', async () => {
-    runInit(cwd, { id: 'lib_abc', component: ['Card'] }, makeIo());
+    runInit(cwd, { id: 'lib_abcabcabcabcabcabcabcabc', component: ['Card'] }, makeIo());
 
     await runPull(cwd, {}, ENV, makeIo(), stubThree());
     expect(existsSync(join(cwd, 'component-specs/card.yaml'))).toBe(true);
@@ -534,7 +569,7 @@ describe('runPull with a selection', () => {
     expect(err).toMatch(/"Toast"/);
     expect(err).toMatch(/Button, Card, Icon Button/);
     expect(existsSync(join(cwd, '.speclayer'))).toBe(false);
-    expect(existsSync(join(cwd, '.speclayer.partial'))).toBe(false);
+    expect(readdirSync(cwd).filter((n) => n.startsWith('.speclayer.partial'))).toEqual([]);
   });
 
   it('rejects an unknown --only value before touching the network', async () => {
@@ -947,21 +982,21 @@ describe('runInit with a selection', () => {
   });
 
   it('persists --only and --component as the include block', () => {
-    const code = runInit(cwd, { id: 'lib_abc', only: 'components', component: ['Button'] }, makeIo());
+    const code = runInit(cwd, { id: 'lib_abcabcabcabcabcabcabcabc', only: 'components', component: ['Button'] }, makeIo());
 
     expect(code).toBe(0);
     expect(readConfig(cwd)?.include).toEqual({ foundation: false, components: ['Button'] });
   });
 
   it('writes no include block when no selection flag is given', () => {
-    runInit(cwd, { id: 'lib_abc' }, makeIo());
+    runInit(cwd, { id: 'lib_abcabcabcabcabcabcabcabc' }, makeIo());
     expect(readConfig(cwd)?.include).toBeUndefined();
   });
 
   it('rejects contradictory selection flags without writing config', () => {
     const io = makeIo();
 
-    const code = runInit(cwd, { id: 'lib_abc', only: 'foundation', component: ['Button'] }, io);
+    const code = runInit(cwd, { id: 'lib_abcabcabcabcabcabcabcabc', only: 'foundation', component: ['Button'] }, io);
 
     expect(code).toBe(1);
     expect(io.errLines.join('\n')).toMatch(/--only foundation/);
@@ -973,7 +1008,7 @@ describe('runList', () => {
   let cwd: string;
   beforeEach(() => {
     cwd = mkdtempSync(join(tmpdir(), 'sl-cli-list-'));
-    runInit(cwd, { id: 'lib_abc' }, makeIo());
+    runInit(cwd, { id: 'lib_abcabcabcabcabcabcabcabc' }, makeIo());
   });
   afterEach(() => {
     rmSync(cwd, { recursive: true, force: true });
@@ -996,7 +1031,7 @@ describe('runList', () => {
 
     expect(code).toBe(0);
     const out = io.outLines.join('\n');
-    expect(out).toMatch(/lib_abc/);
+    expect(out).toMatch(/lib_abcabcabcabcabcabcabcabc/);
     expect(out).toMatch(/2026-09-01T00:00:00\.000Z/);
     expect(out).toMatch(/foundation\s+foundation\s+\.speclayer\/tokens\/resolver\.json\s+sha256:[0-9a-f]{64}/);
     expect(out).toMatch(/component\s+Button\s+not written\s+a{64}/);
@@ -1004,11 +1039,11 @@ describe('runList', () => {
   });
 
   it('prints the version in the header line when the manifest has one', async () => {
-    runInit(cwd, { id: 'lib_abc' }, makeIo());
+    runInit(cwd, { id: 'lib_abcabcabcabcabcabcabcabc' }, makeIo());
     await runPull(cwd, {}, { SPEC_LAYER_KEY: 'sl_secret' }, makeIo(), stub200(JSON.stringify(GOOD_BUNDLE), '2026-09-01T00:00:00.000Z', '1.5.0'));
     const io = makeIo();
     runList(cwd, {}, io);
-    expect(io.outLines[0]).toBe('Library lib_abc, v1.5.0, published 2026-09-01T00:00:00.000Z.');
+    expect(io.outLines[0]).toBe('Library lib_abcabcabcabcabcabcabcabc, v1.5.0, published 2026-09-01T00:00:00.000Z.');
   });
 });
 
@@ -1016,7 +1051,7 @@ describe('runShow', () => {
   let cwd: string;
   beforeEach(async () => {
     cwd = mkdtempSync(join(tmpdir(), 'sl-cli-show-'));
-    runInit(cwd, { id: 'lib_abc' }, makeIo());
+    runInit(cwd, { id: 'lib_abcabcabcabcabcabcabcabc' }, makeIo());
   });
   afterEach(() => {
     rmSync(cwd, { recursive: true, force: true });
@@ -1107,7 +1142,7 @@ describe('runShow', () => {
   });
 
   it('prints the markdown page when speclayer.json says md', async () => {
-    runInit(cwd, { id: 'lib_abc', 'component-format': 'md' }, makeIo());
+    runInit(cwd, { id: 'lib_abcabcabcabcabcabcabcabc', 'component-format': 'md' }, makeIo());
     await runPull(cwd, {}, ENV, makeIo(), stub200(JSON.stringify(MD_BUNDLE)));
     const io = makeIo();
     expect(runShow(cwd, {}, ['component', 'Button'], io)).toBe(0);
@@ -1169,7 +1204,7 @@ describe('runPull safety and freshness', () => {
   let cwd: string;
   beforeEach(() => {
     cwd = mkdtempSync(join(tmpdir(), 'sl-cli-safe-'));
-    runInit(cwd, { id: 'lib_abc' }, makeIo());
+    runInit(cwd, { id: 'lib_abcabcabcabcabcabcabcabc' }, makeIo());
   });
   afterEach(() => {
     rmSync(cwd, { recursive: true, force: true });
@@ -1208,7 +1243,7 @@ describe('runPull safety and freshness', () => {
   it('still sends the hash on a 304 check when the pull never writes the Foundation, ' +
     'so an --only components style config does not redownload forever', async () => {
     writeFileSync(join(cwd, 'speclayer.json'), JSON.stringify({
-      libraryId: 'lib_abc', outDir: '.speclayer', platforms: ['web'],
+      libraryId: 'lib_abcabcabcabcabcabcabcabc', outDir: '.speclayer', platforms: ['web'],
       include: { foundation: false, components: null },
     }));
     await runPull(cwd, {}, ENV, makeIo(), stub200());
@@ -1233,7 +1268,7 @@ describe('runPull safety and freshness', () => {
     const code = await runPull(cwd, { out: '.' }, ENV, io, stubThree());
 
     expect(code).toBe(1);
-    expect(io.errLines.join('\n')).toMatch(/output directory/i);
+    expect(io.errLines).toEqual([OUT_FLAG_RULE]);
     expect(readFileSync(join(cwd, 'keep.txt'), 'utf8')).toBe('mine');
   });
 
@@ -1247,7 +1282,128 @@ describe('runPull safety and freshness', () => {
     expect(code).toBe(1);
     expect(io.errLines.join('\n')).toMatch(/src.*not written by spec-layer/s);
     expect(readFileSync(join(cwd, 'src/index.ts'), 'utf8')).toBe('export {};');
-    expect(existsSync(join(cwd, 'src.partial'))).toBe(false);
+    expect(readdirSync(cwd).filter((n) => n.startsWith('src.partial'))).toEqual([]);
+  });
+
+  it('refuses an absolute or parent --out before touching the network, with the one sentence', async () => {
+    for (const out of [join(tmpdir(), 'sl-elsewhere'), '..', '../sibling']) {
+      const io = makeIo();
+      const fetcher = stubThree();
+
+      expect(await runPull(cwd, { out }, ENV, io, fetcher), out).toBe(1);
+
+      expect(io.errLines).toEqual([OUT_FLAG_RULE]);
+      expect(fetcher).not.toHaveBeenCalled();
+    }
+    expect(existsSync(join(tmpdir(), 'sl-elsewhere'))).toBe(false);
+  });
+
+  it('refuses an absolute outDir an earlier CLI recorded in speclayer.json, naming the file and where the files really are', async () => {
+    writeFileSync(join(cwd, 'speclayer.json'), JSON.stringify({ libraryId: 'lib_abcabcabcabcabcabcabcabc', outDir: '/custom' }));
+    const expected = 'speclayer.json "outDir" is "/custom". Earlier versions wrote that to custom inside this directory. '
+      + 'Change "outDir" to "custom", or run the setup command from the plugin\'s Publish screen, which does that for you.';
+    const io = makeIo();
+    const fetcher = stubThree();
+
+    expect(await runPull(cwd, {}, ENV, io, fetcher)).toBe(1);
+
+    expect(io.errLines).toEqual([expected]);
+    expect(fetcher).not.toHaveBeenCalled();
+    const listIo = makeIo();
+    expect(runList(cwd, {}, listIo)).toBe(1);
+    expect(listIo.errLines).toEqual([expected]);
+  });
+
+  it('pulls again, without crashing, when a hand edit left manifest.json fields of the wrong type', async () => {
+    writeFileSync(join(cwd, 'speclayer.json'), JSON.stringify({ libraryId: 'lib_abcabcabcabcabcabcabcabc', outDir: '.speclayer', platforms: ['web'] }));
+    expect(await runPull(cwd, {}, ENV, makeIo(), stub200())).toBe(0);
+    const path = join(cwd, '.speclayer', 'manifest.json');
+    const good = JSON.parse(readFileSync(path, 'utf8'));
+    for (const edit of [
+      { outputs: [{ platform: 'web', format: 'css', path: 4, case: 'kebab' }] },
+      { componentSpecsDir: 5 },
+    ]) {
+      writeFileSync(path, JSON.stringify({ ...good, ...edit }));
+      const fetcher = stub200();
+
+      expect(await runPull(cwd, {}, ENV, makeIo(), fetcher), JSON.stringify(edit)).toBe(0);
+
+      expect(headerOf(fetcher, 'If-None-Match')).toBeUndefined();
+      expect(JSON.parse(readFileSync(path, 'utf8'))).toMatchObject({ outputs: good.outputs, componentSpecsDir: good.componentSpecsDir });
+    }
+  });
+
+  it('accepts an --out whose name merely begins with two dots', async () => {
+    expect(await runPull(cwd, { out: '..cache' }, ENV, makeIo(), stubThree())).toBe(0);
+    expect(existsSync(join(cwd, '..cache', 'manifest.json'))).toBe(true);
+  });
+
+  it('refuses an --out that is a file, in one sentence, and leaves the file alone', async () => {
+    writeFileSync(join(cwd, 'notes'), 'mine');
+    const io = makeIo();
+
+    const code = await runPull(cwd, { out: 'notes' }, ENV, io, stubThree());
+
+    expect(code).toBe(1);
+    expect(io.errLines.join('\n')).toMatch(/notes exists and is not a directory\. Choose another path or remove the file\./);
+    expect(readFileSync(join(cwd, 'notes'), 'utf8')).toBe('mine');
+  });
+
+  // 0.10.0 followed the link, then replaced it with a real directory. Writing
+  // through a link is not something the swap can do safely, so it is refused,
+  // and the message says what is there rather than "not a directory".
+  it.skipIf(process.platform === 'win32')('refuses an output directory that is a symbolic link, and leaves the link and its target alone', async () => {
+    await runPull(cwd, { out: 'real' }, ENV, makeIo(), stubThree());
+    symlinkSync(join(cwd, 'real'), join(cwd, 'link'));
+    const io = makeIo();
+
+    expect(await runPull(cwd, { out: 'link' }, ENV, io, stubThree())).toBe(1);
+
+    expect(io.errLines).toEqual([
+      `${join(cwd, 'link')} is a symbolic link, and spec-layer pull replaces its output directory rather than writing through a link. `
+      + 'Point --out or "outDir" in speclayer.json at a real directory, or replace the link with the directory it points to.',
+    ]);
+    expect(lstatSync(join(cwd, 'link')).isSymbolicLink()).toBe(true);
+    expect(existsSync(join(cwd, 'real', 'manifest.json'))).toBe(true);
+    expect(readdirSync(cwd).filter((n) => n.startsWith('link.partial'))).toEqual([]);
+  });
+
+  it.skipIf(process.platform === 'win32')('refuses a dangling symbolic link as the output directory too', async () => {
+    symlinkSync(join(cwd, 'missing'), join(cwd, 'link'));
+    const io = makeIo();
+
+    expect(await runPull(cwd, { out: 'link' }, ENV, io, stubThree())).toBe(1);
+
+    expect(io.errLines.join('\n')).toContain('link is a symbolic link');
+    expect(lstatSync(join(cwd, 'link')).isSymbolicLink()).toBe(true);
+    expect(existsSync(join(cwd, 'missing'))).toBe(false);
+  });
+
+  it('treats an unsolicited 304 as an error with exit 1 when there is no local pull', async () => {
+    const io = makeIo();
+    const fetcher = stub304();
+
+    const code = await runPull(cwd, {}, ENV, io, fetcher);
+
+    expect(code).toBe(1);
+    expect(headerOf(fetcher, 'If-None-Match')).toBeUndefined();
+    expect(io.errLines).toEqual([
+      'https://api.spec-layer.com answered 304 Not Modified to a request that sent no If-None-Match, so it cannot be treated as current. '
+      + 'Nothing was written, and files from an earlier pull, if any, are unchanged. Run spec-layer pull again.',
+    ]);
+    expect(io.outLines.join('\n')).not.toContain('Already up to date');
+    expect(existsSync(join(cwd, '.speclayer'))).toBe(false);
+  });
+
+  it('treats a 304 as an error when no hash was sent because the selection changed, and touches nothing', async () => {
+    await runPull(cwd, {}, ENV, makeIo(), stubThree());
+    const io = makeIo();
+
+    const code = await runPull(cwd, { component: ['Card'] }, ENV, io, stub304());
+
+    expect(code).toBe(1);
+    expect(io.errLines.join('\n')).toContain('304 Not Modified');
+    expect(existsSync(join(cwd, 'component-specs/button.yaml'))).toBe(true);
   });
 });
 
@@ -1255,7 +1411,7 @@ describe('runPull component format', () => {
   let cwd: string;
   beforeEach(() => {
     cwd = mkdtempSync(join(tmpdir(), 'sl-cli-fmt-'));
-    runInit(cwd, { id: 'lib_abc' }, makeIo());
+    runInit(cwd, { id: 'lib_abcabcabcabcabcabcabcabc' }, makeIo());
   });
   afterEach(() => { rmSync(cwd, { recursive: true, force: true }); });
 
@@ -1290,7 +1446,7 @@ describe('runPull component format', () => {
   });
 
   it('reads componentSpecsFormat from speclayer.json, and a flag beats it for the run', async () => {
-    runInit(cwd, { id: 'lib_abc', 'component-format': 'md' }, makeIo());
+    runInit(cwd, { id: 'lib_abcabcabcabcabcabcabcabc', 'component-format': 'md' }, makeIo());
     expect(await runPull(cwd, {}, ENV, makeIo(), stub200(JSON.stringify(MD_BUNDLE)))).toBe(0);
     expect(existsSync(join(cwd, 'component-specs/button.md'))).toBe(true);
 
@@ -1382,6 +1538,32 @@ describe('runSetup', () => {
     expect(existsSync(join(cwd, 'speclayer.local.json'))).toBe(false);
   });
 
+  it('refuses a malformed id before writing config or key', async () => {
+    gitInit();
+    const io = makeIo();
+
+    expect(await runSetup(cwd, { id: 'lib_abc', key: KEY }, {}, io, stub200())).toBe(1);
+
+    expect(io.errLines.join('\n')).toContain('24 hex characters');
+    expect(existsSync(join(cwd, 'speclayer.json'))).toBe(false);
+    expect(existsSync(join(cwd, 'speclayer.local.json'))).toBe(false);
+  });
+
+  // Coding agents and CI run this line, so a swapped --id and --key must not
+  // put the secret in a scrollback or a persisted log.
+  it('never echoes a pull key swapped into --id', async () => {
+    gitInit();
+    const io = makeIo();
+
+    expect(await runSetup(cwd, { id: KEY, key: LIB }, {}, io, stub200())).toBe(1);
+
+    expect(io.errLines.join('\n')).not.toContain(KEY);
+    expect(io.outLines.join('\n')).not.toContain(KEY);
+    expect(io.errLines.join('\n')).toContain('pass it with --key');
+    expect(existsSync(join(cwd, 'speclayer.json'))).toBe(false);
+    expect(existsSync(join(cwd, 'speclayer.local.json'))).toBe(false);
+  });
+
   it('errors without a key, before writing anything', async () => {
     const io = makeIo();
     expect(await runSetup(cwd, { id: LIB }, {}, io, stub200())).toBe(1);
@@ -1467,6 +1649,27 @@ describe('runSetup', () => {
     expect(await runSetup(cwd, { id: LIB, key: KEY }, {}, io, stub401())).toBe(1);
     expect(stored().key).toBe(KEY);
     expect(readConfig(cwd)).toMatchObject({ libraryId: LIB });
+    // A retry cannot fix a revoked key, so nothing contradicts the advice to
+    // run setup again from the Publish screen.
+    expect(io.errLines.at(-1)).toMatch(/rotated or revoked/);
+    expect(io.errLines.join('\n')).not.toContain('spec-layer pull');
+  });
+
+  it('suggests a retry after a network, timeout, or 5xx failure, and only then', async () => {
+    gitInit();
+    const RETRY = 'Setup is stored. Run spec-layer pull to retry.';
+    const down = vi.fn(async () => { throw new Error('network down'); }) as unknown as typeof fetch;
+    const status = (code: number) => vi.fn(async () => new Response(null, { status: code })) as unknown as typeof fetch;
+    for (const [label, fetcher] of [['network', down], ['503', status(503)]] as const) {
+      const io = makeIo();
+      expect(await runSetup(cwd, { id: LIB, key: KEY }, {}, io, fetcher), label).toBe(1);
+      expect(io.errLines.at(-1), label).toBe(RETRY);
+    }
+    for (const [label, fetcher] of [['403', status(403)], ['404', status(404)]] as const) {
+      const io = makeIo();
+      expect(await runSetup(cwd, { id: LIB, key: KEY }, {}, io, fetcher), label).toBe(1);
+      expect(io.errLines, label).not.toContain(RETRY);
+    }
   });
 
   /**
@@ -1499,6 +1702,21 @@ describe('runSetup', () => {
     expect(errors).toMatch(/git rm --cached speclayer\.local\.json/);
     expect(errors).toMatch(/already tracked/);
     expect(errors).not.toContain(rotated);
+  });
+
+  it('does not blame tracking when git denies it, and points at a re-including rule instead', async () => {
+    gitInit();
+    writeFileSync(join(cwd, '.gitignore'), 'speclayer.local.json\n!speclayer.local.json\n');
+    const io = makeIo();
+
+    const code = await runSetup(cwd, { id: LIB, key: KEY }, {}, io, stub200());
+
+    expect(code).toBe(1);
+    const errors = io.errLines.join('\n');
+    expect(errors).not.toContain('already tracked');
+    expect(errors).toContain('"!"');
+    expect(errors).not.toContain(KEY);
+    expect(existsSync(join(cwd, 'speclayer.local.json'))).toBe(false);
   });
 
   /**
@@ -1538,6 +1756,41 @@ describe('runSetup', () => {
     expect(readConfig(cwd)).toEqual({
       libraryId: LIB, outDir: 'other', componentSpecsDir: 'component-specs', include: { foundation: true, components: [] },
     });
+  });
+
+  /**
+   * 0.10.0 and earlier recorded `init --out /custom` as-is and then wrote every
+   * pull to `<cwd>/custom`. Re-pasting the plugin's command, which has no
+   * --out, must keep working: setup rewrites the value to where the files
+   * already are and says so.
+   */
+  it('rewrites an absolute outDir from an earlier CLI to where its files already are, and proceeds', async () => {
+    gitInit();
+    expect(await runSetup(cwd, { id: LIB, key: KEY, out: 'custom' }, {}, makeIo(), stub200())).toBe(0);
+    writeFileSync(join(cwd, 'speclayer.json'), JSON.stringify({ libraryId: LIB, outDir: '/custom' }));
+    const io = makeIo();
+
+    expect(await runSetup(cwd, { id: LIB, key: KEY }, {}, io, stub200())).toBe(0);
+
+    expect(readConfig(cwd)?.outDir).toBe('custom');
+    expect(io.outLines).toContain(
+      'speclayer.json "outDir" was "/custom", which earlier versions wrote to custom inside this directory. It now reads "custom", so the files stay where they are.',
+    );
+    expect(io.errLines.join('\n')).not.toContain('outDir');
+    expect(existsSync(join(cwd, 'custom', 'manifest.json'))).toBe(true);
+    expect(existsSync(join(cwd, '.speclayer'))).toBe(false);
+  });
+
+  it('still refuses a bad --out by name when speclayer.json holds an absolute outDir', async () => {
+    gitInit();
+    writeFileSync(join(cwd, 'speclayer.json'), JSON.stringify({ libraryId: LIB, outDir: '/custom' }));
+    const io = makeIo();
+
+    expect(await runSetup(cwd, { id: LIB, key: KEY, out: '../elsewhere' }, {}, io, stub200())).toBe(1);
+
+    expect(io.errLines).toEqual([OUT_FLAG_RULE]);
+    expect(JSON.parse(readFileSync(join(cwd, 'speclayer.json'), 'utf8')).outDir).toBe('/custom');
+    expect(existsSync(join(cwd, 'speclayer.local.json'))).toBe(false);
   });
 
   // A corrupt speclayer.json has nothing to preserve, and setup overwriting it
@@ -1696,6 +1949,41 @@ describe('stored key errors', () => {
     expect(await runPull(cwd, { id: LIB }, {}, io, stub200())).toBe(1);
     expect(io.errLines.join('\n')).toMatch(/setup command/);
     expect(io.errLines.join('\n')).toMatch(/SPEC_LAYER_KEY/);
+  });
+
+  // A key pasted as --id in a set-up repository used to reach the "issued for
+  // library X, not <id>" message verbatim, and `--id sl_... --key lib_...` put
+  // it in the request URL. The flag is shape-checked before either can happen.
+  it('never prints or sends a pull key given as --id to pull or status', async () => {
+    const KEY = `sl_${'k'.repeat(48)}`;
+    writeFileSync(join(cwd, 'speclayer.json'), JSON.stringify({ libraryId: LIB, outDir: '.speclayer' }));
+    writeFileSync(join(cwd, 'speclayer.local.json'), JSON.stringify({ libraryId: LIB, key: `sl_${'a'.repeat(48)}` }));
+    const expected = '--id must be "lib_" followed by 24 hex characters, as the plugin shows it. That looks like the pull key; pass it with --key.';
+    const cases: Array<[string, (io: Io, fetcher: typeof fetch) => Promise<number>]> = [
+      ['pull, stored key for another id', (io, f) => runPull(cwd, { id: KEY }, {}, io, f)],
+      ['pull, swapped with --key', (io, f) => runPull(cwd, { id: KEY, key: LIB }, {}, io, f)],
+      ['status, stored key for another id', (io, f) => runStatus(cwd, { id: KEY }, {}, io, f)],
+      ['status, swapped with --key', (io, f) => runStatus(cwd, { id: KEY, key: LIB }, {}, io, f)],
+    ];
+    for (const [label, run] of cases) {
+      const io = makeIo();
+      const fetcher = stub200();
+
+      expect(await run(io, fetcher), label).toBe(1);
+
+      expect(io.errLines, label).toEqual([expected]);
+      expect(io.outLines.join('\n'), label).not.toContain(KEY);
+      expect(fetcher, label).not.toHaveBeenCalled();
+    }
+  });
+
+  it('does not shape-check an id that came from speclayer.json, which an earlier version may have written', async () => {
+    writeFileSync(join(cwd, 'speclayer.json'), JSON.stringify({ libraryId: 'lib_old', outDir: '.speclayer' }));
+    const fetcher = stub200();
+
+    expect(await runPull(cwd, {}, { SPEC_LAYER_KEY: `sl_${'a'.repeat(48)}` }, makeIo(), fetcher)).toBe(0);
+
+    expect(fetcher).toHaveBeenCalledTimes(1);
   });
 
   // The credential file names the library, so reporting "no library id"

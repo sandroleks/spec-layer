@@ -10,7 +10,7 @@ and writes it to disk.
 
 ## Quick start
 
-After publishing a library from the plugin's Library screen, it shows a setup
+After publishing a library from the plugin's Publish screen, it shows a setup
 command. Run it once in your repository:
 
 ```bash
@@ -69,16 +69,26 @@ files without those fields. Markdown component pages (`componentSpecsFormat`
 and `--component-format`) need 0.10.0 or later. An earlier version ignores the
 key, and refuses to pull into a `component-specs/` that already holds
 Markdown pages, so every CLI that pulls a repository using Markdown needs
-0.10.0.
+0.10.0. `--key -` needs 0.11.0 or later; 0.11.0 also refuses an absolute
+`--out`, a plain-http `--api` to anything but localhost, and an `--id` that is
+not the shape the plugin issues, all of which earlier versions accepted, and
+an output directory that is a symbolic link, which earlier versions replaced
+with a real directory. A parent `--out` was refused before too, when the
+pull wrote; 0.11.0 refuses it before anything is fetched or written. Earlier
+versions recorded an absolute `--out` in `speclayer.json` as-is and wrote
+every pull to that path inside the working directory, so
+`outDir: "/abs/x"` meant `abs/x`. 0.11.0 refuses that value and names the
+relative path to change it to; `setup` with no `--out`, the command the plugin
+copies, rewrites it to that path, where the files already are.
 
 ## Commands
 
 | Command | What it does |
 |---|---|
-| `setup --id lib_... --key sl_... [--out DIR] [--platform P]... [selection] [--component-format yaml\|md]` | Writes `speclayer.json`, stores the key in `speclayer.local.json`, then pulls. The command the plugin copies. |
+| `setup --id lib_... --key sl_...\|- [--out DIR] [--platform P]... [selection] [--component-format yaml\|md]` | Writes `speclayer.json`, stores the key in `speclayer.local.json`, then pulls. The command the plugin copies. |
 | `init --id lib_... [--out DIR] [--platform P]... [selection] [--component-format yaml\|md]` | Writes `speclayer.json` so later commands need no flags. No key, no network. |
-| `pull [--id lib_...] [--key sl_...] [--platform P]... [selection] [--component-format yaml\|md]` | Fetches the library and writes it into `DIR` (default `.speclayer`). |
-| `status [--id lib_...] [--key sl_...]` | Checks freshness without writing. Prints the library version when the service reports one. Exits `2` when the local copy is behind. |
+| `pull [--id lib_...] [--key sl_...\|-] [--platform P]... [selection] [--component-format yaml\|md]` | Fetches the library and writes it into `DIR` (default `.speclayer`). |
+| `status [--id lib_...] [--key sl_...\|-]` | Checks freshness without writing. Prints the library version when the service reports one. Exits `2` when the local copy is behind. |
 | `list` | Lists every artifact in the last pull, with its file path or `not written`. |
 | `show foundation [--canonical]` | Prints the Foundation's DTCG document to stdout. |
 | `show component NAME [--component-format yaml\|md] [--canonical]` | Prints one component's AI YAML or Markdown page to stdout. |
@@ -86,6 +96,8 @@ Markdown pages, so every CLI that pulls a repository using Markdown needs
 | `skill [--install] [--agent HOST]... [--platform P] [--json]` | Prints a guide for a coding agent, adapted to this repository and the last pull; `--install` writes it where the agent reads instructions. |
 
 `--api URL` overrides the API origin (default `https://api.spec-layer.com`).
+It must be `https`; plain `http` is accepted only for `localhost`, `127.0.0.1`,
+or `[::1]`, since the pull key travels with every request.
 
 ## For a coding agent
 
@@ -106,8 +118,8 @@ npx spec-layer skill --install
 ```
 
 `setup` names this command as the next step after a successful pull, and the
-plugin's Publish screen has a **Copy for an AI agent** button that copies the
-setup command already followed by it.
+plugin's Publish screen has an **AI agent setup** block whose Copy button
+copies the setup command already followed by it.
 
 The guide is built from three things and nothing else:
 
@@ -245,10 +257,22 @@ Environment sits above the file so CI can supply a key without touching the
 working tree. A stored key issued for a different library is ignored, and the
 CLI says which library it belongs to rather than letting the server answer 401.
 
+A key typed on the command line is visible to your shell's history and, while
+the command runs, to `ps`. `--key -` reads it from stdin instead:
+
+```bash
+op read "op://Engineering/Spec Layer/pull key" | npx spec-layer setup --id lib_... --key -
+npx spec-layer setup --id lib_... --key -      # then paste the key and press Enter
+```
+
+The first non-empty line is the key. Nothing arriving is an error, not an
+empty key. A key you paste at the prompt shows on screen as you paste it,
+though it still stays out of shell history and `ps`.
+
 Treat the key as a secret: it grants read access to the published bundle.
 `speclayer.local.json` is gitignored, never printed by any command, and never
 copied into `speclayer.json`, `bundle.json`, `manifest.json`, or anything under
-the output directory. If it leaks, rotate it from the plugin's Library screen,
+the output directory. If it leaks, rotate it from the plugin's Publish screen,
 then run the new setup command. The old key stops working once the change
 propagates, which can take up to about a minute.
 
@@ -307,10 +331,18 @@ In `manifest.json`, an artifact the selection left unwritten has `"path":
 null`. A manifest from CLI 0.1.0 has no `selection` field and means
 everything was written.
 
-Writes stage into `.speclayer.partial` and rename into place, so an
-interrupted pull never leaves a half-written directory. `pull` refuses an
-output directory that is the current directory, a parent of it, or an existing
-non-empty directory it did not write, since the swap replaces that directory.
+Writes stage into a fresh `.speclayer.partial-XXXXXX` directory beside the
+output directory and rename into place, so an interrupted pull never leaves a
+half-written output directory and never removes a directory it did not
+create. A pull killed mid-write can leave that staging directory behind; it
+holds nothing the next pull needs and is safe to delete. The output directory
+is a relative path inside the working directory: every command but `tools`
+refuses an absolute path, the current directory, or a parent of it before it
+fetches or writes anything. `pull`, and so `setup`, also refuses a path that
+is a file, a symbolic link, or an existing non-empty directory spec-layer did
+not write, since the swap replaces that directory; that check runs when the
+pull writes, after the fetch. A name that merely begins with two dots, such
+as `..cache`, is an ordinary directory and is accepted.
 
 `component-specs/` and `tokens/` are written in place, not swapped. `pull`
 owns exactly the files there that begin with its marker (the CSS header, or

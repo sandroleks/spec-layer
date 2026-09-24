@@ -524,6 +524,13 @@ describe('upsertBlock', () => {
     const once = upsertBlock('# Repo\n', 'body\n');
     expect(upsertBlock(once, 'body\n')).toBe(once);
   });
+
+  it('refuses a file holding one marker without the other, or the markers out of order', () => {
+    const rule = /must both be present, in that order/;
+    expect(() => upsertBlock(`# Repo\n\n${BLOCK_BEGIN}\nold\n\n## Mine\n`, 'new\n')).toThrow(rule);
+    expect(() => upsertBlock(`${BLOCK_END}\nrest\n`, 'new\n')).toThrow(rule);
+    expect(() => upsertBlock(`${BLOCK_END}\nx\n${BLOCK_BEGIN}\n`, 'new\n')).toThrow(rule);
+  });
 });
 
 describe('installSkill', () => {
@@ -548,6 +555,15 @@ describe('installSkill', () => {
     expect(text).toContain('guide 2');
     expect(text).not.toContain('guide\n');
     expect(text.split(BLOCK_BEGIN)).toHaveLength(2);
+  });
+
+  it('leaves AGENTS.md untouched when it holds a begin marker and no end marker', () => {
+    const halfOpen = `# Ours\n\n${BLOCK_BEGIN}\nstale\n\n## Keep this\n`;
+    writeFileSync(join(cwd, 'AGENTS.md'), halfOpen);
+
+    expect(() => installSkill(cwd, 'agents-md', 'guide\n')).toThrow(/must both be present, in that order/);
+
+    expect(readFileSync(join(cwd, 'AGENTS.md'), 'utf8')).toBe(halfOpen);
   });
 });
 

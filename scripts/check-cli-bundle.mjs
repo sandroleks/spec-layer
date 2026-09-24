@@ -13,12 +13,16 @@
  * test suite and the build itself all passed, because vitest imports the
  * TypeScript sources directly and never touches the bundle.
  *
- * So this runs the actual artifact. Invoked with no arguments the CLI prints
- * its usage banner and exits 1, which needs no network, no key and no
- * filesystem state, and reaching it proves the module graph evaluated.
+ * So this runs the actual artifact three ways: with no arguments (the usage
+ * banner, which proves the module graph evaluated), `tools --json` (a command
+ * path and the version read from disk), and `show component` against a
+ * synthetic bundle in a scratch directory (the local-read path through the
+ * inlined bundle parser). None needs a network, a key, or repository state.
  */
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import { join, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
 
 const BUNDLE = 'packages/cli/dist/cli.js';
 const BANNER = 'spec-layer <command>';
@@ -28,18 +32,67 @@ if (!existsSync(BUNDLE)) {
   process.exit(1);
 }
 
-const run = spawnSync(process.execPath, [BUNDLE], { encoding: 'utf8' });
-const output = `${run.stdout ?? ''}${run.stderr ?? ''}`;
-
-if (!output.includes(BANNER)) {
-  console.error(`The CLI bundle (${BUNDLE}) does not run.\n`);
-  console.error(`Expected the usage banner ("${BANNER}") on a no-argument run.`);
-  console.error(`Got exit code ${run.status}${run.signal ? ` (signal ${run.signal})` : ''}:\n`);
-  console.error(output.trim() || '(no output)');
-  console.error(
-    '\nThe bundle is ESM. A CommonJS dependency that calls require() as it'
-    + '\nevaluates will throw on import unless packages/cli/build.mjs gives the'
-    + '\nbundle a real require via node:module createRequire.',
-  );
+const LICENSE = 'packages/cli/LICENSE';
+if (!existsSync(LICENSE)) {
+  console.error(`${LICENSE} not found. packages/cli/build.mjs copies the root LICENSE there so npm ships it; run the CLI build.`);
   process.exit(1);
 }
+
+const bundlePath = resolve(BUNDLE);
+const pkg = JSON.parse(readFileSync('packages/cli/package.json', 'utf8'));
+
+function fail(title, run, lines) {
+  console.error(`The CLI bundle (${BUNDLE}) does not run: ${title}\n`);
+  console.error(`Got exit code ${run.status}${run.signal ? ` (signal ${run.signal})` : ''}:\n`);
+  console.error(`${run.stdout ?? ''}${run.stderr ?? ''}`.trim() || '(no output)');
+  for (const line of lines) console.error(line);
+  process.exit(1);
+}
+
+// 1. No arguments: the usage banner. Reaching it proves the module graph
+//    evaluated, which is the failure that shipped 0.2.0 dead.
+const banner = spawnSync(process.execPath, [bundlePath], { encoding: 'utf8' });
+if (!`${banner.stdout ?? ''}${banner.stderr ?? ''}`.includes(BANNER)) {
+  fail('the usage banner did not print on a no-argument run.', banner, [
+    '',
+    'The bundle is ESM. A CommonJS dependency that calls require() as it',
+    'evaluates will throw on import unless packages/cli/build.mjs gives the',
+    'bundle a real require via node:module createRequire.',
+  ]);
+}
+
+// 2. and 3. run in a scratch directory so nothing touches the repository.
+const scratch = mkdtempSync(join(tmpdir(), 'sl-bundle-check-'));
+try {
+  // 2. `tools --json`: a command path, JSON on stdout, the package version read
+  //    from disk by version.ts.
+  const tools = spawnSync(process.execPath, [bundlePath, 'tools', '--json'], { cwd: scratch, encoding: 'utf8' });
+  let parsed;
+  try { parsed = JSON.parse(tools.stdout); } catch { parsed = null; }
+  if (tools.status !== 0 || !parsed || parsed.cli !== 'spec-layer' || parsed.version !== pkg.version
+    || !Array.isArray(parsed.tools) || !parsed.tools.some((t) => t.name === 'pull')) {
+    fail(`\`tools --json\` did not print the catalogue for version ${pkg.version}.`, tools, []);
+  }
+
+  // 3. `show component Button` against a synthetic bundle: readLocalBundle,
+  //    the inlined bundle parser, and the exact-bytes stdout path.
+  const ai = 'spec_layer:\n  kind: component\nname: Button\n';
+  const bundle = {
+    schema: 'spec-layer-library-bundle', version: '1.0.0', fileName: 'Smoke',
+    pluginVersion: null, extractorVersion: '3', foundation: null,
+    components: [{ name: 'Button', ai, artifact: { spec_layer: { export: { content_hash: '0'.repeat(64) } } } }],
+  };
+  mkdirSync(join(scratch, '.speclayer'));
+  writeFileSync(join(scratch, '.speclayer', 'bundle.json'), JSON.stringify(bundle));
+  const show = spawnSync(process.execPath, [bundlePath, 'show', 'component', 'Button'], { cwd: scratch, encoding: 'utf8' });
+  if (show.status !== 0 || show.stdout !== ai) {
+    fail('`show component Button` did not print the brief byte for byte.', show, [
+      '',
+      `Expected stdout: ${JSON.stringify(ai)}`,
+    ]);
+  }
+} finally {
+  rmSync(scratch, { recursive: true, force: true });
+}
+
+console.log(`CLI bundle ok: banner, tools --json (${pkg.version}), show component.`);

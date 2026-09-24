@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createHash } from 'node:crypto';
-import { fetchBundle } from '../src/api';
+import { FETCH_TIMEOUT_MS, fetchBundle } from '../src/api';
 
 const GOOD = {
   schema: 'spec-layer-library-bundle', version: '1.0.0', fileName: 'DS',
@@ -62,6 +62,7 @@ describe('fetchBundle', () => {
 
     expect(result.kind).toBe('error');
     expect((result as { kind: 'error'; message: string }).message).toMatch(/rotated or revoked/);
+    expect((result as { kind: 'error'; message: string }).message).toContain('Publish screen');
   });
 
   it('maps 404 to the not-found message', async () => {
@@ -94,5 +95,80 @@ describe('fetchBundle', () => {
     expect(result.kind).toBe('error');
     expect((result as { kind: 'error'; message: string }).message).toMatch(/Could not reach/);
     expect((result as { kind: 'error'; message: string }).message).toContain('https://api.example.com');
+  });
+
+  it('gives up on a stalled server after the timeout and says so plainly', async () => {
+    const fetcher = vi.fn((_url: string, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      const signal = init?.signal;
+      if (!signal) {
+        reject(new Error('fetchBundle passed no signal'));
+        return;
+      }
+      signal.addEventListener('abort', () => reject(signal.reason));
+    })) as unknown as typeof fetch;
+
+    const result = await fetchBundle({ api: 'https://api.example.com', libraryId: 'lib_1', key: 'sl_secret', fetcher, timeoutMs: 20 });
+
+    expect(result).toEqual({ kind: 'error', message: 'https://api.example.com did not finish answering within 0.02 seconds.', retryable: true });
+    const [, init] = (fetcher as unknown as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit];
+    expect(init.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  // The headers arrived, then the body stalled. A stub Response is not wired
+  // to the signal the way a real fetch body is, so the stream wires it.
+  it('gives the timeout message when the deadline fires during the body read', async () => {
+    const fetcher = vi.fn(async (_url: string, init?: RequestInit) => {
+      const signal = init?.signal;
+      if (!signal) throw new Error('fetchBundle passed no signal');
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('{"schema":'));
+          signal.addEventListener('abort', () => controller.error(signal.reason));
+        },
+      });
+      return new Response(body, { status: 200, headers: { 'X-Published-At': '2026-09-01T00:00:00.000Z' } });
+    }) as unknown as typeof fetch;
+
+    const result = await fetchBundle({ api: 'https://api.example.com', libraryId: 'lib_1', key: 'sl_secret', fetcher, timeoutMs: 20 });
+
+    expect(result).toEqual({ kind: 'error', message: 'https://api.example.com did not finish answering within 0.02 seconds.', retryable: true });
+  });
+
+  it('waits 30 seconds by default', () => {
+    expect(FETCH_TIMEOUT_MS).toBe(30_000);
+  });
+
+  it('reports a body that cannot be read as an error instead of throwing', async () => {
+    const broken = new ReadableStream<Uint8Array>({
+      start(controller) { controller.error(new Error('socket hang up')); },
+    });
+    const fetcher = vi.fn(async () => new Response(broken, {
+      status: 200, headers: { 'X-Published-At': '2026-09-01T00:00:00.000Z' },
+    })) as unknown as typeof fetch;
+
+    const result = await fetchBundle({ api: 'https://api.example.com', libraryId: 'lib_1', key: 'sl_secret', fetcher });
+
+    expect(result).toEqual({ kind: 'error', message: 'The response from https://api.example.com could not be read.', retryable: true });
+  });
+
+  it('marks only a network, timeout, or 5xx failure as worth retrying', async () => {
+    const withStatus = (status: number) => vi.fn(async () => new Response(null, { status })) as unknown as typeof fetch;
+    const retryable = async (fetcher: typeof fetch): Promise<unknown> => {
+      const result = await fetchBundle({ api: 'https://api.example.com', libraryId: 'lib_1', key: 'sl_secret', fetcher });
+      return (result as { retryable?: unknown }).retryable;
+    };
+    for (const status of [500, 502, 503, 504]) expect(await retryable(withStatus(status)), String(status)).toBe(true);
+    for (const status of [400, 401, 403, 404, 429]) expect(await retryable(withStatus(status)), String(status)).toBe(false);
+    const down = vi.fn(async () => { throw new Error('network down'); }) as unknown as typeof fetch;
+    expect(await retryable(down)).toBe(true);
+  });
+
+  it('URL-encodes the library id, so an id with a slash cannot change the path', async () => {
+    const fetcher = vi.fn(async () => new Response(null, { status: 404 })) as unknown as typeof fetch;
+
+    await fetchBundle({ api: 'https://api.example.com', libraryId: 'lib_1/../../admin', key: 'sl_secret', fetcher });
+
+    const [url] = (fetcher as unknown as ReturnType<typeof vi.fn>).mock.calls[0] as [string];
+    expect(url).toBe('https://api.example.com/v1/libraries/lib_1%2F..%2F..%2Fadmin');
   });
 });

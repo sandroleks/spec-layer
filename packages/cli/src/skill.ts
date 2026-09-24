@@ -677,7 +677,10 @@ export const BLOCK_END = '<!-- spec-layer:end -->';
  * A shared instruction file (AGENTS.md, GEMINI.md) belongs to the repository,
  * so the guide lives between two markers and only that region is ever
  * replaced. A file without the markers gets the block appended; a missing
- * file is created holding just the block.
+ * file is created holding just the block. A file with one marker but not the
+ * other, or with the end before the begin, is refused: appending a block to
+ * it would make the next run replace everything from the first begin to the
+ * new end, deleting the reader's own text in between.
  */
 export function upsertBlock(existing: string | null, guide: string): string {
   const block = `${BLOCK_BEGIN}\n${guide.trimEnd()}\n${BLOCK_END}\n`;
@@ -687,6 +690,11 @@ export function upsertBlock(existing: string | null, guide: string): string {
   if (begin !== -1 && end !== -1 && end > begin) {
     const after = existing.slice(end + BLOCK_END.length).replace(/^\n/, '');
     return `${existing.slice(0, begin)}${block}${after}`;
+  }
+  if (begin !== -1 || end !== -1) {
+    throw new Error(
+      `${BLOCK_BEGIN} and ${BLOCK_END} must both be present, in that order, or both absent. Fix the markers in the file, then run again.`,
+    );
   }
   const sep = existing.length === 0 ? '' : existing.endsWith('\n\n') ? '' : existing.endsWith('\n') ? '\n' : '\n\n';
   return `${existing}${sep}${block}`;

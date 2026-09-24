@@ -1,15 +1,112 @@
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import type { DtcgOptions } from '@spec-layer/extractor';
 import type { Selection } from './selection';
 import { readCredentials } from './credentials';
 import { isPlatform, PLATFORMS, type Platform } from './detect';
 import { parseOutput, type OutputConfig } from './outputs';
+import { pathInside } from './visibleDir';
 
 export const DEFAULT_API = 'https://api.spec-layer.com';
 export const DEFAULT_OUT_DIR = '.speclayer';
 export const DEFAULT_COMPONENT_SPECS_DIR = 'component-specs';
 const CONFIG_NAME = 'speclayer.json';
+
+/**
+ * The swap in files.ts deletes outDir wholesale, so outDir is only ever a
+ * relative path under the working directory. `join(cwd, '/abs')` used to
+ * nest an absolute --out under cwd silently while every message named the
+ * absolute path; refusing here means init and setup never record such a
+ * value either. The same sentence is thrown by assertReplaceable in files.ts.
+ */
+export const OUT_DIR_RULE = 'The output directory must be a relative path inside the current directory: not ".", not a parent of it, and not an absolute path.';
+
+/** The same rule, refusing a value typed as `--out`, so the reader knows which input to change. */
+export const OUT_FLAG_RULE = '--out must be a relative path inside the current directory: not ".", not a parent of it, and not an absolute path.';
+
+function outDirAllowed(cwd: string, value: string): boolean {
+  const root = resolve(cwd);
+  const abs = resolve(cwd, value);
+  return !isAbsolute(value) && abs !== root && pathInside(root, abs);
+}
+
+/**
+ * Where CLI 0.10.0 and earlier really wrote an absolute `outDir` from
+ * speclayer.json. They recorded `init --out /x` unchecked and then joined it
+ * under the working directory, so every pull landed in `<cwd>/x`. Returns that
+ * directory as a relative path with `/` separators, or null when the value is
+ * not absolute or the joined path is not a usable output directory either.
+ */
+export function legacyOutDir(cwd: string, value: string): string | null {
+  if (!isAbsolute(value)) return null;
+  const root = resolve(cwd);
+  const rel = relative(root, join(root, value)).split(sep).join('/');
+  return outDirAllowed(cwd, rel) ? rel : null;
+}
+
+function configOutDirRefusal(cwd: string, value: string): string {
+  const head = `${CONFIG_NAME} "outDir" is ${JSON.stringify(value)}.`;
+  const legacy = legacyOutDir(cwd, value);
+  return legacy !== null
+    // Not `init`: it resets outDir to the default and orphans the files
+    // already at the legacy path. setup rewrites the value to that path.
+    ? `${head} Earlier versions wrote that to ${legacy} inside this directory. Change "outDir" to "${legacy}", `
+      + 'or run the setup command from the plugin\'s Publish screen, which does that for you.'
+    : `${head} ${OUT_DIR_RULE} Change "outDir", or run spec-layer init again.`;
+}
+
+/**
+ * The output directory for a run, as typed: the flag, then the config, then
+ * the default. A refused flag throws OUT_FLAG_RULE; a refused config value
+ * names speclayer.json and its field, so the reader can tell where it came from.
+ */
+export function resolveOutDir(cwd: string, out: string | undefined, configOutDir: string | undefined): string {
+  if (out !== undefined) {
+    if (!outDirAllowed(cwd, out)) throw new Error(OUT_FLAG_RULE);
+    return out;
+  }
+  if (configOutDir !== undefined) {
+    if (!outDirAllowed(cwd, configOutDir)) throw new Error(configOutDirRefusal(cwd, configOutDir));
+    return configOutDir;
+  }
+  return DEFAULT_OUT_DIR;
+}
+
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
+
+/**
+ * The API origin, checked before any request carries the key. The key
+ * travels in the Authorization header of every request, so plain http is
+ * refused except to this machine, where a local proxy build is the only
+ * thing listening. A trailing slash is dropped: it would build "//v1/..."
+ * paths the proxy router 404s on. `source` names the input the value came
+ * from, so a refusal points at the flag or the variable that holds it.
+ */
+export function apiOrigin(value: string, source: '--api' | 'SPEC_LAYER_API' = '--api'): string {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error(`${source} must be an origin such as ${DEFAULT_API}, not "${value}".`);
+  }
+  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && LOOPBACK_HOSTS.has(url.hostname))) {
+    throw new Error(`${source} must use https, since the pull key travels with every request. Plain http is allowed only for localhost. Got "${value}".`);
+  }
+  return value.replace(/\/+$/, '');
+}
+
+/**
+ * The id shape the publish service issues: `newLibraryId` in
+ * packages/proxy/src/libraries.ts writes `lib_` plus 24 hex characters, and
+ * its `LIBRARY_ID_RE` accepts nothing else. Checked at init and setup so a
+ * typo is caught before it is written to speclayer.json and the server is
+ * left to answer 404.
+ */
+export const LIBRARY_ID_RE = /^lib_[0-9a-f]{24}$/;
+
+export function isLibraryId(value: string): boolean {
+  return LIBRARY_ID_RE.test(value);
+}
 
 /** How component-specs/ is written: the published AI YAML, or a Markdown page projected from the artifact. */
 export const COMPONENT_FORMATS = ['yaml', 'md'] as const;
@@ -176,7 +273,7 @@ export function resolveOptions(
   manifestLibraryId: (outDir: string) => string | null,
 ): ResolvedOptions {
   const config = readConfig(cwd);
-  const outDir = flags.out ?? config?.outDir ?? DEFAULT_OUT_DIR;
+  const outDir = resolveOutDir(cwd, flags.out, config?.outDir);
   const libraryId = flags.id ?? config?.libraryId ?? manifestLibraryId(join(cwd, outDir));
 
   // Read the credential file only when nothing else supplies a key, so a
@@ -203,8 +300,7 @@ export function resolveOptions(
     libraryId,
     outDir,
     componentSpecsDir: config?.componentSpecsDir ?? DEFAULT_COMPONENT_SPECS_DIR,
-    // A trailing slash would build "//v1/..." paths the proxy router 404s on.
-    api: (flags.api ?? env.SPEC_LAYER_API ?? DEFAULT_API).replace(/\/+$/, ''),
+    api: apiOrigin(flags.api ?? env.SPEC_LAYER_API ?? DEFAULT_API, flags.api === undefined ? 'SPEC_LAYER_API' : '--api'),
     key: supplied ?? storedKey,
     ...(config?.componentSpecsFormat ? { componentSpecsFormat: config.componentSpecsFormat } : {}),
     ...(config?.include ? { include: config.include } : {}),

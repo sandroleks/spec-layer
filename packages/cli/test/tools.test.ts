@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { TOOLS, toolsJson, toolsText } from '../src/tools';
 
@@ -38,6 +39,7 @@ describe('the tool catalogue', () => {
     const text = toolsText();
     for (const tool of TOOLS) expect(text).toContain(tool.usage);
     expect(text).toContain('--key, then SPEC_LAYER_KEY, then speclayer.local.json');
+    expect(text).toContain('--key -');
     expect(text).not.toContain('—');
   });
 
@@ -49,6 +51,14 @@ describe('the tool catalogue', () => {
     expect(byName.pull.writes).toContain('outputs[].path from speclayer.json (default tokens/ for web), a directory written in place');
     expect(byName.pull.writes).toContain('componentSpecsDir from speclayer.json (default component-specs/), written in place');
     expect(byName.init.writes).toEqual(['speclayer.json']);
+  });
+
+  it('documents --key - for every command that resolves a key: setup, pull, and status', () => {
+    const byName = Object.fromEntries(TOOLS.map((t) => [t.name, t]));
+    for (const name of ['setup', 'pull', 'status']) {
+      expect(byName[name].usage, name).toContain('sl_...|-');
+    }
+    expect(CLI_SOURCE).toMatch(/status\s+\[--id lib_\.\.\.\] \[--key sl_\.\.\.\|-\]/);
   });
 
   it('names the component format flag for setup, init, pull, and show, and in the banner', () => {
@@ -65,5 +75,14 @@ describe('the tool catalogue', () => {
     expect(parsed.cli).toBe('spec-layer');
     expect(parsed.version).toBe('9.9.9');
     expect(parsed.tools.map((t) => t.name)).toEqual(TOOLS.map((t) => t.name));
+  });
+
+  it('names the plugin screen that hands out the setup command consistently', () => {
+    // The setup command lives on the Publish screen (packages/plugin/src/ui/screens/publish.ts).
+    const srcDir = fileURLToPath(new URL('../src/', import.meta.url));
+    for (const name of readdirSync(srcDir)) {
+      expect(readFileSync(join(srcDir, name), 'utf8'), name).not.toContain('Library screen');
+    }
+    expect(readFileSync(fileURLToPath(new URL('../README.md', import.meta.url)), 'utf8')).not.toContain('Library screen');
   });
 });

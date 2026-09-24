@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { readConfig, writeConfig, resolveOptions, DEFAULT_API, DEFAULT_OUT_DIR, DEFAULT_COMPONENT_SPECS_DIR, isComponentFormat } from '../src/config';
+import { readConfig, writeConfig, resolveOptions, DEFAULT_API, DEFAULT_OUT_DIR, DEFAULT_COMPONENT_SPECS_DIR, OUT_FLAG_RULE, isComponentFormat, legacyOutDir } from '../src/config';
 import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -80,11 +80,11 @@ describe('resolveOptions precedence', () => {
   it('api comes from --api, then SPEC_LAYER_API, else DEFAULT_API', () => {
     const stub = (_outDir: string) => null;
 
-    const resultFromFlag = resolveOptions('/some/cwd', { api: 'from-flag' }, {}, stub);
-    expect(resultFromFlag.api).toBe('from-flag');
+    const resultFromFlag = resolveOptions('/some/cwd', { api: 'https://from-flag.test' }, {}, stub);
+    expect(resultFromFlag.api).toBe('https://from-flag.test');
 
-    const resultFromEnv = resolveOptions('/some/cwd', {}, { SPEC_LAYER_API: 'from-env' }, stub);
-    expect(resultFromEnv.api).toBe('from-env');
+    const resultFromEnv = resolveOptions('/some/cwd', {}, { SPEC_LAYER_API: 'https://from-env.test' }, stub);
+    expect(resultFromEnv.api).toBe('https://from-env.test');
 
     const resultDefault = resolveOptions('/some/cwd', {}, {}, stub);
     expect(resultDefault.api).toBe(DEFAULT_API);
@@ -92,21 +92,59 @@ describe('resolveOptions precedence', () => {
     // Flag beats env
     const resultFlagBeatsEnv = resolveOptions(
       '/some/cwd',
-      { api: 'from-flag' },
-      { SPEC_LAYER_API: 'from-env' },
+      { api: 'https://from-flag.test' },
+      { SPEC_LAYER_API: 'https://from-env.test' },
       stub,
     );
-    expect(resultFlagBeatsEnv.api).toBe('from-flag');
+    expect(resultFlagBeatsEnv.api).toBe('https://from-flag.test');
   });
 
-  it('outDir comes from --out, then config, else .speclayer', () => {
+  it('outDir comes from --out, then config, else .speclayer, and must stay a relative path inside cwd', () => {
     const stub = (_outDir: string) => null;
 
-    const resultFromFlag = resolveOptions('/some/cwd', { out: '/custom' }, {}, stub);
-    expect(resultFromFlag.outDir).toBe('/custom');
+    expect(resolveOptions('/some/cwd', { out: 'build/spec' }, {}, stub).outDir).toBe('build/spec');
+    expect(resolveOptions('/some/cwd', { out: '..cache' }, {}, stub).outDir).toBe('..cache');
+    expect(resolveOptions('/some/cwd', {}, {}, stub).outDir).toBe(DEFAULT_OUT_DIR);
 
-    const resultDefault = resolveOptions('/some/cwd', {}, {}, stub);
-    expect(resultDefault.outDir).toBe(DEFAULT_OUT_DIR);
+    for (const out of ['/custom', '.', '..', '../sibling', 'a/../..', '']) {
+      expect(() => resolveOptions('/some/cwd', { out }, {}, stub), out).toThrow(OUT_FLAG_RULE);
+    }
+    expect(OUT_FLAG_RULE.startsWith('--out ')).toBe(true);
+  });
+
+  it('a refused outDir from speclayer.json names the file and the field, not --out', () => {
+    const stub = (_outDir: string) => null;
+    const tmpDir = mkdtempSync(join(tmpdir(), 'sl-'));
+    try {
+      writeConfig(tmpDir, { libraryId: 'lib_aaaaaaaaaaaaaaaaaaaaaaaa', outDir: '..' });
+      expect(() => resolveOptions(tmpDir, {}, {}, stub)).toThrow(
+        'speclayer.json "outDir" is "..". The output directory must be a relative path inside the current directory: '
+        + 'not ".", not a parent of it, and not an absolute path. Change "outDir", or run spec-layer init again.',
+      );
+      // A flag still wins over the config, so --out is the way past a bad value.
+      expect(resolveOptions(tmpDir, { out: 'fixed' }, {}, stub).outDir).toBe('fixed');
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('an absolute outDir an earlier CLI recorded is refused with the path those files were really written to', () => {
+    const stub = (_outDir: string) => null;
+    const tmpDir = mkdtempSync(join(tmpdir(), 'sl-'));
+    try {
+      writeConfig(tmpDir, { libraryId: 'lib_aaaaaaaaaaaaaaaaaaaaaaaa', outDir: '/abs/x' });
+      expect(() => resolveOptions(tmpDir, {}, {}, stub)).toThrow(
+        'speclayer.json "outDir" is "/abs/x". Earlier versions wrote that to abs/x inside this directory. '
+        + 'Change "outDir" to "abs/x", or run the setup command from the plugin\'s Publish screen, which does that for you.',
+      );
+      expect(legacyOutDir(tmpDir, '/abs/x')).toBe('abs/x');
+      // Not absolute, or joined onto the working directory itself: nothing to offer.
+      expect(legacyOutDir(tmpDir, 'abs/x')).toBeNull();
+      expect(legacyOutDir(tmpDir, '/')).toBeNull();
+      expect(legacyOutDir(tmpDir, '/..')).toBeNull();
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
   });
 
   it('config.libraryId beats manifest when no --id flag', () => {
@@ -246,6 +284,40 @@ describe('api origin normalization', () => {
     const none = (_outDir: string) => null;
     expect(resolveOptions('/some/cwd', { api: 'https://example.test/' }, {}, none).api).toBe('https://example.test');
     expect(resolveOptions('/some/cwd', {}, { SPEC_LAYER_API: 'https://example.test//' }, none).api).toBe('https://example.test');
+  });
+});
+
+describe('api origin scheme', () => {
+  const none = (_outDir: string) => null;
+
+  it('refuses plain http except to this machine, and a value that is not a URL', () => {
+    expect(() => resolveOptions('/some/cwd', { api: 'http://api.example.com' }, {}, none)).toThrow(/must use https/);
+    expect(() => resolveOptions('/some/cwd', {}, { SPEC_LAYER_API: 'http://api.example.com' }, none)).toThrow(/must use https/);
+    expect(() => resolveOptions('/some/cwd', { api: 'api.example.com' }, {}, none)).toThrow(/must be an origin/);
+    // Lookalikes whose WHATWG hostname is not this machine: userinfo before an
+    // @, a subdomain of a public name, and a DNS name that resolves to 127.0.0.1.
+    for (const lookalike of ['http://localhost@evil.com', 'http://localhost.evil.com', 'http://127.0.0.1.nip.io']) {
+      expect(() => resolveOptions('/some/cwd', { api: lookalike }, {}, none), lookalike).toThrow(/must use https/);
+    }
+    for (const local of ['http://localhost:8787', 'http://127.0.0.1:8787', 'http://[::1]:8787']) {
+      expect(resolveOptions('/some/cwd', { api: local }, {}, none).api).toBe(local);
+    }
+    expect(resolveOptions('/some/cwd', { api: 'https://api.example.com/' }, {}, none).api).toBe('https://api.example.com');
+  });
+
+  it('names the input the refused origin came from', () => {
+    const refusal = (flags: { api?: string }, env: Record<string, string>): string => {
+      try {
+        resolveOptions('/some/cwd', flags, env, none);
+      } catch (err) {
+        return (err as Error).message;
+      }
+      throw new Error('expected a refusal');
+    };
+    expect(refusal({}, { SPEC_LAYER_API: 'http://api.example.com' })).toMatch(/^SPEC_LAYER_API must use https/);
+    expect(refusal({}, { SPEC_LAYER_API: 'api.example.com' })).toMatch(/^SPEC_LAYER_API must be an origin/);
+    expect(refusal({ api: 'http://api.example.com' }, { SPEC_LAYER_API: 'https://ok.example.com' })).toMatch(/^--api must use https/);
+    expect(refusal({ api: 'api.example.com' }, {})).toMatch(/^--api must be an origin/);
   });
 });
 
