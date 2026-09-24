@@ -411,6 +411,12 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
 - Registry lookups across the Library, publish, and build paths are issued
   together instead of one round trip per documented section, with the same
   results in the same order.
+- **A doc build reads each variable collection and each previewed node
+  once.** Every placed instance asked Figma for its component's collections
+  again, one after another, and the frame-width pass read every matrix cell
+  that the matrix then read a second time to instance it. Both now go
+  through a cache that lives for one build, and a component's collections
+  are read together. Same documents, fewer round trips on large matrices.
 
 ### Fixed
 

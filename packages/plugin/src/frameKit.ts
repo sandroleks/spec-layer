@@ -81,6 +81,64 @@ export function headingFont(style: FontStyle): FontName {
   return { family: headingFamily, style };
 }
 
+// ---------------------------------------------------------------------------
+// Per-build caches
+// ---------------------------------------------------------------------------
+
+/**
+ * Reads a build repeats: the same collection once per instance it draws, and
+ * the same node once when fitFrameWidth measures it and again when a matrix
+ * or the anatomy instances it. Each is one bridge round trip, so a 40-cell
+ * matrix over three collections was ~160 sequential calls for ~43 answers.
+ *
+ * Reset by applyThemeToKit, which every build calls before drawing, and
+ * whenever the `figma` host changes identity (the test suite installs a fresh
+ * stub per test; a cache that outlived one would answer the next test's ids
+ * with this one's nodes). A node proxy is valid for the life of the plugin
+ * run, and no build edits the variables it reads, so nothing here can go
+ * stale within a build.
+ */
+let cacheHost: unknown = null;
+let collectionCache = new Map<string, Promise<VariableCollection | null>>();
+let nodeCache = new Map<string, Promise<BaseNode | null>>();
+
+export function resetBuildCaches(): void {
+  cacheHost = figma;
+  collectionCache = new Map();
+  nodeCache = new Map();
+}
+
+function ensureCachesForThisHost(): void {
+  if (cacheHost !== figma) resetBuildCaches();
+}
+
+/** A variable collection by id, read once per build. Null when it is
+ *  unavailable (a detached library) or the read throws. */
+export function collectionById(id: string): Promise<VariableCollection | null> {
+  ensureCachesForThisHost();
+  let hit = collectionCache.get(id);
+  if (!hit) {
+    hit = Promise.resolve()
+      .then(() => figma.variables.getVariableCollectionByIdAsync(id))
+      .catch((): VariableCollection | null => null);
+    collectionCache.set(id, hit);
+  }
+  return hit;
+}
+
+/** A node by id, read once per build. Null when it is gone or the read throws. */
+export function nodeById(id: string): Promise<BaseNode | null> {
+  ensureCachesForThisHost();
+  let hit = nodeCache.get(id);
+  if (!hit) {
+    hit = Promise.resolve()
+      .then(() => figma.getNodeByIdAsync(id))
+      .catch((): BaseNode | null => null);
+    nodeCache.set(id, hit);
+  }
+  return hit;
+}
+
 /**
  * Force a fresh instance to resolve variables in the SAME modes as its source
  * component, so it renders identical token values.
@@ -97,12 +155,15 @@ export async function matchVariableModes(inst: InstanceNode, component: Componen
   const modes = (component as SceneNode & { resolvedVariableModes?: Record<string, string> })
     .resolvedVariableModes;
   if (!modes) return;
-  for (const [collectionId, modeId] of Object.entries(modes)) {
-    try {
-      const coll = await figma.variables.getVariableCollectionByIdAsync(collectionId);
-      if (coll) inst.setExplicitVariableModeForCollection(coll, modeId);
-    } catch { /* collection unavailable (detached library) skip */ }
-  }
+  const entries = Object.entries(modes);
+  // All collections at once, through the per-build cache: a matrix of forty
+  // instances over three collections is three reads, not a hundred and twenty.
+  const collections = await Promise.all(entries.map(([collectionId]) => collectionById(collectionId)));
+  entries.forEach(([, modeId], i) => {
+    const coll = collections[i];
+    if (!coll) return; // collection unavailable (detached library): skip
+    try { inst.setExplicitVariableModeForCollection(coll, modeId); } catch { /* mode no longer on this collection: skip */ }
+  });
 }
 
 /**
@@ -214,7 +275,7 @@ export const SLOT_PAD = 12;
 export async function createInstanceFor(nodeId: string, includeHidden = false): Promise<InstanceNode | null> {
   let inst: InstanceNode | null = null;
   try {
-    const node = await figma.getNodeByIdAsync(nodeId);
+    const node = await nodeById(nodeId);
     if (!node || node.type !== 'COMPONENT') return null;
     inst = node.createInstance();
     await matchVariableModes(inst, node);
@@ -284,7 +345,9 @@ export async function buildSlot(nodeId: string, width: number, maxH = 160, inclu
  * mutable field is set on every call: a Default build after a themed one must
  * fully reset. Loads the requested families, reverting any family that fails to
  * Inter (families missing Medium/Bold are common), then always loads the Inter
- * faces since they are the fallback and are needed for bold runs.
+ * faces since they are the fallback and are needed for bold runs. The
+ * per-build caches reset here too, so a rebuild after the user edits a
+ * component reads its nodes and collections afresh.
  *
  * Both frame families go through here: buildDocFrames for component docs and
  * buildFoundationFrame for foundation docs.
@@ -293,6 +356,7 @@ export async function applyThemeToKit(theme: {
   headerBg: string; accent: string; bodyText: string; tableHeadBg: string;
   cornerStyle: CornerStyle; headingFont: string; bodyFont: string;
 }): Promise<void> {
+  resetBuildCaches();
   palette.headerBg = hex(theme.headerBg);
   palette.accent = hex(theme.accent);
   palette.body = hex(theme.bodyText);
