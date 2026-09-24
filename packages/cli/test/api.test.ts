@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createHash } from 'node:crypto';
-import { fetchBundle } from '../src/api';
+import { FETCH_TIMEOUT_MS, fetchBundle } from '../src/api';
 
 const GOOD = {
   schema: 'spec-layer-library-bundle', version: '1.0.0', fileName: 'DS',
@@ -94,5 +94,39 @@ describe('fetchBundle', () => {
     expect(result.kind).toBe('error');
     expect((result as { kind: 'error'; message: string }).message).toMatch(/Could not reach/);
     expect((result as { kind: 'error'; message: string }).message).toContain('https://api.example.com');
+  });
+
+  it('gives up on a stalled server after the timeout and says so plainly', async () => {
+    const fetcher = vi.fn((_url: string, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      const signal = init?.signal;
+      if (!signal) {
+        reject(new Error('fetchBundle passed no signal'));
+        return;
+      }
+      signal.addEventListener('abort', () => reject(signal.reason));
+    })) as unknown as typeof fetch;
+
+    const result = await fetchBundle({ api: 'https://api.example.com', libraryId: 'lib_1', key: 'sl_secret', fetcher, timeoutMs: 20 });
+
+    expect(result).toEqual({ kind: 'error', message: 'No response from https://api.example.com within 0.02 seconds.' });
+    const [, init] = (fetcher as unknown as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit];
+    expect(init.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it('waits 30 seconds by default', () => {
+    expect(FETCH_TIMEOUT_MS).toBe(30_000);
+  });
+
+  it('reports a body that cannot be read as an error instead of throwing', async () => {
+    const broken = new ReadableStream<Uint8Array>({
+      start(controller) { controller.error(new Error('socket hang up')); },
+    });
+    const fetcher = vi.fn(async () => new Response(broken, {
+      status: 200, headers: { 'X-Published-At': '2026-09-01T00:00:00.000Z' },
+    })) as unknown as typeof fetch;
+
+    const result = await fetchBundle({ api: 'https://api.example.com', libraryId: 'lib_1', key: 'sl_secret', fetcher });
+
+    expect(result).toEqual({ kind: 'error', message: 'The response from https://api.example.com could not be read.' });
   });
 });

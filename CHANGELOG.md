@@ -411,6 +411,11 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
 
 ### Fixed
 
+- **A stalled server no longer hangs `spec-layer pull` or `status`.** Every
+  request now carries a 30 second timeout that covers the headers and the
+  body, and a timeout is reported as `No response from <api> within 30
+  seconds.` A response body that cannot be read is reported in one sentence
+  too; it used to escape as a stack trace.
 - **`spec-layer` refuses an output directory it would have mishandled.** An
   absolute `--out` was joined under the working directory and written there
   while every message named the absolute path; `--out` that names a file

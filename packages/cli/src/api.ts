@@ -5,10 +5,24 @@ export type FetchBundleResult =
   | { kind: 'not_modified'; version: string | null }
   | { kind: 'error'; message: string };
 
+/** How long one request may take, headers and body together, before the CLI gives up and says so. */
+export const FETCH_TIMEOUT_MS = 30_000;
+
+/** `AbortSignal.timeout` rejects with a DOMException named TimeoutError; nothing else in this path does. */
+const isTimeout = (err: unknown): boolean =>
+  typeof err === 'object' && err !== null && (err as { name?: unknown }).name === 'TimeoutError';
+
 export async function fetchBundle(opts: {
-  api: string; libraryId: string; key: string; etag?: string; fetcher?: typeof fetch;
+  api: string; libraryId: string; key: string; etag?: string; fetcher?: typeof fetch; timeoutMs?: number;
 }): Promise<FetchBundleResult> {
   const doFetch = opts.fetcher ?? fetch;
+  const timeoutMs = opts.timeoutMs ?? FETCH_TIMEOUT_MS;
+  const timedOut: FetchBundleResult = {
+    kind: 'error', message: `No response from ${opts.api} within ${timeoutMs / 1000} seconds.`,
+  };
+  // One signal covers the headers and the body. Without it a stalled server
+  // hung pull and status forever, with nothing printed.
+  const signal = AbortSignal.timeout(timeoutMs);
   let res: Response;
   try {
     res = await doFetch(`${opts.api}/v1/libraries/${opts.libraryId}`, {
@@ -16,9 +30,10 @@ export async function fetchBundle(opts: {
         Authorization: `Bearer ${opts.key}`,
         ...(opts.etag ? { 'If-None-Match': `"${opts.etag}"` } : {}),
       },
+      signal,
     });
-  } catch {
-    return { kind: 'error', message: `Could not reach ${opts.api}.` };
+  } catch (err) {
+    return isTimeout(err) ? timedOut : { kind: 'error', message: `Could not reach ${opts.api}.` };
   }
   const version = res.headers.get('X-Library-Version');
   if (res.status === 304) return { kind: 'not_modified', version };
@@ -31,7 +46,12 @@ export async function fetchBundle(opts: {
   }
   if (res.status === 404) return { kind: 'error', message: 'Library not found. It may have been unpublished.' };
   if (!res.ok) return { kind: 'error', message: `Request failed with HTTP ${res.status}.` };
-  const raw = await res.text();
+  let raw: string;
+  try {
+    raw = await res.text();
+  } catch (err) {
+    return isTimeout(err) ? timedOut : { kind: 'error', message: `The response from ${opts.api} could not be read.` };
+  }
   return {
     kind: 'ok',
     raw,
