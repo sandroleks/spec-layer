@@ -38,6 +38,7 @@ describe('the tool catalogue', () => {
     const text = toolsText();
     for (const tool of TOOLS) expect(text).toContain(tool.usage);
     expect(text).toContain('--key, then SPEC_LAYER_KEY, then speclayer.local.json');
+    expect(text).toContain('--key -');
     expect(text).not.toContain('—');
   });
 

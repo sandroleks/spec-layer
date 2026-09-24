@@ -27,6 +27,12 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
 
 ### Added
 
+- **`--key -` reads the pull key from stdin.** A key on the command line is
+  visible to shell history and to `ps` while the command runs. `setup` and
+  `pull` now take `--key -` and read the first non-empty line from stdin, from
+  a pipe or a paste followed by Enter, so the pasted command never holds the
+  secret. `SPEC_LAYER_KEY` remains the way for CI. Nothing arriving is an error
+  rather than an empty key.
 - **`spec-layer pull` can write components as Markdown.** Set
   `componentSpecsFormat: "md"` in `speclayer.json`, or pass
   `--component-format md` to `setup`, `init`, `pull`, or `show`, and

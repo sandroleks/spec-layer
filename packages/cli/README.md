@@ -75,9 +75,9 @@ Markdown pages, so every CLI that pulls a repository using Markdown needs
 
 | Command | What it does |
 |---|---|
-| `setup --id lib_... --key sl_... [--out DIR] [--platform P]... [selection] [--component-format yaml\|md]` | Writes `speclayer.json`, stores the key in `speclayer.local.json`, then pulls. The command the plugin copies. |
+| `setup --id lib_... --key sl_...\|- [--out DIR] [--platform P]... [selection] [--component-format yaml\|md]` | Writes `speclayer.json`, stores the key in `speclayer.local.json`, then pulls. The command the plugin copies. |
 | `init --id lib_... [--out DIR] [--platform P]... [selection] [--component-format yaml\|md]` | Writes `speclayer.json` so later commands need no flags. No key, no network. |
-| `pull [--id lib_...] [--key sl_...] [--platform P]... [selection] [--component-format yaml\|md]` | Fetches the library and writes it into `DIR` (default `.speclayer`). |
+| `pull [--id lib_...] [--key sl_...\|-] [--platform P]... [selection] [--component-format yaml\|md]` | Fetches the library and writes it into `DIR` (default `.speclayer`). |
 | `status [--id lib_...] [--key sl_...]` | Checks freshness without writing. Prints the library version when the service reports one. Exits `2` when the local copy is behind. |
 | `list` | Lists every artifact in the last pull, with its file path or `not written`. |
 | `show foundation [--canonical]` | Prints the Foundation's DTCG document to stdout. |
@@ -246,6 +246,17 @@ Commands that talk to the server resolve the key in this order:
 Environment sits above the file so CI can supply a key without touching the
 working tree. A stored key issued for a different library is ignored, and the
 CLI says which library it belongs to rather than letting the server answer 401.
+
+A key typed on the command line is visible to your shell's history and, while
+the command runs, to `ps`. `--key -` reads it from stdin instead:
+
+```bash
+op read "op://Engineering/Spec Layer/pull key" | npx spec-layer setup --id lib_... --key -
+npx spec-layer setup --id lib_... --key -      # then paste the key and press Enter
+```
+
+The first non-empty line is the key. Nothing arriving is an error, not an
+empty key.
 
 Treat the key as a secret: it grants read access to the published bundle.
 `speclayer.local.json` is gitignored, never printed by any command, and never

@@ -2,15 +2,16 @@ import { parseArgs } from 'node:util';
 import {
   runInit, runSetup, runPull, runStatus, runList, runShow, runTools, runSkill, type Flags, type Io,
 } from './commands';
+import { readFirstLine } from './stdin';
 
 const USAGE = `spec-layer <command>
 
 Commands:
-  setup   --id lib_... --key sl_... [--out DIR] [selection] [--platform P]... [--component-format F]
+  setup   --id lib_... --key sl_...|- [--out DIR] [selection] [--platform P]... [--component-format F]
                                                  store the key, then pull
   init    --id lib_... [--out DIR] [selection] [--platform P]... [--component-format F]
                                                  write speclayer.json
-  pull    [--id lib_...] [--key sl_...] [selection] [--platform P]... [--component-format F] [--strict]
+  pull    [--id lib_...] [--key sl_...|-] [selection] [--platform P]... [--component-format F] [--strict]
                                                  fetch the library into DIR (default .speclayer); the foundation lands as DTCG under DIR/tokens/;
                                                  --strict exits 1 when tokens/report.json or an outputs/*.report.json holds an error-severity entry, even on a cached pull (default exit stays 0)
   status  [--id lib_...] [--key sl_...]          check freshness; exits 2 when behind
@@ -30,7 +31,8 @@ Options:
   --api URL   override the API origin (default https://api.spec-layer.com); https only, except http to localhost
   --platform web|ios|android|flutter   the target this repo builds for (repeatable); applies to setup, init, pull, and skill; setup and init store it, pull uses it for the run
   --component-format yaml|md   how component-specs/ is written and show prints a component (default yaml); setup and init store it, pull and show use it for the run
-The pull key comes from --key, SPEC_LAYER_KEY, or speclayer.local.json written by setup.`;
+The pull key comes from --key, SPEC_LAYER_KEY, or speclayer.local.json written by setup.
+--key - reads it from stdin (a pipe, or a paste followed by Enter), so the key stays out of shell history.`;
 
 const io: Io = {
   out: (l) => console.log(l),
@@ -65,6 +67,15 @@ async function main(): Promise<number> {
     // Surface usage, not the exception, and exit nonzero.
     io.err(USAGE);
     return 1;
+  }
+
+  if (values.key === '-') {
+    const key = await readFirstLine(process.stdin);
+    if (key === null) {
+      io.err('--key - reads the key from stdin, and nothing arrived. Pipe the key in, or paste it and press Enter.');
+      return 1;
+    }
+    values = { ...values, key };
   }
 
   const command = positionals[0];
