@@ -73,9 +73,10 @@ Markdown pages, so every CLI that pulls a repository using Markdown needs
 `--out`, a plain-http `--api` to anything but localhost, and an `--id` that is
 not the shape the plugin issues, all of which earlier versions accepted, and
 an output directory that is a symbolic link, which earlier versions replaced
-with a real directory. A parent `--out` was refused before too, when the pull wrote; 0.11.0 refuses it
-before anything is fetched or written. Earlier versions recorded an absolute `--out` in `speclayer.json`
-as-is and wrote every pull to that path inside the working directory, so
+with a real directory. A parent `--out` was refused before too, when the
+pull wrote; 0.11.0 refuses it before anything is fetched or written. Earlier
+versions recorded an absolute `--out` in `speclayer.json` as-is and wrote
+every pull to that path inside the working directory, so
 `outDir: "/abs/x"` meant `abs/x`. 0.11.0 refuses that value and names the
 relative path to change it to; `setup` with no `--out`, the command the plugin
 copies, rewrites it to that path, where the files already are.
@@ -337,11 +338,11 @@ create. A pull killed mid-write can leave that staging directory behind; it
 holds nothing the next pull needs and is safe to delete. The output directory
 is a relative path inside the working directory: every command but `tools`
 refuses an absolute path, the current directory, or a parent of it before it
-fetches or writes anything. `pull`, and so `setup`, also refuses a path that is a file, a
-symbolic link, or an existing non-empty directory spec-layer did not write,
-since the swap replaces that directory; that check runs when the pull writes, after the
-fetch. A name that merely begins with two dots, such as
-`..cache`, is an ordinary directory and is accepted.
+fetches or writes anything. `pull`, and so `setup`, also refuses a path that
+is a file, a symbolic link, or an existing non-empty directory spec-layer did
+not write, since the swap replaces that directory; that check runs when the
+pull writes, after the fetch. A name that merely begins with two dots, such
+as `..cache`, is an ordinary directory and is accepted.
 
 `component-specs/` and `tokens/` are written in place, not swapped. `pull`
 owns exactly the files there that begin with its marker (the CSS header, or

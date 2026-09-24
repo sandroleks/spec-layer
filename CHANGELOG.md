@@ -498,8 +498,8 @@ path, where the files already are, and says so in one line.
   body, and a timeout is reported as `<api> did not finish answering within
   30 seconds.`, which is true whether the server never answered or a slow
   body was still arriving. The limit is fixed, so a bundle that takes longer
-  than 30 seconds to download fails. A response body that cannot be read is reported in one sentence
-  too; it used to escape as a stack trace.
+  than 30 seconds to download fails. A response body that cannot be read is
+  reported in one sentence too; it used to escape as a stack trace.
 - **`spec-layer` refuses an output directory it would have mishandled.** An
   absolute `--out` was joined under the working directory and written there
   while every message named the absolute path; `--out` that names a file
