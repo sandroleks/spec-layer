@@ -413,6 +413,11 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   The commit returns the quota snapshot the response headers need, so the
   proxy no longer calls back for it. Refusals are unchanged, and every
   response carries the same headers and body as before.
+- **Pull streams the bundle, understands `If-None-Match` lists, and says
+  `no-store`.** The Worker passes the stored bytes through as a stream instead
+  of reading them into a string first, a conditional request may send several
+  or weak entity tags, and pull and versions answers carry
+  `Cache-Control: private, no-store`.
 
 ### Fixed
 

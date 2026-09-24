@@ -554,6 +554,24 @@ export async function handleRotate(req: Request, deps: HandlerDeps, libraryId: s
   return json(200, { pullKey });
 }
 
+/**
+ * True when any entity tag in an `If-None-Match` header names `etag`. Tags are
+ * comma-separated; a weak tag (`W/"..."`) is compared by its value, because
+ * the hash covers the stored bytes and nothing else; `*` matches whatever is
+ * current. An unquoted token is not an entity tag and never matches.
+ */
+export function ifNoneMatchMatches(header: string | null, etag: string): boolean {
+  if (header === null) return false;
+  return header.split(',').some((raw) => {
+    const tag = raw.trim();
+    if (tag === '*') return true;
+    return (tag.startsWith('W/') ? tag.slice(2) : tag) === etag;
+  });
+}
+
+/** Pull answers are per-key private data; nothing between the CLI and the Worker may keep a copy. */
+const NO_STORE = 'private, no-store';
+
 /** The meta when the bearer is this library's current pull key, else the error Response. Shared by pull and versions. */
 async function pullAuthorized(req: Request, deps: HandlerDeps, libraryId: string): Promise<LibraryMeta | Response> {
   const auth = req.headers.get('Authorization') ?? '';
@@ -576,8 +594,8 @@ export async function handleVersions(req: Request, deps: HandlerDeps, libraryId:
   if (meta instanceof Response) return meta;
   const raw = (await deps.libraryStore.get(versionsKey(libraryId))) ?? JSON.stringify({ v: 1, records: [] });
   const etag = `"${sha256(raw)}"`;
-  const headers: Record<string, string> = { ETag: etag, 'content-type': 'application/json' };
-  if (req.headers.get('If-None-Match') === etag) return new Response(null, { status: 304, headers });
+  const headers: Record<string, string> = { ETag: etag, 'content-type': 'application/json', 'Cache-Control': NO_STORE };
+  if (ifNoneMatchMatches(req.headers.get('If-None-Match'), etag)) return new Response(null, { status: 304, headers });
   return new Response(raw, { status: 200, headers });
 }
 
@@ -586,16 +604,18 @@ export async function handlePull(req: Request, deps: HandlerDeps, libraryId: str
   if (!deps.requestLimiter.allow(`libpull:${ip}`, deps.now())) return json(429, { error: 'rate_limited' });
   const meta = await pullAuthorized(req, deps, libraryId);
   if (meta instanceof Response) return meta;
+  const etag = `"${meta.bundleHash}"`;
   const headers: Record<string, string> = {
-    ETag: `"${meta.bundleHash}"`,
+    ETag: etag,
     'X-Published-At': meta.publishedAt,
     'content-type': 'application/json',
+    'Cache-Control': NO_STORE,
   };
   if (meta.version) headers['X-Library-Version'] = meta.version;
-  if (req.headers.get('If-None-Match') === `"${meta.bundleHash}"`) {
+  if (ifNoneMatchMatches(req.headers.get('If-None-Match'), etag)) {
     return new Response(null, { status: 304, headers });
   }
-  const bundle = await deps.libraryStore.get(bundleKey(libraryId));
+  const bundle = await deps.libraryStore.getStream(bundleKey(libraryId));
   if (bundle === null) return json(404, { error: 'not_found' });
   return new Response(bundle, { status: 200, headers });
 }

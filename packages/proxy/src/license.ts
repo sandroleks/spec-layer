@@ -16,9 +16,11 @@ export interface KVLike {
   delete(key: string): Promise<void>;
 }
 
-/** Library storage additionally counts owned libraries by key prefix. */
+/** Library storage additionally lists owned libraries by key prefix and can hand a value back as a stream. */
 export interface LibraryStore extends KVLike {
   list(opts: { prefix: string }): Promise<{ keys: Array<{ name: string }> }>;
+  /** The value as a byte stream, so a pull never holds the bundle as one string. */
+  getStream(key: string): Promise<ReadableStream | null>;
 }
 
 export interface LicenseDeps { fetcher: typeof fetch; cache: KVLike; now: () => number }

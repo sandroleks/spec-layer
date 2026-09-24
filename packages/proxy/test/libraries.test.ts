@@ -8,6 +8,7 @@ import {
   handleVersions,
   newLibraryId,
   newPullKey,
+  ifNoneMatchMatches,
   LIBRARY_ID_RE,
   PULL_KEY_RE,
   MAX_BUNDLE_BYTES,
@@ -32,6 +33,10 @@ class MemKV {
   async delete(k: string) { this.map.delete(k); }
   async list(opts: { prefix: string }) {
     return { keys: [...this.map.keys()].filter((k) => k.startsWith(opts.prefix)).map((name) => ({ name })) };
+  }
+  async getStream(k: string): Promise<ReadableStream | null> {
+    const v = this.map.get(k);
+    return v === undefined ? null : new Response(v).body;
   }
 }
 
@@ -938,6 +943,30 @@ describe('handlePull', () => {
     expect(text).toBe(JSON.stringify(BUNDLE));
   });
 
+  it('streams the bundle from the store rather than reading it as a string', async () => {
+    const { deps: d, libraryId, pullKey } = await publishedLibrary();
+    const stringReads: string[] = [];
+    const store = d.libraryStore as MemKV;
+    const original = store.get.bind(store);
+    store.get = async (k: string) => { stringReads.push(k); return original(k); };
+    const res = await handlePull(pullReq(libraryId, pullKey), d, libraryId);
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe(JSON.stringify(BUNDLE));
+    expect(stringReads).not.toContain(`lib:${libraryId}:bundle`);
+  });
+
+  it('matches a weak or listed If-None-Match and tells caches not to store the body', async () => {
+    const { deps: d, libraryId, pullKey } = await publishedLibrary();
+    const etag = `"${sha256(JSON.stringify(BUNDLE))}"`;
+    const weak = await handlePull(pullReq(libraryId, pullKey, `W/${etag}`), d, libraryId);
+    expect(weak.status).toBe(304);
+    const listed = await handlePull(pullReq(libraryId, pullKey, `"other", ${etag}`), d, libraryId);
+    expect(listed.status).toBe(304);
+    expect(listed.headers.get('Cache-Control')).toBe('private, no-store');
+    const full = await handlePull(pullReq(libraryId, pullKey), d, libraryId);
+    expect(full.headers.get('Cache-Control')).toBe('private, no-store');
+  });
+
   it('rejects a malformed key', async () => {
     const { deps: d, libraryId } = await publishedLibrary();
     const res = await handlePull(pullReq(libraryId, 'nope'), d, libraryId);
@@ -1382,6 +1411,18 @@ describe('dry run', () => {
   });
 });
 
+describe('ifNoneMatchMatches', () => {
+  it('handles exact, weak, listed and star tags, and nothing else', () => {
+    expect(ifNoneMatchMatches('"a"', '"a"')).toBe(true);
+    expect(ifNoneMatchMatches('W/"a"', '"a"')).toBe(true);
+    expect(ifNoneMatchMatches('"b", W/"a"', '"a"')).toBe(true);
+    expect(ifNoneMatchMatches('*', '"a"')).toBe(true);
+    expect(ifNoneMatchMatches('"b"', '"a"')).toBe(false);
+    expect(ifNoneMatchMatches('a', '"a"')).toBe(false); // unquoted is not a tag
+    expect(ifNoneMatchMatches(null, '"a"')).toBe(false);
+  });
+});
+
 describe('GET /v1/libraries/:id/versions', () => {
   it('returns the log to a pull-key holder with an ETag, and 304 on a match', async () => {
     const { deps: d, libraryId, pullKey } = await publishedLibrary();
@@ -1395,6 +1436,10 @@ describe('GET /v1/libraries/:id/versions', () => {
 
     const again = await handleVersions(versionsReq(libraryId, pullKey, res.headers.get('ETag')!), d, libraryId);
     expect(again.status).toBe(304);
+    expect(again.headers.get('Cache-Control')).toBe('private, no-store');
+    expect(res.headers.get('Cache-Control')).toBe('private, no-store');
+    const weak = await handleVersions(versionsReq(libraryId, pullKey, `W/${res.headers.get('ETag')!}`), d, libraryId);
+    expect(weak.status).toBe(304);
   });
 
   it('returns an empty log for a library that predates versioning', async () => {

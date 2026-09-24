@@ -169,10 +169,12 @@ was cut, which is over the limit and at most the body's length), `429` rate limi
 
 Pull key required: `Authorization: Bearer sl_...`. Returns the stored bundle
 verbatim with `ETag: "<bundleHash>"` and `X-Published-At`. An `If-None-Match`
-matching the current hash gets a bare `304`, which is how `spec-layer status`
-decides whether a local pull is behind. The response also carries
-`X-Library-Version` when the library has one; a library published before
-versioning omits it.
+naming the current hash, alone, in a list, or as a weak tag, gets a bare
+`304`, which is how `spec-layer status` decides whether a local pull is
+behind, and every answer carries `Cache-Control: private, no-store`, so
+nothing between the CLI and the Worker keeps a copy of a keyed pull. The
+response also carries `X-Library-Version` when the library has one; a
+library published before versioning omits it.
 
 Errors: `401 {"error":"invalid_key"}` (malformed key or digest mismatch),
 `404 {"error":"not_found"}`, `429`.
@@ -194,7 +196,8 @@ Pull key required, as for pull. Returns the version log
 `pluginVersion`, `counts`, `changes`, and `changesTruncated`. `changes` is
 capped at 64 KB of JSON per record, cut after the last change that fits in
 sorted order; `counts` always reflects the full diff. `ETag` is the sha256 of
-the log bytes and a matching `If-None-Match` gets a bare `304`. A library that
+the log bytes and a matching `If-None-Match` gets a bare `304`, with the same
+list and weak-tag handling and the same `Cache-Control`. A library that
 predates versioning answers an empty log. Errors: `401`, `404`, `429`.
 
 ## Quota rules

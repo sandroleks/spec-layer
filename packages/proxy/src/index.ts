@@ -1,5 +1,6 @@
 import { DurableObject } from 'cloudflare:workers';
 import { route, requestLog, type HandlerDeps, type QuotaClient } from './handlers';
+import type { LibraryStore } from './license';
 import { QUOTA_PROFILES, quotaObjectName, type CommitOptions, type QuotaProfile, type QuotaSnapshot, type ReserveOptions, type ReserveResult, type Tier } from './quota';
 import { QuotaStore } from './quotaStore';
 import { SlidingWindowLimiter } from './ratelimit';
@@ -55,6 +56,17 @@ function doQuotaClient(ns: DurableObjectNamespace<QuotaDO>, identityId: string, 
   };
 }
 
+/** The KV namespace as a LibraryStore: KV already lists by prefix; the stream read is `get(key, 'stream')`. */
+function kvLibraryStore(kv: KVNamespace): LibraryStore {
+  return {
+    get: (key) => kv.get(key),
+    put: (key, value, opts) => kv.put(key, value, opts),
+    delete: (key) => kv.delete(key),
+    list: (opts) => kv.list(opts),
+    getStream: (key) => kv.get(key, 'stream'),
+  };
+}
+
 const worker = {
   async fetch(req: Request, env: Env): Promise<Response> {
     const deps: HandlerDeps = {
@@ -69,7 +81,7 @@ const worker = {
       requestLimiter,
       // Same KV namespace as licenseCache today; a dedicated namespace later
       // is a one-line change once library volume warrants it.
-      libraryStore: env.LICENSE_CACHE,
+      libraryStore: kvLibraryStore(env.LICENSE_CACHE),
     };
     return route(req, deps);
   },

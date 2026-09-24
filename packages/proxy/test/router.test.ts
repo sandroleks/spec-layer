@@ -15,6 +15,10 @@ class MemKV {
   async list(opts: { prefix: string }) {
     return { keys: [...this.map.keys()].filter((k) => k.startsWith(opts.prefix)).map((name) => ({ name })) };
   }
+  async getStream(k: string): Promise<ReadableStream | null> {
+    const v = this.map.get(k);
+    return v === undefined ? null : new Response(v).body;
+  }
 }
 
 const baseDeps = () => ({
