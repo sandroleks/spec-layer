@@ -65,6 +65,9 @@ function makeBundle(overrides: Partial<BundleV1> = {}): BundleV1 {
   };
 }
 
+/** Every staging directory left beside outDir; a clean run leaves none. */
+const stagingLeftovers = (dir: string): string[] => readdirSync(dir).filter((n) => n.startsWith('.speclayer.partial'));
+
 // twoComponents() carries the stub foundation from makeBundle(), which fails
 // validateLevel1 (it is only a content-hash stub, not a real v5 artifact), so
 // every writeBundleFiles call using it must deselect the foundation.
@@ -279,7 +282,7 @@ describe('writeBundleFiles', () => {
       libraryId: 'lib-1', publishedAt: '2026-09-01T00:00:00.000Z', bundleHash: 'h'.repeat(64),
     });
     expect(existsSync(join(tmpDir, 'component-specs/button.yaml'))).toBe(true);
-    expect(existsSync(`${outDir}.partial`)).toBe(false);
+    expect(stagingLeftovers(tmpDir)).toEqual([]);
 
     const bundle2 = makeBundle({
       foundation: null,
@@ -298,7 +301,22 @@ describe('writeBundleFiles', () => {
     // New files are present.
     expect(existsSync(join(tmpDir, 'component-specs/card.yaml'))).toBe(true);
     // No staging dir left behind.
-    expect(existsSync(`${outDir}.partial`)).toBe(false);
+    expect(stagingLeftovers(tmpDir)).toEqual([]);
+  });
+
+  it('never deletes a directory it did not create, even one named like its old staging area', () => {
+    mkdirSync(`${outDir}.partial`);
+    writeFileSync(`${outDir}.partial/mine.txt`, 'keep');
+    const bundle = makeBundle({ foundation: null });
+
+    writeBundleFiles({
+      outDir, cwd: tmpDir, raw: JSON.stringify(bundle), bundle,
+      libraryId: 'lib-1', publishedAt: '2026-09-01T00:00:00.000Z', bundleHash: 'h'.repeat(64),
+    });
+
+    expect(readFileSync(`${outDir}.partial/mine.txt`, 'utf8')).toBe('keep');
+    expect(existsSync(join(outDir, 'manifest.json'))).toBe(true);
+    expect(readdirSync(tmpDir).filter((n) => n.startsWith('.speclayer.partial-'))).toEqual([]);
   });
 
   it('skips the foundation file when foundation is null', () => {
@@ -341,12 +359,9 @@ describe('writeBundleFiles', () => {
     const originalResolverContent = readFileSync(join(outDir, 'tokens/resolver.json'), 'utf8');
 
     // Force the mid-staging write of tokens/resolver.json to fail, simulating a disk
-    // error partway through. Directory pre-seeding cannot inject this: writeBundleFiles
-    // unconditionally rmSync's the .partial staging dir as its very first step, so any
-    // conflict planted there ahead of time is wiped out before it can matter (verified:
-    // pre-creating <outDir>.partial/tokens/resolver.json as a directory does not trigger
-    // the catch branch, because it never survives that leading rmSync). Failing exactly
-    // one write instead requires intercepting the fs call itself, via the vi.mock above.
+    // error partway through. The staging directory is a fresh mkdtemp beside outDir,
+    // so nothing can be pre-seeded into it; failing exactly one write requires
+    // intercepting the fs call itself, via the vi.mock above.
     const bundle2 = makeBundle({
       foundation: realFoundation(),
       components: [
@@ -365,7 +380,7 @@ describe('writeBundleFiles', () => {
     }
 
     // Staging directory was cleaned up by the catch branch.
-    expect(existsSync(`${outDir}.partial`)).toBe(false);
+    expect(stagingLeftovers(tmpDir)).toEqual([]);
     // The prior successful outDir is untouched: neither deleted nor half-overwritten.
     // The visible component-specs/ directory was never touched either, because the
     // failure happens while staging the swapped record, before the visible
@@ -809,7 +824,7 @@ describe('writeBundleFiles component format', () => {
       'The published component context for Button could not be rendered as Markdown. Republish from the plugin, then pull again.',
     );
     expect(existsSync(outDir)).toBe(false);
-    expect(existsSync(`${outDir}.partial`)).toBe(false);
+    expect(stagingLeftovers(tmpDir)).toEqual([]);
     expect(existsSync(join(tmpDir, 'component-specs'))).toBe(false);
   });
 

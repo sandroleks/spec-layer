@@ -307,8 +307,11 @@ In `manifest.json`, an artifact the selection left unwritten has `"path":
 null`. A manifest from CLI 0.1.0 has no `selection` field and means
 everything was written.
 
-Writes stage into `.speclayer.partial` and rename into place, so an
-interrupted pull never leaves a half-written directory. The output directory
+Writes stage into a fresh `.speclayer.partial-XXXXXX` directory beside the
+output directory and rename into place, so an interrupted pull never leaves a
+half-written output directory and never removes a directory it did not
+create. A pull killed mid-write can leave that staging directory behind; it
+holds nothing the next pull needs and is safe to delete. The output directory
 is a relative path inside the working directory: `pull`, `setup`, and `init`
 refuse an absolute path, the current directory, a parent of it, a path that is
 a file, or an existing non-empty directory spec-layer did not write, since the

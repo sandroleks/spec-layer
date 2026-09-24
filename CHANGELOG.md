@@ -411,6 +411,11 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
 
 ### Fixed
 
+- **`spec-layer pull` no longer deletes a directory it did not create.** The
+  record was staged in a fixed `.speclayer.partial`, which the pull removed
+  recursively first, whatever was there. Staging now happens in a fresh
+  `.speclayer.partial-XXXXXX` made by that run, so only that run's own
+  directory is ever removed.
 - **A 304 the CLI did not ask for is an error.** `spec-layer pull` sends the
   last pull's hash only when every file that pull wrote is still on disk and
   would be written the same way again. A server that answered 304 to a request

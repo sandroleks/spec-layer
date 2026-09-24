@@ -1,4 +1,4 @@
-import { lstatSync, mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync, renameSync, existsSync } from 'node:fs';
+import { lstatSync, mkdirSync, mkdtempSync, writeFileSync, readFileSync, readdirSync, rmSync, renameSync, existsSync } from 'node:fs';
 import { join, dirname, relative, resolve, sep } from 'node:path';
 import {
   CSS_HEADER_PREFIX, CSS_INDEX_FILE, COMPONENT_MARKDOWN_MARKER, COMPONENT_YAML_MARKER, componentMarkdown, componentSlugs,
@@ -160,7 +160,7 @@ function assertReplaceable(outDir: string, cwd: string): void {
   }
 }
 
-/** Stage the record into <outDir>.partial, swap, then write the visible directories. A failed pull never half-writes. */
+/** Stage the record into a fresh <outDir>.partial-XXXXXX, swap, then write the visible directories. A failed pull never half-writes. */
 export function writeBundleFiles(opts: {
   outDir: string; cwd: string; raw: string; bundle: BundleV1; libraryId: string; publishedAt: string; bundleHash: string;
   version?: string | null;
@@ -200,8 +200,12 @@ export function writeBundleFiles(opts: {
     briefs[`${slugs[i]}.yaml`] = component.ai;
   });
 
-  const staging = `${opts.outDir}.partial`;
-  rmSync(staging, { recursive: true, force: true });
+  // A directory this call creates, so the cleanup below only ever removes
+  // what this call made. A fixed `<outDir>.partial` was deleted recursively
+  // whether or not spec-layer had put it there. The parent must exist first:
+  // `--out build/spec` on a fresh checkout has no `build/` yet.
+  mkdirSync(dirname(resolve(opts.outDir)), { recursive: true });
+  const staging = mkdtempSync(`${resolve(opts.outDir)}.partial-`);
   const written: string[] = [];
   const deliverables: Array<{ output: OutputConfig; files: Record<string, string> }> = [];
   const json = (v: unknown) => `${JSON.stringify(v, null, 2)}\n`;

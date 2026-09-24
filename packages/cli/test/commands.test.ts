@@ -360,7 +360,7 @@ describe('runPull', () => {
     expect(code).toBe(1);
     expect(io.errLines.join('\n')).toMatch(/rotated or revoked/);
     expect(existsSync(join(cwd, '.speclayer'))).toBe(false);
-    expect(existsSync(join(cwd, '.speclayer.partial'))).toBe(false);
+    expect(readdirSync(cwd).filter((n) => n.startsWith('.speclayer.partial'))).toEqual([]);
   });
 
   it('re-pull with unchanged content leaves identical bytes', async () => {
@@ -544,7 +544,7 @@ describe('runPull with a selection', () => {
     expect(err).toMatch(/"Toast"/);
     expect(err).toMatch(/Button, Card, Icon Button/);
     expect(existsSync(join(cwd, '.speclayer'))).toBe(false);
-    expect(existsSync(join(cwd, '.speclayer.partial'))).toBe(false);
+    expect(readdirSync(cwd).filter((n) => n.startsWith('.speclayer.partial'))).toEqual([]);
   });
 
   it('rejects an unknown --only value before touching the network', async () => {
@@ -1257,7 +1257,7 @@ describe('runPull safety and freshness', () => {
     expect(code).toBe(1);
     expect(io.errLines.join('\n')).toMatch(/src.*not written by spec-layer/s);
     expect(readFileSync(join(cwd, 'src/index.ts'), 'utf8')).toBe('export {};');
-    expect(existsSync(join(cwd, 'src.partial'))).toBe(false);
+    expect(readdirSync(cwd).filter((n) => n.startsWith('src.partial'))).toEqual([]);
   });
 
   it('refuses an absolute or parent --out before touching the network, with the one sentence', async () => {
