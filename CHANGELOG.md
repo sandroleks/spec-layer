@@ -408,6 +408,9 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   without it. Your written sections are kept. The Library row says so, and if
   your AI allowance runs out part-way it says that too rather than reporting a
   clean rebuild.
+- Registry lookups across the Library, publish, and build paths are issued
+  together instead of one round trip per documented section, with the same
+  results in the same order.
 
 ### Fixed
 
