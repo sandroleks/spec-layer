@@ -114,6 +114,26 @@ describe('fetchBundle', () => {
     expect(init.signal).toBeInstanceOf(AbortSignal);
   });
 
+  // The headers arrived, then the body stalled. A stub Response is not wired
+  // to the signal the way a real fetch body is, so the stream wires it.
+  it('gives the timeout message when the deadline fires during the body read', async () => {
+    const fetcher = vi.fn(async (_url: string, init?: RequestInit) => {
+      const signal = init?.signal;
+      if (!signal) throw new Error('fetchBundle passed no signal');
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('{"schema":'));
+          signal.addEventListener('abort', () => controller.error(signal.reason));
+        },
+      });
+      return new Response(body, { status: 200, headers: { 'X-Published-At': '2026-09-01T00:00:00.000Z' } });
+    }) as unknown as typeof fetch;
+
+    const result = await fetchBundle({ api: 'https://api.example.com', libraryId: 'lib_1', key: 'sl_secret', fetcher, timeoutMs: 20 });
+
+    expect(result).toEqual({ kind: 'error', message: 'https://api.example.com did not finish answering within 0.02 seconds.', retryable: true });
+  });
+
   it('waits 30 seconds by default', () => {
     expect(FETCH_TIMEOUT_MS).toBe(30_000);
   });

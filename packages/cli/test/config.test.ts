@@ -291,6 +291,11 @@ describe('api origin scheme', () => {
     expect(() => resolveOptions('/some/cwd', { api: 'http://api.example.com' }, {}, none)).toThrow(/must use https/);
     expect(() => resolveOptions('/some/cwd', {}, { SPEC_LAYER_API: 'http://api.example.com' }, none)).toThrow(/must use https/);
     expect(() => resolveOptions('/some/cwd', { api: 'api.example.com' }, {}, none)).toThrow(/must be an origin/);
+    // Lookalikes whose WHATWG hostname is not this machine: userinfo before an
+    // @, a subdomain of a public name, and a DNS name that resolves to 127.0.0.1.
+    for (const lookalike of ['http://localhost@evil.com', 'http://localhost.evil.com', 'http://127.0.0.1.nip.io']) {
+      expect(() => resolveOptions('/some/cwd', { api: lookalike }, {}, none), lookalike).toThrow(/must use https/);
+    }
     for (const local of ['http://localhost:8787', 'http://127.0.0.1:8787', 'http://[::1]:8787']) {
       expect(resolveOptions('/some/cwd', { api: local }, {}, none).api).toBe(local);
     }
