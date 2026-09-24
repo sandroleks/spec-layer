@@ -424,6 +424,12 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
 
 ### Fixed
 
+- **`spec-layer skill --install` refuses a shared file with one marker.** An
+  `AGENTS.md` or `GEMINI.md` holding `<!-- spec-layer:begin -->` without its
+  end marker got a second block appended, and the next run replaced everything
+  from the first marker to the new end, deleting the text in between. The file
+  is now left untouched and the command says which marker is missing or out
+  of order.
 - **A malformed `manifest.json` reads as no pull.** The file was cast to the
   manifest type without a check, so a hand-edited or truncated manifest could
   make `list` print `undefined` cells or `pull` compare a hash that was not a
