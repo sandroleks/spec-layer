@@ -8,7 +8,7 @@ import {
 import type { Platform } from './detect';
 import { outputId, outputPathProblem, renderOutput, type OutputConfig } from './outputs';
 import { pathInside, visibleDirProblem, writeVisibleDir } from './visibleDir';
-import { DEFAULT_COMPONENT_FORMAT, DEFAULT_COMPONENT_SPECS_DIR, OUT_DIR_RULE, type ComponentFormat } from './config';
+import { DEFAULT_COMPONENT_FORMAT, DEFAULT_COMPONENT_SPECS_DIR, OUT_DIR_RULE, isComponentFormat, type ComponentFormat } from './config';
 import { parseBundle, type BundleV1 } from './bundle';
 import { DEFAULT_SELECTION, selectComponents, type Selection } from './selection';
 import { cliVersion } from './version';
@@ -112,17 +112,37 @@ const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'obj
 
 type StoredArtifact = ManifestArtifact & { aiPath?: string | null };
 
+const isString = (v: unknown): v is string => typeof v === 'string';
+const optional = (v: unknown, check: (x: unknown) => boolean): boolean => v === undefined || check(v);
+
+/** `{ foundation, components }` as every CLI since 0.2.0 wrote it; `components` is null for every component. */
+const isStoredSelection = (v: unknown): boolean => isRecord(v)
+  && typeof v.foundation === 'boolean'
+  && (v.components === null || (Array.isArray(v.components) && v.components.every(isString)));
+
+/** One outputs[] entry as parseOutput produced it, since 0.6.0: the four named strings, plus the optional overrides. */
+const isStoredOutput = (v: unknown): boolean => isRecord(v)
+  && isString(v.platform) && isString(v.format) && isString(v.path) && isString(v.case)
+  && optional(v.root, isString) && optional(v.modeSelector, isString)
+  && optional(v.modes, (m) => isRecord(m) && Object.values(m).every(isString));
+
 /**
- * The fields every CLI since 0.1.0 wrote, and the artifact rows. Optional
- * blocks (`selection`, `dtcg`, `outputs`, ...) are read as written; their
- * readers already tolerate absence. `path` may be absent (0.5.0 wrote
- * `aiPath`), null (not written), or a string.
+ * The fields every CLI since 0.1.0 wrote, and the artifact rows. Each optional
+ * field a later read uses is checked for its type when present, so a hand edit
+ * reads as no pull rather than crashing `pull`, `list`, or `skill`; absence is
+ * fine for all of them, since no CLI before 0.7.0 wrote the newer ones. `path`
+ * may be absent (0.5.0 wrote `aiPath`), null (not written), or a string.
  */
 function isManifestShape(v: unknown): v is Manifest & { artifacts: StoredArtifact[] } {
   if (!isRecord(v)) return false;
   if (typeof v.libraryId !== 'string' || typeof v.publishedAt !== 'string'
     || typeof v.bundleHash !== 'string' || typeof v.extractorVersion !== 'string') return false;
   if (v.pluginVersion !== undefined && v.pluginVersion !== null && typeof v.pluginVersion !== 'string') return false;
+  if (!optional(v.version, isString) || !optional(v.cliVersion, isString)
+    || !optional(v.selection, isStoredSelection) || !optional(v.dtcg, isRecord)
+    || !optional(v.platforms, (p) => Array.isArray(p) && p.every(isString))
+    || !optional(v.outputs, (o) => Array.isArray(o) && o.every(isStoredOutput))
+    || !optional(v.componentSpecsDir, isString) || !optional(v.componentSpecsFormat, isComponentFormat)) return false;
   if (!Array.isArray(v.artifacts)) return false;
   const pathLike = (p: unknown): boolean => p === undefined || p === null || typeof p === 'string';
   return v.artifacts.every((a) => isRecord(a)
@@ -174,9 +194,20 @@ function assertReplaceable(outDir: string, cwd: string): void {
   const root = resolve(cwd);
   const abs = resolve(outDir);
   if (abs === root || !pathInside(root, abs)) throw new Error(OUT_DIR_RULE);
-  if (!existsSync(abs)) return;
+  // lstat, not existsSync: a link, dangling or not, is the link itself here.
+  const stat = lstatSync(abs, { throwIfNoEntry: false });
+  if (!stat) return;
+  // The swap renames a fresh directory onto outDir, which would replace a
+  // link rather than write through it (0.10.0 did exactly that), so refuse
+  // and say what is there.
+  if (stat.isSymbolicLink()) {
+    throw new Error(
+      `${outDir} is a symbolic link, and spec-layer pull replaces its output directory rather than writing through a link. `
+      + 'Point --out or "outDir" in speclayer.json at a real directory, or replace the link with the directory it points to.',
+    );
+  }
   // readdirSync on a file throws a raw ENOTDIR; say what is there instead.
-  if (!lstatSync(abs).isDirectory()) {
+  if (!stat.isDirectory()) {
     throw new Error(`${outDir} exists and is not a directory. Choose another path or remove the file.`);
   }
   if (!existsSync(join(abs, 'manifest.json')) && readdirSync(abs).length > 0) {

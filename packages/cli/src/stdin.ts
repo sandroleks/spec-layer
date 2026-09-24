@@ -32,7 +32,7 @@ export const KEY_COMMANDS: ReadonlySet<string> = new Set(['setup', 'pull', 'stat
 export interface StdinKeyResult {
   /** The key read from stdin, or null when this call never read stdin at all. */
   key: string | null;
-  /** Set when stdin closed before a line arrived; the caller should refuse and exit 1. */
+  /** Set when stdin closed before a line arrived, or could not be read; the caller should refuse and exit 1. */
   error: string | null;
 }
 
@@ -52,7 +52,17 @@ export async function resolveKeyFromStdin(
   if (key !== '-' || command === undefined || !KEY_COMMANDS.has(command)) {
     return { key: null, error: null };
   }
-  const line = await readFirstLine(input);
+  let line: string | null;
+  try {
+    line = await readFirstLine(input);
+  } catch {
+    // A closed descriptor (`<&-`) or EIO on a detached terminal errors the
+    // stream. That is one sentence and exit 1, like every other refusal.
+    return {
+      key: null,
+      error: '--key - could not read the key from stdin. Pipe the key in, paste it and press Enter, or set SPEC_LAYER_KEY.',
+    };
+  }
   if (line === null) {
     return {
       key: null,

@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtempSync, mkdirSync, rmSync, existsSync, readFileSync, readdirSync, writeFileSync, chmodSync } from 'node:fs';
+import {
+  mkdtempSync, mkdirSync, rmSync, existsSync, readFileSync, readdirSync, writeFileSync, chmodSync, lstatSync, symlinkSync,
+} from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
@@ -1312,6 +1314,25 @@ describe('runPull safety and freshness', () => {
     expect(listIo.errLines).toEqual([expected]);
   });
 
+  it('pulls again, without crashing, when a hand edit left manifest.json fields of the wrong type', async () => {
+    writeFileSync(join(cwd, 'speclayer.json'), JSON.stringify({ libraryId: 'lib_abcabcabcabcabcabcabcabc', outDir: '.speclayer', platforms: ['web'] }));
+    expect(await runPull(cwd, {}, ENV, makeIo(), stub200())).toBe(0);
+    const path = join(cwd, '.speclayer', 'manifest.json');
+    const good = JSON.parse(readFileSync(path, 'utf8'));
+    for (const edit of [
+      { outputs: [{ platform: 'web', format: 'css', path: 4, case: 'kebab' }] },
+      { componentSpecsDir: 5 },
+    ]) {
+      writeFileSync(path, JSON.stringify({ ...good, ...edit }));
+      const fetcher = stub200();
+
+      expect(await runPull(cwd, {}, ENV, makeIo(), fetcher), JSON.stringify(edit)).toBe(0);
+
+      expect(headerOf(fetcher, 'If-None-Match')).toBeUndefined();
+      expect(JSON.parse(readFileSync(path, 'utf8'))).toMatchObject({ outputs: good.outputs, componentSpecsDir: good.componentSpecsDir });
+    }
+  });
+
   it('accepts an --out whose name merely begins with two dots', async () => {
     expect(await runPull(cwd, { out: '..cache' }, ENV, makeIo(), stubThree())).toBe(0);
     expect(existsSync(join(cwd, '..cache', 'manifest.json'))).toBe(true);
@@ -1326,6 +1347,36 @@ describe('runPull safety and freshness', () => {
     expect(code).toBe(1);
     expect(io.errLines.join('\n')).toMatch(/notes exists and is not a directory\. Choose another path or remove the file\./);
     expect(readFileSync(join(cwd, 'notes'), 'utf8')).toBe('mine');
+  });
+
+  // 0.10.0 followed the link, then replaced it with a real directory. Writing
+  // through a link is not something the swap can do safely, so it is refused,
+  // and the message says what is there rather than "not a directory".
+  it.skipIf(process.platform === 'win32')('refuses an output directory that is a symbolic link, and leaves the link and its target alone', async () => {
+    await runPull(cwd, { out: 'real' }, ENV, makeIo(), stubThree());
+    symlinkSync(join(cwd, 'real'), join(cwd, 'link'));
+    const io = makeIo();
+
+    expect(await runPull(cwd, { out: 'link' }, ENV, io, stubThree())).toBe(1);
+
+    expect(io.errLines).toEqual([
+      `${join(cwd, 'link')} is a symbolic link, and spec-layer pull replaces its output directory rather than writing through a link. `
+      + 'Point --out or "outDir" in speclayer.json at a real directory, or replace the link with the directory it points to.',
+    ]);
+    expect(lstatSync(join(cwd, 'link')).isSymbolicLink()).toBe(true);
+    expect(existsSync(join(cwd, 'real', 'manifest.json'))).toBe(true);
+    expect(readdirSync(cwd).filter((n) => n.startsWith('link.partial'))).toEqual([]);
+  });
+
+  it.skipIf(process.platform === 'win32')('refuses a dangling symbolic link as the output directory too', async () => {
+    symlinkSync(join(cwd, 'missing'), join(cwd, 'link'));
+    const io = makeIo();
+
+    expect(await runPull(cwd, { out: 'link' }, ENV, io, stubThree())).toBe(1);
+
+    expect(io.errLines.join('\n')).toContain('link is a symbolic link');
+    expect(lstatSync(join(cwd, 'link')).isSymbolicLink()).toBe(true);
+    expect(existsSync(join(cwd, 'missing'))).toBe(false);
   });
 
   it('treats an unsolicited 304 as an error with exit 1 when there is no local pull', async () => {

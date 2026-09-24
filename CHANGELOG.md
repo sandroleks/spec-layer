@@ -26,11 +26,12 @@ byte-identical files. The plugin's Markdown setup command depends on it: CLI
 plugin build carrying it must not reach the listing before 0.10.0 is on npm.
 
 The CLI hardening in this section ships as 0.11.0, a minor release because
-`--key -` is a new option and because three inputs the CLI used to accept are
-now refused: an absolute `--out`, a plain-http `--api` to anything but
-localhost, and an `--id` that is not the shape the plugin issues. A parent
-`--out` was already refused when the pull wrote; it is now refused before
-anything is fetched or written. A repository on 0.10.0 re-projects once on its first pull with 0.11.0 through
+`--key -` is a new option and because four inputs the CLI used to accept are
+now refused: an absolute `--out`, an output directory that is a symbolic
+link, a plain-http `--api` to anything but localhost, and an `--id` that is
+not the shape the plugin issues. A parent `--out` was already refused when
+the pull wrote; it is now refused before anything is fetched or written. A
+repository on 0.10.0 re-projects once on its first pull with 0.11.0 through
 the `manifest.cliVersion` check and gets byte-identical files. One kind of
 repository needs a step: earlier versions recorded `init --out /abs/x` in
 `speclayer.json` as-is and wrote every pull to `abs/x` inside the working
@@ -55,7 +56,8 @@ path, where the files already are, and says so in one line.
   look like a hang. Every other command ignores `--key` entirely, so
   `--key -` there is inert rather than a stray block on stdin.
   `SPEC_LAYER_KEY` remains the way for CI. Nothing arriving is an error
-  rather than an empty key.
+  rather than an empty key, and a stdin that cannot be read, such as a
+  closed descriptor, is refused in one sentence rather than a stack trace.
 - **`spec-layer pull` can write components as Markdown.** Set
   `componentSpecsFormat: "md"` in `speclayer.json`, or pass
   `--component-format md` to `setup`, `init`, `pull`, or `show`, and
@@ -466,7 +468,10 @@ path, where the files already are, and says so in one line.
   manifest type without a check, so a hand-edited or truncated manifest could
   make `list` print `undefined` cells or `pull` compare a hash that was not a
   string. Every command now reports `No local pull found. Run spec-layer
-  pull.`, and the next pull rewrites the file.
+  pull.`, and the next pull rewrites the file. Each optional field a later
+  read uses is checked too when present, so an `outputs` that is not a list
+  or a `componentSpecsDir` that is not a string reads the same way instead of
+  crashing `pull`; every shape an earlier CLI wrote still reads.
 - **`--id` is checked against the shape the plugin issues.** `init` and
   `setup` refuse an id that is not `lib_` followed by 24 hex characters, with
   one sentence, before writing `speclayer.json` or the key. The sentence never
@@ -505,7 +510,12 @@ path, where the files already are, and says so in one line.
   `status`, `list`, `show`, and `skill` only read, and report no local pull
   there. The same rule applies to `componentSpecsDir` and
   `outputs[].path`, which share the check. A refusal names `--out` or
-  `speclayer.json` `"outDir"`, whichever the value came from.
+  `speclayer.json` `"outDir"`, whichever the value came from. An output
+  directory that is a symbolic link is now refused when the pull writes, with
+  a sentence that says it is a link: 0.10.0 followed the link and then
+  replaced it with a real directory, and the swap cannot write through one.
+  Point the output directory at a real directory, or replace the link with
+  the directory it points to.
 - **`--api` and `SPEC_LAYER_API` must be https.** The pull key travels in the
   Authorization header of every request, and a plain `http://` origin sent it
   in the clear. Only `localhost`, `127.0.0.1`, and `[::1]` may use http, for a

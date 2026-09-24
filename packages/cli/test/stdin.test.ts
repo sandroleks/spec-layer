@@ -36,6 +36,16 @@ describe('resolveKeyFromStdin', () => {
     });
   });
 
+  // A closed descriptor (`<&-`) or EIO on a detached terminal errors the
+  // stream; that must be one sentence and exit 1, never a stack trace.
+  it('turns a stdin read error into one sentence instead of rejecting', async () => {
+    const broken = new Readable({ read() { this.destroy(new Error('EIO: i/o error, read')); } });
+    expect(await resolveKeyFromStdin('setup', '-', broken)).toEqual({
+      key: null,
+      error: '--key - could not read the key from stdin. Pipe the key in, paste it and press Enter, or set SPEC_LAYER_KEY.',
+    });
+  });
+
   it('never touches stdin for a command that does not resolve a key', async () => {
     const read = vi.fn(() => { throw new Error('stdin must not be read for a command that never uses the key'); });
     const stream = new Readable({ read });

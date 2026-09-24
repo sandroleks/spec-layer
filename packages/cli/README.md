@@ -71,8 +71,9 @@ key, and refuses to pull into a `component-specs/` that already holds
 Markdown pages, so every CLI that pulls a repository using Markdown needs
 0.10.0. `--key -` needs 0.11.0 or later; 0.11.0 also refuses an absolute
 `--out`, a plain-http `--api` to anything but localhost, and an `--id` that is
-not the shape the plugin issues, all of which earlier versions accepted. A
-parent `--out` was refused before too, when the pull wrote; 0.11.0 refuses it
+not the shape the plugin issues, all of which earlier versions accepted, and
+an output directory that is a symbolic link, which earlier versions replaced
+with a real directory. A parent `--out` was refused before too, when the pull wrote; 0.11.0 refuses it
 before anything is fetched or written. Earlier versions recorded an absolute `--out` in `speclayer.json`
 as-is and wrote every pull to that path inside the working directory, so
 `outDir: "/abs/x"` meant `abs/x`. 0.11.0 refuses that value and names the
@@ -336,9 +337,9 @@ create. A pull killed mid-write can leave that staging directory behind; it
 holds nothing the next pull needs and is safe to delete. The output directory
 is a relative path inside the working directory: every command but `tools`
 refuses an absolute path, the current directory, or a parent of it before it
-fetches or writes anything. `pull`, and so `setup`, also refuses a path that is a file,
-or an existing non-empty directory spec-layer did not write, since the swap
-replaces that directory; that check runs when the pull writes, after the
+fetches or writes anything. `pull`, and so `setup`, also refuses a path that is a file, a
+symbolic link, or an existing non-empty directory spec-layer did not write,
+since the swap replaces that directory; that check runs when the pull writes, after the
 fetch. A name that merely begins with two dots, such as
 `..cache`, is an ordinary directory and is accepted.
 

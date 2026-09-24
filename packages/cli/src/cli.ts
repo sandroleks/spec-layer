@@ -71,15 +71,17 @@ async function main(): Promise<number> {
 
   const command = positionals[0];
 
-  const stdinKey = await resolveKeyFromStdin(command, values.key, process.stdin);
-  if (stdinKey.error !== null) {
-    io.err(stdinKey.error);
-    return 1;
-  }
-  if (stdinKey.key !== null) values = { ...values, key: stdinKey.key };
-
   const cwd = process.cwd();
   try {
+    // Inside the try, so a stdin failure resolveKeyFromStdin did not turn
+    // into a sentence itself still gets the last-resort net below.
+    const stdinKey = await resolveKeyFromStdin(command, values.key, process.stdin);
+    if (stdinKey.error !== null) {
+      io.err(stdinKey.error);
+      return 1;
+    }
+    if (stdinKey.key !== null) values = { ...values, key: stdinKey.key };
+
     if (command === 'setup') return await runSetup(cwd, values, process.env, io);
     if (command === 'init') return runInit(cwd, values, io);
     if (command === 'pull') return await runPull(cwd, values, process.env, io);

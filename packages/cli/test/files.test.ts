@@ -148,6 +148,60 @@ describe('writeBundleFiles', () => {
     expect(readManifest(outDir)?.libraryId).toBe('lib_old');
   });
 
+  it('reads an optional field of the wrong type as no pull, so a hand edit cannot crash a later read', () => {
+    mkdirSync(outDir, { recursive: true });
+    const base = {
+      libraryId: 'lib_old', publishedAt: '2026-09-01T00:00:00.000Z', bundleHash: 'h', pluginVersion: null, extractorVersion: '2', artifacts: [],
+    };
+    const output = { platform: 'web', format: 'css', path: 'tokens', case: 'kebab' };
+    const wrong: Array<Record<string, unknown>> = [
+      { version: 3 },
+      { cliVersion: false },
+      { selection: 'all' },
+      { selection: { foundation: 'yes', components: null } },
+      { selection: { foundation: true } },
+      { selection: { foundation: true, components: [1] } },
+      { dtcg: 'legacy' },
+      { platforms: 'web' },
+      { platforms: [1] },
+      { outputs: 'tokens' },
+      { outputs: [null] },
+      { outputs: [{ ...output, path: 4 }] },
+      { outputs: [{ ...output, platform: undefined }] },
+      { outputs: [{ ...output, modes: 'dark' }] },
+      { outputs: [{ ...output, modeSelector: 1 }] },
+      { componentSpecsDir: ['component-specs'] },
+      { componentSpecsFormat: 'markdown' },
+    ];
+    for (const extra of wrong) {
+      writeFileSync(join(outDir, 'manifest.json'), JSON.stringify({ ...base, ...extra }));
+      expect(readManifest(outDir), JSON.stringify(extra)).toBeNull();
+    }
+  });
+
+  it('still reads every optional field as 0.7.0 to 0.10.0 wrote it', () => {
+    mkdirSync(outDir, { recursive: true });
+    const written = {
+      libraryId: 'lib_aaaaaaaaaaaaaaaaaaaaaaaa', publishedAt: '2026-09-01T00:00:00.000Z', bundleHash: 'h',
+      pluginVersion: '5.1.0', extractorVersion: '2', cliVersion: '0.10.0', version: '1.2.0',
+      selection: { foundation: true, components: ['Button'] },
+      dtcg: { values: 'legacy', units: { 'Primitives/number/*': 'px' } },
+      platforms: ['web'],
+      outputs: [{
+        platform: 'web', format: 'css', path: 'tokens', case: 'kebab', root: ':root',
+        modeSelector: '[data-theme="{mode}"]', modes: { Theme: '.dark' },
+      }],
+      componentSpecsDir: 'component-specs', componentSpecsFormat: 'md',
+      artifacts: [{ kind: 'component', name: 'Button', contentHash: 'c', path: 'component-specs/button.md' }],
+    };
+    writeFileSync(join(outDir, 'manifest.json'), JSON.stringify(written));
+    expect(readManifest(outDir)).toEqual(written);
+    // 0.7.0 to 0.9.x wrote no componentSpecsFormat, and a selection with every component.
+    const { componentSpecsFormat: _format, ...older } = written;
+    writeFileSync(join(outDir, 'manifest.json'), JSON.stringify({ ...older, selection: { foundation: false, components: null } }));
+    expect(readManifest(outDir)?.selection).toEqual({ foundation: false, components: null });
+  });
+
   it('replaces a CRLF-checked-out brief already on disk in component-specs/', () => {
     // A Git for Windows checkout with core.autocrlf=true turns the CLI's own
     // committed briefs into `spec_layer:\r\n  kind: component`; the marker
