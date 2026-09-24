@@ -480,7 +480,9 @@ describe('handlePublish', () => {
     });
     const res2 = await handlePublish(noHeader, d);
     expect(res2.status).toBe(413);
-    expect(((await res2.json()) as { size: number }).size).toBeGreaterThan(MAX_BUNDLE_BYTES);
+    const size2 = ((await res2.json()) as { size: number }).size;
+    expect(size2).toBeGreaterThan(MAX_BUNDLE_BYTES);
+    expect(size2).toBeLessThanOrEqual(byteLength(payload));
   });
 
   it('rejects an unsupported bundle version', async () => {

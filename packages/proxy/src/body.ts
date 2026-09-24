@@ -23,7 +23,9 @@ export async function readBodyCapped(req: Request, maxBytes: number): Promise<Ca
       if (done) break;
       total += value.byteLength;
       if (total > maxBytes) {
-        await reader.cancel();
+        // Fire-and-forget: a rejected cancel is not this request's problem, and
+        // must never turn an already-decided `too_large` into `unreadable`.
+        void reader.cancel().catch(() => {});
         return { kind: 'too_large', size: total };
       }
       chunks.push(value);
