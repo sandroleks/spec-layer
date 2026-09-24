@@ -20,7 +20,7 @@ export function memQuota(now: () => number) {
     return {
       reserve: (tier, cacheKey, opts) => store.reserve(tier, cacheKey, now(), opts),
       commit: (tier, cacheKey, body, opts) => store.commit(tier, cacheKey, body, now(), opts),
-      release: (cacheKey) => store.release(cacheKey, now()),
+      release: (cacheKey, opts) => store.release(cacheKey, now(), opts),
       snapshot: (tier) => store.snapshot(tier, now()),
     };
   };

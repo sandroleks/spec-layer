@@ -1,6 +1,6 @@
 import {
   QuotaEngine, RESPONSE_TTL_MS,
-  type CommitOptions, type QuotaLimits, type QuotaSnapshot, type ReserveOptions, type ReserveResult, type Tier,
+  type CommitOptions, type QuotaLimits, type QuotaSnapshot, type ReleaseOptions, type ReserveOptions, type ReserveResult, type Tier,
 } from './quota';
 
 /**
@@ -82,9 +82,9 @@ export class QuotaStore {
     return engine.snapshot(tier, now);
   }
 
-  async release(cacheKey: string, now: number): Promise<void> {
+  async release(cacheKey: string, now: number, opts?: ReleaseOptions): Promise<void> {
     const engine = await this.load(now);
-    engine.release(cacheKey);
+    engine.release(cacheKey, now, opts);
     await this.save(engine);
   }
 

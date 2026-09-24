@@ -1,7 +1,7 @@
 import { DurableObject } from 'cloudflare:workers';
 import { route, requestLog, type HandlerDeps, type QuotaClient } from './handlers';
 import type { LibraryStore } from './license';
-import { QUOTA_PROFILES, quotaObjectName, type CommitOptions, type QuotaProfile, type QuotaSnapshot, type ReserveOptions, type ReserveResult, type Tier } from './quota';
+import { QUOTA_PROFILES, quotaObjectName, type CommitOptions, type QuotaProfile, type QuotaSnapshot, type ReleaseOptions, type ReserveOptions, type ReserveResult, type Tier } from './quota';
 import { QuotaStore } from './quotaStore';
 import { SlidingWindowLimiter, REQUEST_LIMITER_MAX_KEYS, LICENSE_LIMITER_MAX_KEYS } from './ratelimit';
 
@@ -37,8 +37,8 @@ export class QuotaDO extends DurableObject<Env> {
     return this.store(profile).commit(tier, cacheKey, body, now, opts);
   }
 
-  release(profile: QuotaProfile, cacheKey: string, now: number): Promise<void> {
-    return this.store(profile).release(cacheKey, now);
+  release(profile: QuotaProfile, cacheKey: string, now: number, opts?: ReleaseOptions): Promise<void> {
+    return this.store(profile).release(cacheKey, now, opts);
   }
 
   snapshot(profile: QuotaProfile, tier: Tier, now: number): Promise<QuotaSnapshot> {
@@ -51,7 +51,7 @@ function doQuotaClient(ns: DurableObjectNamespace<QuotaDO>, identityId: string, 
   return {
     reserve: async (tier, cacheKey, opts) => await stub.reserve(profile, tier, cacheKey, Date.now(), opts),
     commit: async (tier, cacheKey, body, opts) => await stub.commit(profile, tier, cacheKey, body, Date.now(), opts),
-    release: async (cacheKey) => { await stub.release(profile, cacheKey, Date.now()); },
+    release: async (cacheKey, opts) => { await stub.release(profile, cacheKey, Date.now(), opts); },
     snapshot: async (tier) => await stub.snapshot(profile, tier, Date.now()),
   };
 }

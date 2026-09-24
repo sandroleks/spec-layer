@@ -181,4 +181,14 @@ describe('QuotaStore', () => {
     expect((await store.reserve('free', 'k1', T0 + 2)).kind).toBe('proceed');
     expect(storage.map.has(responseKey('k1'))).toBe(false);
   });
+
+  it('release persists a head it is handed, so a later reserve that read an older one is pending', async () => {
+    const storage = new MemDoStorage();
+    const store = new QuotaStore(storage, QUOTA_PROFILES.publish);
+    await store.reserve('free', 'publish:lib_1:100->a', T0, { lock: 'publish:lib_1', base: 100 });
+    await store.release('publish:lib_1:100->a', T0 + 1, { head: { lock: 'publish:lib_1', at: 200 } });
+    const reopened = new QuotaStore(storage, QUOTA_PROFILES.publish);
+    expect(await reopened.reserve('free', 'publish:lib_1:100->b', T0 + 2, { lock: 'publish:lib_1', base: 100 })).toEqual({ kind: 'pending' });
+    expect(storage.map.has(responseKey('publish:lib_1:100->a'))).toBe(false);
+  });
 });

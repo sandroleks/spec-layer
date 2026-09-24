@@ -276,9 +276,13 @@ before this split is migrated to that layout the first time it is read.
   caught up) answers 409 publish_pending instead of assigning the same
   version and dropping the other record from the log. The diff baseline, the
   current bundle, is a third read that is not checked: a stale one can only
-  make the minimum bump wrong, never fork the version. A recorded head is
-  held for `HEAD_TTL_MS` (ten minutes) and then forgotten, and a library
-  this object has never committed has no head to check against. A publish
+  make the minimum bump wrong, never fork the version. A publish takes its
+  `publishedAt` after those reads and at least one millisecond past both
+  times it read, so a head never moves backwards, even from a Worker whose
+  clock is behind the one that wrote the last publish. A create records its
+  head too. A recorded head is held for `HEAD_TTL_MS` (ten minutes) and then
+  forgotten, and a library this object has neither created nor committed
+  since then has no head to check against. A publish
   still writes the current bundle, the per-version bundle, the version log,
   then the meta, in that order. A stop
   between the log and the meta leaves a log record the meta does not carry;
@@ -298,8 +302,12 @@ before this split is migrated to that layout the first time it is read.
   second writer can proceed in that window; its create is still counted
   once it commits; if its head reaches the object out of order, later
   publishes of that library from this identity can answer 409 until the head
-  expires. A commit that throws after the KV writes (the Durable Object call
-  fails) releases its reservation, or lets it expire, uncounted: for a
+  expires. A publish that throws after its meta write (a failed prune, or a
+  Durable Object commit that fails) releases its reservation uncounted, and
+  that release records the head it wrote, so a publish that still reads the
+  older meta is refused as if the commit had landed. When the release fails
+  too, nothing records the head: the lock stays held until it expires, which
+  outlasts the KV cache of about a minute, and the write is not counted. For a
   create, the library exists but the object never counted it, so a quick
   retry before the listing catches up can create a second library past the
   ceiling. The count only goes up: there is no delete route, and a library

@@ -442,7 +442,12 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   changed publish, or one that read the library before another publish
   finished, answers `409 publish_pending` instead of assigning the same
   version, dropping the other publish from the version history, or leaving
-  the meta and bundle from different writers. The library ceiling is counted
+  the meta and bundle from different writers. A publish's `publishedAt` is
+  taken after those reads and always lands after the state it read, so a
+  Worker whose clock runs behind cannot move the library back in time, and a
+  publish that fails after writing its meta still records it, so a stale read
+  is refused as if that publish had finished. A create records the same state,
+  so a new library's first update is checked too. The library ceiling is counted
   in that same object, so two concurrent creates no longer both pass an
   eventually consistent KV listing, and a create is counted even when its
   writes take longer than its reservation lives. Publishes under two

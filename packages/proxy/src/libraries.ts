@@ -290,6 +290,12 @@ function headBase(meta: LibraryMeta, log: VersionLog): number {
   return Number.isNaN(logAt) ? metaAt : Math.min(metaAt, logAt);
 }
 
+/** `now`, moved past the meta's and the log head's times when either is at or ahead of it. A time that does not parse is ignored. */
+function nextHeadAt(now: number, meta: LibraryMeta, log: VersionLog): number {
+  const after = [Date.parse(meta.publishedAt) + 1, logHeadAt(log) + 1].filter((at) => !Number.isNaN(at));
+  return Math.max(now, ...after);
+}
+
 /**
  * The 403 for a library ceiling, from the KV pre-check or from the Durable
  * Object's create count. Free callers get `existing`, the first library the
@@ -362,7 +368,6 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
   // Stored as the client sent it, so the pulled bytes are the published bytes.
   const stored = JSON.stringify(bundle);
   const fileName = typeof bundle.fileName === 'string' ? truncateUtf16(bundle.fileName, MAX_FILE_NAME_LENGTH) : null;
-  const publishedAt = new Date(deps.now()).toISOString();
   const bundleHash = sha256(stored);
   // Two hashes, two questions. The byte hash is the pull ETag. The content
   // hash is "did this change what developers pull", which the byte hash cannot
@@ -448,6 +453,16 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
   const resolution = resolveBump({ storedVersion, minimumBump: diff?.minimumBump ?? null, bump: body.bump, initialVersion: body.initialVersion });
   if (!resolution.ok) return json(resolution.status, resolution.body);
 
+  // The head this write leaves, taken after the meta and log reads, never
+  // before them. Taken earlier, another publish could commit a newer head in
+  // between, this one would read that newer meta, pass the reserve, and then
+  // write an older time behind it: the head would go backwards and a reader
+  // still holding the newer meta would pass the check and fork the version.
+  // For the same reason an update lands at least one millisecond after both
+  // the meta and the log head it read, however far this Worker's clock is
+  // behind the one that wrote them. A create has nothing to follow.
+  const publishedAt = new Date(meta ? nextHeadAt(deps.now(), meta, log) : deps.now()).toISOString();
+
   // A create is a new library by definition, so its reservation must never
   // replay an earlier one: the id is generated up front and folded into the
   // cache key itself, so two creates from identical bundles can never collide.
@@ -505,6 +520,8 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
     default:
       return json(500, { error: 'internal' });
   }
+  /** Set once this publish's meta is in KV: the head it now has to record, by commit or by release. */
+  let headWritten: { lock: string; at: number } | null = null;
   try {
     // Inside the try: a logger that throws must still release the reservation.
     if (reserved.kind === 'proceed' && reserved.flagged) {
@@ -526,9 +543,10 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
       // bundle or a version that is not there yet.
       const written = await writeVersion(store, libraryId, stored, log, record);
       await store.put(metaKey(libraryId), JSON.stringify(next));
+      headWritten = { lock, at: Date.parse(publishedAt) };
       await Promise.all(bundlesToPrune(written).map((version) => store.delete(versionBundleKey(libraryId as string, version))));
       const snap = await quota.commit(caller.tier, cacheKey, JSON.stringify({ libraryId, publishedAt, version: record.version }), {
-        head: { lock, at: Date.parse(publishedAt) },
+        head: headWritten,
       });
       deps.log('library_publish', { libraryId, size: bodyBytes, version: record.version, bump: record.bump });
       return json(200, {
@@ -552,14 +570,25 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
       store.put(keyRecord(id), sha256(pullKey)),
       store.put(`${ownerPrefix(caller.tierIdentity)}${id}`, publishedAt),
     ]);
+    // A create records its head too, so the new library's first update is
+    // checked like every later one instead of accepting any base.
+    headWritten = { lock: `publish:${id}`, at: Date.parse(publishedAt) };
     // The replay body never carries the pull key: it is handed out exactly once.
-    const snap = await quota.commit(caller.tier, cacheKey, JSON.stringify({ libraryId: id, publishedAt, version: record.version }), { create: true });
+    const snap = await quota.commit(caller.tier, cacheKey, JSON.stringify({ libraryId: id, publishedAt, version: record.version }), {
+      create: true, head: headWritten,
+    });
     deps.log('library_publish', { libraryId: id, size: bodyBytes, created: true, version: record.version });
     return json(201, {
       libraryId: id, pullKey, publishedAt, version: record.version, bump: record.bump, minimumBump: record.minimumBump,
     }, { ...quotaHeaders(snap), 'X-Library-Version': record.version });
   } catch (err) {
-    await quota.release(cacheKey);
+    // A throw after the meta write (a failed prune, or a commit the Durable
+    // Object never finished) leaves a new head in KV that nothing recorded.
+    // Freeing the lock without it would let a publish that still reads the
+    // older meta proceed and fork the version, so the release records it,
+    // uncounted. If the release fails too, an update's lock stays held for the
+    // rest of its three minutes, which outlasts the KV cache of about a minute.
+    await quota.release(cacheKey, headWritten ? { head: headWritten } : undefined);
     throw err;
   }
 }

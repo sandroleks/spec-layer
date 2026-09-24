@@ -127,6 +127,17 @@ export interface CommitOptions {
   head?: { lock: string; at: number };
 }
 
+export interface ReleaseOptions {
+  /**
+   * A head to record while freeing the reservation, exactly as `commit` would.
+   * Publish passes it when its meta write landed and something after it threw:
+   * the new head is in KV, and freeing the lock without recording it would let
+   * a publish that read the older head proceed and fork the version. Nothing
+   * is counted.
+   */
+  head?: { lock: string; at: number };
+}
+
 interface ResponseEntry { at: number }
 /** A response entry as a blob written before the split stored it: body inline. */
 interface LegacyResponseEntry extends ResponseEntry { body?: string }
@@ -329,8 +340,9 @@ export class QuotaEngine {
     this.s.months[mk] = (this.s.months[mk] ?? 0) + 1;
   }
 
-  release(cacheKey: string): void {
+  release(cacheKey: string, now: number, opts: ReleaseOptions = {}): void {
     this.settle(cacheKey);
+    if (opts.head) this.s.heads[opts.head.lock] = { at: opts.head.at, recordedAt: now };
   }
 
   snapshot(tier: Tier, now: number): QuotaSnapshot {

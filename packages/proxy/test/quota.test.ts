@@ -51,7 +51,7 @@ describe('QuotaEngine free tier', () => {
   it('only commit decrements; an un-committed reserve does not count', () => {
     const e = new QuotaEngine();
     e.reserve('free', 'a', T0);           // reserved, never committed
-    e.release('a');
+    e.release('a', T0);
     const s = e.snapshot('free', T0 + 1);
     expect(s.used).toBe(0);
     expect(s.limit).toBe(BOOST_LIMIT);
@@ -248,10 +248,24 @@ describe('QuotaEngine locks and create slots', () => {
     expect(e.reserve('pro', 'publish:lib_2:1->a', T0 + 3, { lock: 'publish:lib_2', base: 1 }).kind).toBe('proceed');
   });
 
-  it('records a head only on commit, never on release, and forgets it after HEAD_TTL_MS', () => {
+  it('a release that names a head records it while freeing the lock', () => {
+    // A publish whose commit threw after its meta was written: the lock goes,
+    // but the head it left in KV must still refuse a read from before it.
     const e = new QuotaEngine(undefined, QUOTA_PROFILES.publish);
     e.reserve('pro', 'publish:lib_1:100->a', T0, { lock: 'publish:lib_1', base: 100 });
-    e.release('publish:lib_1:100->a');
+    e.release('publish:lib_1:100->a', T0 + 1, { head: { lock: 'publish:lib_1', at: 200 } });
+    expect(e.reserve('pro', 'publish:lib_1:100->b', T0 + 2, { lock: 'publish:lib_1', base: 100 })).toEqual({ kind: 'pending' });
+    expect(e.reserve('pro', 'publish:lib_1:200->b', T0 + 3, { lock: 'publish:lib_1', base: 200 }).kind).toBe('proceed');
+    // Nothing was counted.
+    expect(e.snapshot('pro', T0 + 3).used).toBe(0);
+    // It is forgotten after HEAD_TTL_MS like a committed one.
+    expect(e.reserve('pro', 'publish:lib_1:100->c', T0 + 1 + HEAD_TTL_MS, { lock: 'publish:lib_1', base: 100 }).kind).toBe('proceed');
+  });
+
+  it('records no head on a plain release, and forgets a committed one after HEAD_TTL_MS', () => {
+    const e = new QuotaEngine(undefined, QUOTA_PROFILES.publish);
+    e.reserve('pro', 'publish:lib_1:100->a', T0, { lock: 'publish:lib_1', base: 100 });
+    e.release('publish:lib_1:100->a', T0);
     expect((JSON.parse(e.toJSON()) as { heads: Record<string, unknown> }).heads).toEqual({});
     expect(e.reserve('pro', 'publish:lib_1:100->b', T0 + 1, { lock: 'publish:lib_1', base: 100 }).kind).toBe('proceed');
     e.commit('publish:lib_1:100->b', T0 + 2, { head: { lock: 'publish:lib_1', at: 200 } });
@@ -266,7 +280,7 @@ describe('QuotaEngine locks and create slots', () => {
     expect(e.reserve('pro', 'publish:lib_1:a->h2', T0 + 1, { lock: 'publish:lib_1' })).toEqual({ kind: 'pending' });
     // A different library's lock is independent.
     expect(e.reserve('pro', 'publish:lib_2:a->h1', T0 + 2, { lock: 'publish:lib_2' }).kind).toBe('proceed');
-    e.release('publish:lib_1:a->h1');
+    e.release('publish:lib_1:a->h1', T0 + 2);
     expect(e.reserve('pro', 'publish:lib_1:a->h2', T0 + 3, { lock: 'publish:lib_1' }).kind).toBe('proceed');
   });
 
@@ -286,7 +300,7 @@ describe('QuotaEngine locks and create slots', () => {
     // In flight: the slot is taken before anything commits.
     expect(e.reserve('free', 'publish:new:b', T0 + 1, { create: { limit: 1, listed: 0 } }))
       .toEqual({ kind: 'library_limit', limit: 1, owned: 0 });
-    e.release('publish:new:a');
+    e.release('publish:new:a', T0 + 1);
     expect(e.reserve('free', 'publish:new:b', T0 + 2, { create: { limit: 1, listed: 0 } }).kind).toBe('proceed');
     e.commit('publish:new:b', T0 + 3, { create: true });
     // Committed: the count is the object's own, whatever the listing says.
