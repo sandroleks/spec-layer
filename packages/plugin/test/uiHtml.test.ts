@@ -1,40 +1,45 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
 /**
  * The design system reaches the plugin through build.mjs, not through the
  * TypeScript import graph, so the only honest place to assert it is the
  * built artefact.
+ *
+ * Two builds for the whole module, both into scratch directories: a plain one
+ * and a UI_HARNESS one. The developer's dist/ is never written or deleted, so
+ * running this file cannot leave someone holding a different artefact than
+ * they think they have.
  */
 const pluginDir = fileURLToPath(new URL('..', import.meta.url));
-const uiHtml = fileURLToPath(new URL('../dist/ui.html', import.meta.url));
-const harness = fileURLToPath(new URL('../dist/ui-harness.html', import.meta.url));
+const plainOut = mkdtempSync(join(tmpdir(), 'sl-ui-plain-'));
+const harnessOut = mkdtempSync(join(tmpdir(), 'sl-ui-harness-'));
 
-/** `env` is still needed for UI_HARNESS, the one remaining build flag. */
-function build(env: NodeJS.ProcessEnv = {}): void {
+function build(outDir: string, env: NodeJS.ProcessEnv = {}): void {
   execFileSync('node', ['build.mjs'], {
-    cwd: pluginDir, stdio: 'pipe', env: { ...process.env, ...env },
+    cwd: pluginDir, stdio: 'pipe', env: { ...process.env, PLUGIN_OUT_DIR: outDir, ...env },
   });
 }
 
-/**
- * These specs overwrite the developer's dist/. Put it back the way a plain
- * build leaves it, so running the tests never leaves someone holding a
- * different artefact than they think they have.
- */
+beforeAll(() => {
+  build(plainOut);
+  build(harnessOut, { UI_HARNESS: '1' });
+});
+
 afterAll(() => {
-  build();
-  rmSync(harness, { force: true });
+  rmSync(plainOut, { recursive: true, force: true });
+  rmSync(harnessOut, { recursive: true, force: true });
 });
 
 describe('dist/ui.html', () => {
   let vnext = '';
 
   beforeAll(() => {
-    build();
-    vnext = readFileSync(uiHtml, 'utf-8');
+    vnext = readFileSync(join(plainOut, 'ui.html'), 'utf-8');
   });
 
   it('does not ship Anatomy display-mode controls', () => {
@@ -172,14 +177,11 @@ describe('dist/ui.html', () => {
 
 describe('dist/ui-harness.html', () => {
   it('is not emitted by a normal build, so it can never ship as the plugin UI', () => {
-    rmSync(harness, { force: true });
-    build();
-    expect(existsSync(harness)).toBe(false);
+    expect(existsSync(join(plainOut, 'ui-harness.html'))).toBe(false);
   });
 
   it('is emitted when explicitly asked for', () => {
-    build({ UI_HARNESS: '1' });
-    expect(existsSync(harness)).toBe(true);
+    expect(existsSync(join(harnessOut, 'ui-harness.html'))).toBe(true);
   });
 
   it('is never referenced by the manifest', () => {

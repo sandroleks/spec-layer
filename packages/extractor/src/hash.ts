@@ -8,7 +8,9 @@ import { compareCodeUnits } from './v5/diagnostics';
 
 /** Canonical JSON: object keys sorted recursively, then SHA-256. */
 function canonical(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
+  // An undefined member becomes `null`, exactly as JSON.stringify writes it;
+  // `JSON.stringify(undefined)` is undefined and would leave an empty slot.
+  if (Array.isArray(value)) return `[${value.map((v) => (v === undefined ? 'null' : canonical(v))).join(',')}]`;
   if (value && typeof value === 'object') {
     // Mirror JSON.stringify's own dropping of undefined-valued keys, keeping
     // canonical output consistent regardless of whether a caller passes them.
@@ -81,22 +83,35 @@ export interface SpecHashProjection {
  */
 export function specHashProjection(spec: IntermediateSpec, options: SpecHashOptions = {}): SpecHashProjection {
   const {
+    // Excluded on purpose. rawValues and nodeEffects are additive detail that
+    // alters no rendered output, so including either would flip every
+    // committed document to "update available" for a change nobody can see
+    // on canvas. figmaFileName and documentationLinks are extracted for the
+    // YAML brief and Component Context v5 and drawn nowhere since the facts
+    // strip went (2026-09-18); hashed implies rendered, so a file rename or a
+    // new documentation link must not read as drift the Update cannot show.
     rawValues: _rawValues,
-    // Same contract as rawValues: additive detail that alters no rendered
-    // output, so including it would flip every committed document to "update
-    // available" for a change nobody can see on canvas.
     nodeEffects: _nodeEffects,
-    // Extracted for the YAML brief and Component Context v5, and drawn
-    // nowhere on canvas since the facts strip went (2026-09-18). Hashed
-    // implies rendered: a file rename or a new documentation link must not
-    // read as drift the Update cannot show.
     figmaFileName: _figmaFileName,
     documentationLinks: _documentationLinks,
-    ...rest
+    // Hashed as extracted.
+    name, figmaKey, figmaFile, figmaNode, description, anatomyComponentId,
+    props, variants, variantInstances, states, related,
+    // Hashed through the reductions below.
+    anatomy, tokens, gaps, layout,
+    ...unrouted
   } = spec;
-  const hashable = {
-    ...rest,
-    anatomy: anatomyFor(spec.anatomy, { includeHidden: options.includeHidden === true })
+  // Every IntermediateSpec field is named above, so `unrouted` is `{}`. A
+  // field added to IntermediateSpec lands here and fails to compile until it
+  // is routed: excluded with a reason, or hashed. The `...rest` spread this
+  // replaces let a new field into every committed document's hash silently,
+  // which is an unplanned rebuild request (review 2026-09-23).
+  const _everyFieldRouted: Record<string, never> = unrouted;
+  void _everyFieldRouted;
+  return {
+    name, figmaKey, figmaFile, figmaNode, description, anatomyComponentId,
+    props, variants, variantInstances, states, related,
+    anatomy: anatomyFor(anatomy, { includeHidden: options.includeHidden === true })
       .filter((p) => p.depth === 0)
       .map(({ id, name, type, nested }) => ({ id, name, type, nested })),
     // `path` is a new identity for data already hashed under `part`, so it must
@@ -117,14 +132,13 @@ export function specHashProjection(spec: IntermediateSpec, options: SpecHashOpti
     // `shownBy` itself stays out of the projection; a rule's PRESENCE in this
     // array already carries it, and every committed doc's baseline was
     // computed without the key.
-    tokens: tokensFor(spec.tokens, { includeHidden: options.includeHidden === true })
-      .map(({ part, property, conditions, name }) =>
-        ({ part, property, conditions, token: name })),
+    tokens: tokensFor(tokens, { includeHidden: options.includeHidden === true })
+      .map(({ part, property, conditions, name: token }) => ({ part, property, conditions, token })),
     // Same reasoning as `tokens` above: `path` is a new identity for data
     // already hashed under `part`, so it stays out. `property` and `value` do
     // enter: they are real content (the measured number is its own field, not
-    // text inside `issue`), so dropping them
-    // would silently stop the hash from noticing a gap's value change.
+    // text inside `issue`), so dropping them would silently stop the hash from
+    // noticing a gap's value change.
     //
     // gaps itself reaches only componentBrief's `unbound` list (the clipboard
     // brief, generated fresh on every click, never stored), so nothing on
@@ -134,23 +148,19 @@ export function specHashProjection(spec: IntermediateSpec, options: SpecHashOpti
     // produced by the same hardcoded-value detection and move together. Right
     // now, gaps moving is what makes that detection register as drift at all.
     // Excluding gaps here would leave a hardcoded-value change silently
-    // unflagged rather than merely over-flagged — worse, not better. Don't
-    // remove this without first covering that case some other way.
-    gaps: spec.gaps.map(({ part, property, issue, value }) =>
+    // unflagged rather than merely over-flagged, which is worse, not better.
+    // Do not remove this without first covering that case some other way.
+    gaps: gaps.map(({ part, property, issue, value }) =>
       ({ part, property, issue, ...(value !== undefined ? { value } : {}) })),
     // `values` and `path` are both new identities for data already hashed
     // here: the numbers live inside `summary`'s rendered sentence (validate.ts
     // reads the structured `values`, never the sentence), and `path` names the
-    // same node `part` already names. Both
-    // must stay out of the hash for the same reason `path` stays out of
-    // `tokens`/`gaps` above: every committed doc's baseline was computed
-    // without them, and including either would flip all of them to "update
-    // available" for a change that alters no rendered output. The projection
+    // same node `part` already names. Both must stay out of the hash for the
+    // same reason `path` stays out of `tokens`/`gaps` above. The projection
     // names the two fields it keeps rather than deleting the ones it drops, so
     // a field added to LayoutSummary later is excluded by default.
-    layout: spec.layout.map(({ part, summary }) => ({ part, summary })),
+    layout: layout.map(({ part, summary }) => ({ part, summary })),
   };
-  return hashable;
 }
 
 /**

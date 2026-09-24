@@ -27,6 +27,18 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
 
 ### Added
 
+- **A self-describing DTCG output** (CLI 0.8.2, on npm since 2026-09-10; the
+  plugin's clipboard side of it landed after the `v5.1.0` tag in #59 and #60
+  and has not been in a tagged plugin release). The document extension now
+  carries a `census` of what each emitted file holds and a `config_hash` of the
+  projection options that produced it, and `resolver.json` carries that
+  extension instead of only the clipboard document doing so. The sidecar
+  records the `transform` behind each token's value in each mode, and the value
+  each alias resolves to. Every field is descriptive: no canvas hash and no
+  artifact identity moved, and `EXTRACTOR_VERSION` is unchanged, so no document
+  needs regenerating. A repository pulling with an earlier CLI gets the same
+  files without these fields. The census reports what the projection produced;
+  `report.json` keeps its own job of naming what it could not express.
 - **`spec-layer pull` can write components as Markdown.** Set
   `componentSpecsFormat: "md"` in `speclayer.json`, or pass
   `--component-format md` to `setup`, `init`, `pull`, or `show`, and
@@ -192,6 +204,39 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
 
 ### Changed
 
+- **The published Foundation Context v5 schema pins its envelope, diagnostics
+  and statistics.** `spec_layer`, each `diagnostics` entry and `statistics`
+  were untyped objects, and an alias or missing value's `reason` was any
+  string, while the Component Context schema pinned all of them. The
+  Foundation schema now states the envelope field by field, lists the
+  diagnostic codes and severities, types every statistic as a count, and
+  lists both reason vocabularies; `validateLevel1` learns the two reason
+  lists so the plugin's own check and the published schema keep agreeing.
+  The same check gates `spec-layer pull`, which refuses a published
+  Foundation that fails it and asks for a republish.
+  `completeness.styles` documents why it is `partial` or `unavailable` for
+  any file with a style, a partial read, or a scoped export. Every committed
+  golden validates, including a real synthetic artifact carrying diagnostics
+  and both style kinds. The schema is tightened in place with no version
+  bump: no artifact any released plugin has ever emitted changes or stops
+  validating. The live schema at
+  `spec-layer.com/schemas/foundation-context/v5.json` serves the old bytes
+  until the private site redeploys, so `npm run check:site-live` fails from
+  this change until that deploy; it is not part of `npm run check`.
+- **The repository gates cover what they claimed to.** `npm run typecheck`
+  now compiles `packages/proxy/test` and `packages/cli/test`; both had type
+  errors that vitest's type stripping hid, all in test code.
+  The main-thread sandbox scan now knows the URL, fetch and abort classes,
+  `crypto`, `performance`, `self` and the scheduler calls, catches a global
+  used as a value or reached through `globalThis`, `self` or `window`
+  (`globalThis` itself exists in the sandbox and passes), and runs from a
+  checkout path with a space in it or through a symlink, which it had not.
+  The sandbox and NUL scans each print one line when they pass, so a scan
+  that never ran can no longer look like a clean one.
+  The pre-commit hook recognises Spec Layer pull keys, npm tokens and
+  Cloudflare token assignments, and `npm ci` now wires it into the clone.
+  The NUL scan reads every tracked text file, including `.github/`, the root
+  configs and the hook, not only `packages/` and `scripts/`.
 - **The Foundations and Library empty states teach the next move.** Each gets
   an animated drawing in the same family as the component screen's (a file
   whose color, text, and effect slots fill after a refresh; a doc dropping
@@ -421,8 +466,94 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   repaint now uses `findAllWithCriteria` so Figma filters frames by pluginData
   key natively, instead of evaluating a predicate once per node across the bridge.
 
+### Removed
+
+- **The legacy foundation YAML brief and the component brief's unused
+  foundation option.** Neither had a shipping caller, and no shipped output
+  changes.
+
 ### Fixed
 
+- **A DTCG token that is also a group is omitted and reported, in either
+  order.** A variable named `color/red` beside `color/red/dark` used to come
+  out differently depending on which Figma listed first: either `dark` was
+  written inside the `red` token's own object, or the `red` token replaced
+  the group and `dark` vanished, with nothing in the report either way. The
+  token at the group path is now omitted whichever order the file lists them
+  in, and `report.json` names it under `path_collision` with
+  `details.reason: "group"`; its values stay in `spec-layer.meta.json`. The
+  entry is an error, so `spec-layer pull --strict` fails on a library that
+  has one. A style whose path is also a group of other styles, such as
+  `Body` beside `Body/Regular`, gets the same treatment. Nothing here touches
+  a content hash.
+
+- **A DTCG reference is written only into a file where it resolves.** An
+  alias writes nothing in a mode, and is reported `target_omitted`, when its
+  target has no value in that mode's file or, for a target in another
+  collection, lacks one in any mode of that collection, since a resolver can
+  select any of them. That covers an alias two or more hops from an omitted
+  token, and one whose target has no value in a single mode; both used to
+  write a reference that did not resolve. A style bound to such a token
+  writes its resolved value and reports `binding_dropped`, as it already did
+  for an omitted one. A token that ends up with no value in any mode, for
+  any reason, is now marked `omitted` in `spec-layer.meta.json` with its
+  values and counted as omitted in the census, like every other omitted
+  token. Nothing here touches a content hash.
+
+- **`report.json` is the same whatever order the file lists its tokens.**
+  Tokens that share a DTCG path or a code syntax identifier are listed by
+  id, and entries that tie on path, code and mode are ordered by their
+  details.
+
+- **Copy for AI on a component no longer fails on a Foundation whose default
+  mode is undeclared.** The component copy read the token's value under the
+  collection's `default_mode_id` and crashed when that mode did not exist;
+  the Foundation's own `UNRESOLVED_REFERENCE` finding is carried instead.
+
+- **A style bound to an unscoped number no longer reports drift against
+  itself.** A Figma variable with no unit-pinning scope is a bare number in
+  the Foundation artifact, while a text style's font size or an effect's
+  blur is always a pixel dimension. Comparing the two whole made every such
+  binding a `STYLE_BINDING_DRIFT` warning, in every artifact and every
+  `report.json` a pull wrote. The check now compares the number when one
+  side states no unit, the same rule the Level 2 chain replay already
+  applied, and still reports two different numbers or two different units.
+  `content_hash` is unchanged: diagnostics are outside it.
+
+- **A multi-line description whose first line begins with a space no longer
+  breaks the YAML.** The emitter wrote a literal block scalar without an
+  indentation indicator, so a parser took that line's leading spaces as the
+  block's indentation and the next line ended the block early: one such
+  description made the whole copied brief, the published artifact and the
+  pulled file unparseable, and a description whose every line was indented
+  parsed with its indentation silently stripped. The emitter now writes the
+  indicator (`|2-`) exactly when the first non-empty line begins with a
+  space, which is the rule js-yaml's own writer follows; every other string
+  is emitted byte for byte as before.
+- **Renaming a token no longer floods the version log.** The per-variant
+  binding comparison behind Publish compared token display names, so
+  renaming one token reported `binding changed` on every component and
+  variant bound to it, on top of the one `token renamed` change the
+  foundation diff already reports. Bindings are now compared by the token's
+  source id and rendered by name, so a rename is one major change and a real
+  rebinding reads exactly as before.
+- **An oversized first version is refused before it can wedge a library.**
+  `isSemver` accepted any run of digits, and a 22-digit number came back from
+  the next bump as `1e+21.0.0`, which no later check accepted, so that
+  library could never publish again. Each of the three numbers must now fit a
+  safe integer, and a bump that would leave that range is refused rather than
+  written. A new version with a leading zero, such as `01.0.0`, is refused
+  too, as semver requires. A library already stored at such a version still
+  publishes: its next bump drops the zero, so `01.0.0` plus a patch becomes
+  `1.0.1`. The proxy and the plugin's first-version field already call the
+  same check, so both refuse the same strings.
+- **The Tokens table keeps a hardcoded value on each of two same-named
+  layers.** Unbound values were deduplicated by layer name and property, so
+  when two layers in different branches shared a name (two `Label` texts,
+  say) the second one's hardcoded fill, padding, gap or radius was dropped
+  from the table. Values are now keyed by the layer's path, as token bindings
+  and gaps already are. The canvas drift hash never covered these rows, so no
+  document reports an update.
 - **Publish and the snapshot download refuse a file with nothing in it.** The
   proxy accepts an empty bundle, so a file with no local variables or styles
   and no component docs used to publish anyway: a first publish created a
@@ -646,6 +777,41 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   column, notes take the same measure as the contrast notes, and labels
   wrap at it. The text itself is unchanged, so no existing doc reports an
   update for this.
+
+- **AI-written group descriptions in DTCG are marked as such.** Figma has no
+  group descriptions, so every folder description a Foundation doc carries
+  is written by AI, yet each one used to land in every DTCG token file as the
+  group's `$description`, the field a consumer reads as the author's own
+  text. They now sit under `$extensions["com.spec-layer"].generated_description`, and no
+  token group carries a `$description` at all. The CLI skill guide and the
+  plugin's downloadable skill say so instead of describing the old field.
+  Token `$description` values, which come from Figma, are unchanged. A
+  repository's pulled `tokens/` change on the next re-projection.
+
+- **`dtcg.units` overrides reach a collection whose name contains a slash,
+  and say when they did nothing.** The key `"Brand/Core/spacing/*"` was cut
+  at its first slash and compared to a collection called `Brand`, so a
+  collection named `Brand/Core` could never be overridden. The key is now
+  read as the collection's whole name followed by `/` and a glob. An
+  override that names no collection, or whose glob matches no token, is
+  reported in `report.json` as `unit_override_unmatched` (info) instead of
+  being ignored. The glob is compiled once per pull rather than once per
+  token per mode. `config_hash` is unchanged: it digests the overrides as
+  written.
+
+- **A collection named `Typography styles` or `Effect styles` keeps its own
+  resolver set.** It used to share the set name with the style file, and
+  the file written last won. The collection is now labelled by its name and
+  id, like two collections that share a name, and the report says why.
+
+- **A Markdown anatomy part named like a heading or list marker renders as
+  text.** A part named `# Icon` or `- Label` began a list item whose content
+  CommonMark reads as a heading or a nested list. Part names now get the
+  same leading-marker escape as the component description.
+
+- **A drift message never prints `[object Object]`.** `valueText` now reads
+  through the typed envelope a value carries when its type differs from its
+  token's, so a dimension or colour inside it renders as `16px` or its hex.
 
 ### Added
 
@@ -969,6 +1135,12 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   it. The CLI-side half of that pairing is the `skill --install` entry above:
   it is what actually notices the collision and reports it.
 
+### Removed
+
+- **The unused v4 brief to v5 normalizer.** Nothing in the plugin or the CLI
+  called it, and the Foundation Context v5 artifact is built from the Figma
+  read alone.
+
 ## [5.1.0] - 2026-09-10
 
 ### Fixed
@@ -1049,16 +1221,6 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   is on, the Measurements diagram measures its size rails, padding bands, and
   spacing from the revealed instance rather than the source component, so the
   overlay matches what is drawn.
-- **A self-describing DTCG output** (CLI 0.8.2). The document extension now
-  carries a `census` of what each emitted file holds and a `config_hash` of the
-  projection options that produced it, and `resolver.json` carries that
-  extension instead of only the clipboard document doing so. The sidecar
-  records the `transform` behind each token's value in each mode, and the value
-  each alias resolves to. Every field is descriptive: no canvas hash and no
-  artifact identity moved, and `EXTRACTOR_VERSION` is unchanged, so no document
-  needs regenerating. A repository pulling with an earlier CLI gets the same
-  files without these fields. The census reports what the projection produced;
-  `report.json` keeps its own job of naming what it could not express.
 
 ### Removed
 

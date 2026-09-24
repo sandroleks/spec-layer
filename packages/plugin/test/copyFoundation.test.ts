@@ -154,14 +154,14 @@ describe('copyFoundationBrief', () => {
     onFoundationMessage(DUMP);
     await copyFoundationBrief(presenter());
     const bg = leafAt(copied().sets.Color.sources[0], 'Color.color.bg');
-    expect('$description' in bg).toBe(false);
+    expect('$extensions' in bg).toBe(false);
   });
 
   it('carries group descriptions merged from the foundation doc links on canvas', async () => {
     onFoundationMessage(DUMP, { Color: { 'color/bg': 'Backgrounds behind content.' } });
     await copyFoundationBrief(presenter());
     const bg = leafAt(copied().sets.Color.sources[0], 'Color.color.bg');
-    expect(bg.$description).toBe('Backgrounds behind content.');
+    expect(bg.$extensions).toEqual({ 'com.spec-layer': { generated_description: 'Backgrounds behind content.' } });
   });
 
   it('keeps generated guidelines outside the semantic content hash', async () => {
@@ -172,7 +172,7 @@ describe('copyFoundationBrief', () => {
     await copyFoundationBrief(presenter());
     const second = copied();
     const group = leafAt(second.sets.Color.sources[0], 'Color.color');
-    expect(group.$description).toBe('Changed wording.');
+    expect(group.$extensions).toEqual({ 'com.spec-layer': { generated_description: 'Changed wording.' } });
     expect(second.$extensions['com.spec-layer'].content_hash)
       .toBe(first.$extensions['com.spec-layer'].content_hash);
   });
@@ -193,7 +193,7 @@ describe('copyFoundationBrief', () => {
     });
     await copyFoundationBrief(presenter()); // 3: Copy, no refresh in between.
     const bg = leafAt(copied().sets.Color.sources[0], 'Color.color.bg');
-    expect(bg.$description).toBe('Backgrounds behind content.');
+    expect(bg.$extensions).toEqual({ 'com.spec-layer': { generated_description: 'Backgrounds behind content.' } });
   });
 
   /**
@@ -206,7 +206,7 @@ describe('copyFoundationBrief', () => {
     setFoundationGroupDescriptions({}); // docDetached/docRemoved's fresh, now-empty merge.
     await copyFoundationBrief(presenter());
     const bg = leafAt(copied().sets.Color.sources[0], 'Color.color.bg');
-    expect('$description' in bg).toBe(false);
+    expect('$extensions' in bg).toBe(false);
   });
 
   it('renders no caveat in the tier-3 modal for a small payload', async () => {
@@ -402,7 +402,7 @@ describe('copyFoundationBriefForScope', () => {
     });
     await copyFoundationBriefForScope(COLOR_SCOPE, presenter());
     const group = leafAt(copied().sets.Color.sources[0], 'Color.color');
-    expect(group.$description).toBe('Surface and text colours.');
+    expect(group.$extensions).toEqual({ 'com.spec-layer': { generated_description: 'Surface and text colours.' } });
   });
 
   it('refuses when no foundation has been read', async () => {

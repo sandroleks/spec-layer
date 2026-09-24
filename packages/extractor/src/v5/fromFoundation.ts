@@ -32,7 +32,7 @@ import type {
   AliasReference, CanonicalValue, TokenType, TypedValue, UnresolvedReason,
 } from './value';
 import { resolvedValueOf } from './value';
-import { validateLevel1, validateLevel2 } from './validate';
+import { typedValuesAgree, validateLevel1, validateLevel2 } from './validate';
 
 export interface FoundationExportV5Meta {
   exportId: string;
@@ -239,7 +239,7 @@ function typographyStyleOf(
     // when every source mode states one identical value.
     if (unique.size !== 1) continue;
     const tokenValue = [...unique.values()][0];
-    if (canonicalJson(tokenValue) === canonicalJson(property.resolved)) continue;
+    if (typedValuesAgree(tokenValue, property.resolved)) continue;
     diagnostics.push(diagnostic('STYLE_BINDING_DRIFT', {
       entity_id: style.id,
       message: 'The typography style\'s own value for `details.property` differs from the value its bound token holds in every mode; the style keeps its own value, and `details` carries both.',
@@ -616,7 +616,7 @@ function effectStyleOf(
     // the same value; choosing one differing mode would invent context.
     if (unique.size !== 1) continue;
     const tokenValue = [...unique.values()][0];
-    if (canonicalJson(tokenValue) !== canonicalJson(styleValue)) {
+    if (!typedValuesAgree(tokenValue, styleValue)) {
       diagnostics.push(diagnostic('STYLE_BINDING_DRIFT', {
         entity_id: style.id,
         message: 'The effect style\'s own value for `details.property` differs from the value its bound token holds in every mode; the style keeps its own value, and `details` carries both.',

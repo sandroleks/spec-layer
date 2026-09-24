@@ -1,14 +1,20 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import Ajv2020 from 'ajv/dist/2020';
 import addFormats from 'ajv-formats';
 import { validateLevel1 } from '../../src/v5/validate';
 import { SCHEMA_URI } from '../../src/v5/canonical';
-import { compareCodeUnits } from '../../src/v5/diagnostics';
+import { DEFAULT_SEVERITY, compareCodeUnits } from '../../src/v5/diagnostics';
+import { buildFoundation } from '../../src/foundation';
+import type { SerializedFoundation } from '../../src/foundation';
+import { buildFoundationArtifactV5 } from '../../src/v5/fromFoundation';
+import type { FoundationExportV5Meta } from '../../src/v5/fromFoundation';
 import {
-  SUPPORTED_DURATION_UNITS, SUPPORTED_TOKEN_TYPES, SUPPORTED_UNITS,
+  SUPPORTED_DURATION_UNITS, SUPPORTED_MISSING_REASONS, SUPPORTED_TOKEN_TYPES, SUPPORTED_UNITS,
+  SUPPORTED_UNRESOLVED_REASONS,
 } from '../../src/v5/value';
-import { VALID_CASES, INVALID_CASES } from './fixtures';
+import { OK_ARTIFACT, VALID_CASES, INVALID_CASES } from './fixtures';
 
 const schemaText = readFileSync(
   'packages/extractor/src/v5/schema/foundation-5.1.0.json', 'utf8',
@@ -69,6 +75,9 @@ describe('schema parity', () => {
       ['token_type', SUPPORTED_TOKEN_TYPES, enumOf('token_type', [])],
       ['duration_value.unit', SUPPORTED_DURATION_UNITS,
         enumOf('duration_value', ['properties', 'unit'])],
+      ['unresolved_reason', SUPPORTED_UNRESOLVED_REASONS, enumOf('unresolved_reason', [])],
+      ['missing_reason', SUPPORTED_MISSING_REASONS, enumOf('missing_reason', [])],
+      ['diagnostic.code', Object.keys(DEFAULT_SEVERITY), enumOf('diagnostic', ['properties', 'code'])],
     ];
     for (const [name, runtime, schemaEnum] of pairs) {
       expect(
@@ -122,5 +131,97 @@ describe('schema parity', () => {
       expect(validateLevel1(artifact).length, `handwritten accepted invalid ${name}`)
         .toBeGreaterThan(0);
     }
+  });
+});
+
+describe('schema-only envelope rules', () => {
+  // Level 1 runs inside the plugin on an artifact the plugin itself just
+  // wrote, so it checks only that the envelope, the diagnostics list and the
+  // statistics block exist; their contents are the writer's own output. The
+  // published schema is the consumer's check on the same bytes and pins them.
+  const rejects = (name: string, mutate: (root: Record<string, unknown>) => void) => {
+    const root = structuredClone(OK_ARTIFACT) as unknown as Record<string, unknown>;
+    mutate(root);
+    expect(compiled(root), `schema accepted ${name}`).toBe(false);
+  };
+  const envelope = (root: Record<string, unknown>) => root.spec_layer as Record<string, Record<string, unknown>>;
+
+  it('rejects a foreign envelope', () => {
+    rejects('a component envelope kind', (r) => { (r.spec_layer as Record<string, unknown>).kind = 'component'; });
+    rejects('the component extractor name', (r) => { envelope(r).extractor.name = 'spec-layer-component'; });
+    rejects('a content hash that is not sha256', (r) => { envelope(r).export.content_hash = 'md5:abc'; });
+    rejects('an unknown envelope field', (r) => { (r.spec_layer as Record<string, unknown>).extra = true; });
+  });
+
+  it('rejects a diagnostic outside the vocabulary', () => {
+    rejects('an unknown code', (r) => {
+      r.diagnostics = [{ code: 'MADE_UP', severity: 'error', entity_id: 'x', message: 'y' }];
+    });
+    rejects('an unknown severity', (r) => {
+      r.diagnostics = [{ code: 'UNRESOLVED_ALIAS', severity: 'fatal', entity_id: 'x', message: 'y' }];
+    });
+  });
+
+  it('rejects statistics that are not the extractor counts', () => {
+    rejects('a fractional token count', (r) => { (r.statistics as Record<string, unknown>).tokens = 1.5; });
+    rejects('a missing lifecycle block', (r) => { delete (r.statistics as Record<string, unknown>).lifecycle; });
+    rejects('an unknown statistic', (r) => { (r.statistics as Record<string, unknown>).luck = 7; });
+  });
+
+});
+
+// `OK_ARTIFACT` (and every VALID_CASES entry above) has `diagnostics: []`
+// and no styles, so a `diagnostic`, `statistics`, or `envelope` def that
+// rejected every diagnostic, or that only happened to work for an empty
+// `styles.typography`/`styles.effects`, would still ship green through every
+// fixture-based test in this file. These three variants of one real
+// synthetic golden -- built through the actual production extractor
+// (`buildFoundationArtifactV5`), not a hand-mutated fixture -- are what
+// exercises those defs against non-empty diagnostics and both style kinds.
+const REAL_FIXTURE_PATH = fileURLToPath(
+  new URL('../fixtures/v5/synthetic-foundation-serialized.json', import.meta.url),
+);
+const REAL_META: FoundationExportV5Meta = {
+  exportId: 'synthetic-direct-v5-acceptance',
+  generatedAt: '2026-08-28T00:00:00.000Z',
+  build: null,
+};
+
+function realArtifact(scope?: FoundationExportV5Meta['scope']) {
+  const serialized = JSON.parse(readFileSync(REAL_FIXTURE_PATH, 'utf8')) as SerializedFoundation;
+  const meta: FoundationExportV5Meta = scope ? { ...REAL_META, scope } : REAL_META;
+  return buildFoundationArtifactV5(buildFoundation(serialized), meta).artifact;
+}
+
+/** A real artifact reaches a consumer as JSON, never as the live JS object
+ *  `buildFoundationArtifactV5` returns, so it is round-tripped before
+ *  validation here too -- the same transform every consumer's `JSON.parse`
+ *  already applies. */
+const roundTrip = (value: unknown): unknown => JSON.parse(JSON.stringify(value));
+
+describe('validates real synthetic foundation artifacts', () => {
+  it('accepts the whole-file real artifact, which is not a vacuous check', () => {
+    const artifact = realArtifact();
+    // If any of these read zero, the schema check below would pass for the
+    // wrong reason: the empty-diagnostics, no-styles case OK_ARTIFACT already
+    // covers, not the non-empty case this test exists to cover.
+    expect(artifact.diagnostics.length).toBeGreaterThan(0);
+    expect(artifact.styles.typography.length).toBeGreaterThan(0);
+    expect(artifact.styles.effects.length).toBeGreaterThan(0);
+    expect(compiled(roundTrip(artifact)), ajv.errorsText(compiled.errors)).toBe(true);
+  });
+
+  it('accepts a styles-only real artifact, scoped to effect styles', () => {
+    const artifact = realArtifact({ target: 'effectStyles' });
+    expect(artifact.styles.effects.length).toBeGreaterThan(0);
+    expect(artifact.diagnostics.length).toBeGreaterThan(0);
+    expect(compiled(roundTrip(artifact)), ajv.errorsText(compiled.errors)).toBe(true);
+  });
+
+  it('accepts a real artifact scoped to typography styles', () => {
+    const artifact = realArtifact({ target: 'textStyles' });
+    expect(artifact.styles.typography.length).toBeGreaterThan(0);
+    expect(artifact.diagnostics.length).toBeGreaterThan(0);
+    expect(compiled(roundTrip(artifact)), ajv.errorsText(compiled.errors)).toBe(true);
   });
 });

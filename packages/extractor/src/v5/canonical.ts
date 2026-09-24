@@ -108,14 +108,13 @@ export interface FoundationArtifactV5 extends SemanticPayload {
 /**
  * Canonical JSON for v5: object keys sorted recursively BY CODE UNIT.
  *
- * Semantically identical to `hash.ts`'s private `canonical` in every respect
- * but one -- the comparator. Recursive key sort, `undefined`-valued keys
- * dropped (mirroring `JSON.stringify`'s own behaviour, so a caller passing an
- * explicit `undefined` and a caller omitting the key produce one string), and
- * `JSON.stringify` for every scalar. ONLY the comparator differs, and that is
- * the whole point: `compareCodeUnits` is reused from `diagnostics.ts` rather
- * than open-coded here so the v5 tree has exactly one definition of ordering,
- * and a future edit to it cannot leave the hash and the sorts disagreeing.
+ * Recursive key sort, `undefined`-valued keys dropped from objects (mirroring
+ * `JSON.stringify`'s own behaviour, so a caller passing an explicit `undefined`
+ * and a caller omitting the key produce one string), and `undefined` array
+ * members written as `null` (also mirroring `JSON.stringify`). `compareCodeUnits`
+ * is reused from `diagnostics.ts` rather than open-coded here so the v5 tree
+ * has exactly one definition of ordering, and a future edit to it cannot leave
+ * the hash and the sorts disagreeing.
  *
  * Exported so a test can assert the SERIALIZED STRING's key order directly.
  * Asserting only that two hashes match cannot distinguish "ordered by code
@@ -123,7 +122,9 @@ export interface FoundationArtifactV5 extends SemanticPayload {
  * replaces was precisely a consistent-but-wrong rule.
  */
 export function canonicalJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  if (Array.isArray(value)) {
+    return `[${value.map(v => (v === undefined ? 'null' : canonicalJson(v))).join(',')}]`;
+  }
   if (value && typeof value === 'object') {
     const entries = Object.entries(value as Record<string, unknown>)
       .filter(([, v]) => v !== undefined)

@@ -896,8 +896,9 @@ figma.ui.onmessage = async (raw: unknown) => {
         // Merged from every foundation doc link on canvas so the Copy button
         // can hand the agent the vocabulary the plugin already generated,
         // not just a bare token table. Omitted rather than sent empty so an
-        // absent field keeps meaning "nothing on canvas", matching
-        // foundationBrief's own absent-vs-empty rule one layer up.
+        // absent field keeps meaning "nothing on canvas" rather than "an
+        // empty map was read", the same absent-versus-empty rule the DTCG
+        // projection applies to a group with no description.
         const merged = await liveFoundationGroupDescriptions();
         const groupDescriptions = Object.keys(merged).length > 0 ? merged : undefined;
         // The 'foundation' reply hands the UI this dump, so the next

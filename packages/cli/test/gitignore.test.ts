@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, existsSync, chmodSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
@@ -44,23 +44,41 @@ function withoutGitOnPath<T>(fn: () => T): T {
 }
 
 describe('ensureIgnored', () => {
+  /**
+   * One repository for the whole describe; each case gets its own fresh
+   * subdirectory as `cwd`. git honours a nested .gitignore for its own
+   * directory (the reason ensureIgnored writes to cwd rather than the top
+   * level), so cases stay independent without paying a `git init` each. A
+   * spawn from a vitest worker costs about 200 ms here (2026-09-23: the
+   * one-spawn not-a-repo case ran 196 ms), and init was one of four to nine
+   * per case. `outside` is a plain temp dir for the cases that need no
+   * repository above them.
+   */
+  let repo: string;
   let cwd: string;
-  beforeEach(() => { cwd = mkdtempSync(join(tmpdir(), 'sl-ignore-')); });
-  afterEach(() => { rmSync(cwd, { recursive: true, force: true }); });
+  let outside: string;
+  beforeAll(() => {
+    repo = mkdtempSync(join(tmpdir(), 'sl-ignore-repo-'));
+    gitInit(repo);
+  });
+  afterAll(() => { rmSync(repo, { recursive: true, force: true }); });
+  beforeEach(() => {
+    cwd = mkdtempSync(join(repo, 'case-'));
+    outside = mkdtempSync(join(tmpdir(), 'sl-ignore-'));
+  });
+  afterEach(() => { rmSync(outside, { recursive: true, force: true }); });
 
   it('reports not-a-repo outside a git working tree', () => {
-    expect(ensureIgnored(cwd, NAME)).toEqual({ kind: 'not-a-repo' });
-    expect(existsSync(join(cwd, '.gitignore'))).toBe(false);
+    expect(ensureIgnored(outside, NAME)).toEqual({ kind: 'not-a-repo' });
+    expect(existsSync(join(outside, '.gitignore'))).toBe(false);
   });
 
   it('creates .gitignore with the entry when there is none', () => {
-    gitInit(cwd);
     expect(ensureIgnored(cwd, NAME)).toEqual({ kind: 'created' });
     expect(readFileSync(join(cwd, '.gitignore'), 'utf8')).toContain(NAME);
   });
 
   it('appends to an existing .gitignore', () => {
-    gitInit(cwd);
     writeFileSync(join(cwd, '.gitignore'), 'node_modules\n');
     expect(ensureIgnored(cwd, NAME)).toEqual({ kind: 'added' });
     const body = readFileSync(join(cwd, '.gitignore'), 'utf8');
@@ -69,7 +87,6 @@ describe('ensureIgnored', () => {
   });
 
   it('appends cleanly when the file has no trailing newline', () => {
-    gitInit(cwd);
     writeFileSync(join(cwd, '.gitignore'), 'node_modules');
     ensureIgnored(cwd, NAME);
     const lines = readFileSync(join(cwd, '.gitignore'), 'utf8').split('\n');
@@ -78,7 +95,6 @@ describe('ensureIgnored', () => {
   });
 
   it('is idempotent: a second call adds nothing', () => {
-    gitInit(cwd);
     ensureIgnored(cwd, NAME);
     const first = readFileSync(join(cwd, '.gitignore'), 'utf8');
     expect(ensureIgnored(cwd, NAME)).toEqual({ kind: 'already' });
@@ -88,14 +104,12 @@ describe('ensureIgnored', () => {
   // A broad pattern already covers the file, so appending the name would be
   // noise. git decides, so this passes without any pattern parsing.
   it('reports already when a wildcard pattern covers the file', () => {
-    gitInit(cwd);
     writeFileSync(join(cwd, '.gitignore'), '*.local.json\n');
     expect(ensureIgnored(cwd, NAME)).toEqual({ kind: 'already' });
   });
 
   it('refuses when .gitignore cannot be written', () => {
     if (process.getuid?.() === 0) return; // root ignores the mode bits
-    gitInit(cwd);
     const path = join(cwd, '.gitignore');
     writeFileSync(path, 'node_modules\n');
     chmodSync(path, 0o444);
@@ -109,23 +123,21 @@ describe('ensureIgnored', () => {
   // Reporting this as "not a repository" would be a false reassurance that
   // lets a caller write an un-ignored secret into a real git checkout.
   it('reports no-git when a working tree exists but git cannot run', () => {
-    gitInit(cwd);
     const result = withoutGitOnPath(() => ensureIgnored(cwd, NAME));
     expect(result).toEqual({ kind: 'no-git', line: NAME });
     expect(existsSync(join(cwd, '.gitignore'))).toBe(false);
   });
 
   it('still reports not-a-repo when git cannot run and there is no .git', () => {
-    const result = withoutGitOnPath(() => ensureIgnored(cwd, NAME));
+    const result = withoutGitOnPath(() => ensureIgnored(outside, NAME));
     expect(result).toEqual({ kind: 'not-a-repo' });
-    expect(existsSync(join(cwd, '.gitignore'))).toBe(false);
+    expect(existsSync(join(outside, '.gitignore'))).toBe(false);
   });
 
   // Running the pasted setup command from a package subdirectory is normal in
   // a monorepo, and a missing git binary is a slim-container thing. Looking
   // only at cwd for `.git` found nothing here and called it "no repository".
   it('reports no-git from a subdirectory of a working tree when git cannot run', () => {
-    gitInit(cwd);
     const sub = join(cwd, 'apps', 'web');
     mkdirSync(sub, { recursive: true });
     const result = withoutGitOnPath(() => ensureIgnored(sub, NAME));
@@ -136,8 +148,8 @@ describe('ensureIgnored', () => {
   // A linked worktree or a submodule has a `.git` FILE, not a directory, and
   // it is just as much a real working tree.
   it('treats a .git file as a working tree when git cannot run', () => {
-    writeFileSync(join(cwd, '.git'), 'gitdir: /elsewhere/.git/worktrees/w\n');
-    const result = withoutGitOnPath(() => ensureIgnored(cwd, NAME));
+    writeFileSync(join(outside, '.git'), 'gitdir: /elsewhere/.git/worktrees/w\n');
+    const result = withoutGitOnPath(() => ensureIgnored(outside, NAME));
     expect(result).toEqual({ kind: 'no-git', line: NAME });
   });
 
@@ -147,7 +159,6 @@ describe('ensureIgnored', () => {
    * -a` publish a freshly written key.
    */
   it('reports still-not-ignored when the file is already tracked', () => {
-    gitInit(cwd);
     writeFileSync(join(cwd, NAME), '{}\n');
     gitCommit(cwd, NAME);
 
@@ -158,7 +169,6 @@ describe('ensureIgnored', () => {
   });
 
   it('does not re-append the entry on a repeat run against a tracked file', () => {
-    gitInit(cwd);
     writeFileSync(join(cwd, NAME), '{}\n');
     gitCommit(cwd, NAME);
     expect(ensureIgnored(cwd, NAME).kind).toBe('still-not-ignored');
@@ -174,8 +184,8 @@ describe('ensureIgnored', () => {
   // reading the status alone left an inert .gitignore inside the git directory
   // and reported an outcome git never confirmed.
   it('reports not-a-repo inside a bare repository', () => {
-    gitInit(cwd, ['--bare']);
-    expect(ensureIgnored(cwd, NAME)).toEqual({ kind: 'not-a-repo' });
-    expect(existsSync(join(cwd, '.gitignore'))).toBe(false);
+    gitInit(outside, ['--bare']);
+    expect(ensureIgnored(outside, NAME)).toEqual({ kind: 'not-a-repo' });
+    expect(existsSync(join(outside, '.gitignore'))).toBe(false);
   });
 });
