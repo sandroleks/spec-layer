@@ -25,6 +25,13 @@ byte-identical files. The plugin's Markdown setup command depends on it: CLI
 0.9.0 does not know `--component-format`, prints its usage, and exits 1, so a
 plugin build carrying it must not reach the listing before 0.10.0 is on npm.
 
+The CLI hardening in this section ships as 0.11.0, a minor release because
+`--key -` is a new option and because three inputs the CLI used to accept are
+now refused: an absolute or parent `--out`, a plain-http `--api` to anything
+but localhost, and an `--id` that is not the shape the plugin issues. A
+repository on 0.10.0 re-projects once on its first pull with 0.11.0 through
+the `manifest.cliVersion` check and gets byte-identical files.
+
 ### Added
 
 - **The `spec-layer` tarball carries `LICENSE`.** The CLI build copies the

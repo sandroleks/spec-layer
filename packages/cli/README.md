@@ -69,7 +69,10 @@ files without those fields. Markdown component pages (`componentSpecsFormat`
 and `--component-format`) need 0.10.0 or later. An earlier version ignores the
 key, and refuses to pull into a `component-specs/` that already holds
 Markdown pages, so every CLI that pulls a repository using Markdown needs
-0.10.0.
+0.10.0. `--key -` needs 0.11.0 or later; 0.11.0 also refuses an absolute or
+parent `--out`, a plain-http `--api` to anything but localhost, and an `--id`
+that is not the shape the plugin issues, all of which earlier versions
+accepted.
 
 ## Commands
 
