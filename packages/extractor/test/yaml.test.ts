@@ -172,6 +172,45 @@ describe('toYaml', () => {
     }
     expect(rt).toEqual(v);
   });
+
+  // Review 2026-09-23, top finding 1. A literal block scalar with no
+  // indentation indicator takes its content indentation from the first
+  // non-empty line. A first line that began with a space was therefore read
+  // as deeper indentation, the next line's shallower indent ended the scalar
+  // early, and js-yaml threw "bad indentation of a mapping entry" on the
+  // whole brief. When every line began with spaces the parse succeeded and
+  // the spaces were silently dropped instead.
+  it('round-trips a multi-line string whose first line begins with a space (review 2026-09-23, finding 1)', () => {
+    const v = { definition: '  indented\nsecond' };
+    expect(roundTrip(v)).toEqual(v);
+    expect(toYaml(v)).toBe('definition: |2-\n    indented\n  second\n');
+  });
+
+  it('round-trips a multi-line string whose first non-empty line begins with a space after a blank line', () => {
+    const v = { definition: '\n  indented\nsecond' };
+    expect(roundTrip(v)).toEqual(v);
+  });
+
+  it('round-trips a multi-line string whose every line begins with spaces without stripping them', () => {
+    const v = { definition: '  a\n  b' };
+    expect(roundTrip(v)).toEqual(v);
+  });
+
+  it('round-trips a leading-space multi-line string inside a list item and at the top level', () => {
+    expect(roundTrip({ items: ['  indented\nsecond'] })).toEqual({ items: ['  indented\nsecond'] });
+    expect(roundTrip('  indented\nsecond')).toBe('  indented\nsecond');
+  });
+
+  it('round-trips a whitespace-only line under keep chomping', () => {
+    const v = { definition: '  \n' };
+    expect(roundTrip(v)).toEqual(v);
+  });
+
+  it('writes no indentation indicator when the first line does not begin with a space', () => {
+    // Every brief that parsed before is emitted byte for byte as it was: the
+    // indicator appears only where the old output could not be parsed.
+    expect(toYaml({ d: 'a\n  b' })).toBe('d: |-\n  a\n    b\n');
+  });
 });
 
 describe('flow style for short scalar collections', () => {

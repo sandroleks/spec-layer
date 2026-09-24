@@ -331,8 +331,8 @@ export function isFoundationLink(d: DocLinkData): d is FoundationDocLink {
 
 /**
  * Merge every foundation doc link's stored group descriptions into one map
- * for `foundationBrief`'s `groupDescriptions` option, keyed by collection
- * name then folder path.
+ * for the Foundation copy and download (`foundationDtcgJson` in
+ * `ui/actions.ts`), keyed by collection name then folder path.
  *
  * Nested rather than flat: two collections can each hold a folder of the
  * same name (e.g. two "color" folders in two different collections), and a

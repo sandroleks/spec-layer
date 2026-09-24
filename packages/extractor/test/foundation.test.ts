@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  buildFoundation, groupOf, type SerializedFoundation,
+  buildFoundation, groupOf, groupRowsByFolder, type SerializedFoundation,
   planFoundationUnits, unitContent, SPLIT_THRESHOLD, MAX_MODE_COLUMNS,
   foundationUnitTitle, groupTitle, groupTitles, narrowFoundation,
   glyphForScopes,
@@ -46,6 +46,26 @@ describe('groupOf', () => {
   });
   it('handles a leading slash without producing an empty group', () => {
     expect(groupOf('/odd')).toBe('/odd');
+  });
+});
+
+describe('groupRowsByFolder', () => {
+  it('groups by folder in first-appearance order and keeps row order inside a group', () => {
+    const rows = [
+      { name: 'color/bg/a' }, { name: 'space/1' }, { name: 'color/bg/b' },
+      { name: 'color/fg/a' }, { name: 'standalone' },
+    ];
+    expect(groupRowsByFolder(rows)).toEqual([
+      { folder: 'color/bg', rows: [{ name: 'color/bg/a' }, { name: 'color/bg/b' }] },
+      { folder: 'space', rows: [{ name: 'space/1' }] },
+      { folder: 'color/fg', rows: [{ name: 'color/fg/a' }] },
+      // A folderless name groups under '' and the renderer draws no heading.
+      { folder: '', rows: [{ name: 'standalone' }] },
+    ]);
+  });
+
+  it('returns no groups for no rows', () => {
+    expect(groupRowsByFolder([])).toEqual([]);
   });
 });
 

@@ -435,8 +435,48 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   your AI allowance runs out part-way it says that too rather than reporting a
   clean rebuild.
 
+### Removed
+
+- **The legacy foundation YAML brief and the component brief's unused
+  foundation option.** Neither had a shipping caller, and no shipped output
+  changes.
+
 ### Fixed
 
+- **A multi-line description whose first line begins with a space no longer
+  breaks the YAML.** The emitter wrote a literal block scalar without an
+  indentation indicator, so a parser took that line's leading spaces as the
+  block's indentation and the next line ended the block early: one such
+  description made the whole copied brief, the published artifact and the
+  pulled file unparseable, and a description whose every line was indented
+  parsed with its indentation silently stripped. The emitter now writes the
+  indicator (`|2-`) exactly when the first non-empty line begins with a
+  space, which is the rule js-yaml's own writer follows; every other string
+  is emitted byte for byte as before.
+- **Renaming a token no longer floods the version log.** The per-variant
+  binding comparison behind Publish compared token display names, so
+  renaming one token reported `binding changed` on every component and
+  variant bound to it, on top of the one `token renamed` change the
+  foundation diff already reports. Bindings are now compared by the token's
+  source id and rendered by name, so a rename is one major change and a real
+  rebinding reads exactly as before.
+- **An oversized first version is refused before it can wedge a library.**
+  `isSemver` accepted any run of digits, and a 22-digit number came back from
+  the next bump as `1e+21.0.0`, which no later check accepted, so that
+  library could never publish again. Each of the three numbers must now fit a
+  safe integer, and a bump that would leave that range is refused rather than
+  written. A new version with a leading zero, such as `01.0.0`, is refused
+  too, as semver requires. A library already stored at such a version still
+  publishes: its next bump drops the zero, so `01.0.0` plus a patch becomes
+  `1.0.1`. The proxy and the plugin's first-version field already call the
+  same check, so both refuse the same strings.
+- **The Tokens table keeps a hardcoded value on each of two same-named
+  layers.** Unbound values were deduplicated by layer name and property, so
+  when two layers in different branches shared a name (two `Label` texts,
+  say) the second one's hardcoded fill, padding, gap or radius was dropped
+  from the table. Values are now keyed by the layer's path, as token bindings
+  and gaps already are. The canvas drift hash never covered these rows, so no
+  document reports an update.
 - **Publish and the snapshot download refuse a file with nothing in it.** The
   proxy accepts an empty bundle, so a file with no local variables or styles
   and no component docs used to publish anyway: a first publish created a
