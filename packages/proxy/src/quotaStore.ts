@@ -1,6 +1,6 @@
 import {
   QuotaEngine, RESPONSE_TTL_MS,
-  type QuotaLimits, type QuotaSnapshot, type ReserveResult, type Tier,
+  type QuotaLimits, type QuotaSnapshot, type ReserveOptions, type ReserveResult, type Tier,
 } from './quota';
 
 /**
@@ -52,9 +52,9 @@ export class QuotaStore {
     await this.storage.put(ENGINE_KEY, engine.toJSON());
   }
 
-  async reserve(tier: Tier, cacheKey: string, now: number): Promise<ReserveResult> {
+  async reserve(tier: Tier, cacheKey: string, now: number, opts?: ReserveOptions): Promise<ReserveResult> {
     const engine = await this.load(now);
-    let out = engine.reserve(tier, cacheKey, now);
+    let out = engine.reserve(tier, cacheKey, now, opts);
     if (out.kind === 'cached') {
       const body = await this.storage.get<string>(responseKey(cacheKey));
       if (body !== undefined) {
@@ -66,7 +66,7 @@ export class QuotaStore {
       // reserve afresh (this second attempt also counts against the
       // per-minute attempt limit, which is the honest reading of it).
       engine.forgetResponse(cacheKey);
-      out = engine.reserve(tier, cacheKey, now);
+      out = engine.reserve(tier, cacheKey, now, opts);
     }
     await this.save(engine);
     // `forgetResponse` removed the only entry that could answer `cached` again; fail closed if it somehow does.

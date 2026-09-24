@@ -18,7 +18,7 @@ export function memQuota(now: () => number) {
     const store = stores.get(key) ?? new QuotaStore(new MemDoStorage(), QUOTA_PROFILES[profile]);
     stores.set(key, store);
     return {
-      reserve: (tier, cacheKey) => store.reserve(tier, cacheKey, now()),
+      reserve: (tier, cacheKey, opts) => store.reserve(tier, cacheKey, now(), opts),
       commit: (tier, cacheKey, body) => store.commit(tier, cacheKey, body, now()),
       release: (cacheKey) => store.release(cacheKey, now()),
       snapshot: (tier) => store.snapshot(tier, now()),

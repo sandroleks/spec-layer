@@ -69,10 +69,28 @@ export type EngineReserveResult =
   | { kind: 'cached' }
   | { kind: 'pending' }
   | { kind: 'exhausted'; resetsAt: string }
-  | { kind: 'rate_limited'; retryAfterMs: number };
+  | { kind: 'rate_limited'; retryAfterMs: number }
+  | { kind: 'library_limit'; limit: number; owned: number };
 
 /** What a QuotaClient answers: the engine's verdict with the cached body attached. */
 export type ReserveResult = Exclude<EngineReserveResult, { kind: 'cached' }> | { kind: 'cached'; body: string };
+
+export interface ReserveOptions {
+  /**
+   * A name several cache keys answer to. While a live reservation holds it
+   * under another key, this reserve is `pending`: two changed publishes to
+   * one library cannot both proceed. Publish passes `publish:<libraryId>`.
+   */
+  lock?: string;
+  /**
+   * This reservation creates a library. Refused with `library_limit` once
+   * the object's committed creates or the caller's listing (whichever knows
+   * more), plus the creates still in flight, reach `limit`. The listing
+   * covers libraries that predate this counter; the counter covers what an
+   * eventually consistent listing has not caught up with.
+   */
+  create?: { limit: number; listed: number };
+}
 
 interface ResponseEntry { at: number }
 /** A response entry as a blob written before the split stored it: body inline. */
@@ -86,10 +104,14 @@ interface State {
   reservations: Record<string, number>;        // cacheKey -> reservedAt
   responses: Record<string, ResponseEntry>;    // cacheKey -> committed at; the body is under its own storage key
   recent: number[];                            // request timestamps (rate limit)
+  locks: Record<string, { cacheKey: string; at: number }>;   // lock name -> the reservation holding it
+  pendingCreates: Record<string, number>;      // cacheKey -> reservedAt, for create reservations only
+  libraries: number;                           // creates committed through this object
 }
 
 const fresh = (): State => ({
   firstSeen: null, boostUsed: 0, months: {}, reservations: {}, responses: {}, recent: [],
+  locks: {}, pendingCreates: {}, libraries: 0,
 });
 
 const monthKey = (now: number) => new Date(now).toISOString().slice(0, 7);
@@ -188,9 +210,15 @@ export class QuotaEngine {
     for (const [k, at] of Object.entries(this.s.reservations)) {
       if (now - at >= RESERVATION_TTL_MS) delete this.s.reservations[k];
     }
+    for (const [name, held] of Object.entries(this.s.locks)) {
+      if (now - held.at >= RESERVATION_TTL_MS) delete this.s.locks[name];
+    }
+    for (const [k, at] of Object.entries(this.s.pendingCreates)) {
+      if (now - at >= RESERVATION_TTL_MS) delete this.s.pendingCreates[k];
+    }
   }
 
-  reserve(tier: Tier, cacheKey: string, now: number): EngineReserveResult {
+  reserve(tier: Tier, cacheKey: string, now: number, opts: ReserveOptions = {}): EngineReserveResult {
     this.prune(now);
     if (this.s.firstSeen === null) this.s.firstSeen = now;
     // Idempotent retry: a committed generation within 24h is served from cache.
@@ -207,11 +235,23 @@ export class QuotaEngine {
     // Concurrent window on the same component: live reservation wins.
     const heldAt = this.s.reservations[cacheKey];
     if (heldAt !== undefined && now - heldAt < RESERVATION_TTL_MS) return { kind: 'pending' };
+    // Another writer holds this lock under a different key: it finishes first.
+    if (opts.lock !== undefined) {
+      const held = this.s.locks[opts.lock];
+      if (held && held.cacheKey !== cacheKey && now - held.at < RESERVATION_TTL_MS) return { kind: 'pending' };
+    }
+    if (opts.create) {
+      const owned = Math.max(opts.create.listed, this.s.libraries);
+      const inFlight = Object.keys(this.s.pendingCreates).length;
+      if (owned + inFlight >= opts.create.limit) return { kind: 'library_limit', limit: opts.create.limit, owned };
+    }
     if (tier === 'free') {
       const { used, limit, resetsAt } = this.freeUsage(now);
       if (used >= limit) return { kind: 'exhausted', resetsAt };
     }
     this.s.reservations[cacheKey] = now;
+    if (opts.lock !== undefined) this.s.locks[opts.lock] = { cacheKey, at: now };
+    if (opts.create) this.s.pendingCreates[cacheKey] = now;
     if (tier === 'pro') {
       const used = this.s.months[monthKey(now)] ?? 0;
       return { kind: 'proceed', flagged: used >= PRO_SOFT_THRESHOLD };
@@ -219,9 +259,21 @@ export class QuotaEngine {
     return { kind: 'proceed' };
   }
 
+  /** Frees every lock and create slot this reservation holds. `commit` counts the create; `release` only frees it. */
+  private settle(cacheKey: string, committed: boolean): void {
+    delete this.s.reservations[cacheKey];
+    for (const [name, held] of Object.entries(this.s.locks)) {
+      if (held.cacheKey === cacheKey) delete this.s.locks[name];
+    }
+    if (this.s.pendingCreates[cacheKey] !== undefined) {
+      delete this.s.pendingCreates[cacheKey];
+      if (committed) this.s.libraries += 1;
+    }
+  }
+
   commit(cacheKey: string, now: number): void {
     this.prune(now);
-    delete this.s.reservations[cacheKey];
+    this.settle(cacheKey, true);
     this.s.responses[cacheKey] = { at: now };
     // A stale entry for this same key, pruned just above, must not make the
     // store delete the body this commit is about to write.
@@ -233,7 +285,7 @@ export class QuotaEngine {
   }
 
   release(cacheKey: string): void {
-    delete this.s.reservations[cacheKey];
+    this.settle(cacheKey, false);
   }
 
   snapshot(tier: Tier, now: number): QuotaSnapshot {

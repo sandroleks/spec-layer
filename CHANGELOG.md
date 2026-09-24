@@ -414,6 +414,13 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   proxy no longer calls back for it. Refusals are unchanged, and every
   response carries the same headers and body as before.
 
+- **The proxy's usage tracking can now briefly hold a lock and a limited
+  number of "new library" slots, ready for publish to use.** Nothing calls
+  either yet, so publishing and generating behave exactly as before; this is
+  the groundwork for making two changed publishes to the same library queue
+  instead of racing, and for making the free plan's one-library limit hold
+  even when the list of existing libraries has not caught up yet.
+
 ### Fixed
 
 - **The proxy answers from one origin.** `workers_dev` is off, so the

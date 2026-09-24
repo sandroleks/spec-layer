@@ -225,3 +225,56 @@ describe('QuotaEngine publish profile', () => {
     expect(new QuotaEngine().snapshot('free', T0).limit).toBe(BOOST_LIMIT);
   });
 });
+
+describe('QuotaEngine locks and create slots', () => {
+  it('a live lock held by another cache key answers pending until it is released', () => {
+    const e = new QuotaEngine(undefined, QUOTA_PROFILES.publish);
+    expect(e.reserve('pro', 'publish:lib_1:a->h1', T0, { lock: 'publish:lib_1' }).kind).toBe('proceed');
+    expect(e.reserve('pro', 'publish:lib_1:a->h2', T0 + 1, { lock: 'publish:lib_1' })).toEqual({ kind: 'pending' });
+    // A different library's lock is independent.
+    expect(e.reserve('pro', 'publish:lib_2:a->h1', T0 + 2, { lock: 'publish:lib_2' }).kind).toBe('proceed');
+    e.release('publish:lib_1:a->h1');
+    expect(e.reserve('pro', 'publish:lib_1:a->h2', T0 + 3, { lock: 'publish:lib_1' }).kind).toBe('proceed');
+  });
+
+  it('commit frees the lock, and the lock expires with the reservation', () => {
+    const e = new QuotaEngine(undefined, QUOTA_PROFILES.publish);
+    e.reserve('pro', 'k1', T0, { lock: 'L' });
+    e.commit('k1', T0 + 1);
+    expect(e.reserve('pro', 'k2', T0 + 2, { lock: 'L' }).kind).toBe('proceed');
+    // Crashed holder: nothing commits or releases k2; the lock lapses with its reservation.
+    expect(e.reserve('pro', 'k3', T0 + 3, { lock: 'L' })).toEqual({ kind: 'pending' });
+    expect(e.reserve('pro', 'k3', T0 + 2 + RESERVATION_TTL_MS, { lock: 'L' }).kind).toBe('proceed');
+  });
+
+  it('refuses a create once committed, listed and in-flight creates reach the limit', () => {
+    const e = new QuotaEngine(undefined, QUOTA_PROFILES.publish);
+    expect(e.reserve('free', 'publish:new:a', T0, { create: { limit: 1, listed: 0 } }).kind).toBe('proceed');
+    // In flight: the slot is taken before anything commits.
+    expect(e.reserve('free', 'publish:new:b', T0 + 1, { create: { limit: 1, listed: 0 } }))
+      .toEqual({ kind: 'library_limit', limit: 1, owned: 0 });
+    e.release('publish:new:a');
+    expect(e.reserve('free', 'publish:new:b', T0 + 2, { create: { limit: 1, listed: 0 } }).kind).toBe('proceed');
+    e.commit('publish:new:b', T0 + 3);
+    // Committed: the count is the object's own, whatever the listing says.
+    expect(e.reserve('free', 'publish:new:c', T0 + 4, { create: { limit: 1, listed: 0 } }))
+      .toEqual({ kind: 'library_limit', limit: 1, owned: 1 });
+    expect(e.snapshot('free', T0 + 4).used).toBe(1);
+  });
+
+  it('trusts the caller\'s listing when it knows more than the counter', () => {
+    const e = new QuotaEngine(undefined, QUOTA_PROFILES.publish);
+    expect(e.reserve('pro', 'publish:new:a', T0, { create: { limit: 10, listed: 10 } }))
+      .toEqual({ kind: 'library_limit', limit: 10, owned: 10 });
+    expect(e.reserve('pro', 'publish:new:a', T0 + 1, { create: { limit: 10, listed: 9 } }).kind).toBe('proceed');
+  });
+
+  it('an update never holds a create slot, and a create slot is released with its reservation', () => {
+    const e = new QuotaEngine(undefined, QUOTA_PROFILES.publish);
+    e.reserve('free', 'publish:lib_1:x->y', T0, { lock: 'publish:lib_1' });
+    e.commit('publish:lib_1:x->y', T0 + 1);
+    expect(e.reserve('free', 'publish:new:a', T0 + 2, { create: { limit: 1, listed: 0 } }).kind).toBe('proceed');
+    const later = new QuotaEngine(e.toJSON(), QUOTA_PROFILES.publish);
+    expect(later.reserve('free', 'publish:new:b', T0 + 2 + RESERVATION_TTL_MS, { create: { limit: 1, listed: 0 } }).kind).toBe('proceed');
+  });
+});
