@@ -629,6 +629,11 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   the file written last won. The collection is now labelled by its name and
   id, like two collections that share a name, and the report says why.
 
+- **A Markdown anatomy part named like a heading or list marker renders as
+  text.** A part named `# Icon` or `- Label` began a list item whose content
+  CommonMark reads as a heading or a nested list. Part names now get the
+  same leading-marker escape as the component description.
+
 ### Added
 
 - **The CSS output reports every unitless number it emits.** A Figma variable
