@@ -3,7 +3,7 @@ import { join, resolve } from 'node:path';
 import type { DtcgOptions } from '@spec-layer/extractor';
 import { parseBundle, type BundleV1 } from './bundle';
 import {
-  readConfig, resolveOptions, resolveOutDir, writeConfig, DEFAULT_COMPONENT_SPECS_DIR, DEFAULT_COMPONENT_FORMAT,
+  readConfig, resolveOptions, resolveOutDir, legacyOutDir, writeConfig, DEFAULT_COMPONENT_SPECS_DIR, DEFAULT_COMPONENT_FORMAT,
   COMPONENT_FORMATS, isComponentFormat, isLibraryId, type CliConfig, type ComponentFormat, type ResolvedOptions,
 } from './config';
 import { fetchBundle } from './api';
@@ -293,9 +293,23 @@ export async function runSetup(
   if (fromFlags === null) return 1;
   const format = componentFormatFromFlags(flags, io);
   if (format === null) return 1;
+  // 0.10.0 and earlier recorded an absolute --out unchecked and wrote every
+  // pull to it joined under the working directory. With no --out, setup
+  // records that relative path instead, which is where the files already are,
+  // so the plugin's command keeps working. This is the only stored value any
+  // command rewrites on its own.
+  let configOutDir = existing?.outDir;
+  let legacyFrom: string | null = null;
+  if (flags.out === undefined && configOutDir !== undefined) {
+    const legacy = legacyOutDir(cwd, configOutDir);
+    if (legacy !== null) {
+      legacyFrom = configOutDir;
+      configOutDir = legacy;
+    }
+  }
   let outDir: string;
   try {
-    outDir = resolveOutDir(cwd, flags.out, existing?.outDir);
+    outDir = resolveOutDir(cwd, flags.out, configOutDir);
   } catch (err) {
     io.err(errorText(err));
     return 1;
@@ -319,6 +333,9 @@ export async function runSetup(
     ...(existing?.outputs !== undefined || outputs.length > 0 ? { outputs } : {}),
   });
   io.out(`Wrote speclayer.json (library ${flags.id}, output ${outDir}${platforms.length > 0 ? `, platforms ${platforms.join(', ')}` : ''}).`);
+  if (legacyFrom !== null) {
+    io.out(`speclayer.json "outDir" was ${JSON.stringify(legacyFrom)}, which earlier versions wrote to ${outDir} inside this directory. It now reads "${outDir}", so the files stay where they are.`);
+  }
 
   const ignored = ensureIgnored(cwd, CREDENTIALS_NAME);
   switch (ignored.kind) {

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { readConfig, writeConfig, resolveOptions, DEFAULT_API, DEFAULT_OUT_DIR, DEFAULT_COMPONENT_SPECS_DIR, OUT_DIR_RULE, isComponentFormat } from '../src/config';
+import { readConfig, writeConfig, resolveOptions, DEFAULT_API, DEFAULT_OUT_DIR, DEFAULT_COMPONENT_SPECS_DIR, OUT_FLAG_RULE, isComponentFormat, legacyOutDir } from '../src/config';
 import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -107,7 +107,43 @@ describe('resolveOptions precedence', () => {
     expect(resolveOptions('/some/cwd', {}, {}, stub).outDir).toBe(DEFAULT_OUT_DIR);
 
     for (const out of ['/custom', '.', '..', '../sibling', 'a/../..', '']) {
-      expect(() => resolveOptions('/some/cwd', { out }, {}, stub), out).toThrow(OUT_DIR_RULE);
+      expect(() => resolveOptions('/some/cwd', { out }, {}, stub), out).toThrow(OUT_FLAG_RULE);
+    }
+    expect(OUT_FLAG_RULE.startsWith('--out ')).toBe(true);
+  });
+
+  it('a refused outDir from speclayer.json names the file and the field, not --out', () => {
+    const stub = (_outDir: string) => null;
+    const tmpDir = mkdtempSync(join(tmpdir(), 'sl-'));
+    try {
+      writeConfig(tmpDir, { libraryId: 'lib_aaaaaaaaaaaaaaaaaaaaaaaa', outDir: '..' });
+      expect(() => resolveOptions(tmpDir, {}, {}, stub)).toThrow(
+        'speclayer.json "outDir" is "..". The output directory must be a relative path inside the current directory: '
+        + 'not ".", not a parent of it, and not an absolute path. Change "outDir", or run spec-layer init again.',
+      );
+      // A flag still wins over the config, so --out is the way past a bad value.
+      expect(resolveOptions(tmpDir, { out: 'fixed' }, {}, stub).outDir).toBe('fixed');
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('an absolute outDir an earlier CLI recorded is refused with the path those files were really written to', () => {
+    const stub = (_outDir: string) => null;
+    const tmpDir = mkdtempSync(join(tmpdir(), 'sl-'));
+    try {
+      writeConfig(tmpDir, { libraryId: 'lib_aaaaaaaaaaaaaaaaaaaaaaaa', outDir: '/abs/x' });
+      expect(() => resolveOptions(tmpDir, {}, {}, stub)).toThrow(
+        'speclayer.json "outDir" is "/abs/x". Earlier versions wrote that to abs/x inside this directory. '
+        + 'Change "outDir" to "abs/x", or run spec-layer init again.',
+      );
+      expect(legacyOutDir(tmpDir, '/abs/x')).toBe('abs/x');
+      // Not absolute, or joined onto the working directory itself: nothing to offer.
+      expect(legacyOutDir(tmpDir, 'abs/x')).toBeNull();
+      expect(legacyOutDir(tmpDir, '/')).toBeNull();
+      expect(legacyOutDir(tmpDir, '/..')).toBeNull();
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
     }
   });
 

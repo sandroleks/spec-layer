@@ -1,5 +1,5 @@
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
-import { isAbsolute, join, resolve } from 'node:path';
+import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import type { DtcgOptions } from '@spec-layer/extractor';
 import type { Selection } from './selection';
 import { readCredentials } from './credentials';
@@ -21,13 +21,52 @@ const CONFIG_NAME = 'speclayer.json';
  */
 export const OUT_DIR_RULE = 'The output directory must be a relative path inside the current directory: not ".", not a parent of it, and not an absolute path.';
 
-/** The output directory for a run, as typed: the flag, then the config, then the default. Throws OUT_DIR_RULE. */
-export function resolveOutDir(cwd: string, out: string | undefined, configOutDir: string | undefined): string {
-  const outDir = out ?? configOutDir ?? DEFAULT_OUT_DIR;
+/** The same rule, refusing a value typed as `--out`, so the reader knows which input to change. */
+export const OUT_FLAG_RULE = '--out must be a relative path inside the current directory: not ".", not a parent of it, and not an absolute path.';
+
+function outDirAllowed(cwd: string, value: string): boolean {
   const root = resolve(cwd);
-  const abs = resolve(cwd, outDir);
-  if (isAbsolute(outDir) || abs === root || !pathInside(root, abs)) throw new Error(OUT_DIR_RULE);
-  return outDir;
+  const abs = resolve(cwd, value);
+  return !isAbsolute(value) && abs !== root && pathInside(root, abs);
+}
+
+/**
+ * Where CLI 0.10.0 and earlier really wrote an absolute `outDir` from
+ * speclayer.json. They recorded `init --out /x` unchecked and then joined it
+ * under the working directory, so every pull landed in `<cwd>/x`. Returns that
+ * directory as a relative path with `/` separators, or null when the value is
+ * not absolute or the joined path is not a usable output directory either.
+ */
+export function legacyOutDir(cwd: string, value: string): string | null {
+  if (!isAbsolute(value)) return null;
+  const root = resolve(cwd);
+  const rel = relative(root, join(root, value)).split(sep).join('/');
+  return outDirAllowed(cwd, rel) ? rel : null;
+}
+
+function configOutDirRefusal(cwd: string, value: string): string {
+  const head = `${CONFIG_NAME} "outDir" is ${JSON.stringify(value)}.`;
+  const legacy = legacyOutDir(cwd, value);
+  return legacy !== null
+    ? `${head} Earlier versions wrote that to ${legacy} inside this directory. Change "outDir" to "${legacy}", or run spec-layer init again.`
+    : `${head} ${OUT_DIR_RULE} Change "outDir", or run spec-layer init again.`;
+}
+
+/**
+ * The output directory for a run, as typed: the flag, then the config, then
+ * the default. A refused flag throws OUT_FLAG_RULE; a refused config value
+ * names speclayer.json and its field, so the reader can tell where it came from.
+ */
+export function resolveOutDir(cwd: string, out: string | undefined, configOutDir: string | undefined): string {
+  if (out !== undefined) {
+    if (!outDirAllowed(cwd, out)) throw new Error(OUT_FLAG_RULE);
+    return out;
+  }
+  if (configOutDir !== undefined) {
+    if (!outDirAllowed(cwd, configOutDir)) throw new Error(configOutDirRefusal(cwd, configOutDir));
+    return configOutDir;
+  }
+  return DEFAULT_OUT_DIR;
 }
 
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);

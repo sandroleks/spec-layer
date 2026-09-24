@@ -30,7 +30,12 @@ The CLI hardening in this section ships as 0.11.0, a minor release because
 now refused: an absolute or parent `--out`, a plain-http `--api` to anything
 but localhost, and an `--id` that is not the shape the plugin issues. A
 repository on 0.10.0 re-projects once on its first pull with 0.11.0 through
-the `manifest.cliVersion` check and gets byte-identical files.
+the `manifest.cliVersion` check and gets byte-identical files. One kind of
+repository needs a step: earlier versions recorded `init --out /abs/x` in
+`speclayer.json` as-is and wrote every pull to `abs/x` inside the working
+directory, so 0.11.0 refuses that `outDir` with the relative path to change it
+to, and `setup` with no `--out`, the plugin's command, rewrites it to that
+path, where the files already are, and says so in one line.
 
 ### Added
 
@@ -482,7 +487,8 @@ the `manifest.cliVersion` check and gets byte-identical files.
   `show`, and `skill` now refuse an absolute path, `.`, a parent, or a file
   with one sentence before touching the network or writing `speclayer.json`,
   and `..cache` is accepted. The same rule applies to `componentSpecsDir` and
-  `outputs[].path`, which share the check.
+  `outputs[].path`, which share the check. A refusal names `--out` or
+  `speclayer.json` `"outDir"`, whichever the value came from.
 - **`--api` and `SPEC_LAYER_API` must be https.** The pull key travels in the
   Authorization header of every request, and a plain `http://` origin sent it
   in the clear. Only `localhost`, `127.0.0.1`, and `[::1]` may use http, for a

@@ -72,7 +72,11 @@ Markdown pages, so every CLI that pulls a repository using Markdown needs
 0.10.0. `--key -` needs 0.11.0 or later; 0.11.0 also refuses an absolute or
 parent `--out`, a plain-http `--api` to anything but localhost, and an `--id`
 that is not the shape the plugin issues, all of which earlier versions
-accepted.
+accepted. Earlier versions recorded an absolute `--out` in `speclayer.json`
+as-is and wrote every pull to that path inside the working directory, so
+`outDir: "/abs/x"` meant `abs/x`. 0.11.0 refuses that value and names the
+relative path to change it to; `setup` with no `--out`, the command the plugin
+copies, rewrites it to that path, where the files already are.
 
 ## Commands
 

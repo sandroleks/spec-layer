@@ -12,7 +12,7 @@ import { buildComponentV5GoldenArtifact } from '../../extractor/test/fixtures/co
 import {
   runInit, runSetup, runPull, runStatus, runList, runShow, runTools, runSkill, type Io,
 } from '../src/commands';
-import { OUT_DIR_RULE, readConfig } from '../src/config';
+import { OUT_FLAG_RULE, readConfig } from '../src/config';
 import { readIndexImports } from '../src/outputs';
 
 function makeIo(): Io & { outLines: string[]; errLines: string[]; writes: string[] } {
@@ -213,7 +213,8 @@ describe('runInit', () => {
     const code = runInit(cwd, { id: 'lib_abcabcabcabcabcabcabcabc', out: '../elsewhere' }, io);
 
     expect(code).toBe(1);
-    expect(io.errLines).toEqual([OUT_DIR_RULE]);
+    expect(io.errLines).toEqual([OUT_FLAG_RULE]);
+    expect(io.errLines[0]).toContain('--out');
     expect(existsSync(join(cwd, 'speclayer.json'))).toBe(false);
   });
 
@@ -1252,7 +1253,7 @@ describe('runPull safety and freshness', () => {
     const code = await runPull(cwd, { out: '.' }, ENV, io, stubThree());
 
     expect(code).toBe(1);
-    expect(io.errLines.join('\n')).toMatch(/output directory/i);
+    expect(io.errLines).toEqual([OUT_FLAG_RULE]);
     expect(readFileSync(join(cwd, 'keep.txt'), 'utf8')).toBe('mine');
   });
 
@@ -1276,10 +1277,26 @@ describe('runPull safety and freshness', () => {
 
       expect(await runPull(cwd, { out }, ENV, io, fetcher), out).toBe(1);
 
-      expect(io.errLines).toEqual([OUT_DIR_RULE]);
+      expect(io.errLines).toEqual([OUT_FLAG_RULE]);
       expect(fetcher).not.toHaveBeenCalled();
     }
     expect(existsSync(join(tmpdir(), 'sl-elsewhere'))).toBe(false);
+  });
+
+  it('refuses an absolute outDir an earlier CLI recorded in speclayer.json, naming the file and where the files really are', async () => {
+    writeFileSync(join(cwd, 'speclayer.json'), JSON.stringify({ libraryId: 'lib_abcabcabcabcabcabcabcabc', outDir: '/custom' }));
+    const expected = 'speclayer.json "outDir" is "/custom". Earlier versions wrote that to custom inside this directory. '
+      + 'Change "outDir" to "custom", or run spec-layer init again.';
+    const io = makeIo();
+    const fetcher = stubThree();
+
+    expect(await runPull(cwd, {}, ENV, io, fetcher)).toBe(1);
+
+    expect(io.errLines).toEqual([expected]);
+    expect(fetcher).not.toHaveBeenCalled();
+    const listIo = makeIo();
+    expect(runList(cwd, {}, listIo)).toBe(1);
+    expect(listIo.errLines).toEqual([expected]);
   });
 
   it('accepts an --out whose name merely begins with two dots', async () => {
@@ -1637,6 +1654,41 @@ describe('runSetup', () => {
     expect(readConfig(cwd)).toEqual({
       libraryId: LIB, outDir: 'other', componentSpecsDir: 'component-specs', include: { foundation: true, components: [] },
     });
+  });
+
+  /**
+   * 0.10.0 and earlier recorded `init --out /custom` as-is and then wrote every
+   * pull to `<cwd>/custom`. Re-pasting the plugin's command, which has no
+   * --out, must keep working: setup rewrites the value to where the files
+   * already are and says so.
+   */
+  it('rewrites an absolute outDir from an earlier CLI to where its files already are, and proceeds', async () => {
+    gitInit();
+    expect(await runSetup(cwd, { id: LIB, key: KEY, out: 'custom' }, {}, makeIo(), stub200())).toBe(0);
+    writeFileSync(join(cwd, 'speclayer.json'), JSON.stringify({ libraryId: LIB, outDir: '/custom' }));
+    const io = makeIo();
+
+    expect(await runSetup(cwd, { id: LIB, key: KEY }, {}, io, stub200())).toBe(0);
+
+    expect(readConfig(cwd)?.outDir).toBe('custom');
+    expect(io.outLines).toContain(
+      'speclayer.json "outDir" was "/custom", which earlier versions wrote to custom inside this directory. It now reads "custom", so the files stay where they are.',
+    );
+    expect(io.errLines.join('\n')).not.toContain('outDir');
+    expect(existsSync(join(cwd, 'custom', 'manifest.json'))).toBe(true);
+    expect(existsSync(join(cwd, '.speclayer'))).toBe(false);
+  });
+
+  it('still refuses a bad --out by name when speclayer.json holds an absolute outDir', async () => {
+    gitInit();
+    writeFileSync(join(cwd, 'speclayer.json'), JSON.stringify({ libraryId: LIB, outDir: '/custom' }));
+    const io = makeIo();
+
+    expect(await runSetup(cwd, { id: LIB, key: KEY, out: '../elsewhere' }, {}, io, stub200())).toBe(1);
+
+    expect(io.errLines).toEqual([OUT_FLAG_RULE]);
+    expect(JSON.parse(readFileSync(join(cwd, 'speclayer.json'), 'utf8')).outDir).toBe('/custom');
+    expect(existsSync(join(cwd, 'speclayer.local.json'))).toBe(false);
   });
 
   // A corrupt speclayer.json has nothing to preserve, and setup overwriting it
