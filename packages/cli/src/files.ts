@@ -19,13 +19,12 @@ import { cliVersion } from './version';
 export { slugify };
 
 /**
- * The first two lines of every component brief the extractor emits, now
- * defined once in the extractor beside the Markdown projection's. Kept under
- * this name so existing callers are unchanged. Nothing is prepended to a
- * brief; the marker is what the plugin already writes, so the file stays
- * byte-identical to Copy for AI.
+ * The first two lines of every component brief the extractor emits, defined
+ * in the extractor beside the Markdown projection's marker. Nothing is
+ * prepended to a brief; the marker is what the plugin already writes, so the
+ * file stays byte-identical to Copy for AI.
  */
-export const COMPONENT_SPEC_MARKER = COMPONENT_YAML_MARKER;
+const COMPONENT_SPEC_MARKER = COMPONENT_YAML_MARKER;
 
 /**
  * The visible component-specs/ directory is owned by either format's opening
