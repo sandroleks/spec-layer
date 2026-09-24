@@ -23,6 +23,10 @@ coverage/
 .speclayer/
 speclayer.json
 
+# Copied from the root LICENSE by packages/cli/build.mjs so the npm tarball
+# carries it; the root file is the only source.
+packages/cli/LICENSE
+
 # The prose tree, the internal vault, the marketing site, and the capture
 # library now live in a separate private repository, so the ignore rules that
 # covered their generated archives and delivery variants went with them.

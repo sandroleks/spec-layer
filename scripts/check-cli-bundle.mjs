@@ -28,6 +28,12 @@ if (!existsSync(BUNDLE)) {
   process.exit(1);
 }
 
+const LICENSE = 'packages/cli/LICENSE';
+if (!existsSync(LICENSE)) {
+  console.error(`${LICENSE} not found. packages/cli/build.mjs copies the root LICENSE there so npm ships it; run the CLI build.`);
+  process.exit(1);
+}
+
 const run = spawnSync(process.execPath, [BUNDLE], { encoding: 'utf8' });
 const output = `${run.stdout ?? ''}${run.stderr ?? ''}`;
 

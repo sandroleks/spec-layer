@@ -1,4 +1,5 @@
 import { build } from 'esbuild';
+import { copyFileSync } from 'fs';
 import { dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -26,3 +27,9 @@ await build({
   outfile: 'dist/cli.js',
   absWorkingDir: dirname(fileURLToPath(import.meta.url)),
 });
+
+// npm always ships a LICENSE file from the package directory, whatever
+// `files` lists, but this repository keeps its one LICENSE at the root, so the
+// tarball went out without any. Copy it in at build time; the copy is
+// gitignored so the root stays the only source.
+copyFileSync(new URL('../../LICENSE', import.meta.url), new URL('./LICENSE', import.meta.url));

@@ -27,6 +27,9 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
 
 ### Added
 
+- **The `spec-layer` tarball carries `LICENSE`.** The CLI build copies the
+  repository's MIT license into the package directory, where npm always
+  includes it, and the bundle check fails when it is missing.
 - **`--key -` reads the pull key from stdin.** A key on the command line is
   visible to shell history and to `ps` while the command runs. `setup`,
   `pull`, and `status` (the commands that resolve a key at all) now take
