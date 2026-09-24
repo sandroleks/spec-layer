@@ -445,6 +445,9 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   two or more hops from an omitted token, and one whose target has no value
   in a single mode. A style bound to such a token writes its resolved value
   and reports `binding_dropped`, as it already did for an omitted one.
+  `report.json` no longer depends on the order the file lists its tokens:
+  tokens that share a path or a code syntax identifier are listed by id, and
+  entries that tie on path, code and mode are ordered by their details.
 
 - **Copy for AI on a component no longer fails on a Foundation whose default
   mode is undeclared.** The component copy read the token's value under the

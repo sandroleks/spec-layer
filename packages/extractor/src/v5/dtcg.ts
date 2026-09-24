@@ -371,13 +371,16 @@ function indexPaths(p: Projection): void {
       p.pathById.set(tokens[0].id, path);
       continue;
     }
-    for (const token of tokens) {
-      p.omittedIds.add(token.id);
-      p.collidedIds.add(token.id);
+    // By id, not artifact order, so the entries and each `ids` list come out
+    // the same however the file lists the colliding tokens.
+    const ids = tokens.map((t) => t.id).sort(compareCodeUnits);
+    for (const id of ids) {
+      p.omittedIds.add(id);
+      p.collidedIds.add(id);
       reportOnce(p, {
         code: 'path_collision', severity: 'error', path,
         message: `${tokens.length} tokens map to this DTCG path; all of them were omitted so that none replaces another.`,
-        details: { id: token.id, ids: tokens.map((t) => t.id) },
+        details: { id, ids: [...ids] },
       });
     }
   }
@@ -793,12 +796,13 @@ function reportDuplicateCodeSyntax(p: Projection): void {
   for (const [key, tokens] of owners) {
     if (tokens.length < 2) continue;
     const [platform, identifier] = JSON.parse(key) as [string, string];
+    const ids = tokens.map((t) => t.id).sort(compareCodeUnits);
     for (const token of tokens) {
       reportOnce(p, {
         code: 'duplicate_code_syntax', severity: 'warning',
         path: p.pathById.get(token.id) ?? p.segmentsById.get(token.id)?.join('.') ?? token.name,
         message: `${tokens.length} tokens declare the ${platform} identifier \`${identifier}\`, so the identifier alone does not say which token is meant; each token keeps it as declared.`,
-        details: { id: token.id, platform, identifier, ids: tokens.map((t) => t.id) },
+        details: { id: token.id, platform, identifier, ids: [...ids] },
       });
     }
   }
@@ -1432,8 +1436,11 @@ export function foundationDtcg(
   Object.assign(files, styles);
   for (const [file, tree] of Object.entries(styles)) census[file] = styleCensus(tree);
   const resolver = buildResolver(p, plans, Object.keys(styles).sort(compareCodeUnits));
+  // The details break the last tie, so two entries on one path, code and
+  // mode (two colliding tokens, two segment notes) never keep source order.
   p.report.sort((a, b) => compareCodeUnits(a.path, b.path)
-    || compareCodeUnits(a.code, b.code) || compareCodeUnits(a.mode ?? '', b.mode ?? ''));
+    || compareCodeUnits(a.code, b.code) || compareCodeUnits(a.mode ?? '', b.mode ?? '')
+    || compareCodeUnits(canonicalJson(a.details), canonicalJson(b.details)));
 
   const meta: Record<string, DtcgMetaEntry> = {};
   for (const token of artifact.tokens) {

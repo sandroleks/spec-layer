@@ -1712,6 +1712,27 @@ describe('determinism', () => {
     expect(Object.keys(a.extension.census)).toEqual(Object.keys(b.extension.census));
     expect(Object.keys(a.meta)).toEqual(Object.keys(b.meta));
   });
+
+  it('writes the same report for a duplicate path collision whatever the token order', () => {
+    const collided = (reverse: boolean): FoundationArtifactV5 => {
+      const artifact = syntheticArtifact();
+      for (const token of artifact.tokens) {
+        if (token.id === 'VariableID:color-exact' || token.id === 'VariableID:color-lossy') token.name = 'color/twin';
+        // A shared identifier lists its tokens too, and must not follow token order either.
+        if (token.id === 'VariableID:gap' || token.id === 'VariableID:shadow-blur') token.code_syntax = { WEB: '--dup' };
+      }
+      if (reverse) artifact.tokens.reverse();
+      return artifact;
+    };
+    const forward = foundationDtcg(collided(false));
+    const backward = foundationDtcg(collided(true));
+    expect(forward.report.filter((r) => r.code === 'path_collision').map((r) => r.details)).toEqual([
+      { id: 'VariableID:color-exact', ids: ['VariableID:color-exact', 'VariableID:color-lossy'] },
+      { id: 'VariableID:color-lossy', ids: ['VariableID:color-exact', 'VariableID:color-lossy'] },
+    ]);
+    expect(dtcgExportFiles(backward)['report.json']).toBe(dtcgExportFiles(forward)['report.json']);
+    expect(dtcgExportFiles(backward)).toEqual(dtcgExportFiles(forward));
+  });
 });
 
 describe('dtcg.units overrides', () => {
