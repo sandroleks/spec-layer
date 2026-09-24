@@ -1,0 +1,1710 @@
+{
+  "id": "20:100",
+  "name": "Button",
+  "type": "COMPONENT_SET",
+  "visible": true,
+  "key": "ref-button",
+  "description": "Triggers an action in place. Pick the visual weight with Style and the footprint with Size.",
+  "propertyDefinitions": {
+    "Size": {
+      "type": "VARIANT",
+      "defaultValue": "Medium",
+      "variantOptions": [
+        "Medium",
+        "Large"
+      ]
+    },
+    "Style": {
+      "type": "VARIANT",
+      "defaultValue": "Filled",
+      "variantOptions": [
+        "Filled",
+        "Outlined"
+      ]
+    },
+    "hover": {
+      "type": "VARIANT",
+      "defaultValue": "False",
+      "variantOptions": [
+        "False",
+        "True"
+      ]
+    },
+    "disabled": {
+      "type": "VARIANT",
+      "defaultValue": "False",
+      "variantOptions": [
+        "False",
+        "True"
+      ]
+    },
+    "Show icon#20:1": {
+      "type": "BOOLEAN",
+      "defaultValue": true
+    },
+    "Label#20:2": {
+      "type": "TEXT",
+      "defaultValue": "Button"
+    }
+  },
+  "children": [
+    {
+      "id": "20:101",
+      "name": "Size=Medium, Style=Filled, hover=False, disabled=False",
+      "type": "COMPONENT",
+      "visible": true,
+      "bindings": [
+        {
+          "property": "fills",
+          "id": "VariableID:ref/action-primary",
+          "name": "color/action/primary",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/color"
+        },
+        {
+          "property": "cornerRadius",
+          "id": "VariableID:ref/radius-control",
+          "name": "radius/control",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/radius"
+        },
+        {
+          "property": "paddingTop",
+          "id": "VariableID:ref/space-200",
+          "name": "space/200",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/spacing"
+        },
+        {
+          "property": "paddingBottom",
+          "id": "VariableID:ref/space-200",
+          "name": "space/200",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/spacing"
+        },
+        {
+          "property": "paddingLeft",
+          "id": "VariableID:ref/space-300",
+          "name": "space/300",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/spacing"
+        },
+        {
+          "property": "paddingRight",
+          "id": "VariableID:ref/space-300",
+          "name": "space/300",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/spacing"
+        },
+        {
+          "property": "itemSpacing",
+          "id": "VariableID:ref/space-200",
+          "name": "space/200",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/spacing"
+        }
+      ],
+      "layout": {
+        "mode": "HORIZONTAL",
+        "paddingTop": 8,
+        "paddingRight": 12,
+        "paddingBottom": 8,
+        "paddingLeft": 12,
+        "itemSpacing": 8,
+        "cornerRadius": 8
+      },
+      "children": [
+        {
+          "id": "20:102",
+          "name": "icon-slot",
+          "type": "FRAME",
+          "visible": true,
+          "layout": {
+            "mode": "HORIZONTAL",
+            "paddingTop": 2,
+            "paddingRight": 2,
+            "paddingBottom": 2,
+            "paddingLeft": 2
+          },
+          "children": [
+            {
+              "id": "20:103",
+              "name": "icon",
+              "type": "INSTANCE",
+              "visible": true,
+              "mainComponent": {
+                "name": "Icon",
+                "key": "ref-icon"
+              },
+              "bindings": [
+                {
+                  "property": "fills",
+                  "id": "VariableID:ref/text-on-action",
+                  "name": "color/text/on-action",
+                  "kind": "variable",
+                  "remote": false,
+                  "collectionId": "VariableCollectionId:ref/color"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "20:104",
+          "name": "label",
+          "type": "TEXT",
+          "visible": true,
+          "bindings": [
+            {
+              "property": "fills",
+              "id": "VariableID:ref/text-on-action",
+              "name": "color/text/on-action",
+              "kind": "variable",
+              "remote": false,
+              "collectionId": "VariableCollectionId:ref/color"
+            },
+            {
+              "property": "typography",
+              "id": "S:ref/label-large",
+              "name": "Label/Large",
+              "kind": "text-style",
+              "remote": false
+            }
+          ],
+          "text": {
+            "fontSize": 16,
+            "fontWeight": 600
+          }
+        }
+      ]
+    },
+    {
+      "id": "20:105",
+      "name": "Size=Medium, Style=Filled, hover=True, disabled=False",
+      "type": "COMPONENT",
+      "visible": true,
+      "bindings": [
+        {
+          "property": "fills",
+          "id": "VariableID:ref/action-primary-hover",
+          "name": "color/action/primary-hover",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/color"
+        },
+        {
+          "property": "cornerRadius",
+          "id": "VariableID:ref/radius-control",
+          "name": "radius/control",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/radius"
+        },
+        {
+          "property": "paddingTop",
+          "id": "VariableID:ref/space-200",
+          "name": "space/200",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/spacing"
+        },
+        {
+          "property": "paddingBottom",
+          "id": "VariableID:ref/space-200",
+          "name": "space/200",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/spacing"
+        },
+        {
+          "property": "paddingLeft",
+          "id": "VariableID:ref/space-300",
+          "name": "space/300",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/spacing"
+        },
+        {
+          "property": "paddingRight",
+          "id": "VariableID:ref/space-300",
+          "name": "space/300",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/spacing"
+        },
+        {
+          "property": "itemSpacing",
+          "id": "VariableID:ref/space-200",
+          "name": "space/200",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/spacing"
+        },
+        {
+          "property": "effects",
+          "id": "S:ref/elevation-1",
+          "name": "Elevation/1",
+          "kind": "effect-style",
+          "remote": false
+        }
+      ],
+      "layout": {
+        "mode": "HORIZONTAL",
+        "paddingTop": 8,
+        "paddingRight": 12,
+        "paddingBottom": 8,
+        "paddingLeft": 12,
+        "itemSpacing": 8,
+        "cornerRadius": 8
+      },
+      "children": [
+        {
+          "id": "20:106",
+          "name": "icon-slot",
+          "type": "FRAME",
+          "visible": true,
+          "layout": {
+            "mode": "HORIZONTAL",
+            "paddingTop": 2,
+            "paddingRight": 2,
+            "paddingBottom": 2,
+            "paddingLeft": 2
+          },
+          "children": [
+            {
+              "id": "20:107",
+              "name": "icon",
+              "type": "INSTANCE",
+              "visible": true,
+              "mainComponent": {
+                "name": "Icon",
+                "key": "ref-icon"
+              },
+              "bindings": [
+                {
+                  "property": "fills",
+                  "id": "VariableID:ref/text-on-action",
+                  "name": "color/text/on-action",
+                  "kind": "variable",
+                  "remote": false,
+                  "collectionId": "VariableCollectionId:ref/color"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "20:108",
+          "name": "label",
+          "type": "TEXT",
+          "visible": true,
+          "bindings": [
+            {
+              "property": "fills",
+              "id": "VariableID:ref/text-on-action",
+              "name": "color/text/on-action",
+              "kind": "variable",
+              "remote": false,
+              "collectionId": "VariableCollectionId:ref/color"
+            },
+            {
+              "property": "typography",
+              "id": "S:ref/label-large",
+              "name": "Label/Large",
+              "kind": "text-style",
+              "remote": false
+            }
+          ],
+          "text": {
+            "fontSize": 16,
+            "fontWeight": 600
+          }
+        }
+      ]
+    },
+    {
+      "id": "20:109",
+      "name": "Size=Medium, Style=Filled, hover=False, disabled=True",
+      "type": "COMPONENT",
+      "visible": true,
+      "bindings": [
+        {
+          "property": "fills",
+          "id": "VariableID:ref/action-disabled",
+          "name": "color/action/disabled",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/color"
+        },
+        {
+          "property": "cornerRadius",
+          "id": "VariableID:ref/radius-control",
+          "name": "radius/control",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/radius"
+        },
+        {
+          "property": "paddingTop",
+          "id": "VariableID:ref/space-200",
+          "name": "space/200",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/spacing"
+        },
+        {
+          "property": "paddingBottom",
+          "id": "VariableID:ref/space-200",
+          "name": "space/200",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/spacing"
+        },
+        {
+          "property": "paddingLeft",
+          "id": "VariableID:ref/space-300",
+          "name": "space/300",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/spacing"
+        },
+        {
+          "property": "paddingRight",
+          "id": "VariableID:ref/space-300",
+          "name": "space/300",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/spacing"
+        },
+        {
+          "property": "itemSpacing",
+          "id": "VariableID:ref/space-200",
+          "name": "space/200",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/spacing"
+        }
+      ],
+      "layout": {
+        "mode": "HORIZONTAL",
+        "paddingTop": 8,
+        "paddingRight": 12,
+        "paddingBottom": 8,
+        "paddingLeft": 12,
+        "itemSpacing": 8,
+        "cornerRadius": 8
+      },
+      "children": [
+        {
+          "id": "20:110",
+          "name": "icon-slot",
+          "type": "FRAME",
+          "visible": true,
+          "layout": {
+            "mode": "HORIZONTAL",
+            "paddingTop": 2,
+            "paddingRight": 2,
+            "paddingBottom": 2,
+            "paddingLeft": 2
+          },
+          "children": [
+            {
+              "id": "20:111",
+              "name": "icon",
+              "type": "INSTANCE",
+              "visible": true,
+              "mainComponent": {
+                "name": "Icon",
+                "key": "ref-icon"
+              },
+              "bindings": [
+                {
+                  "property": "fills",
+                  "id": "VariableID:ref/text-on-action",
+                  "name": "color/text/on-action",
+                  "kind": "variable",
+                  "remote": false,
+                  "collectionId": "VariableCollectionId:ref/color"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "20:112",
+          "name": "label",
+          "type": "TEXT",
+          "visible": true,
+          "bindings": [
+            {
+              "property": "fills",
+              "id": "VariableID:ref/text-on-action",
+              "name": "color/text/on-action",
+              "kind": "variable",
+              "remote": false,
+              "collectionId": "VariableCollectionId:ref/color"
+            },
+            {
+              "property": "typography",
+              "id": "S:ref/label-large",
+              "name": "Label/Large",
+              "kind": "text-style",
+              "remote": false
+            }
+          ],
+          "text": {
+            "fontSize": 16,
+            "fontWeight": 600
+          }
+        }
+      ]
+    },
+    {
+      "id": "20:113",
+      "name": "Size=Medium, Style=Outlined, hover=False, disabled=False",
+      "type": "COMPONENT",
+      "visible": true,
+      "bindings": [
+        {
+          "property": "strokes",
+          "id": "VariableID:ref/border-subtle",
+          "name": "color/border/subtle",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/color"
+        },
+        {
+          "property": "cornerRadius",
+          "id": "VariableID:ref/radius-control",
+          "name": "radius/control",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/radius"
+        },
+        {
+          "property": "paddingTop",
+          "id": "VariableID:ref/space-200",
+          "name": "space/200",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/spacing"
+        },
+        {
+          "property": "paddingBottom",
+          "id": "VariableID:ref/space-200",
+          "name": "space/200",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/spacing"
+        },
+        {
+          "property": "paddingLeft",
+          "id": "VariableID:ref/space-300",
+          "name": "space/300",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/spacing"
+        },
+        {
+          "property": "paddingRight",
+          "id": "VariableID:ref/space-300",
+          "name": "space/300",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/spacing"
+        },
+        {
+          "property": "itemSpacing",
+          "id": "VariableID:ref/space-200",
+          "name": "space/200",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/spacing"
+        }
+      ],
+      "layout": {
+        "mode": "HORIZONTAL",
+        "paddingTop": 8,
+        "paddingRight": 12,
+        "paddingBottom": 8,
+        "paddingLeft": 12,
+        "itemSpacing": 8,
+        "cornerRadius": 8
+      },
+      "children": [
+        {
+          "id": "20:114",
+          "name": "icon-slot",
+          "type": "FRAME",
+          "visible": true,
+          "layout": {
+            "mode": "HORIZONTAL",
+            "paddingTop": 2,
+            "paddingRight": 2,
+            "paddingBottom": 2,
+            "paddingLeft": 2
+          },
+          "children": [
+            {
+              "id": "20:115",
+              "name": "icon",
+              "type": "INSTANCE",
+              "visible": true,
+              "mainComponent": {
+                "name": "Icon",
+                "key": "ref-icon"
+              },
+              "bindings": [
+                {
+                  "property": "fills",
+                  "id": "VariableID:ref/action-primary",
+                  "name": "color/action/primary",
+                  "kind": "variable",
+                  "remote": false,
+                  "collectionId": "VariableCollectionId:ref/color"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "20:116",
+          "name": "label",
+          "type": "TEXT",
+          "visible": true,
+          "bindings": [
+            {
+              "property": "fills",
+              "id": "VariableID:ref/action-primary",
+              "name": "color/action/primary",
+              "kind": "variable",
+              "remote": false,
+              "collectionId": "VariableCollectionId:ref/color"
+            },
+            {
+              "property": "typography",
+              "id": "S:ref/label-large",
+              "name": "Label/Large",
+              "kind": "text-style",
+              "remote": false
+            }
+          ],
+          "text": {
+            "fontSize": 16,
+            "fontWeight": 600
+          }
+        }
+      ]
+    },
+    {
+      "id": "20:117",
+      "name": "Size=Medium, Style=Outlined, hover=True, disabled=False",
+      "type": "COMPONENT",
+      "visible": true,
+      "bindings": [
+        {
+          "property": "strokes",
+          "id": "VariableID:ref/border-subtle",
+          "name": "color/border/subtle",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/color"
+        },
+        {
+          "property": "cornerRadius",
+          "id": "VariableID:ref/radius-control",
+          "name": "radius/control",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/radius"
+        },
+        {
+          "property": "paddingTop",
+          "id": "VariableID:ref/space-200",
+          "name": "space/200",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/spacing"
+        },
+        {
+          "property": "paddingBottom",
+          "id": "VariableID:ref/space-200",
+          "name": "space/200",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/spacing"
+        },
+        {
+          "property": "paddingLeft",
+          "id": "VariableID:ref/space-300",
+          "name": "space/300",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/spacing"
+        },
+        {
+          "property": "paddingRight",
+          "id": "VariableID:ref/space-300",
+          "name": "space/300",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/spacing"
+        },
+        {
+          "property": "itemSpacing",
+          "id": "VariableID:ref/space-200",
+          "name": "space/200",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/spacing"
+        }
+      ],
+      "layout": {
+        "mode": "HORIZONTAL",
+        "paddingTop": 8,
+        "paddingRight": 12,
+        "paddingBottom": 8,
+        "paddingLeft": 12,
+        "itemSpacing": 8,
+        "cornerRadius": 8
+      },
+      "children": [
+        {
+          "id": "20:118",
+          "name": "icon-slot",
+          "type": "FRAME",
+          "visible": true,
+          "layout": {
+            "mode": "HORIZONTAL",
+            "paddingTop": 2,
+            "paddingRight": 2,
+            "paddingBottom": 2,
+            "paddingLeft": 2
+          },
+          "children": [
+            {
+              "id": "20:119",
+              "name": "icon",
+              "type": "INSTANCE",
+              "visible": true,
+              "mainComponent": {
+                "name": "Icon",
+                "key": "ref-icon"
+              },
+              "bindings": [
+                {
+                  "property": "fills",
+                  "id": "VariableID:ref/action-primary",
+                  "name": "color/action/primary",
+                  "kind": "variable",
+                  "remote": false,
+                  "collectionId": "VariableCollectionId:ref/color"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "20:120",
+          "name": "label",
+          "type": "TEXT",
+          "visible": true,
+          "bindings": [
+            {
+              "property": "fills",
+              "id": "VariableID:ref/action-primary",
+              "name": "color/action/primary",
+              "kind": "variable",
+              "remote": false,
+              "collectionId": "VariableCollectionId:ref/color"
+            },
+            {
+              "property": "typography",
+              "id": "S:ref/label-large",
+              "name": "Label/Large",
+              "kind": "text-style",
+              "remote": false
+            }
+          ],
+          "text": {
+            "fontSize": 16,
+            "fontWeight": 600
+          }
+        }
+      ]
+    },
+    {
+      "id": "20:121",
+      "name": "Size=Medium, Style=Outlined, hover=False, disabled=True",
+      "type": "COMPONENT",
+      "visible": true,
+      "bindings": [
+        {
+          "property": "strokes",
+          "id": "VariableID:ref/border-subtle",
+          "name": "color/border/subtle",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/color"
+        },
+        {
+          "property": "cornerRadius",
+          "id": "VariableID:ref/radius-control",
+          "name": "radius/control",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/radius"
+        },
+        {
+          "property": "paddingTop",
+          "id": "VariableID:ref/space-200",
+          "name": "space/200",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/spacing"
+        },
+        {
+          "property": "paddingBottom",
+          "id": "VariableID:ref/space-200",
+          "name": "space/200",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/spacing"
+        },
+        {
+          "property": "paddingLeft",
+          "id": "VariableID:ref/space-300",
+          "name": "space/300",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/spacing"
+        },
+        {
+          "property": "paddingRight",
+          "id": "VariableID:ref/space-300",
+          "name": "space/300",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/spacing"
+        },
+        {
+          "property": "itemSpacing",
+          "id": "VariableID:ref/space-200",
+          "name": "space/200",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/spacing"
+        }
+      ],
+      "layout": {
+        "mode": "HORIZONTAL",
+        "paddingTop": 8,
+        "paddingRight": 12,
+        "paddingBottom": 8,
+        "paddingLeft": 12,
+        "itemSpacing": 8,
+        "cornerRadius": 8
+      },
+      "children": [
+        {
+          "id": "20:122",
+          "name": "icon-slot",
+          "type": "FRAME",
+          "visible": true,
+          "layout": {
+            "mode": "HORIZONTAL",
+            "paddingTop": 2,
+            "paddingRight": 2,
+            "paddingBottom": 2,
+            "paddingLeft": 2
+          },
+          "children": [
+            {
+              "id": "20:123",
+              "name": "icon",
+              "type": "INSTANCE",
+              "visible": true,
+              "mainComponent": {
+                "name": "Icon",
+                "key": "ref-icon"
+              },
+              "bindings": [
+                {
+                  "property": "fills",
+                  "id": "VariableID:ref/action-disabled",
+                  "name": "color/action/disabled",
+                  "kind": "variable",
+                  "remote": false,
+                  "collectionId": "VariableCollectionId:ref/color"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "20:124",
+          "name": "label",
+          "type": "TEXT",
+          "visible": true,
+          "bindings": [
+            {
+              "property": "fills",
+              "id": "VariableID:ref/action-disabled",
+              "name": "color/action/disabled",
+              "kind": "variable",
+              "remote": false,
+              "collectionId": "VariableCollectionId:ref/color"
+            },
+            {
+              "property": "typography",
+              "id": "S:ref/label-large",
+              "name": "Label/Large",
+              "kind": "text-style",
+              "remote": false
+            }
+          ],
+          "text": {
+            "fontSize": 16,
+            "fontWeight": 600
+          }
+        }
+      ]
+    },
+    {
+      "id": "20:125",
+      "name": "Size=Large, Style=Filled, hover=False, disabled=False",
+      "type": "COMPONENT",
+      "visible": true,
+      "bindings": [
+        {
+          "property": "fills",
+          "id": "VariableID:ref/action-primary",
+          "name": "color/action/primary",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/color"
+        },
+        {
+          "property": "cornerRadius",
+          "id": "VariableID:ref/radius-control",
+          "name": "radius/control",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/radius"
+        },
+        {
+          "property": "paddingTop",
+          "id": "VariableID:ref/space-300",
+          "name": "space/300",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/spacing"
+        },
+        {
+          "property": "paddingBottom",
+          "id": "VariableID:ref/space-300",
+          "name": "space/300",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/spacing"
+        },
+        {
+          "property": "paddingLeft",
+          "id": "VariableID:ref/space-400",
+          "name": "space/400",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/spacing"
+        },
+        {
+          "property": "paddingRight",
+          "id": "VariableID:ref/space-400",
+          "name": "space/400",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/spacing"
+        },
+        {
+          "property": "itemSpacing",
+          "id": "VariableID:ref/space-200",
+          "name": "space/200",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/spacing"
+        }
+      ],
+      "layout": {
+        "mode": "HORIZONTAL",
+        "paddingTop": 12,
+        "paddingRight": 16,
+        "paddingBottom": 12,
+        "paddingLeft": 16,
+        "itemSpacing": 8,
+        "cornerRadius": 8
+      },
+      "children": [
+        {
+          "id": "20:126",
+          "name": "icon-slot",
+          "type": "FRAME",
+          "visible": true,
+          "layout": {
+            "mode": "HORIZONTAL",
+            "paddingTop": 2,
+            "paddingRight": 2,
+            "paddingBottom": 2,
+            "paddingLeft": 2
+          },
+          "children": [
+            {
+              "id": "20:127",
+              "name": "icon",
+              "type": "INSTANCE",
+              "visible": true,
+              "mainComponent": {
+                "name": "Icon",
+                "key": "ref-icon"
+              },
+              "bindings": [
+                {
+                  "property": "fills",
+                  "id": "VariableID:ref/text-on-action",
+                  "name": "color/text/on-action",
+                  "kind": "variable",
+                  "remote": false,
+                  "collectionId": "VariableCollectionId:ref/color"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "20:128",
+          "name": "label",
+          "type": "TEXT",
+          "visible": true,
+          "bindings": [
+            {
+              "property": "fills",
+              "id": "VariableID:ref/text-on-action",
+              "name": "color/text/on-action",
+              "kind": "variable",
+              "remote": false,
+              "collectionId": "VariableCollectionId:ref/color"
+            },
+            {
+              "property": "typography",
+              "id": "S:ref/label-large",
+              "name": "Label/Large",
+              "kind": "text-style",
+              "remote": false
+            }
+          ],
+          "text": {
+            "fontSize": 16,
+            "fontWeight": 600
+          }
+        }
+      ]
+    },
+    {
+      "id": "20:129",
+      "name": "Size=Large, Style=Filled, hover=True, disabled=False",
+      "type": "COMPONENT",
+      "visible": true,
+      "bindings": [
+        {
+          "property": "fills",
+          "id": "VariableID:ref/action-primary-hover",
+          "name": "color/action/primary-hover",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/color"
+        },
+        {
+          "property": "cornerRadius",
+          "id": "VariableID:ref/radius-control",
+          "name": "radius/control",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/radius"
+        },
+        {
+          "property": "paddingTop",
+          "id": "VariableID:ref/space-300",
+          "name": "space/300",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/spacing"
+        },
+        {
+          "property": "paddingBottom",
+          "id": "VariableID:ref/space-300",
+          "name": "space/300",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/spacing"
+        },
+        {
+          "property": "paddingLeft",
+          "id": "VariableID:ref/space-400",
+          "name": "space/400",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/spacing"
+        },
+        {
+          "property": "paddingRight",
+          "id": "VariableID:ref/space-400",
+          "name": "space/400",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/spacing"
+        },
+        {
+          "property": "itemSpacing",
+          "id": "VariableID:ref/space-200",
+          "name": "space/200",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/spacing"
+        },
+        {
+          "property": "effects",
+          "id": "S:ref/elevation-1",
+          "name": "Elevation/1",
+          "kind": "effect-style",
+          "remote": false
+        }
+      ],
+      "layout": {
+        "mode": "HORIZONTAL",
+        "paddingTop": 12,
+        "paddingRight": 16,
+        "paddingBottom": 12,
+        "paddingLeft": 16,
+        "itemSpacing": 8,
+        "cornerRadius": 8
+      },
+      "children": [
+        {
+          "id": "20:130",
+          "name": "icon-slot",
+          "type": "FRAME",
+          "visible": true,
+          "layout": {
+            "mode": "HORIZONTAL",
+            "paddingTop": 2,
+            "paddingRight": 2,
+            "paddingBottom": 2,
+            "paddingLeft": 2
+          },
+          "children": [
+            {
+              "id": "20:131",
+              "name": "icon",
+              "type": "INSTANCE",
+              "visible": true,
+              "mainComponent": {
+                "name": "Icon",
+                "key": "ref-icon"
+              },
+              "bindings": [
+                {
+                  "property": "fills",
+                  "id": "VariableID:ref/text-on-action",
+                  "name": "color/text/on-action",
+                  "kind": "variable",
+                  "remote": false,
+                  "collectionId": "VariableCollectionId:ref/color"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "20:132",
+          "name": "label",
+          "type": "TEXT",
+          "visible": true,
+          "bindings": [
+            {
+              "property": "fills",
+              "id": "VariableID:ref/text-on-action",
+              "name": "color/text/on-action",
+              "kind": "variable",
+              "remote": false,
+              "collectionId": "VariableCollectionId:ref/color"
+            },
+            {
+              "property": "typography",
+              "id": "S:ref/label-large",
+              "name": "Label/Large",
+              "kind": "text-style",
+              "remote": false
+            }
+          ],
+          "text": {
+            "fontSize": 16,
+            "fontWeight": 600
+          }
+        }
+      ]
+    },
+    {
+      "id": "20:133",
+      "name": "Size=Large, Style=Filled, hover=False, disabled=True",
+      "type": "COMPONENT",
+      "visible": true,
+      "bindings": [
+        {
+          "property": "fills",
+          "id": "VariableID:ref/action-disabled",
+          "name": "color/action/disabled",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/color"
+        },
+        {
+          "property": "cornerRadius",
+          "id": "VariableID:ref/radius-control",
+          "name": "radius/control",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/radius"
+        },
+        {
+          "property": "paddingTop",
+          "id": "VariableID:ref/space-300",
+          "name": "space/300",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/spacing"
+        },
+        {
+          "property": "paddingBottom",
+          "id": "VariableID:ref/space-300",
+          "name": "space/300",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/spacing"
+        },
+        {
+          "property": "paddingLeft",
+          "id": "VariableID:ref/space-400",
+          "name": "space/400",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/spacing"
+        },
+        {
+          "property": "paddingRight",
+          "id": "VariableID:ref/space-400",
+          "name": "space/400",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/spacing"
+        },
+        {
+          "property": "itemSpacing",
+          "id": "VariableID:ref/space-200",
+          "name": "space/200",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/spacing"
+        }
+      ],
+      "layout": {
+        "mode": "HORIZONTAL",
+        "paddingTop": 12,
+        "paddingRight": 16,
+        "paddingBottom": 12,
+        "paddingLeft": 16,
+        "itemSpacing": 8,
+        "cornerRadius": 8
+      },
+      "children": [
+        {
+          "id": "20:134",
+          "name": "icon-slot",
+          "type": "FRAME",
+          "visible": true,
+          "layout": {
+            "mode": "HORIZONTAL",
+            "paddingTop": 2,
+            "paddingRight": 2,
+            "paddingBottom": 2,
+            "paddingLeft": 2
+          },
+          "children": [
+            {
+              "id": "20:135",
+              "name": "icon",
+              "type": "INSTANCE",
+              "visible": true,
+              "mainComponent": {
+                "name": "Icon",
+                "key": "ref-icon"
+              },
+              "bindings": [
+                {
+                  "property": "fills",
+                  "id": "VariableID:ref/text-on-action",
+                  "name": "color/text/on-action",
+                  "kind": "variable",
+                  "remote": false,
+                  "collectionId": "VariableCollectionId:ref/color"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "20:136",
+          "name": "label",
+          "type": "TEXT",
+          "visible": true,
+          "bindings": [
+            {
+              "property": "fills",
+              "id": "VariableID:ref/text-on-action",
+              "name": "color/text/on-action",
+              "kind": "variable",
+              "remote": false,
+              "collectionId": "VariableCollectionId:ref/color"
+            },
+            {
+              "property": "typography",
+              "id": "S:ref/label-large",
+              "name": "Label/Large",
+              "kind": "text-style",
+              "remote": false
+            }
+          ],
+          "text": {
+            "fontSize": 16,
+            "fontWeight": 600
+          }
+        }
+      ]
+    },
+    {
+      "id": "20:137",
+      "name": "Size=Large, Style=Outlined, hover=False, disabled=False",
+      "type": "COMPONENT",
+      "visible": true,
+      "bindings": [
+        {
+          "property": "strokes",
+          "id": "VariableID:ref/border-subtle",
+          "name": "color/border/subtle",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/color"
+        },
+        {
+          "property": "cornerRadius",
+          "id": "VariableID:ref/radius-control",
+          "name": "radius/control",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/radius"
+        },
+        {
+          "property": "paddingTop",
+          "id": "VariableID:ref/space-300",
+          "name": "space/300",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/spacing"
+        },
+        {
+          "property": "paddingBottom",
+          "id": "VariableID:ref/space-300",
+          "name": "space/300",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/spacing"
+        },
+        {
+          "property": "paddingLeft",
+          "id": "VariableID:ref/space-400",
+          "name": "space/400",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/spacing"
+        },
+        {
+          "property": "paddingRight",
+          "id": "VariableID:ref/space-400",
+          "name": "space/400",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/spacing"
+        },
+        {
+          "property": "itemSpacing",
+          "id": "VariableID:ref/space-200",
+          "name": "space/200",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/spacing"
+        }
+      ],
+      "layout": {
+        "mode": "HORIZONTAL",
+        "paddingTop": 12,
+        "paddingRight": 16,
+        "paddingBottom": 12,
+        "paddingLeft": 16,
+        "itemSpacing": 8,
+        "cornerRadius": 8
+      },
+      "children": [
+        {
+          "id": "20:138",
+          "name": "icon-slot",
+          "type": "FRAME",
+          "visible": true,
+          "layout": {
+            "mode": "HORIZONTAL",
+            "paddingTop": 2,
+            "paddingRight": 2,
+            "paddingBottom": 2,
+            "paddingLeft": 2
+          },
+          "children": [
+            {
+              "id": "20:139",
+              "name": "icon",
+              "type": "INSTANCE",
+              "visible": true,
+              "mainComponent": {
+                "name": "Icon",
+                "key": "ref-icon"
+              },
+              "bindings": [
+                {
+                  "property": "fills",
+                  "id": "VariableID:ref/action-primary",
+                  "name": "color/action/primary",
+                  "kind": "variable",
+                  "remote": false,
+                  "collectionId": "VariableCollectionId:ref/color"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "20:140",
+          "name": "label",
+          "type": "TEXT",
+          "visible": true,
+          "bindings": [
+            {
+              "property": "fills",
+              "id": "VariableID:ref/action-primary",
+              "name": "color/action/primary",
+              "kind": "variable",
+              "remote": false,
+              "collectionId": "VariableCollectionId:ref/color"
+            },
+            {
+              "property": "typography",
+              "id": "S:ref/label-large",
+              "name": "Label/Large",
+              "kind": "text-style",
+              "remote": false
+            }
+          ],
+          "text": {
+            "fontSize": 16,
+            "fontWeight": 600
+          }
+        }
+      ]
+    },
+    {
+      "id": "20:141",
+      "name": "Size=Large, Style=Outlined, hover=True, disabled=False",
+      "type": "COMPONENT",
+      "visible": true,
+      "bindings": [
+        {
+          "property": "strokes",
+          "id": "VariableID:ref/border-subtle",
+          "name": "color/border/subtle",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/color"
+        },
+        {
+          "property": "cornerRadius",
+          "id": "VariableID:ref/radius-control",
+          "name": "radius/control",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/radius"
+        },
+        {
+          "property": "paddingTop",
+          "id": "VariableID:ref/space-300",
+          "name": "space/300",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/spacing"
+        },
+        {
+          "property": "paddingBottom",
+          "id": "VariableID:ref/space-300",
+          "name": "space/300",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/spacing"
+        },
+        {
+          "property": "paddingLeft",
+          "id": "VariableID:ref/space-400",
+          "name": "space/400",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/spacing"
+        },
+        {
+          "property": "paddingRight",
+          "id": "VariableID:ref/space-400",
+          "name": "space/400",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/spacing"
+        },
+        {
+          "property": "itemSpacing",
+          "id": "VariableID:ref/space-200",
+          "name": "space/200",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/spacing"
+        }
+      ],
+      "layout": {
+        "mode": "HORIZONTAL",
+        "paddingTop": 12,
+        "paddingRight": 16,
+        "paddingBottom": 12,
+        "paddingLeft": 16,
+        "itemSpacing": 8,
+        "cornerRadius": 8
+      },
+      "children": [
+        {
+          "id": "20:142",
+          "name": "icon-slot",
+          "type": "FRAME",
+          "visible": true,
+          "layout": {
+            "mode": "HORIZONTAL",
+            "paddingTop": 2,
+            "paddingRight": 2,
+            "paddingBottom": 2,
+            "paddingLeft": 2
+          },
+          "children": [
+            {
+              "id": "20:143",
+              "name": "icon",
+              "type": "INSTANCE",
+              "visible": true,
+              "mainComponent": {
+                "name": "Icon",
+                "key": "ref-icon"
+              },
+              "bindings": [
+                {
+                  "property": "fills",
+                  "id": "VariableID:ref/action-primary",
+                  "name": "color/action/primary",
+                  "kind": "variable",
+                  "remote": false,
+                  "collectionId": "VariableCollectionId:ref/color"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "20:144",
+          "name": "label",
+          "type": "TEXT",
+          "visible": true,
+          "bindings": [
+            {
+              "property": "fills",
+              "id": "VariableID:ref/action-primary",
+              "name": "color/action/primary",
+              "kind": "variable",
+              "remote": false,
+              "collectionId": "VariableCollectionId:ref/color"
+            },
+            {
+              "property": "typography",
+              "id": "S:ref/label-large",
+              "name": "Label/Large",
+              "kind": "text-style",
+              "remote": false
+            }
+          ],
+          "text": {
+            "fontSize": 16,
+            "fontWeight": 600
+          }
+        }
+      ]
+    },
+    {
+      "id": "20:145",
+      "name": "Size=Large, Style=Outlined, hover=False, disabled=True",
+      "type": "COMPONENT",
+      "visible": true,
+      "bindings": [
+        {
+          "property": "strokes",
+          "id": "VariableID:ref/border-subtle",
+          "name": "color/border/subtle",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/color"
+        },
+        {
+          "property": "cornerRadius",
+          "id": "VariableID:ref/radius-control",
+          "name": "radius/control",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/radius"
+        },
+        {
+          "property": "paddingTop",
+          "id": "VariableID:ref/space-300",
+          "name": "space/300",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/spacing"
+        },
+        {
+          "property": "paddingBottom",
+          "id": "VariableID:ref/space-300",
+          "name": "space/300",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/spacing"
+        },
+        {
+          "property": "paddingLeft",
+          "id": "VariableID:ref/space-400",
+          "name": "space/400",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/spacing"
+        },
+        {
+          "property": "paddingRight",
+          "id": "VariableID:ref/space-400",
+          "name": "space/400",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/spacing"
+        },
+        {
+          "property": "itemSpacing",
+          "id": "VariableID:ref/space-200",
+          "name": "space/200",
+          "kind": "variable",
+          "remote": false,
+          "collectionId": "VariableCollectionId:ref/spacing"
+        }
+      ],
+      "layout": {
+        "mode": "HORIZONTAL",
+        "paddingTop": 12,
+        "paddingRight": 16,
+        "paddingBottom": 12,
+        "paddingLeft": 16,
+        "itemSpacing": 8,
+        "cornerRadius": 8
+      },
+      "children": [
+        {
+          "id": "20:146",
+          "name": "icon-slot",
+          "type": "FRAME",
+          "visible": true,
+          "layout": {
+            "mode": "HORIZONTAL",
+            "paddingTop": 2,
+            "paddingRight": 2,
+            "paddingBottom": 2,
+            "paddingLeft": 2
+          },
+          "children": [
+            {
+              "id": "20:147",
+              "name": "icon",
+              "type": "INSTANCE",
+              "visible": true,
+              "mainComponent": {
+                "name": "Icon",
+                "key": "ref-icon"
+              },
+              "bindings": [
+                {
+                  "property": "fills",
+                  "id": "VariableID:ref/action-disabled",
+                  "name": "color/action/disabled",
+                  "kind": "variable",
+                  "remote": false,
+                  "collectionId": "VariableCollectionId:ref/color"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "20:148",
+          "name": "label",
+          "type": "TEXT",
+          "visible": true,
+          "bindings": [
+            {
+              "property": "fills",
+              "id": "VariableID:ref/action-disabled",
+              "name": "color/action/disabled",
+              "kind": "variable",
+              "remote": false,
+              "collectionId": "VariableCollectionId:ref/color"
+            },
+            {
+              "property": "typography",
+              "id": "S:ref/label-large",
+              "name": "Label/Large",
+              "kind": "text-style",
+              "remote": false
+            }
+          ],
+          "text": {
+            "fontSize": 16,
+            "fontWeight": 600
+          }
+        }
+      ]
+    }
+  ]
+}
