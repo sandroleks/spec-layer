@@ -437,9 +437,14 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   in, and `report.json` names it under `path_collision` with
   `details.reason: "group"`; its values stay in `spec-layer.meta.json`. A
   style whose name is a prefix of another style's name gets the same
-  treatment. Nothing here touches a content hash. An alias two or more hops
-  from an omitted token is now omitted too, and reported `target_omitted`,
-  instead of writing a reference to a path the export never declares.
+  treatment. Nothing here touches a content hash. A reference is now written
+  only into a file where it resolves. An alias writes nothing in a mode, and
+  is reported `target_omitted`, when its target has no leaf in that mode's
+  file or, for a target in another collection, lacks one in any mode of that
+  collection, since a resolver can select any of them. That covers an alias
+  two or more hops from an omitted token, and one whose target has no value
+  in a single mode. A style bound to such a token writes its resolved value
+  and reports `binding_dropped`, as it already did for an omitted one.
 
 - **Copy for AI on a component no longer fails on a Foundation whose default
   mode is undeclared.** The component copy read the token's value under the
