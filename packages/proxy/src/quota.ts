@@ -3,7 +3,8 @@ export const BOOST_WINDOW_MS = 30 * 864e5;
 export const MONTHLY_LIMIT = 10;
 export const PRO_SOFT_THRESHOLD = 1000;
 export const RATE_LIMIT_PER_MIN = 10;
-export const RESERVATION_TTL_MS = 120_000;
+/** Longer than `UPSTREAM_TIMEOUT_MS` in handlers.ts, so a reservation never lapses while its generation is still running. */
+export const RESERVATION_TTL_MS = 180_000;
 export const RESPONSE_TTL_MS = 24 * 3600_000;
 /**
  * How long a committed library head is held against stale reads. It covers a

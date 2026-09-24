@@ -416,6 +416,13 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
 
 ### Fixed
 
+- **An Anthropic call that hangs is cut off before its reservation expires.**
+  The proxy aborts the upstream call at 150 seconds and answers
+  `502 upstream_timeout` with nothing charged; the reservation window is now
+  180 seconds, so a generation can no longer outlive its reservation and let a
+  retry pay twice for one answer. Every proxy log line now carries the
+  request's ray id and route, and an upstream error carries Anthropic's
+  request id.
 - **Publishes from one identity no longer race a library or the library
   ceiling.** A changed publish holds a per-library lock in the publisher's
   quota object until its writes commit, and that object checks the library
@@ -427,7 +434,7 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   in that same object, so two concurrent creates no longer both pass an
   eventually consistent KV listing, and a create is counted even when its
   writes take longer than its reservation lives. Publishes under two
-  different identities, and a publish that runs past its two-minute
+  different identities, and a publish that runs past its three-minute
   reservation, are not covered; the proxy README lists these limits. When the refused create's
   library has not reached the listing yet, `library_limit.existing` is
   `null`. A create refused only because another create by the same identity

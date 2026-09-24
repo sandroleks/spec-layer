@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { sha256 } from 'js-sha256';
-import { handleProse, type QuotaClient } from '../src/handlers';
+import { handleProse, requestLog, UPSTREAM_TIMEOUT_MS, type QuotaClient } from '../src/handlers';
+import { RESERVATION_TTL_MS } from '../src/quota';
 import { memQuota } from './quotaHarness';
 import { SlidingWindowLimiter } from '../src/ratelimit';
 import {
@@ -179,12 +180,34 @@ describe('handleProse', () => {
   });
 
   it('does not decrement quota when Anthropic fails, and returns 502', async () => {
-    const failing = vi.fn(async () => new Response('overloaded', { status: 529 }));
+    const failing = vi.fn(async () => new Response('overloaded', { status: 529, headers: { 'request-id': 'req_abc' } }));
     const d = deps({ fetcher: failing as unknown as typeof fetch });
     const res = await handleProse(proseReq(GOOD_BODY, { 'X-Figma-User': 'u1' }), d);
     expect(res.status).toBe(502);
+    expect(d.log).toHaveBeenCalledWith('upstream_error', { status: 529, requestId: 'req_abc' });
     const res2 = await handleProse(proseReq(GOOD_BODY, { 'X-Figma-User': 'u1' }), { ...d, fetcher: deps().fetcher });
     expect(res2.headers.get('X-Quota-Used')).toBe('1'); // first attempt did not count
+  });
+
+  it('gives the Anthropic call a timeout shorter than the reservation TTL', async () => {
+    expect(UPSTREAM_TIMEOUT_MS).toBeLessThan(RESERVATION_TTL_MS);
+    const d = deps();
+    await handleProse(proseReq(GOOD_BODY, { 'X-Figma-User': 'u1' }), d);
+    const init = (d._anthropic.mock.calls[0] as [string, RequestInit])[1];
+    expect(init.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it('releases the reservation and answers 502 upstream_timeout when the call times out', async () => {
+    const timingOut = vi.fn(async () => { throw new DOMException('The operation was aborted due to timeout', 'TimeoutError'); });
+    const d = deps({ fetcher: timingOut as unknown as typeof fetch });
+    const res = await handleProse(proseReq(GOOD_BODY, { 'X-Figma-User': 'u1' }), d);
+    expect(res.status).toBe(502);
+    expect(await res.json()).toEqual({ error: 'upstream_timeout' });
+    expect(d.log).toHaveBeenCalledWith('upstream_timeout', { timeoutMs: UPSTREAM_TIMEOUT_MS });
+    // Nothing was charged and nothing is pending: the retry runs.
+    const retry = await handleProse(proseReq(GOOD_BODY, { 'X-Figma-User': 'u1' }), { ...d, fetcher: deps().fetcher });
+    expect(retry.status).toBe(200);
+    expect(retry.headers.get('X-Quota-Used')).toBe('1');
   });
 
   it('rejects a non-allowlisted upstream request', async () => {
@@ -260,5 +283,23 @@ describe('handleProse', () => {
     for (const call of (d.log as ReturnType<typeof vi.fn>).mock.calls) {
       expect(JSON.stringify(call)).not.toContain(UUID_KEY);
     }
+  });
+});
+
+describe('requestLog', () => {
+  it('stamps every line with the ray id and the route', () => {
+    const lines: string[] = [];
+    const log = requestLog(new Request('https://p.test/v1/libraries/lib_000000000000000000000000', { headers: { 'CF-Ray': '8a1b2c3d4e5f-SJC' } }), (line) => lines.push(line));
+    log('library_publish', { libraryId: 'lib_000000000000000000000000', size: 12 });
+    expect(JSON.parse(lines[0])).toEqual({
+      event: 'library_publish', ray: '8a1b2c3d4e5f-SJC', route: 'GET /v1/libraries/lib_000000000000000000000000',
+      libraryId: 'lib_000000000000000000000000', size: 12,
+    });
+  });
+
+  it('writes null, not a made-up id, when there is no ray header', () => {
+    const lines: string[] = [];
+    requestLog(new Request('https://p.test/v1/quota'), (line) => lines.push(line))('x', {});
+    expect(JSON.parse(lines[0])).toEqual({ event: 'x', ray: null, route: 'GET /v1/quota' });
   });
 });

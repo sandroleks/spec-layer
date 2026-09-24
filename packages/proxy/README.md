@@ -47,7 +47,8 @@ unauthenticated or license not active,
 `402 {"error":"quota_exhausted","resetsAt":…}`,
 `409 {"error":"generation_pending"}` (another window is generating the same
 component), `429 {"error":"rate_limited","retryAfterMs":…}`, `502` upstream
-failure (quota not decremented).
+failure (quota not decremented), `502 {"error":"upstream_timeout"}` when
+Anthropic does not answer within 150 s (quota not decremented).
 
 ### `GET /v1/quota`
 
@@ -280,7 +281,7 @@ before this split is migrated to that layout the first time it is read.
   second (a Pro key on one device and the Figma-id-plus-pull-key proof on
   another) are not serialized against each other; the same person on two
   devices with the same key is. Both last as long as the reservation
-  (`RESERVATION_TTL_MS`, two minutes). A create that dies between
+  (`RESERVATION_TTL_MS`, three minutes). A create that dies between
   reservation and commit keeps its slot that long, so the identity's next
   create answers `409 publish_pending` until it lapses. A publish whose
   writes outlast it loses the lock and the slot while still writing, so a
@@ -389,7 +390,9 @@ npx wrangler deploy
 Ops: set a spend alert on the Anthropic workspace; `fair_use_flag` and
 `upstream_error` log events are the abuse/outage review queue. Workers
 observability is on with every invocation sampled, so each event is readable
-in the dashboard beside its request.
+in the dashboard beside its request. Every log line carries the request's
+`ray` and `route`, and an `upstream_error` carries Anthropic's `requestId`
+for their support.
 
 ## Smoke test
 

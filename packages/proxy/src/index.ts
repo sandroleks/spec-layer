@@ -1,5 +1,5 @@
 import { DurableObject } from 'cloudflare:workers';
-import { route, type HandlerDeps, type QuotaClient } from './handlers';
+import { route, requestLog, type HandlerDeps, type QuotaClient } from './handlers';
 import { QUOTA_PROFILES, quotaObjectName, type CommitOptions, type QuotaProfile, type QuotaSnapshot, type ReserveOptions, type ReserveResult, type Tier } from './quota';
 import { QuotaStore } from './quotaStore';
 import { SlidingWindowLimiter } from './ratelimit';
@@ -64,7 +64,7 @@ const worker = {
       licenseCache: env.LICENSE_CACHE,
       now: () => Date.now(),
       quotaFor: (id, profile) => doQuotaClient(env.QUOTA, id, profile),
-      log: (event, fields) => console.log(JSON.stringify({ event, ...fields })),
+      log: requestLog(req, (line) => console.log(line)),
       licenseLimiter,
       requestLimiter,
       // Same KV namespace as licenseCache today; a dedicated namespace later

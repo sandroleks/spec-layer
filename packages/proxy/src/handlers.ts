@@ -69,6 +69,24 @@ export const MODEL_BY_TIER: Record<Tier, string> = { pro: 'claude-sonnet-5', fre
  *  4.5 rejects `output_config.effort`, so free gets nothing extra. */
 export const PRO_OUTPUT_CONFIG = { effort: 'low' } as const;
 
+/**
+ * How long one Anthropic call may run. Below `RESERVATION_TTL_MS`: a call that
+ * outlived its reservation would let a retry be charged twice for one answer.
+ */
+export const UPSTREAM_TIMEOUT_MS = 150_000;
+
+/**
+ * A `log` that stamps every line with the request it belongs to: the
+ * Cloudflare ray id and the route, so a `fair_use_flag` or `upstream_error`
+ * can be found beside its invocation in the dashboard. Nothing from a header
+ * that could carry a key is ever included.
+ */
+export function requestLog(req: Request, sink: (line: string) => void): HandlerDeps['log'] {
+  const ray = req.headers.get('CF-Ray');
+  const route = `${req.method} ${new URL(req.url).pathname}`;
+  return (event, fields) => sink(JSON.stringify({ event, ray, route, ...fields }));
+}
+
 export interface ProseKeyInfo { version: number; kind: 'component' | 'groups'; tier: Tier | null }
 
 /**
@@ -293,15 +311,20 @@ export async function handleProse(req: Request, deps: HandlerDeps): Promise<Resp
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify(upstreamRequest(body.request as Record<string, unknown>, tier, keyInfo.tier === null)),
+      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
     });
-  } catch {
+  } catch (err) {
     await quota.release(cacheKey);
+    if (err instanceof Error && err.name === 'TimeoutError') {
+      deps.log('upstream_timeout', { timeoutMs: UPSTREAM_TIMEOUT_MS });
+      return json(502, { error: 'upstream_timeout' });
+    }
     return json(502, { error: 'upstream_unreachable' });
   }
 
   if (!upstream.ok) {
     await quota.release(cacheKey);
-    deps.log('upstream_error', { status: upstream.status });
+    deps.log('upstream_error', { status: upstream.status, requestId: upstream.headers.get('request-id') });
     return json(502, { error: 'upstream_error', status: upstream.status });
   }
 
