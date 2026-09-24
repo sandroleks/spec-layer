@@ -612,6 +612,15 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   to your page before the doc-updated toast shows. Clearing your selection
   during any of these builds is also no longer mistaken for the build's own
   generated content and is replayed correctly.
+- **A Foundation build that fails part-way cleans up after itself.** The
+  frame builder appended its card to the page before anything could go
+  wrong and removed nothing on a throw, and the two build handlers could
+  throw between placing a new Section and registering it. Either left a
+  visible, unlinked duplicate beside the doc it was replacing, invisible to
+  Library. The builder now removes its card and Section on failure, as the
+  component builder already did, and the handlers remove a Section they had
+  not yet handed to the registry. Once the old doc is gone the new one is
+  kept, whatever fails after that.
 
 ### Added
 

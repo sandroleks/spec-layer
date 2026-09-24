@@ -897,6 +897,13 @@ figma.ui.onmessage = async (raw: unknown) => {
       // actually landed on the canvas before the failure (frames are appended
       // one at a time and are never rolled back).
       let created = 0;
+      // The Section this iteration built but has not yet handed to the
+      // registry. buildFoundationFrame appends it to the page, so a throw
+      // between there and writeRegistry would leave an untracked duplicate
+      // beside the doc it was meant to replace. Cleared once the registry owns
+      // it, or, for a replacement, once the predecessor is gone (then it IS
+      // the doc, and a later throw must not delete the user's only copy).
+      let pending: SectionNode | null = null;
       // The page the user invoked from. A non-replacing unit always lands
       // here; a replacing unit switches to its predecessor's page just long
       // enough to build and place it, then control returns here before the
@@ -995,6 +1002,7 @@ figma.ui.onmessage = async (raw: unknown) => {
             msg.config.includeContrast, contrastReport, pill,
             overview,
           );
+          pending = section;
 
           const data: FoundationDocLink = {
             v: 1,
@@ -1040,10 +1048,12 @@ figma.ui.onmessage = async (raw: unknown) => {
             // prune.
             const reg: DocRegistry = removeDoc(readRegistry(), prior.id);
             prior.remove();
+            pending = null; // the new Section is now the doc, whatever happens next
             writeRegistry(addDoc(reg, section.id));
             replaced++;
           } else {
             writeRegistry(addDoc(readRegistry(), section.id));
+            pending = null;
             x += section.width + 80;
             created++;
           }
@@ -1067,6 +1077,9 @@ figma.ui.onmessage = async (raw: unknown) => {
         const groupDescriptions = await liveFoundationGroupDescriptions();
         figma.ui.postMessage({ type: 'foundationDone', created, replaced, groupDescriptions } as MainToUi);
       } catch (err) {
+        if (pending) {
+          try { pending.remove(); } catch { /* already gone */ }
+        }
         const message = err instanceof Error ? err.message : String(err);
         // A throw earlier in the loop (buildFoundationFrame, writeRegistry, or
         // prior.remove(), all of which can run after the loop switched to a
@@ -1117,6 +1130,10 @@ figma.ui.onmessage = async (raw: unknown) => {
       // describe different pages.
       const invokingPage = figma.currentPage;
       const atBegin = invokingPage.selection.map((node) => node.id);
+      // The Section this rebuild made but has not yet handed to the registry;
+      // see renderFoundation's own `pending` for why. Declared before the try
+      // so the catch below can see it.
+      let pending: SectionNode | null = null;
       try {
         const node = await figma.getNodeByIdAsync(msg.docId);
         if (!node || node.type !== 'SECTION') {
@@ -1193,6 +1210,7 @@ figma.ui.onmessage = async (raw: unknown) => {
           pill,
           link.collectionOverview,
         );
+        pending = section;
 
         const data: FoundationDocLink = {
           v: 1, kind: 'foundation', scope,
@@ -1223,9 +1241,9 @@ figma.ui.onmessage = async (raw: unknown) => {
         // Point of no return, matching the component path (renderDocFrame
         // above): the new section is stamped and placed before the old one
         // goes, so a failure here never leaves the user having lost a good doc.
-        let reg = readRegistry();
-        reg = removeDoc(reg, prior.id);
+        const reg = removeDoc(readRegistry(), prior.id);
         prior.remove();
+        pending = null; // point of no return: the new Section is the doc
         writeRegistry(addDoc(reg, section.id));
 
         // Stamp the docId so the reply identifies itself as this row's Update
@@ -1243,6 +1261,9 @@ figma.ui.onmessage = async (raw: unknown) => {
           type: 'foundationDone', created: 0, replaced: 1, docId: msg.docId, groupDescriptions,
         } as MainToUi);
       } catch (err) {
+        if (pending) {
+          try { pending.remove(); } catch { /* already gone */ }
+        }
         const message = err instanceof Error ? err.message : String(err);
         figma.ui.postMessage({ type: 'docSourceError', docId: msg.docId, message } as MainToUi);
       } finally {

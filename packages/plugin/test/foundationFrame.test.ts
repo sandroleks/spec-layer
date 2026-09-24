@@ -543,6 +543,41 @@ describe('buildFoundationFrame', () => {
     return section.children[0] as unknown as FakeFrame;
   }
 
+  it('removes the card it drew when the Section cannot be made, so a failed build leaves nothing on the canvas', async () => {
+    class TrackedFrame extends FakeFrame {
+      removed = false;
+      remove(): void { this.removed = true; }
+    }
+    const made: TrackedFrame[] = [];
+    installFakeFigma({
+      createFrame: () => { const f = new TrackedFrame(); made.push(f); return f; },
+      createSection: () => { throw new Error('sections are off'); },
+    });
+    await expect(build()).rejects.toThrow('sections are off');
+    // The card is named after the unit's title; every other frame is inside it.
+    const card = made.find((f) => f.name === 'Primitives');
+    expect(card).toBeDefined();
+    expect(card?.removed).toBe(true);
+  });
+
+  it('removes a Section it made when placing the card in it throws', async () => {
+    class TrackedSection extends FakeSection {
+      removed = false;
+      remove(): void { this.removed = true; }
+      resizeWithoutConstraints(): void { throw new Error('resize refused'); }
+    }
+    let section: TrackedSection | null = null;
+    installFakeFigma({ createSection: () => { section = new TrackedSection(); return section; } });
+    await expect(build()).rejects.toThrow('resize refused');
+    // A non-null assertion, not optional chaining: TS's control flow analysis
+    // does not track an assignment made inside a closure, so it keeps treating
+    // `section` as its initial `null` here regardless of which we'd use; only
+    // `!` (rather than `?.`, which types the access as never on that narrowed
+    // null) gets a type the property access on the next line can pass.
+    expect(section).not.toBeNull();
+    expect(section!.removed).toBe(true);
+  });
+
   it('opens with a header band painted in the theme header colour', async () => {
     const card = cardOf(await build());
     const band = card.children[0] as FakeFrame;
