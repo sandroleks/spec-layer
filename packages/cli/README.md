@@ -308,9 +308,12 @@ null`. A manifest from CLI 0.1.0 has no `selection` field and means
 everything was written.
 
 Writes stage into `.speclayer.partial` and rename into place, so an
-interrupted pull never leaves a half-written directory. `pull` refuses an
-output directory that is the current directory, a parent of it, or an existing
-non-empty directory it did not write, since the swap replaces that directory.
+interrupted pull never leaves a half-written directory. The output directory
+is a relative path inside the working directory: `pull`, `setup`, and `init`
+refuse an absolute path, the current directory, a parent of it, a path that is
+a file, or an existing non-empty directory spec-layer did not write, since the
+swap replaces that directory. A name that merely begins with two dots, such as
+`..cache`, is an ordinary directory and is accepted.
 
 `component-specs/` and `tokens/` are written in place, not swapped. `pull`
 owns exactly the files there that begin with its marker (the CSS header, or

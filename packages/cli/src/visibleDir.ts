@@ -1,7 +1,7 @@
 import {
   closeSync, existsSync, lstatSync, mkdirSync, openSync, readSync, readdirSync, renameSync, rmSync, writeFileSync,
 } from 'node:fs';
-import { isAbsolute, join, relative, resolve } from 'node:path';
+import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 /**
  * A visible directory is one the team sees and commits (tokens/,
@@ -11,10 +11,16 @@ import { isAbsolute, join, relative, resolve } from 'node:path';
  * docs/superpowers/specs/2026-09-09-css-token-directory-design.md, section 5.
  */
 
-const inside = (parent: string, child: string): boolean => {
+/**
+ * Whether `child` is `parent` itself or sits under it. Only `..` and a path
+ * that starts with `../` leave the parent; a sibling whose name merely begins
+ * with two dots (`..cache`) is inside it. `startsWith('..')` alone refused
+ * those names as parents.
+ */
+export function pathInside(parent: string, child: string): boolean {
   const rel = relative(parent, child);
-  return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
-};
+  return rel === '' || (rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
+}
 
 const isDotfile = (name: string): boolean => name.startsWith('.');
 
@@ -57,11 +63,11 @@ export function visibleDirProblem(
 ): string | null {
   const root = resolve(cwd);
   const abs = resolve(cwd, dir);
-  if (!inside(root, abs) || abs === root) return `${dir} is outside this directory. Choose a path inside the repository.`;
-  if (inside(resolve(cwd, outDir), abs)) return `${dir} is inside ${outDir}, which pull replaces wholesale. Choose a path outside it.`;
+  if (!pathInside(root, abs) || abs === root) return `${dir} is outside this directory. Choose a path inside the repository.`;
+  if (pathInside(resolve(cwd, outDir), abs)) return `${dir} is inside ${outDir}, which pull replaces wholesale. Choose a path outside it.`;
   for (const other of others) {
     const otherAbs = resolve(cwd, other);
-    if (inside(abs, otherAbs) || inside(otherAbs, abs)) return `${dir} and ${other} overlap. Give each output its own directory.`;
+    if (pathInside(abs, otherAbs) || pathInside(otherAbs, abs)) return `${dir} and ${other} overlap. Give each output its own directory.`;
   }
   if (!existsSync(abs)) return null;
   if (!lstatSync(abs).isDirectory()) return `${dir} exists and is not a directory. Choose another path or remove the file.`;

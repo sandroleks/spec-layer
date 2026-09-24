@@ -1,15 +1,34 @@
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { isAbsolute, join, resolve } from 'node:path';
 import type { DtcgOptions } from '@spec-layer/extractor';
 import type { Selection } from './selection';
 import { readCredentials } from './credentials';
 import { isPlatform, PLATFORMS, type Platform } from './detect';
 import { parseOutput, type OutputConfig } from './outputs';
+import { pathInside } from './visibleDir';
 
 export const DEFAULT_API = 'https://api.spec-layer.com';
 export const DEFAULT_OUT_DIR = '.speclayer';
 export const DEFAULT_COMPONENT_SPECS_DIR = 'component-specs';
 const CONFIG_NAME = 'speclayer.json';
+
+/**
+ * The swap in files.ts deletes outDir wholesale, so outDir is only ever a
+ * relative path under the working directory. `join(cwd, '/abs')` used to
+ * nest an absolute --out under cwd silently while every message named the
+ * absolute path; refusing here means init and setup never record such a
+ * value either. The same sentence is thrown by assertReplaceable in files.ts.
+ */
+export const OUT_DIR_RULE = 'The output directory must be a relative path inside the current directory: not ".", not a parent of it, and not an absolute path.';
+
+/** The output directory for a run, as typed: the flag, then the config, then the default. Throws OUT_DIR_RULE. */
+export function resolveOutDir(cwd: string, out: string | undefined, configOutDir: string | undefined): string {
+  const outDir = out ?? configOutDir ?? DEFAULT_OUT_DIR;
+  const root = resolve(cwd);
+  const abs = resolve(cwd, outDir);
+  if (isAbsolute(outDir) || abs === root || !pathInside(root, abs)) throw new Error(OUT_DIR_RULE);
+  return outDir;
+}
 
 /** How component-specs/ is written: the published AI YAML, or a Markdown page projected from the artifact. */
 export const COMPONENT_FORMATS = ['yaml', 'md'] as const;
@@ -176,7 +195,7 @@ export function resolveOptions(
   manifestLibraryId: (outDir: string) => string | null,
 ): ResolvedOptions {
   const config = readConfig(cwd);
-  const outDir = flags.out ?? config?.outDir ?? DEFAULT_OUT_DIR;
+  const outDir = resolveOutDir(cwd, flags.out, config?.outDir);
   const libraryId = flags.id ?? config?.libraryId ?? manifestLibraryId(join(cwd, outDir));
 
   // Read the credential file only when nothing else supplies a key, so a

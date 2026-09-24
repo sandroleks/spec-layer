@@ -411,6 +411,15 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
 
 ### Fixed
 
+- **`spec-layer` refuses an output directory it would have mishandled.** An
+  absolute `--out` was joined under the working directory and written there
+  while every message named the absolute path; `--out` that names a file
+  surfaced a raw `ENOTDIR`; and a directory whose name merely begins with two
+  dots (`..cache`) was refused as a parent. `pull`, `setup`, `init`, `list`,
+  `show`, and `skill` now refuse an absolute path, `.`, a parent, or a file
+  with one sentence before touching the network or writing `speclayer.json`,
+  and `..cache` is accepted. The same rule applies to `componentSpecsDir` and
+  `outputs[].path`, which share the check.
 - **Publish and the snapshot download refuse a file with nothing in it.** The
   proxy accepts an empty bundle, so a file with no local variables or styles
   and no component docs used to publish anyway: a first publish created a

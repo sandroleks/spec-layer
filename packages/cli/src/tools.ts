@@ -115,7 +115,7 @@ export const TOOLS: readonly Tool[] = [
 
 export const GLOBAL_FLAGS: ReadonlyArray<{ flag: string; summary: string }> = [
   { flag: '--api URL', summary: 'Override the API origin (default https://api.spec-layer.com). Also SPEC_LAYER_API.' },
-  { flag: '--out DIR', summary: 'Output directory (default .speclayer, or the outDir in speclayer.json).' },
+  { flag: '--out DIR', summary: 'Output directory (default .speclayer, or the outDir in speclayer.json). A relative path inside the working directory; pull replaces it wholesale.' },
 ];
 
 export const KEY_RESOLUTION = 'The pull key resolves from --key, then SPEC_LAYER_KEY, then speclayer.local.json written by setup. No command ever prints it.';

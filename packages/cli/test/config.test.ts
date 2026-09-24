@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { readConfig, writeConfig, resolveOptions, DEFAULT_API, DEFAULT_OUT_DIR, DEFAULT_COMPONENT_SPECS_DIR, isComponentFormat } from '../src/config';
+import { readConfig, writeConfig, resolveOptions, DEFAULT_API, DEFAULT_OUT_DIR, DEFAULT_COMPONENT_SPECS_DIR, OUT_DIR_RULE, isComponentFormat } from '../src/config';
 import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -99,14 +99,16 @@ describe('resolveOptions precedence', () => {
     expect(resultFlagBeatsEnv.api).toBe('from-flag');
   });
 
-  it('outDir comes from --out, then config, else .speclayer', () => {
+  it('outDir comes from --out, then config, else .speclayer, and must stay a relative path inside cwd', () => {
     const stub = (_outDir: string) => null;
 
-    const resultFromFlag = resolveOptions('/some/cwd', { out: '/custom' }, {}, stub);
-    expect(resultFromFlag.outDir).toBe('/custom');
+    expect(resolveOptions('/some/cwd', { out: 'build/spec' }, {}, stub).outDir).toBe('build/spec');
+    expect(resolveOptions('/some/cwd', { out: '..cache' }, {}, stub).outDir).toBe('..cache');
+    expect(resolveOptions('/some/cwd', {}, {}, stub).outDir).toBe(DEFAULT_OUT_DIR);
 
-    const resultDefault = resolveOptions('/some/cwd', {}, {}, stub);
-    expect(resultDefault.outDir).toBe(DEFAULT_OUT_DIR);
+    for (const out of ['/custom', '.', '..', '../sibling', 'a/../..', '']) {
+      expect(() => resolveOptions('/some/cwd', { out }, {}, stub), out).toThrow(OUT_DIR_RULE);
+    }
   });
 
   it('config.libraryId beats manifest when no --id flag', () => {

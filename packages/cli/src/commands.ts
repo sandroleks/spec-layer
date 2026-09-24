@@ -3,7 +3,7 @@ import { join, resolve } from 'node:path';
 import type { DtcgOptions } from '@spec-layer/extractor';
 import { parseBundle, type BundleV1 } from './bundle';
 import {
-  readConfig, resolveOptions, writeConfig, DEFAULT_OUT_DIR, DEFAULT_COMPONENT_SPECS_DIR, DEFAULT_COMPONENT_FORMAT,
+  readConfig, resolveOptions, resolveOutDir, writeConfig, DEFAULT_COMPONENT_SPECS_DIR, DEFAULT_COMPONENT_FORMAT,
   COMPONENT_FORMATS, isComponentFormat, type CliConfig, type ComponentFormat, type ResolvedOptions,
 } from './config';
 import { fetchBundle } from './api';
@@ -152,7 +152,13 @@ export function runInit(cwd: string, flags: Flags, io: Io): number {
   if (format === null) return 1;
   const { platforms, source } = resolvePlatforms(cwd, fromFlags, null);
   const outputs = defaultOutputs(platforms);
-  const outDir = flags.out ?? DEFAULT_OUT_DIR;
+  let outDir: string;
+  try {
+    outDir = resolveOutDir(cwd, flags.out, undefined);
+  } catch (err) {
+    io.err(errorText(err));
+    return 1;
+  }
   writeConfig(cwd, {
     libraryId: flags.id, outDir, componentSpecsDir: DEFAULT_COMPONENT_SPECS_DIR,
     ...(format ? { componentSpecsFormat: format } : {}),
@@ -212,7 +218,7 @@ function resolved(
 /** Output directory for the local-only commands, which need neither id nor key. */
 function resolvedOutDir(cwd: string, flags: Flags, io: Io): string | null {
   try {
-    return join(cwd, flags.out ?? readConfig(cwd)?.outDir ?? DEFAULT_OUT_DIR);
+    return join(cwd, resolveOutDir(cwd, flags.out, readConfig(cwd)?.outDir));
   } catch (err) {
     io.err(errorText(err));
     return null;
@@ -276,7 +282,13 @@ export async function runSetup(
   if (fromFlags === null) return 1;
   const format = componentFormatFromFlags(flags, io);
   if (format === null) return 1;
-  const outDir = flags.out ?? existing?.outDir ?? DEFAULT_OUT_DIR;
+  let outDir: string;
+  try {
+    outDir = resolveOutDir(cwd, flags.out, existing?.outDir);
+  } catch (err) {
+    io.err(errorText(err));
+    return 1;
+  }
   const componentSpecsDir = existing?.componentSpecsDir ?? DEFAULT_COMPONENT_SPECS_DIR;
   const keptInclude = include ?? existing?.include ?? null;
   const keptDtcg = existing?.dtcg ?? null;
@@ -773,8 +785,11 @@ export function runTools(flags: Flags, io: Io): number {
 /** Everything `skill` says, gathered once so --json, printing, and --install agree. */
 function collectSkillInput(cwd: string, flags: Flags, io: Io): SkillInput | null {
   let config: CliConfig | null = null;
-  try { config = readConfig(cwd); } catch (err) { io.err(errorText(err)); return null; }
-  const outDir = flags.out ?? config?.outDir ?? DEFAULT_OUT_DIR;
+  let outDir: string;
+  try {
+    config = readConfig(cwd);
+    outDir = resolveOutDir(cwd, flags.out, config?.outDir);
+  } catch (err) { io.err(errorText(err)); return null; }
   const profile = detectRepo(cwd);
   const fromFlags = platformsFromFlags(flags, io);
   if (fromFlags === null) return null;

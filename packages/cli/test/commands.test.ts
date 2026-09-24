@@ -12,7 +12,7 @@ import { buildComponentV5GoldenArtifact } from '../../extractor/test/fixtures/co
 import {
   runInit, runSetup, runPull, runStatus, runList, runShow, runTools, runSkill, type Io,
 } from '../src/commands';
-import { readConfig } from '../src/config';
+import { OUT_DIR_RULE, readConfig } from '../src/config';
 import { readIndexImports } from '../src/outputs';
 
 function makeIo(): Io & { outLines: string[]; errLines: string[]; writes: string[] } {
@@ -204,6 +204,16 @@ describe('runInit', () => {
 
     expect(code).toBe(1);
     expect(io.errLines.join('\n')).toMatch(/--id/);
+    expect(existsSync(join(cwd, 'speclayer.json'))).toBe(false);
+  });
+
+  it('refuses an --out outside the working directory and writes nothing', () => {
+    const io = makeIo();
+
+    const code = runInit(cwd, { id: 'lib_abc', out: '../elsewhere' }, io);
+
+    expect(code).toBe(1);
+    expect(io.errLines).toEqual([OUT_DIR_RULE]);
     expect(existsSync(join(cwd, 'speclayer.json'))).toBe(false);
   });
 
@@ -1248,6 +1258,35 @@ describe('runPull safety and freshness', () => {
     expect(io.errLines.join('\n')).toMatch(/src.*not written by spec-layer/s);
     expect(readFileSync(join(cwd, 'src/index.ts'), 'utf8')).toBe('export {};');
     expect(existsSync(join(cwd, 'src.partial'))).toBe(false);
+  });
+
+  it('refuses an absolute or parent --out before touching the network, with the one sentence', async () => {
+    for (const out of [join(tmpdir(), 'sl-elsewhere'), '..', '../sibling']) {
+      const io = makeIo();
+      const fetcher = stubThree();
+
+      expect(await runPull(cwd, { out }, ENV, io, fetcher), out).toBe(1);
+
+      expect(io.errLines).toEqual([OUT_DIR_RULE]);
+      expect(fetcher).not.toHaveBeenCalled();
+    }
+    expect(existsSync(join(tmpdir(), 'sl-elsewhere'))).toBe(false);
+  });
+
+  it('accepts an --out whose name merely begins with two dots', async () => {
+    expect(await runPull(cwd, { out: '..cache' }, ENV, makeIo(), stubThree())).toBe(0);
+    expect(existsSync(join(cwd, '..cache', 'manifest.json'))).toBe(true);
+  });
+
+  it('refuses an --out that is a file, in one sentence, and leaves the file alone', async () => {
+    writeFileSync(join(cwd, 'notes'), 'mine');
+    const io = makeIo();
+
+    const code = await runPull(cwd, { out: 'notes' }, ENV, io, stubThree());
+
+    expect(code).toBe(1);
+    expect(io.errLines.join('\n')).toMatch(/notes exists and is not a directory\. Choose another path or remove the file\./);
+    expect(readFileSync(join(cwd, 'notes'), 'utf8')).toBe('mine');
   });
 });
 

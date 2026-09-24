@@ -1,5 +1,5 @@
-import { mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync, renameSync, existsSync } from 'node:fs';
-import { join, dirname, relative, resolve, isAbsolute, sep } from 'node:path';
+import { lstatSync, mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync, renameSync, existsSync } from 'node:fs';
+import { join, dirname, relative, resolve, sep } from 'node:path';
 import {
   CSS_HEADER_PREFIX, CSS_INDEX_FILE, COMPONENT_MARKDOWN_MARKER, COMPONENT_YAML_MARKER, componentMarkdown, componentSlugs,
   dtcgExportFiles, fontRequirements, foundationDtcg, slugify, usageUnits, validateLevel1,
@@ -7,8 +7,8 @@ import {
 } from '@spec-layer/extractor';
 import type { Platform } from './detect';
 import { outputId, outputPathProblem, renderOutput, type OutputConfig } from './outputs';
-import { visibleDirProblem, writeVisibleDir } from './visibleDir';
-import { DEFAULT_COMPONENT_FORMAT, DEFAULT_COMPONENT_SPECS_DIR, type ComponentFormat } from './config';
+import { pathInside, visibleDirProblem, writeVisibleDir } from './visibleDir';
+import { DEFAULT_COMPONENT_FORMAT, DEFAULT_COMPONENT_SPECS_DIR, OUT_DIR_RULE, type ComponentFormat } from './config';
 import { parseBundle, type BundleV1 } from './bundle';
 import { DEFAULT_SELECTION, selectComponents, type Selection } from './selection';
 import { cliVersion } from './version';
@@ -141,15 +141,21 @@ export function readLocalBundle(outDir: string): BundleV1 | null {
 
 /**
  * The swap below deletes outDir wholesale, so refuse anything that is not a
- * directory of our own: the working directory or one of its parents, or an
- * existing non-empty directory that holds no manifest from a previous pull.
+ * directory of our own: the working directory or one of its parents, a file,
+ * or an existing non-empty directory that holds no manifest from a previous
+ * pull. resolveOutDir in config.ts already refused the first case for every
+ * command; this is the last line of defence, with the same sentence.
  */
 function assertReplaceable(outDir: string, cwd: string): void {
-  const rel = relative(resolve(cwd), resolve(outDir));
-  if (rel === '' || rel.startsWith('..') || isAbsolute(rel)) {
-    throw new Error('The output directory must sit inside the current directory, not be "." or a parent of it.');
+  const root = resolve(cwd);
+  const abs = resolve(outDir);
+  if (abs === root || !pathInside(root, abs)) throw new Error(OUT_DIR_RULE);
+  if (!existsSync(abs)) return;
+  // readdirSync on a file throws a raw ENOTDIR; say what is there instead.
+  if (!lstatSync(abs).isDirectory()) {
+    throw new Error(`${outDir} exists and is not a directory. Choose another path or remove the file.`);
   }
-  if (existsSync(outDir) && !existsSync(join(outDir, 'manifest.json')) && readdirSync(outDir).length > 0) {
+  if (!existsSync(join(abs, 'manifest.json')) && readdirSync(abs).length > 0) {
     throw new Error(`${outDir} exists and was not written by spec-layer pull. Choose an empty or new directory.`);
   }
 }
