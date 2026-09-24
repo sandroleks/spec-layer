@@ -3,6 +3,20 @@
  * isolate recycles and is not shared across colos — good enough to blunt
  * naive enumeration; a Cloudflare WAF rate rule is the real backstop (README).
  */
+
+/** Distinct keys one surface may hold before the limiter fails closed for new ones. */
+export const MAX_KEYS_PER_SURFACE = 10_000;
+/**
+ * `requestLimiter` is shared by five key prefixes (prose:, quota:, libreq:,
+ * libdry:, libpull:) and `licenseLimiter` by three (the bare IP on the license
+ * routes, libpub:, librot:). Each map is sized at one surface's worth of keys
+ * per prefix, so ordinary traffic on the busiest route no longer uses up the
+ * room the others need. The map is still shared: enough distinct addresses in
+ * one window on one surface can still fill it.
+ */
+export const REQUEST_LIMITER_MAX_KEYS = 5 * MAX_KEYS_PER_SURFACE;
+export const LICENSE_LIMITER_MAX_KEYS = 3 * MAX_KEYS_PER_SURFACE;
+
 export class SlidingWindowLimiter {
   private hits = new Map<string, number[]>();
   private calls = 0;
@@ -10,7 +24,7 @@ export class SlidingWindowLimiter {
   constructor(
     private limit: number,
     private windowMs: number,
-    private maxKeys = 10_000,
+    private maxKeys = MAX_KEYS_PER_SURFACE,
   ) {}
 
   private prune(now: number): void {

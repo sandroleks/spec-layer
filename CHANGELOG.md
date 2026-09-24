@@ -419,6 +419,12 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   or weak entity tags, and pull and versions answers carry
   `Cache-Control: private, no-store`.
 
+- **The proxy's in-isolate rate limiters hold ten thousand keys for each
+  surface that shares them** instead of ten thousand in total across the
+  routes that share one map, so ordinary traffic on one route no longer uses
+  up the room the others need. The map is still shared, so a flood from
+  enough distinct addresses can still fill it.
+
 ### Fixed
 
 - **An Anthropic call that hangs is cut off before its reservation expires.**

@@ -3,10 +3,10 @@ import { route, requestLog, type HandlerDeps, type QuotaClient } from './handler
 import type { LibraryStore } from './license';
 import { QUOTA_PROFILES, quotaObjectName, type CommitOptions, type QuotaProfile, type QuotaSnapshot, type ReserveOptions, type ReserveResult, type Tier } from './quota';
 import { QuotaStore } from './quotaStore';
-import { SlidingWindowLimiter } from './ratelimit';
+import { SlidingWindowLimiter, REQUEST_LIMITER_MAX_KEYS, LICENSE_LIMITER_MAX_KEYS } from './ratelimit';
 
-const licenseLimiter = new SlidingWindowLimiter(20, 60_000);
-const requestLimiter = new SlidingWindowLimiter(60, 60_000);
+const licenseLimiter = new SlidingWindowLimiter(20, 60_000, LICENSE_LIMITER_MAX_KEYS);
+const requestLimiter = new SlidingWindowLimiter(60, 60_000, REQUEST_LIMITER_MAX_KEYS);
 
 export interface Env {
   LICENSE_CACHE: KVNamespace;
