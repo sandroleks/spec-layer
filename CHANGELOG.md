@@ -437,7 +437,8 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
 - **Publishes from one identity no longer race a library or the library
   ceiling.** A changed publish holds a per-library lock in the publisher's
   quota object until its writes commit, and that object checks the library
-  state the publish read against the last one it saw written. A concurrent
+  state the publish read, the older of its meta and its version log, against
+  the last one it saw written. A concurrent
   changed publish, or one that read the library before another publish
   finished, answers `409 publish_pending` instead of assigning the same
   version, dropping the other publish from the version history, or leaving

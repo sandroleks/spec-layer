@@ -267,12 +267,16 @@ before this split is migrated to that layout the first time it is read.
 - **Version writes are not atomic; writers from one identity are
   serialized.** A changed publish holds a per-library lock in the
   publisher's identity object until its KV writes commit, and its
-  reservation carries the library head it read (the meta's `publishedAt`).
+  reservation carries the library head it read: the older of the meta's
+  `publishedAt` and the time of the version log's newest record, because KV
+  caches each key separately and a fresh meta can sit beside a stale log.
   That object records the head each commit writes and compares it inside
   the reservation, so a second changed publish that read the library before
   another commit (while it was diffing, or from a KV read that had not
   caught up) answers 409 publish_pending instead of assigning the same
-  version and dropping the other record from the log. A recorded head is
+  version and dropping the other record from the log. The diff baseline, the
+  current bundle, is a third read that is not checked: a stale one can only
+  make the minimum bump wrong, never fork the version. A recorded head is
   held for `HEAD_TTL_MS` (ten minutes) and then forgotten, and a library
   this object has never committed has no head to check against. A publish
   still writes the current bundle, the per-version bundle, the version log,

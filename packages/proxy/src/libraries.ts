@@ -267,6 +267,29 @@ function versionRecord(input: {
   };
 }
 
+/** Epoch ms of the log's newest record, or NaN when the log is empty or that time does not parse. */
+const logHeadAt = (log: VersionLog): number => Date.parse(log.records[0]?.publishedAt ?? '');
+
+/**
+ * The head an update tells the reserve it read: the stalest of the reads that
+ * decided the write. KV caches every key on its own at each colo, so a fresh
+ * meta can sit beside a log cached before the last publish. Checking the meta
+ * alone would pass that publish, which would then assign a version from the
+ * old log and write it over the newer record. The older of the two times is
+ * refused whenever either read is behind a committed head.
+ *
+ * A log ahead of its meta is a legitimate state: a writer that stopped between
+ * the log and the meta writes. That writer never committed, so it recorded no
+ * head, and the minimum here is the meta's time, which is the head the last
+ * commit recorded, so the publish still passes. An empty log, or a record
+ * whose time does not parse, falls back to the meta alone.
+ */
+function headBase(meta: LibraryMeta, log: VersionLog): number {
+  const metaAt = Date.parse(meta.publishedAt);
+  const logAt = logHeadAt(log);
+  return Number.isNaN(logAt) ? metaAt : Math.min(metaAt, logAt);
+}
+
 /**
  * The 403 for a library ceiling, from the KV pre-check or from the Durable
  * Object's create count. Free callers get `existing`, the first library the
@@ -450,13 +473,14 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
   // and never refuses that key, so a retry of this same publish meets only
   // its own reservation, as before. Everything above was decided from the
   // head this handler read (the meta, the log, the diff), so the reserve
-  // also carries that head: when a writer has committed a newer one since,
+  // also carries that head, the older of the meta's and the log's times
+  // (`headBase`): when a writer has committed a newer one since,
   // this publish is stale and answers 409 too, instead of forking the version
   // and dropping that writer's log record. A create takes a slot in the
   // identity's library count, which the Durable Object settles atomically.
   const lock = libraryId ? `publish:${libraryId}` : null;
   const reserved = await quota.reserve(caller.tier, cacheKey, lock !== null && meta
-    ? { lock, base: Date.parse(meta.publishedAt) }
+    ? { lock, base: headBase(meta, log) }
     : { create: { limit: LIBRARY_LIMITS[caller.tier], listed: listed.length } });
   switch (reserved.kind) {
     case 'cached': {

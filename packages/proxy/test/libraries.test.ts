@@ -445,6 +445,55 @@ describe('handlePublish', () => {
     expect(retry.status).toBe(200);
   });
 
+  it('refuses a publish that read a fresh meta beside a stale version log, and leaves the log alone', async () => {
+    // KV caches each key on its own at a colo, so the meta a pull just
+    // refreshed can sit beside a log cached before the last publish.
+    let t = Date.parse('2026-07-01T00:00:00Z');
+    class StaleLogKV extends MemKV {
+      staleLog: string | null = null;
+      async get(k: string) { return this.staleLog !== null && k.endsWith(':versions') ? this.staleLog : super.get(k); }
+    }
+    const store = new StaleLogKV();
+    const d = deps({ now: () => t, quotaFor: memQuota(() => t), libraryStore: store });
+    const { libraryId, headers } = await freeLibrary(d);
+    const firstLog = store.map.get(versionsKey(libraryId)) as string;
+    t += 10_000;
+    expect((await handlePublish(publishReq({ libraryId, bundle: BUNDLE_WITH_CARD }, headers), d)).status).toBe(200);
+    const currentLog = store.map.get(versionsKey(libraryId));
+    store.staleLog = firstLog;
+    t += 25_000;
+    const res = await handlePublish(publishReq({ libraryId, bundle: BUNDLE_DESCRIBED }, headers), d);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: 'publish_pending' });
+    expect(store.map.get(versionsKey(libraryId))).toBe(currentLog);
+    expect(store.map.get(`lib:${libraryId}:bundle`)).toBe(JSON.stringify(BUNDLE_WITH_CARD));
+  });
+
+  it('proceeds from a log ahead of its meta, left by a writer that stopped before the meta and recorded no head', async () => {
+    let t = Date.parse('2026-07-01T00:00:00Z');
+    class MetaFailKV extends MemKV {
+      failMeta = false;
+      async put(k: string, v: string, opts?: { expirationTtl?: number }) {
+        if (this.failMeta && k.endsWith(':meta')) { this.failMeta = false; throw new Error('kv unavailable'); }
+        await super.put(k, v, opts);
+      }
+    }
+    const store = new MetaFailKV();
+    const d = deps({ now: () => t, quotaFor: memQuota(() => t), libraryStore: store });
+    const { libraryId, headers, publishedAt } = await freeLibrary(d);
+    t += 10_000;
+    store.failMeta = true;
+    await expect(handlePublish(publishReq({ libraryId, bundle: BUNDLE_WITH_CARD }, headers), d)).rejects.toThrow('kv unavailable');
+    const stopped = JSON.parse(store.map.get(versionsKey(libraryId)) as string) as VersionLog;
+    expect(stopped.records.map((r) => r.version)).toEqual(['1.1.0', '1.0.0']);
+    expect((JSON.parse(store.map.get(`lib:${libraryId}:meta`) as string) as LibraryMeta).publishedAt).toBe(publishedAt);
+    t += 10_000;
+    const res = await handlePublish(publishReq({ libraryId, bundle: BUNDLE_DESCRIBED }, headers), d);
+    expect(res.status).toBe(200);
+    const log = JSON.parse(store.map.get(versionsKey(libraryId)) as string) as VersionLog;
+    expect(log.records.map((r) => r.version)).toEqual(['2.0.0', '1.1.0', '1.0.0']);
+  });
+
   it('a dry run and an unchanged republish take no lock', async () => {
     const d = deps();
     const { libraryId, headers } = await freeLibrary(d);
