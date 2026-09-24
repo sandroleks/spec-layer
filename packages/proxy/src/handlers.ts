@@ -328,7 +328,21 @@ export async function handleProse(req: Request, deps: HandlerDeps): Promise<Resp
     return json(502, { error: 'upstream_error', status: upstream.status });
   }
 
-  const text = await upstream.text();
+  // AbortSignal.timeout aborts the whole fetch, including a body still
+  // streaming past the deadline: a second guard here catches that case the
+  // same way as the initial call. Any other body-read error keeps its prior
+  // handling and reaches route()'s catch-all as a 500, uncounted.
+  let text: string;
+  try {
+    text = await upstream.text();
+  } catch (err) {
+    if (err instanceof Error && err.name === 'TimeoutError') {
+      await quota.release(cacheKey);
+      deps.log('upstream_timeout', { timeoutMs: UPSTREAM_TIMEOUT_MS });
+      return json(502, { error: 'upstream_timeout' });
+    }
+    throw err;
+  }
   const s = await quota.commit(tier, cacheKey, text);
   return new Response(text, { status: 200, headers: { 'content-type': 'application/json', ...quotaHeaders(s) } });
 }

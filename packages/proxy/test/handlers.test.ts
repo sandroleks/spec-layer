@@ -210,6 +210,26 @@ describe('handleProse', () => {
     expect(retry.headers.get('X-Quota-Used')).toBe('1');
   });
 
+  it('releases the reservation and answers 502 upstream_timeout when the body is still streaming at the deadline', async () => {
+    // Headers arrived (the Response resolved), but AbortSignal.timeout aborts
+    // the whole fetch, including a body still being read, so .text() is where
+    // the timeout actually surfaces here.
+    const timingOutBody = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      text: () => { throw new DOMException('The operation was aborted due to timeout', 'TimeoutError'); },
+    }));
+    const d = deps({ fetcher: timingOutBody as unknown as typeof fetch });
+    const res = await handleProse(proseReq(GOOD_BODY, { 'X-Figma-User': 'u1' }), d);
+    expect(res.status).toBe(502);
+    expect(await res.json()).toEqual({ error: 'upstream_timeout' });
+    expect(d.log).toHaveBeenCalledWith('upstream_timeout', { timeoutMs: UPSTREAM_TIMEOUT_MS });
+    // Nothing was charged and nothing is pending: the retry runs.
+    const retry = await handleProse(proseReq(GOOD_BODY, { 'X-Figma-User': 'u1' }), { ...d, fetcher: deps().fetcher });
+    expect(retry.status).toBe(200);
+    expect(retry.headers.get('X-Quota-Used')).toBe('1');
+  });
+
   it('rejects a non-allowlisted upstream request', async () => {
     const bad = { ...GOOD_BODY, request: { ...GOOD_BODY.request, model: 'claude-opus-4-8' } };
     const res = await handleProse(proseReq(bad, { 'X-Figma-User': 'u1' }), deps());
