@@ -890,8 +890,15 @@ export function artifactWithCrossCollectionCycle(): FoundationArtifactV5 {
 
 /** A chain of `length` tokens, each aliasing the next under one mode of a
  *  dedicated collection, terminating in a literal -- long enough to blow a
- *  recursive walk's call stack, and to make an O(n^2) resolution slow. */
-export function artifactWithChainOfLength(length: number): FoundationArtifactV5 {
+ *  recursive walk's call stack, and to make an O(n^2) resolution slow.
+ *
+ *  By default each token records ONE hop and claims `resolved`, the truncated
+ *  claim `checkChainTruth` must diagnose. With `completeChains` every token
+ *  records every hop down to the literal, so the replay walks the whole
+ *  depth from every root and must find nothing. */
+export function artifactWithChainOfLength(
+  length: number, options: { completeChains?: boolean } = {},
+): FoundationArtifactV5 {
   const root = structuredClone(OK_ARTIFACT);
   const collectionId = 'VariableCollectionId:chain';
   root.collections.push({
@@ -911,7 +918,9 @@ export function artifactWithChainOfLength(length: number): FoundationArtifactV5 
           },
           resolved: {
             status: 'resolved', value: sampleTypedValue('number'),
-            chain: [{ token_id: ids[i + 1], mode_id: 'm1' }],
+            chain: options.completeChains
+              ? ids.slice(i + 1).map((hop) => ({ token_id: hop, mode_id: 'm1' }))
+              : [{ token_id: ids[i + 1], mode_id: 'm1' }],
           },
         };
     return {
