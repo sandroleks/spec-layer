@@ -18,7 +18,8 @@ export type { QuotaProfile };
 
 export interface QuotaClient {
   reserve(tier: Tier, cacheKey: string): Promise<ReserveResult>;
-  commit(cacheKey: string, body: string): Promise<void>;
+  /** Commits and returns the snapshot after it, so the success path costs one Durable Object hop. */
+  commit(tier: Tier, cacheKey: string, body: string): Promise<QuotaSnapshot>;
   release(cacheKey: string): Promise<void>;
   snapshot(tier: Tier): Promise<QuotaSnapshot>;
 }
@@ -305,8 +306,7 @@ export async function handleProse(req: Request, deps: HandlerDeps): Promise<Resp
   }
 
   const text = await upstream.text();
-  await quota.commit(cacheKey, text);
-  const s = await quota.snapshot(tier);
+  const s = await quota.commit(tier, cacheKey, text);
   return new Response(text, { status: 200, headers: { 'content-type': 'application/json', ...quotaHeaders(s) } });
 }
 

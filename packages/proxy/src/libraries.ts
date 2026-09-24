@@ -438,11 +438,11 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
       const written = await writeVersion(store, libraryId, stored, log, record);
       await store.put(metaKey(libraryId), JSON.stringify(next));
       await Promise.all(bundlesToPrune(written).map((version) => store.delete(versionBundleKey(libraryId as string, version))));
-      await quota.commit(cacheKey, JSON.stringify({ libraryId, publishedAt, version: record.version }));
+      const snap = await quota.commit(caller.tier, cacheKey, JSON.stringify({ libraryId, publishedAt, version: record.version }));
       deps.log('library_publish', { libraryId, size: bodyBytes, version: record.version, bump: record.bump });
-      return respond(200, {
+      return json(200, {
         libraryId, publishedAt, version: record.version, bump: record.bump, minimumBump: record.minimumBump,
-      }, { 'X-Library-Version': record.version });
+      }, { ...quotaHeaders(snap), 'X-Library-Version': record.version });
     }
     const id = newId as string; // set above whenever libraryId is null
     const pullKey = newPullKey();
@@ -462,11 +462,11 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
       store.put(`${ownerPrefix(caller.tierIdentity)}${id}`, publishedAt),
     ]);
     // The replay body never carries the pull key: it is handed out exactly once.
-    await quota.commit(cacheKey, JSON.stringify({ libraryId: id, publishedAt, version: record.version }));
+    const snap = await quota.commit(caller.tier, cacheKey, JSON.stringify({ libraryId: id, publishedAt, version: record.version }));
     deps.log('library_publish', { libraryId: id, size: bodyBytes, created: true, version: record.version });
-    return respond(201, {
+    return json(201, {
       libraryId: id, pullKey, publishedAt, version: record.version, bump: record.bump, minimumBump: record.minimumBump,
-    }, { 'X-Library-Version': record.version });
+    }, { ...quotaHeaders(snap), 'X-Library-Version': record.version });
   } catch (err) {
     await quota.release(cacheKey);
     throw err;

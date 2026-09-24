@@ -409,6 +409,11 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   your AI allowance runs out part-way it says that too rather than reporting a
   clean rebuild.
 
+- **Successful generations and publishes cost one Durable Object hop fewer.**
+  The commit returns the quota snapshot the response headers need, so the
+  proxy no longer calls back for it. Refusals are unchanged, and every
+  response carries the same headers and body as before.
+
 ### Fixed
 
 - **The proxy answers from one origin.** `workers_dev` is off, so the
@@ -420,6 +425,13 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   buffering the whole body first when no `Content-Length` was sent. The 413's
   `size` is the declared length when there is one, else the byte count at the
   cut.
+- **A busy identity's quota state no longer grows into one oversized Durable
+  Object value.** Each cached response now sits under its own storage key
+  beside a small counter record, the newest 500 are retained, and a record
+  written before the split is migrated the first time it is read. Before, a
+  Pro identity with a day of generations could push the single value past
+  the storage limit and get a 500 on every quota operation until entries
+  aged out.
 - **Publish and the snapshot download refuse a file with nothing in it.** The
   proxy accepts an empty bundle, so a file with no local variables or styles
   and no component docs used to publish anyway: a first publish created a

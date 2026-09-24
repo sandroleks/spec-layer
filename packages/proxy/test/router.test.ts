@@ -1,8 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { sha256 } from 'js-sha256';
 import { route } from '../src/handlers';
-import { QuotaEngine, QUOTA_PROFILES, type QuotaProfile, type Tier, type ReserveResult, type QuotaSnapshot } from '../src/quota';
-import { quotaObjectName } from '../src/index';
+import { memQuota } from './quotaHarness';
 import { SlidingWindowLimiter } from '../src/ratelimit';
 import { hashFigmaId } from '../src/identity';
 
@@ -16,21 +15,6 @@ class MemKV {
   async list(opts: { prefix: string }) {
     return { keys: [...this.map.keys()].filter((k) => k.startsWith(opts.prefix)).map((name) => ({ name })) };
   }
-}
-
-function memQuota(now: () => number) {
-  const engines = new Map<string, QuotaEngine>();
-  return (id: string, profile: QuotaProfile = 'ai') => {
-    const key = quotaObjectName(id, profile);
-    const e = engines.get(key) ?? new QuotaEngine(undefined, QUOTA_PROFILES[profile]);
-    engines.set(key, e);
-    return {
-      reserve: async (tier: Tier, k: string): Promise<ReserveResult> => e.reserve(tier, k, now()),
-      commit: async (k: string, b: string) => e.commit(k, b, now()),
-      release: async (k: string) => e.release(k),
-      snapshot: async (tier: Tier): Promise<QuotaSnapshot> => e.snapshot(tier, now()),
-    };
-  };
 }
 
 const baseDeps = () => ({
@@ -82,7 +66,7 @@ describe('route', () => {
     d.fetcher = vi.fn(async () => new Response(
       JSON.stringify({ valid: false, license_key: { status: 'expired' } }), { status: 200 },
     )) as unknown as typeof fetch;
-    await d.quotaFor(`free:${hashFigmaId('u1', 'salt')}`, 'publish').commit('seed', '{}');
+    await d.quotaFor(`free:${hashFigmaId('u1', 'salt')}`, 'publish').commit('free', 'seed', '{}');
     const res = await route(new Request('https://p.test/v1/quota', {
       headers: { Authorization: `Bearer ${UUID_KEY}`, 'X-Figma-User': 'u1' },
     }), d);

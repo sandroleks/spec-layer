@@ -5,6 +5,13 @@ export const PRO_SOFT_THRESHOLD = 1000;
 export const RATE_LIMIT_PER_MIN = 10;
 export const RESERVATION_TTL_MS = 120_000;
 export const RESPONSE_TTL_MS = 24 * 3600_000;
+/**
+ * How many committed responses one identity keeps for replay. Each body has
+ * its own storage key (`resp:<cacheKey>`, see quotaStore.ts); this bounds the
+ * index inside the engine record and the storage the identity holds. The
+ * oldest fall out first, before their 24 h would have expired them.
+ */
+export const MAX_RETAINED_RESPONSES = 500;
 
 export const PUBLISH_MONTHLY_LIMIT = 10;
 
@@ -27,6 +34,15 @@ export const QUOTA_PROFILES: Record<QuotaProfile, QuotaLimits> = {
   publish: { boostLimit: null, boostWindowMs: 0, monthlyLimit: PUBLISH_MONTHLY_LIMIT },
 };
 
+/**
+ * One Durable Object per identity and profile. The AI profile keeps the bare
+ * identity as its name so every existing object's state stays reachable; other
+ * profiles are prefixed so their counts never share storage with it.
+ */
+export function quotaObjectName(identityId: string, profile: QuotaProfile): string {
+  return profile === 'ai' ? identityId : `${profile}:${identityId}`;
+}
+
 export type Tier = 'free' | 'pro';
 
 export interface QuotaSnapshot {
@@ -47,19 +63,28 @@ export function quotaHeaders(s: QuotaSnapshot): Record<string, string> {
   };
 }
 
-export type ReserveResult =
+/** What the engine alone can say. A cached answer's body lives outside the counter; the store fills it in. */
+export type EngineReserveResult =
   | { kind: 'proceed'; flagged?: boolean }
-  | { kind: 'cached'; body: string }
+  | { kind: 'cached' }
   | { kind: 'pending' }
   | { kind: 'exhausted'; resetsAt: string }
   | { kind: 'rate_limited'; retryAfterMs: number };
+
+/** What a QuotaClient answers: the engine's verdict with the cached body attached. */
+export type ReserveResult = Exclude<EngineReserveResult, { kind: 'cached' }> | { kind: 'cached'; body: string };
+
+interface ResponseEntry { at: number }
+/** A response entry as a blob written before the split stored it: body inline. */
+interface LegacyResponseEntry extends ResponseEntry { body?: string }
+export interface LegacyBody { cacheKey: string; body: string; at: number }
 
 interface State {
   firstSeen: number | null;
   boostUsed: number;
   months: Record<string, number>;              // 'YYYY-MM' -> committed count
   reservations: Record<string, number>;        // cacheKey -> reservedAt
-  responses: Record<string, { body: string; at: number }>;
+  responses: Record<string, ResponseEntry>;    // cacheKey -> committed at; the body is under its own storage key
   recent: number[];                            // request timestamps (rate limit)
 }
 
@@ -76,12 +101,50 @@ function nextMonthStart(now: number): string {
 
 export class QuotaEngine {
   private s: State;
+  private legacy: LegacyBody[] = [];
+  private evicted: string[] = [];
 
   constructor(json?: string, private limits: QuotaLimits = QUOTA_PROFILES.ai) {
     this.s = json ? { ...fresh(), ...(JSON.parse(json) as State) } : fresh();
+    // A blob written before the split carries each body inline. Lift them out
+    // so the counter stays small; the store writes them under their own keys.
+    for (const [cacheKey, entry] of Object.entries(this.s.responses as Record<string, LegacyResponseEntry>)) {
+      if (typeof entry.body === 'string') {
+        this.legacy.push({ cacheKey, body: entry.body, at: entry.at });
+        this.s.responses[cacheKey] = { at: entry.at };
+      }
+    }
   }
 
   toJSON(): string { return JSON.stringify(this.s); }
+
+  /** Inline bodies found in a pre-split blob, handed over once. */
+  drainLegacyBodies(): LegacyBody[] {
+    const out = this.legacy;
+    this.legacy = [];
+    return out;
+  }
+
+  /** Cache keys whose index entry was dropped since the last call; their bodies are the store's to delete. */
+  takeEvicted(): string[] {
+    const out = this.evicted;
+    this.evicted = [];
+    return out;
+  }
+
+  /** Drops one committed entry, reporting it through `takeEvicted` exactly once. */
+  forgetResponse(cacheKey: string): void {
+    if (this.s.responses[cacheKey] === undefined) return;
+    delete this.s.responses[cacheKey];
+    this.evicted.push(cacheKey);
+  }
+
+  private capResponses(): void {
+    const keys = Object.keys(this.s.responses);
+    if (keys.length <= MAX_RETAINED_RESPONSES) return;
+    keys.sort((a, b) => this.s.responses[a].at - this.s.responses[b].at || (a < b ? -1 : a > b ? 1 : 0));
+    for (const key of keys.slice(0, keys.length - MAX_RETAINED_RESPONSES)) this.forgetResponse(key);
+  }
 
   // A never-seen identity is treated as starting its boost window "now" so
   // that a quota peek (GET /v1/quota before any generation) reports boost
@@ -111,20 +174,20 @@ export class QuotaEngine {
   /** Drop expired responses and stale reservations so serialized state stays bounded. */
   private prune(now: number): void {
     for (const [k, v] of Object.entries(this.s.responses)) {
-      if (now - v.at >= RESPONSE_TTL_MS) delete this.s.responses[k];
+      if (now - v.at >= RESPONSE_TTL_MS) this.forgetResponse(k);
     }
     for (const [k, at] of Object.entries(this.s.reservations)) {
       if (now - at >= RESERVATION_TTL_MS) delete this.s.reservations[k];
     }
   }
 
-  reserve(tier: Tier, cacheKey: string, now: number): ReserveResult {
+  reserve(tier: Tier, cacheKey: string, now: number): EngineReserveResult {
     this.prune(now);
     if (this.s.firstSeen === null) this.s.firstSeen = now;
     // Idempotent retry: a committed generation within 24h is served from cache.
     const hit = this.s.responses[cacheKey];
-    if (hit && now - hit.at < RESPONSE_TTL_MS) return { kind: 'cached', body: hit.body };
-    if (hit) delete this.s.responses[cacheKey];
+    if (hit && now - hit.at < RESPONSE_TTL_MS) return { kind: 'cached' };
+    if (hit) this.forgetResponse(cacheKey);
     // Sliding-window rate limit (attempts, not commits).
     this.s.recent = this.s.recent.filter((t) => now - t < 60_000);
     if (this.s.recent.length >= RATE_LIMIT_PER_MIN) {
@@ -147,10 +210,11 @@ export class QuotaEngine {
     return { kind: 'proceed' };
   }
 
-  commit(cacheKey: string, body: string, now: number): void {
+  commit(cacheKey: string, now: number): void {
     this.prune(now);
     delete this.s.reservations[cacheKey];
-    this.s.responses[cacheKey] = { body, at: now };
+    this.s.responses[cacheKey] = { at: now };
+    this.capResponses();
     if (this.inBoost(now)) this.s.boostUsed += 1;
     const mk = monthKey(now);
     this.s.months[mk] = (this.s.months[mk] ?? 0) + 1;

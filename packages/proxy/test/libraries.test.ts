@@ -17,8 +17,8 @@ import {
 import { versionsKey, versionBundleKey, type VersionLog } from '../src/versions';
 import { hashFigmaId } from '../src/identity';
 import { SlidingWindowLimiter } from '../src/ratelimit';
-import { QuotaEngine, QUOTA_PROFILES, PRO_SOFT_THRESHOLD, type QuotaProfile, type Tier, type ReserveResult, type QuotaSnapshot } from '../src/quota';
-import { quotaObjectName } from '../src/index';
+import { PRO_SOFT_THRESHOLD } from '../src/quota';
+import { memQuota } from './quotaHarness';
 import type { HandlerDeps } from '../src/handlers';
 
 const UUID_KEY = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
@@ -32,22 +32,6 @@ class MemKV {
   async list(opts: { prefix: string }) {
     return { keys: [...this.map.keys()].filter((k) => k.startsWith(opts.prefix)).map((name) => ({ name })) };
   }
-}
-
-/** In-memory QuotaClient over a real engine — same contract the DO fulfils in prod. */
-function memQuota(now: () => number) {
-  const engines = new Map<string, QuotaEngine>();
-  return (id: string, profile: QuotaProfile = 'ai') => {
-    const key = quotaObjectName(id, profile);
-    const e = engines.get(key) ?? new QuotaEngine(undefined, QUOTA_PROFILES[profile]);
-    engines.set(key, e);
-    return {
-      reserve: async (tier: Tier, k: string): Promise<ReserveResult> => e.reserve(tier, k, now()),
-      commit: async (k: string, b: string) => e.commit(k, b, now()),
-      release: async (k: string) => e.release(k),
-      snapshot: async (tier: Tier): Promise<QuotaSnapshot> => e.snapshot(tier, now()),
-    };
-  };
 }
 
 const byteLength = (s: string) => new TextEncoder().encode(s).byteLength;
@@ -557,6 +541,20 @@ describe('handlePublish', () => {
     expect(res.headers.get('X-Quota-Resets-At')).toBe('2026-08-01T00:00:00.000Z');
   });
 
+  it('answers a successful publish from the snapshot commit returns: no separate snapshot hop', async () => {
+    const d = deps();
+    const inner = d.quotaFor;
+    let snapshots = 0;
+    d.quotaFor = (id, profile) => {
+      const client = inner(id, profile);
+      return { ...client, snapshot: (tier) => { snapshots += 1; return client.snapshot(tier); } };
+    };
+    const res = await handlePublish(publishReq({ bundle: BUNDLE }, figma()), d);
+    expect(res.status).toBe(201);
+    expect(res.headers.get('X-Quota-Used')).toBe('1');
+    expect(snapshots).toBe(0);
+  });
+
   it('replays an unchanged republish without counting or writing', async () => {
     const d = deps();
     const { libraryId, publishedAt, headers } = await freeLibrary(d);
@@ -690,7 +688,7 @@ describe('handlePublish', () => {
     // per-minute rate limiter, and 1000 calls at this frozen clock would trip
     // it before the real publish below ever runs.
     for (let i = 0; i < PRO_SOFT_THRESHOLD; i += 1) {
-      await engine.commit(`seed${i}`, '{}');
+      await engine.commit('pro', `seed${i}`, '{}');
     }
     const res = await handlePublish(publishReq({ bundle: BUNDLE }), d);
     expect(res.status).toBe(201);

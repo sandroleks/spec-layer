@@ -1,61 +1,57 @@
+import { DurableObject } from 'cloudflare:workers';
 import { route, type HandlerDeps, type QuotaClient } from './handlers';
-import { QuotaEngine, QUOTA_PROFILES, type QuotaProfile, type ReserveResult, type QuotaSnapshot, type Tier } from './quota';
+import { QUOTA_PROFILES, quotaObjectName, type QuotaProfile, type QuotaSnapshot, type ReserveResult, type Tier } from './quota';
+import { QuotaStore } from './quotaStore';
 import { SlidingWindowLimiter } from './ratelimit';
 
 const licenseLimiter = new SlidingWindowLimiter(20, 60_000);
 const requestLimiter = new SlidingWindowLimiter(60, 60_000);
 
-/**
- * One Durable Object per identity and profile. The AI profile keeps the bare
- * identity as its name so every existing object's state stays reachable; other
- * profiles are prefixed so their counts never share storage with it.
- */
-export function quotaObjectName(identityId: string, profile: QuotaProfile): string {
-  return profile === 'ai' ? identityId : `${profile}:${identityId}`;
-}
-
 export interface Env {
   LICENSE_CACHE: KVNamespace;
-  QUOTA: DurableObjectNamespace;
+  QUOTA: DurableObjectNamespace<QuotaDO>;
   ANTHROPIC_API_KEY: string;
   FIGMA_ID_SALT: string;
 }
 
 /**
- * One Durable Object per identity: single-threaded execution makes
- * reserve/commit atomic without explicit locking.
+ * One Durable Object per identity and profile: single-threaded execution
+ * makes reserve/commit atomic without explicit locking. Every rule and the
+ * storage layout live in QuotaStore, which the tests drive over an in-memory
+ * storage; this class only binds `ctx.storage` and exposes the four
+ * operations over RPC. The profile rides on each call because the object's
+ * name, not its state, decides it. `now` comes from the Worker so the clock
+ * is one place, as before.
  */
-export class QuotaDO implements DurableObject {
-  constructor(private state: DurableObjectState) {}
+export class QuotaDO extends DurableObject<Env> {
+  private store(profile: QuotaProfile): QuotaStore {
+    return new QuotaStore(this.ctx.storage, QUOTA_PROFILES[profile]);
+  }
 
-  async fetch(req: Request): Promise<Response> {
-    const stored = await this.state.storage.get<string>('engine');
-    const { op, tier, cacheKey, body, now, profile } = (await req.json()) as {
-      op: 'reserve' | 'commit' | 'release' | 'snapshot';
-      tier: Tier; cacheKey?: string; body?: string; now: number; profile?: QuotaProfile;
-    };
-    const engine = new QuotaEngine(stored ?? undefined, QUOTA_PROFILES[profile ?? 'ai']);
-    let out: unknown = null;
-    if (op === 'reserve') out = engine.reserve(tier, cacheKey as string, now);
-    else if (op === 'commit') engine.commit(cacheKey as string, body as string, now);
-    else if (op === 'release') engine.release(cacheKey as string);
-    else out = engine.snapshot(tier, now);
-    if (op !== 'snapshot') await this.state.storage.put('engine', engine.toJSON());
-    return new Response(JSON.stringify(out), { headers: { 'content-type': 'application/json' } });
+  reserve(profile: QuotaProfile, tier: Tier, cacheKey: string, now: number): Promise<ReserveResult> {
+    return this.store(profile).reserve(tier, cacheKey, now);
+  }
+
+  commit(profile: QuotaProfile, tier: Tier, cacheKey: string, body: string, now: number): Promise<QuotaSnapshot> {
+    return this.store(profile).commit(tier, cacheKey, body, now);
+  }
+
+  release(profile: QuotaProfile, cacheKey: string, now: number): Promise<void> {
+    return this.store(profile).release(cacheKey, now);
+  }
+
+  snapshot(profile: QuotaProfile, tier: Tier, now: number): Promise<QuotaSnapshot> {
+    return this.store(profile).snapshot(tier, now);
   }
 }
 
-function doQuotaClient(ns: DurableObjectNamespace, identityId: string, profile: QuotaProfile = 'ai'): QuotaClient {
+function doQuotaClient(ns: DurableObjectNamespace<QuotaDO>, identityId: string, profile: QuotaProfile = 'ai'): QuotaClient {
   const stub = ns.get(ns.idFromName(quotaObjectName(identityId, profile)));
-  const call = async (payload: Record<string, unknown>) => {
-    const res = await stub.fetch('https://do/quota', { method: 'POST', body: JSON.stringify({ ...payload, profile, now: Date.now() }) });
-    return res.json();
-  };
   return {
-    reserve: (tier, cacheKey) => call({ op: 'reserve', tier, cacheKey }) as Promise<ReserveResult>,
-    commit: async (cacheKey, body) => { await call({ op: 'commit', tier: 'free', cacheKey, body }); },
-    release: async (cacheKey) => { await call({ op: 'release', tier: 'free', cacheKey }); },
-    snapshot: (tier) => call({ op: 'snapshot', tier }) as Promise<QuotaSnapshot>,
+    reserve: async (tier, cacheKey) => await stub.reserve(profile, tier, cacheKey, Date.now()),
+    commit: async (tier, cacheKey, body) => await stub.commit(profile, tier, cacheKey, body, Date.now()),
+    release: async (cacheKey) => { await stub.release(profile, cacheKey, Date.now()); },
+    snapshot: async (tier) => await stub.snapshot(profile, tier, Date.now()),
   };
 }
 

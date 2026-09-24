@@ -1,8 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { sha256 } from 'js-sha256';
 import { handleProse, type QuotaClient } from '../src/handlers';
-import { QuotaEngine, QUOTA_PROFILES, type QuotaProfile, type Tier, type ReserveResult, type QuotaSnapshot } from '../src/quota';
-import { quotaObjectName } from '../src/index';
+import { memQuota } from './quotaHarness';
 import { SlidingWindowLimiter } from '../src/ratelimit';
 import {
   proseRequest, proseCacheKey,
@@ -20,22 +19,6 @@ class MemKV {
   async list(opts: { prefix: string }) {
     return { keys: [...this.map.keys()].filter((k) => k.startsWith(opts.prefix)).map((name) => ({ name })) };
   }
-}
-
-/** In-memory QuotaClient over a real engine — same contract the DO fulfils in prod. */
-function memQuota(now: () => number) {
-  const engines = new Map<string, QuotaEngine>();
-  return (id: string, profile: QuotaProfile = 'ai') => {
-    const key = quotaObjectName(id, profile);
-    const e = engines.get(key) ?? new QuotaEngine(undefined, QUOTA_PROFILES[profile]);
-    engines.set(key, e);
-    return {
-      reserve: async (tier: Tier, k: string): Promise<ReserveResult> => e.reserve(tier, k, now()),
-      commit: async (k: string, b: string) => e.commit(k, b, now()),
-      release: async (k: string) => e.release(k),
-      snapshot: async (tier: Tier): Promise<QuotaSnapshot> => e.snapshot(tier, now()),
-    };
-  };
 }
 
 /** The same stub `proseContract.test.ts` uses: the v9 prompt walks every field
@@ -171,6 +154,20 @@ describe('handleProse', () => {
     expect(res2.headers.get('X-Quota-Used')).toBe('1');
   });
 
+  it('answers a generation from the snapshot commit returns: no separate snapshot hop', async () => {
+    const d = deps();
+    const inner = d.quotaFor;
+    let snapshots = 0;
+    d.quotaFor = (id, profile) => {
+      const client = inner(id, profile);
+      return { ...client, snapshot: (tier) => { snapshots += 1; return client.snapshot(tier); } };
+    };
+    const res = await handleProse(proseReq(GOOD_BODY, { 'X-Figma-User': 'u1' }), d);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('X-Quota-Used')).toBe('1');
+    expect(snapshots).toBe(0);
+  });
+
   it('402 when the free quota is exhausted', async () => {
     const d = deps();
     for (let i = 0; i < 20; i++) {
@@ -243,7 +240,10 @@ describe('handleProse', () => {
     // key were logged.
     const flaggedQuota: QuotaClient = {
       reserve: async () => ({ kind: 'proceed', flagged: true }),
-      commit: async () => {},
+      commit: async () => ({
+        tier: 'pro', used: 1001, limit: null, remaining: null,
+        resetsAt: new Date('2026-08-01T00:00:00Z').toISOString(),
+      }),
       release: async () => {},
       snapshot: async () => ({
         tier: 'pro', used: 1000, limit: null, remaining: null,

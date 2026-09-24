@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { QuotaEngine, BOOST_LIMIT, BOOST_WINDOW_MS, MONTHLY_LIMIT, RESERVATION_TTL_MS, RESPONSE_TTL_MS, RATE_LIMIT_PER_MIN, PRO_SOFT_THRESHOLD, QUOTA_PROFILES, PUBLISH_MONTHLY_LIMIT } from '../src/quota';
-import { quotaObjectName } from '../src/index';
+import { QuotaEngine, BOOST_LIMIT, BOOST_WINDOW_MS, MONTHLY_LIMIT, RESERVATION_TTL_MS, RESPONSE_TTL_MS, RATE_LIMIT_PER_MIN, PRO_SOFT_THRESHOLD, QUOTA_PROFILES, PUBLISH_MONTHLY_LIMIT, MAX_RETAINED_RESPONSES, quotaObjectName } from '../src/quota';
 
 const T0 = Date.parse('2026-07-01T00:00:00Z');
 const DAY = 864e5;
@@ -21,7 +20,7 @@ function burn(e: QuotaEngine, n: number, at: number, prefix = 'k') {
     const t = at + i * 60_000;
     const r = e.reserve('free', `${prefix}${i}`, t);
     expect(r.kind).toBe('proceed');
-    e.commit(`${prefix}${i}`, '{}', t);
+    e.commit(`${prefix}${i}`, t);
   }
 }
 
@@ -67,19 +66,19 @@ describe('QuotaEngine free tier', () => {
 });
 
 describe('QuotaEngine idempotency', () => {
-  it('returns the cached response for a committed cacheKey (no double bill)', () => {
+  it('reports a committed cacheKey as cached without counting it again; the body is the store\'s', () => {
     const e = new QuotaEngine();
     e.reserve('free', 'dup', T0);
-    e.commit('dup', '{"id":"msg_1"}', T0);
+    e.commit('dup', T0);
     const r = e.reserve('free', 'dup', T0 + 60_000);
-    expect(r).toEqual({ kind: 'cached', body: '{"id":"msg_1"}' });
+    expect(r).toEqual({ kind: 'cached' });
     expect(e.snapshot('free', T0 + 60_000).used).toBe(1); // still 1
   });
 
   it('expires the response cache after 24h', () => {
     const e = new QuotaEngine();
     e.reserve('free', 'dup', T0);
-    e.commit('dup', '{}', T0);
+    e.commit('dup', T0);
     expect(e.reserve('free', 'dup', T0 + RESPONSE_TTL_MS + 1).kind).toBe('proceed');
   });
 
@@ -95,13 +94,49 @@ describe('QuotaEngine idempotency', () => {
     expect(e.reserve('free', 'crashed', T0 + RESERVATION_TTL_MS + 1).kind).toBe('proceed');
   });
 
-  it('prunes expired responses from serialized state (bounded growth)', () => {
+  it('prunes expired index entries and hands their keys to the store for deletion', () => {
     const e = new QuotaEngine();
     e.reserve('pro', 'old', T0);
-    e.commit('old', '{"big":"body"}', T0);
+    e.commit('old', T0);
+    expect(e.takeEvicted()).toEqual([]);
     // A later unrelated request past the TTL sweeps the old entry out.
     e.reserve('pro', 'new', T0 + RESPONSE_TTL_MS + 1);
-    expect(e.toJSON()).not.toContain('big');
+    expect(e.toJSON()).not.toContain('old');
+    expect(e.takeEvicted()).toEqual(['old']);
+    expect(e.takeEvicted()).toEqual([]); // drained
+  });
+
+  it('lifts inline bodies out of a pre-split blob and keeps the index', () => {
+    const e = new QuotaEngine(JSON.stringify({
+      firstSeen: T0, boostUsed: 1, months: {}, reservations: {}, recent: [],
+      responses: { a: { body: '{"id":"a"}', at: T0 }, b: { at: T0 + 1 } },
+    }));
+    expect(e.drainLegacyBodies()).toEqual([{ cacheKey: 'a', body: '{"id":"a"}', at: T0 }]);
+    expect(e.drainLegacyBodies()).toEqual([]);
+    expect(e.toJSON()).not.toContain('"body"');
+    expect(e.reserve('free', 'a', T0 + 2)).toEqual({ kind: 'cached' });
+    expect(e.reserve('free', 'b', T0 + 3)).toEqual({ kind: 'cached' });
+  });
+
+  it('caps the index at MAX_RETAINED_RESPONSES, evicting the oldest first', () => {
+    const e = new QuotaEngine();
+    for (let i = 0; i <= MAX_RETAINED_RESPONSES; i += 1) {
+      const t = T0 + i * 60_000;
+      e.reserve('pro', `k${i}`, t);
+      e.commit(`k${i}`, t);
+    }
+    expect(e.takeEvicted()).toEqual(['k0']);
+    expect(e.reserve('pro', 'k0', T0 + (MAX_RETAINED_RESPONSES + 2) * 60_000).kind).toBe('proceed');
+  });
+
+  it('forgetResponse removes one entry and reports it once', () => {
+    const e = new QuotaEngine();
+    e.reserve('pro', 'k', T0);
+    e.commit('k', T0);
+    e.forgetResponse('k');
+    e.forgetResponse('k');
+    expect(e.takeEvicted()).toEqual(['k']);
+    expect(e.reserve('pro', 'k', T0 + 1).kind).toBe('proceed');
   });
 });
 
@@ -121,7 +156,7 @@ describe('QuotaEngine rate limit + pro', () => {
   it('cached hits are not rate-limited (free redraws)', () => {
     const e = new QuotaEngine();
     e.reserve('pro', 'c', T0);
-    e.commit('c', '{}', T0);
+    e.commit('c', T0);
     for (let i = 0; i < 30; i++) {
       expect(e.reserve('pro', 'c', T0 + 1000 + i).kind).toBe('cached');
     }

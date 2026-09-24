@@ -211,7 +211,10 @@ predates versioning answers an empty log. Errors: `401`, `404`, `429`.
 
 Atomicity: one Durable Object per identity (`QuotaDO`) serializes all quota
 ops. The only server-side content storage is the 24h idempotency response
-cache inside the DO; prompts and prose are never logged.
+cache inside the DO, one storage key per committed response (`resp:<cacheKey>`)
+beside a small `engine` counter record, with the newest 500 responses retained
+per identity; prompts and prose are never logged. An `engine` value written
+before this split is migrated to that layout the first time it is read.
 
 ## Accepted risks and operational notes
 
@@ -357,5 +360,7 @@ npm run check:proxy-dry-run        # bundle and validate without uploading
 ```
 
 All business logic is in pure, dependency-injected modules
-(`src/quota.ts`, `src/license.ts`, `src/handlers.ts`) tested without
-miniflare; `src/index.ts` is the thin Cloudflare adapter.
+(`src/quota.ts`, `src/quotaStore.ts`, `src/license.ts`, `src/handlers.ts`,
+`src/libraries.ts`) tested without miniflare; `src/index.ts` is the thin
+Cloudflare adapter, and its `QuotaDO` is four RPC methods over `QuotaStore`
+that nothing but the wrangler dry run and `tsc` exercise.
