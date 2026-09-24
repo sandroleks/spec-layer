@@ -113,6 +113,12 @@ describe('canonicalJson', () => {
     expect(canonicalJson({ b: { d: 1, c: [{ f: 1, e: 2 }] }, a: undefined }))
       .toBe('{"b":{"c":[{"e":2,"f":1}],"d":1}}');
   });
+
+  it('writes an undefined array member as null, as JSON.stringify does', () => {
+    expect(canonicalJson([undefined, 1])).toBe('[null,1]');
+    expect(canonicalJson([undefined, 1])).toBe(canonicalJson([null, 1]));
+    expect(canonicalJson({ a: [1, undefined] })).toBe('{"a":[1,null]}');
+  });
 });
 
 describe('semanticContentHash', () => {
