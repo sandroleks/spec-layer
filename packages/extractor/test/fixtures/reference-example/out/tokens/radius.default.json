@@ -1,0 +1,24 @@
+{
+  "Radius": {
+    "radius": {
+      "200": {
+        "$type": "dimension",
+        "$value": {
+          "unit": "px",
+          "value": 8
+        },
+        "$description": "Radius primitive. Not scoped, so it is aliased rather than applied directly."
+      },
+      "control": {
+        "$type": "dimension",
+        "$value": "{Radius.radius.200}",
+        "$description": "Corner radius for buttons and other controls."
+      },
+      "full": {
+        "$type": "number",
+        "$value": 9999,
+        "$description": "Pill radius primitive."
+      }
+    }
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "Typography styles": {
+    "Label": {
+      "Large": {
+        "$type": "typography",
+        "$value": {
+          "fontFamily": "Inter",
+          "fontSize": "{Typography.type.size.label}",
+          "fontWeight": 600,
+          "letterSpacing": {
+            "unit": "px",
+            "value": 0
+          }
+        },
+        "$description": "Labels on buttons and other controls.",
+        "$extensions": {
+          "com.spec-layer": {
+            "lineHeight": {
+              "unit": "px",
+              "value": 24
+            },
+            "paragraphIndent": {
+              "unit": "px",
+              "value": 0
+            },
+            "paragraphSpacing": {
+              "unit": "px",
+              "value": 0
+            },
+            "textCase": "original",
+            "textDecoration": "none"
+          }
+        }
+      }
+    }
+  }
+}

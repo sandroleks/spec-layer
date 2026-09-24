@@ -11,11 +11,30 @@
  *
  * `referenceExample.test.ts` pins which features the example exercises. When
  * one of those assertions fails, the fix belongs in the input JSON.
+ *
+ * `renderReferenceExample` below mirrors what a real `spec-layer pull` writes
+ * for this library (`packages/cli/src/files.ts`, `packages/cli/src/outputs.ts`),
+ * restricted to the files the documentation site's Example page shows:
+ * the component brief in both projections, the Foundation's DTCG export and
+ * CSS output (both of which the CLI writes under `tokens/`), and `fonts.json`.
+ * It does not render `bundle.json`, `manifest.json`, `outputs/*.map.json`,
+ * `outputs/*.report.json`, or `component-specs/`, which the site does not
+ * mirror. `referenceExampleGolden.test.ts` pins the output byte for byte
+ * against `reference-example/out/`.
+ *
+ * Regenerate deliberately with:
+ * `npx tsx packages/extractor/test/fixtures/referenceExample.ts`.
+ * The documentation site mirrors `reference-example/out/` byte for byte, so
+ * regenerate only when you mean every consumer to see the new bytes.
  */
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   buildComponentArtifactV5, buildFoundation, buildFoundationArtifactV5,
-  componentAiContext, extract, foundationDtcgDocument, toYaml, EXTRACTOR_VERSION,
-  LIBRARY_BUNDLE_SCHEMA,
+  componentAiContext, componentMarkdown, cssOutput, dtcgExportFiles, extract,
+  fontRequirements, foundationDtcg, foundationDtcgDocument, toYaml, usageUnits,
+  EXTRACTOR_VERSION, LIBRARY_BUNDLE_SCHEMA,
 } from '../../src/index';
 import type {
   ComponentArtifactV5, FoundationArtifactV5, LibraryBundleV1, ProseDrafts,
@@ -184,4 +203,59 @@ export function buildReferenceBundle(): LibraryBundleV1 {
       variants: referenceSpec().variantInstances.map(({ name, values }) => ({ name, values })),
     }],
   };
+}
+
+/** Where the rendered goldens live on disk, committed beside this file. */
+export const REFERENCE_OUT_DIR = fileURLToPath(new URL('./reference-example/out/', import.meta.url));
+
+/**
+ * Renders every file a real `spec-layer pull` would write for this library,
+ * restricted to what the documentation site's Example page shows. Paths are
+ * relative to `REFERENCE_OUT_DIR`. See the file header for what is and is
+ * not rendered, and why.
+ */
+export function renderReferenceExample(): Record<string, string> {
+  const bundle = buildReferenceBundle();
+  const foundation = buildReferenceFoundation();
+  const button = buildReferenceButton();
+  const exp = foundationDtcg(foundation, {}, usageUnits(bundle));
+  const json = (v: unknown) => `${JSON.stringify(v, null, 2)}\n`;
+  const out: Record<string, string> = {
+    'button.yaml': toYaml(componentAiContext(button) as unknown as YamlValue),
+    'button.md': componentMarkdown(button),
+    'fonts.json': json(fontRequirements(foundation)),
+  };
+  // The CLI writes both the DTCG export and the CSS output under `tokens/`
+  // (`packages/cli/src/files.ts`: `put(\`tokens/${name}\`, ...)` for the DTCG
+  // files, and the default `web`/`css` output path is also `tokens`, per
+  // `packages/cli/src/outputs.ts` `FORMATS`), so both land in the same
+  // directory here.
+  for (const [name, text] of Object.entries(dtcgExportFiles(exp))) out[`tokens/${name}`] = text;
+  const header = {
+    libraryId: REFERENCE_LIBRARY_ID,
+    contentHash: foundation.spec_layer.export.content_hash,
+    platform: 'web',
+    format: 'css',
+  };
+  const css = cssOutput(exp, header, { case: 'kebab' });
+  for (const [name, text] of Object.entries(css.files)) out[`tokens/${name}`] = text;
+  return out;
+}
+
+/** Writes `renderReferenceExample()` to `REFERENCE_OUT_DIR`, replacing
+ *  whatever was there. Called by `referenceExampleGolden.test.ts` under
+ *  `UPDATE_REFERENCE_EXAMPLE=1`, and by the CLI entry point below. */
+export function writeReferenceExample(): void {
+  rmSync(REFERENCE_OUT_DIR, { recursive: true, force: true });
+  for (const [path, text] of Object.entries(renderReferenceExample())) {
+    const full = join(REFERENCE_OUT_DIR, path);
+    mkdirSync(dirname(full), { recursive: true });
+    writeFileSync(full, text);
+  }
+}
+
+// Regenerate deliberately with:
+// npx tsx packages/extractor/test/fixtures/referenceExample.ts
+if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  writeReferenceExample();
 }

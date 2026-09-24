@@ -1,0 +1,38 @@
+{
+  "Spacing": {
+    "space": {
+      "100": {
+        "$type": "dimension",
+        "$value": {
+          "unit": "px",
+          "value": 4
+        },
+        "$description": "Smallest spacing step."
+      },
+      "200": {
+        "$type": "dimension",
+        "$value": {
+          "unit": "px",
+          "value": 8
+        },
+        "$description": "Small spacing step."
+      },
+      "300": {
+        "$type": "dimension",
+        "$value": {
+          "unit": "px",
+          "value": 12
+        },
+        "$description": "Medium spacing step."
+      },
+      "400": {
+        "$type": "dimension",
+        "$value": {
+          "unit": "px",
+          "value": 16
+        },
+        "$description": "Large spacing step."
+      }
+    }
+  }
+}

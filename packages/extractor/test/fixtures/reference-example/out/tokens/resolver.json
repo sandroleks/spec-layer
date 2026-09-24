@@ -1,0 +1,337 @@
+{
+  "version": "2025.10",
+  "name": "Reference Design System",
+  "sets": {
+    "Spacing": {
+      "sources": [
+        {
+          "$ref": "spacing.default.json"
+        }
+      ]
+    },
+    "Radius": {
+      "sources": [
+        {
+          "$ref": "radius.default.json"
+        }
+      ]
+    },
+    "Typography": {
+      "sources": [
+        {
+          "$ref": "typography.default.json"
+        }
+      ]
+    },
+    "Effect styles": {
+      "sources": [
+        {
+          "$ref": "styles.effects.json"
+        }
+      ]
+    },
+    "Typography styles": {
+      "sources": [
+        {
+          "$ref": "styles.typography.json"
+        }
+      ]
+    }
+  },
+  "modifiers": {
+    "Color": {
+      "contexts": {
+        "Light": [
+          {
+            "$ref": "color.light.json"
+          }
+        ],
+        "Dark": [
+          {
+            "$ref": "color.dark.json"
+          }
+        ]
+      },
+      "default": "Light"
+    }
+  },
+  "resolutionOrder": [
+    {
+      "$ref": "#/modifiers/Color"
+    },
+    {
+      "$ref": "#/sets/Spacing"
+    },
+    {
+      "$ref": "#/sets/Radius"
+    },
+    {
+      "$ref": "#/sets/Typography"
+    },
+    {
+      "$ref": "#/sets/Effect styles"
+    },
+    {
+      "$ref": "#/sets/Typography styles"
+    }
+  ],
+  "$extensions": {
+    "com.spec-layer": {
+      "schema_version": "5.1.1",
+      "content_hash": "sha256:c94a75e9f0d78969dcd512ea58b367370ed1790c733e780e62fb481a9aa5afcb",
+      "config_hash": "sha256:c68f92d8722277d28acec2f2fdb0a1a1556a2fc51e759f0ea17029daf8e98adf",
+      "source": {
+        "provider": "figma",
+        "file_name": "Reference Design System"
+      },
+      "completeness": {
+        "collections": "complete",
+        "styles": "partial",
+        "unavailable_sources": []
+      },
+      "code_syntax": {
+        "Color.brand.200": {
+          "WEB": "--brand-200"
+        },
+        "Color.brand.300": {
+          "WEB": "--brand-300"
+        },
+        "Color.brand.600": {
+          "WEB": "--brand-600"
+        },
+        "Color.brand.700": {
+          "WEB": "--brand-700"
+        },
+        "Color.color.action.disabled": {
+          "WEB": "--color-action-disabled"
+        },
+        "Color.color.action.primary": {
+          "WEB": "--color-action-primary"
+        },
+        "Color.color.action.primary-hover": {
+          "WEB": "--color-action-primary-hover"
+        },
+        "Color.color.border.subtle": {
+          "WEB": "--color-border-subtle"
+        },
+        "Color.color.text.on-action": {
+          "WEB": "--color-text-on-action"
+        },
+        "Color.neutral.0": {
+          "WEB": "--neutral-0"
+        },
+        "Color.neutral.200": {
+          "WEB": "--neutral-200"
+        },
+        "Color.neutral.400": {
+          "WEB": "--neutral-400"
+        },
+        "Color.neutral.700": {
+          "WEB": "--neutral-700"
+        },
+        "Color.neutral.900": {
+          "WEB": "--neutral-900"
+        },
+        "Radius.radius.200": {
+          "WEB": "--radius-200"
+        },
+        "Radius.radius.control": {
+          "WEB": "--radius-control"
+        },
+        "Radius.radius.full": {
+          "WEB": "--radius-full"
+        },
+        "Spacing.space.100": {
+          "WEB": "--space-100"
+        },
+        "Spacing.space.200": {
+          "WEB": "--space-200"
+        },
+        "Spacing.space.300": {
+          "WEB": "--space-300"
+        },
+        "Spacing.space.400": {
+          "WEB": "--space-400"
+        },
+        "Typography.type.size.label": {
+          "WEB": "--type-size-label"
+        }
+      },
+      "census": {
+        "color.dark.json": {
+          "tokens": 14,
+          "types": {
+            "color": 14
+          },
+          "descriptions": {
+            "present": 14,
+            "missing": 0
+          },
+          "aliases": 5,
+          "literals": 9,
+          "scopes": {
+            "FRAME_FILL": 3,
+            "SHAPE_FILL": 4,
+            "STROKE_COLOR": 1,
+            "TEXT_FILL": 3
+          },
+          "code_syntax": {
+            "present": 14,
+            "missing": 0
+          },
+          "publication": {
+            "published": 0,
+            "hidden_from_publishing": 0,
+            "unstated": 14
+          }
+        },
+        "color.light.json": {
+          "tokens": 14,
+          "types": {
+            "color": 14
+          },
+          "descriptions": {
+            "present": 14,
+            "missing": 0
+          },
+          "aliases": 5,
+          "literals": 9,
+          "scopes": {
+            "FRAME_FILL": 3,
+            "SHAPE_FILL": 4,
+            "STROKE_COLOR": 1,
+            "TEXT_FILL": 3
+          },
+          "code_syntax": {
+            "present": 14,
+            "missing": 0
+          },
+          "publication": {
+            "published": 0,
+            "hidden_from_publishing": 0,
+            "unstated": 14
+          }
+        },
+        "radius.default.json": {
+          "tokens": 3,
+          "types": {
+            "dimension": 2,
+            "number": 1
+          },
+          "descriptions": {
+            "present": 3,
+            "missing": 0
+          },
+          "aliases": 1,
+          "literals": 2,
+          "scopes": {
+            "CORNER_RADIUS": 1
+          },
+          "code_syntax": {
+            "present": 3,
+            "missing": 0
+          },
+          "publication": {
+            "published": 0,
+            "hidden_from_publishing": 0,
+            "unstated": 3
+          }
+        },
+        "spacing.default.json": {
+          "tokens": 4,
+          "types": {
+            "dimension": 4
+          },
+          "descriptions": {
+            "present": 4,
+            "missing": 0
+          },
+          "aliases": 0,
+          "literals": 4,
+          "scopes": {
+            "GAP": 4
+          },
+          "code_syntax": {
+            "present": 4,
+            "missing": 0
+          },
+          "publication": {
+            "published": 0,
+            "hidden_from_publishing": 0,
+            "unstated": 4
+          }
+        },
+        "styles.effects.json": {
+          "tokens": 1,
+          "types": {
+            "shadow": 1
+          },
+          "descriptions": {
+            "present": 0,
+            "missing": 1
+          }
+        },
+        "styles.typography.json": {
+          "tokens": 1,
+          "types": {
+            "typography": 1
+          },
+          "descriptions": {
+            "present": 1,
+            "missing": 0
+          }
+        },
+        "typography.default.json": {
+          "tokens": 1,
+          "types": {
+            "dimension": 1
+          },
+          "descriptions": {
+            "present": 1,
+            "missing": 0
+          },
+          "aliases": 0,
+          "literals": 1,
+          "scopes": {
+            "FONT_SIZE": 1
+          },
+          "code_syntax": {
+            "present": 1,
+            "missing": 0
+          },
+          "publication": {
+            "published": 0,
+            "hidden_from_publishing": 0,
+            "unstated": 1
+          }
+        }
+      },
+      "report": [
+        {
+          "code": "unit_derived_from_usage",
+          "severity": "info",
+          "path": "Radius.radius.200",
+          "message": "This token's own variable states no unit, so px was taken from how the library uses it: Radius.radius.control aliases it and is scoped `CORNER_RADIUS`.",
+          "details": {
+            "id": "VariableID:ref/radius-200",
+            "unit": "px",
+            "via": "alias-scope",
+            "source": "Radius.radius.control",
+            "reason": "CORNER_RADIUS"
+          }
+        },
+        {
+          "code": "unit_not_expressible",
+          "severity": "info",
+          "path": "Typography styles.Label.Large",
+          "message": "The line height is a measured value, but DTCG `lineHeight` is a unitless multiplier of the font size; the measured value is kept under `$extensions[\"com.spec-layer\"]`, and `$value` has no `lineHeight`.",
+          "details": {
+            "property": "lineHeight",
+            "unit": "px",
+            "number": 24
+          }
+        }
+      ]
+    }
+  }
+}
