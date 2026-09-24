@@ -15,7 +15,7 @@
 import { icon } from '../shell/icons';
 import type { ShellRefs } from '../shell/shell';
 import {
-  agentSetupMessage, setupCommand, effectiveBump, currentVersionOf, nextVersionFor,
+  agentSetupMessage, setupCommand, effectiveBump, currentVersionOf, nextVersionFor, isPublishBusy,
   PROPOSAL_FAILED_MESSAGE, BELOW_MINIMUM_MESSAGE,
   type PublishState, type DryRunResult,
 } from '../publish';
@@ -26,14 +26,7 @@ import {
 } from '../viewModel/allowance';
 import { progressMarkup } from './progress';
 import { isSemver, type Bump } from '@spec-layer/extractor';
-
-function esc(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
+import { esc } from '../escape';
 
 /**
  * The one sentence of explanation, shown only before the first publish, where
@@ -46,12 +39,6 @@ const BEFORE_FIRST_PUBLISH =
   'Publish this file’s component and foundation docs so developers and ' +
   'coding agents can pull them. The setup commands appear here after the ' +
   'first publish.';
-
-/** Statuses where a publish OR a download is in flight, so the primary is
- *  working. Intent-blind by design: both share the one collect round trip. */
-function isBusy(state: PublishState): boolean {
-  return state.status === 'collecting' || state.status === 'uploading';
-}
 
 /**
  * The footer's primary is always the Publish action (the download has its own
@@ -82,9 +69,13 @@ function busyLabel(state: PublishState): string {
  * design-system/components.css was written to stop.
  */
 export function publishHeaderMarkup(state: PublishState): string {
-  const pill = state.libraryId
-    ? '<span class="sl-badge" data-tone="success">Published</span>'
-    : '<span class="sl-badge">Not published</span>';
+  // Neutral until the file's identity has arrived: "Not published" for a
+  // published file is the fabrication this guards against.
+  const pill = !state.infoKnown
+    ? '<span class="sl-badge">Checking…</span>'
+    : state.libraryId
+      ? '<span class="sl-badge" data-tone="success">Published</span>'
+      : '<span class="sl-badge">Not published</span>';
   return (
     '<button class="sl-icon-button sl-publish-back" type="button" ' +
     `data-publish-back aria-label="Back to Library">${icon('chevronLeft')}</button>` +
@@ -177,12 +168,46 @@ function bumpControl(minimum: Bump, chosen: Bump | null): string {
   return `<div class="sl-segmented sl-publish-bumps" role="radiogroup" aria-label="Version change">${buttons}</div>`;
 }
 
-function historyLink(): string {
+/**
+ * The two ways out of the version block: re-run the check this session
+ * holds, and open the history. "Check again" stays on screen, and stays
+ * focusable, while a check is already running or the screen is busy some
+ * other way: `aria-disabled`, not the `disabled` attribute, so a reader who
+ * had focus on it (or is tabbing through) never loses it to `<body>` the
+ * moment it needs to look inactive. The controller's own guard
+ * (`onPublishRecheck`) already makes a click while busy a no-op, so nothing
+ * else has to. Both are small secondaries so neither competes with the
+ * footer's primary.
+ */
+function versionActions(state: PublishState): string {
+  const recheckDisabled = state.proposalStatus === 'loading' || isPublishBusy(state);
   return (
+    '<span class="sl-publish-version-actions">' +
     '<button class="sl-button" data-tone="secondary" data-size="small" type="button" ' +
-    'data-publish-history>Version history</button>'
+    `data-publish-recheck${recheckDisabled ? ' aria-disabled="true"' : ''}>Check again</button>` +
+    '<button class="sl-button" data-tone="secondary" data-size="small" type="button" ' +
+    'data-publish-history>Version history</button></span>'
   );
 }
+
+/**
+ * Every proposal note states an answer as of when it was computed, not a
+ * live fact: a variable, style, or layer edited straight on the canvas is
+ * invisible to this session until the next dry run, so the wording never
+ * reads as a present-tense claim about the file right now. Worded per
+ * source (see `PublishState.proposalSource`), since a proposal born from a
+ * publish already reflects exactly what that publish just sent, and only a
+ * canvas edit made since could make it stale, while a dry run's answer is
+ * only ever as of the moment it ran. "Check again" (above) is the way to
+ * ask again after such an edit.
+ */
+function checkedNote(state: PublishState): string {
+  return state.proposalSource === 'publish'
+    ? 'This reflects what you just published.'
+    : 'Checked earlier in this session. If you’ve edited the canvas since, press Check again.';
+}
+
+const INVALID_FIRST_VERSION_HINT = 'Use three numbers, like 1.0.0.';
 
 /**
  * The version block: the next version and one line of why, the raise
@@ -201,16 +226,24 @@ function versionBlock(state: PublishState): string {
     `placeholder="Optional. Appears in version history.">${esc(state.note)}</textarea></label>`
   );
   let body: string;
+  if (!state.infoKnown) {
+    // Whether this file has a library is not known yet, so neither a first
+    // version field nor a next version can be shown without guessing.
+    return `<section class="sl-publish-block sl-publish-version">${head()}${
+      note('Checking whether this file is published<span class="sl-work-dots" aria-hidden="true"><i></i><i></i><i></i></span>')}</section>`;
+  }
   if (!state.libraryId) {
     // Nothing published yet, so there is nothing to diff against: the version
     // is whatever the publisher types here, and it becomes 1.0.0 by default.
     const valid = isSemver(state.initialVersion);
+    // The hint is always in the DOM and hidden when valid, so typing can
+    // toggle it in place (patchInitialVersion) instead of repainting.
     body =
       note('The first publish creates this version.') +
       `<label class="sl-field"${valid ? '' : ' data-invalid="true"'}><span class="sl-field-label">First version</span>` +
       '<span class="sl-input-wrap"><input data-publish-initial-version inputmode="decimal" ' +
       `value="${esc(state.initialVersion)}" aria-invalid="${!valid}"></span></label>` +
-      (valid ? '' : '<p class="sl-publish-status is-error">Use three numbers, like 1.0.0.</p>') +
+      `<p class="sl-publish-status is-error" data-publish-initial-version-error${valid ? ' hidden' : ''}>${INVALID_FIRST_VERSION_HINT}</p>` +
       noteField;
     return `<section class="sl-publish-block sl-publish-version">${head()}${body}</section>`;
   }
@@ -225,14 +258,16 @@ function versionBlock(state: PublishState): string {
     body = note(PROPOSAL_FAILED_MESSAGE) + noteField;
   } else if (!state.proposal) {
     // No failure and no answer yet: either nothing has asked (a fresh publish
-    // just landed) or the reply has not arrived. Neutral, not a failure claim.
-    body = note('Open Publish again to check what changed.') + noteField;
+    // just landed) or the reply has not arrived. Neutral, not a failure
+    // claim, and points at the control that gets one rather than at a vague
+    // "try again".
+    body = note('Press Check again to see what changed.') + noteField;
   } else if (state.proposal.unchanged) {
-    body = note(`Nothing changed since ${esc(since)}.`);
+    body = note(`Nothing changed since ${esc(since)}. ${checkedNote(state)}`);
   } else if (current === null) {
     // A library published before versions existed: no baseline version to
     // bump, so the next publish creates the first one and there is no raise.
-    body = note(`No version yet. The next publish creates ${esc(state.proposal.proposedVersion ?? '1.0.0')}.`) + noteField;
+    body = note(`No version yet. The next publish creates ${esc(state.proposal.proposedVersion ?? '1.0.0')}. ${checkedNote(state)}`) + noteField;
   } else {
     const minimum: Bump = state.proposal.minimumBump ?? 'patch';
     const applied = effectiveBump(state) ?? minimum;
@@ -243,10 +278,11 @@ function versionBlock(state: PublishState): string {
       : `${BUMP_WORD[applied]}, raised from ${minimum}: ${reason}`;
     body =
       `<p class="sl-publish-version-next"><strong>Next version ${esc(next)}</strong><span>${esc(why)}</span></p>` +
+      note(checkedNote(state)) +
       bumpControl(minimum, state.chosenBump) +
       noteField;
   }
-  return `<section class="sl-publish-block sl-publish-version">${head(historyLink())}${body}</section>`;
+  return `<section class="sl-publish-block sl-publish-version">${head(versionActions(state))}${body}</section>`;
 }
 
 /**
@@ -303,7 +339,7 @@ export function publishScrollMarkup(
   state: PublishState, allowance: PublishAllowance, locale?: string,
   componentFormat: ComponentFormat = DEFAULT_COMPONENT_FORMAT,
 ): string {
-  const busy = isBusy(state);
+  const busy = isPublishBusy(state);
   // Rotating during an upload would race the publish on the server, so the
   // control is disabled while the footer reports work in progress. Its own
   // row, apart from the copy actions: the one destructive control on the
@@ -342,8 +378,10 @@ export function publishScrollMarkup(
       'Rotating stops the current key working for everyone within about a minute.</p>' +
       '</section>' +
       rotateRow;
-  } else {
+  } else if (state.infoKnown) {
     body = `<p class="sl-publish-intro">${BEFORE_FIRST_PUBLISH}</p>`;
+  } else {
+    body = ''; // the version block above already says the identity is being read
   }
   // Room to scroll the last control out from under the floating error.
   const hasError = state.status === 'error' && Boolean(state.message);
@@ -374,7 +412,7 @@ export function publishScrollMarkup(
  * progress labels carry no ellipsis because `sl-work-dots` animates one.
  */
 export function publishFooterMarkup(state: PublishState): string {
-  const busy = isBusy(state);
+  const busy = isPublishBusy(state);
   const progress = busy
     ? (
       '<div class="sl-footer-progress">' +
@@ -400,7 +438,15 @@ export function publishFooterMarkup(state: PublishState): string {
   // library) or nothing to publish (the dry run reported unchanged):
   // `nextVersionFor` already carries that guard.
   const next = busy ? null : nextVersionFor(state);
-  const label = busy ? busyLabel(state) : next ? `Publish ${esc(next)}` : 'Publish library';
+  // Before the file's identity has arrived, "Publish library" would be a
+  // first-publish claim this task exists to remove, right under a
+  // "Checking…" pill and version block. The button matches them instead,
+  // disabled, until infoKnown says which one is true. Busy still wins first:
+  // the download action needs no identity and can be running (and disabled
+  // for its own honest reason, see busyLabel) while infoKnown is still false.
+  const label = busy
+    ? busyLabel(state)
+    : !state.infoKnown ? 'Checking…' : next ? `Publish ${esc(next)}` : 'Publish library';
   return (
     progress +
     '<div class="sl-footer-actions">' +
@@ -408,7 +454,7 @@ export function publishFooterMarkup(state: PublishState): string {
     'target="_blank" rel="noopener">' +
     `<span>Read the guide</span>${icon('externalLink', 15)}</a>` +
     '<button class="sl-button sl-publish-submit" data-tone="primary" ' +
-    `type="button" data-publish${busy ? ' disabled' : ''}>` +
+    `type="button" data-publish${(busy || !state.infoKnown) ? ' disabled' : ''}>` +
     `${icon('upload', 15)}<span>${label}</span></button>` +
     '</div>'
   );
@@ -429,4 +475,25 @@ export function renderPublishScreen(
   refs.scroll.scrollTop = samePane ? top : 0;
   refs.footer.innerHTML = publishFooterMarkup(state);
   refs.footer.hidden = false;
+}
+
+/**
+ * Reflects the first-version field's validity without a repaint. Typing used
+ * to redraw the whole screen per keystroke and put the caret at the end.
+ * Trims the way onInitialVersionInput does, so the two never disagree.
+ * Returns false when the field is not on screen.
+ */
+export function patchInitialVersion(root: ParentNode, value: string): boolean {
+  const input = root.querySelector<HTMLInputElement>('[data-publish-initial-version]');
+  if (!input) return false;
+  const valid = isSemver(value.trim());
+  input.setAttribute('aria-invalid', String(!valid));
+  const field = input.closest<HTMLElement>('.sl-field');
+  if (field) {
+    if (valid) field.removeAttribute('data-invalid');
+    else field.setAttribute('data-invalid', 'true');
+  }
+  const hint = root.querySelector<HTMLElement>('[data-publish-initial-version-error]');
+  if (hint) hint.hidden = valid;
+  return true;
 }

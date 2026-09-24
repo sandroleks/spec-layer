@@ -173,6 +173,14 @@ describe('dist/ui.html', () => {
       /\.sl-choice-input\[data-mixed="?true"?\]\s*\+\s*\.sl-checkbox-box:{1,2}after\s*\{[^}]*grid-area:\s*1\s*\/\s*1;/,
     );
   });
+
+  it('styles the tier-3 copy dialog, so it never renders unstyled below the shell', () => {
+    // clipboard.ts builds the dialog by hand, so nothing in the TypeScript
+    // graph proves the CSS exists; only the built stylesheet can.
+    const css = vnext.match(/<style>([\s\S]*?)<\/style>/)?.[1] ?? '';
+    expect(css).toMatch(/\.sl-copy-fallback-panel\s*>\s*h2\s*\{/);
+    expect(css).toMatch(/\.sl-copy-fallback-panel\s*>\s*textarea\s*\{[^}]*width:\s*100%/);
+  });
 });
 
 describe('dist/ui-harness.html', () => {

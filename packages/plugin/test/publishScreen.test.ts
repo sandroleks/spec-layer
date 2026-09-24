@@ -31,7 +31,11 @@ function state(overrides: Partial<PublishState> = {}): PublishState {
     chosenBump: null,
     note: '',
     initialVersion: '1.0.0',
+    infoKnown: true,
     downloadFormat: 'yaml',
+    proposalGeneration: 0,
+    collectGeneration: 0,
+    proposalSource: 'check',
     ...overrides,
   };
 }
@@ -99,6 +103,17 @@ describe('publish screen header', () => {
       .toContain('>Published</span>');
     const markup = publishHeaderMarkup(PUBLISHED);
     expect(markup.indexOf('<h1>')).toBeLessThan(markup.indexOf('sl-badge'));
+  });
+
+  it('shows a neutral pill and no version claim before the publish identity is known', () => {
+    const unknown = state({ infoKnown: false });
+    expect(publishHeaderMarkup(unknown)).toContain('Checking…');
+    expect(publishHeaderMarkup(unknown)).not.toContain('Not published');
+    expect(publishHeaderMarkup(unknown)).not.toContain('>Published<');
+    const scroll = publishScrollMarkup(unknown, FREE);
+    expect(scroll).toContain('Checking whether this file is published');
+    expect(scroll).not.toContain('data-publish-initial-version');
+    expect(scroll).not.toContain('The setup commands appear here');
   });
 
   /**
@@ -314,6 +329,20 @@ describe('publish screen footer', () => {
   });
 
   /**
+   * Before the identity is known, "Publish library" (or any proposed
+   * version) would be a first-publish claim about a file that may already be
+   * published. The primary matches the neutral pill and version block
+   * instead: disabled, with the same "Checking…" word, until infoKnown says
+   * which one is true.
+   */
+  it('disables the primary with a neutral label before the publish identity is known', () => {
+    const markup = publishFooterMarkup(state({ infoKnown: false }));
+    expect(markup).toContain('data-publish disabled');
+    expect(markup).toContain('Checking…');
+    expect(markup).not.toContain('Publish library');
+  });
+
+  /**
    * The body no longer explains publishing, so the explanation needs a
    * permanent exit: a secondary before the primary, in the order the Library
    * footer uses. An anchor with target _blank is the plugin's established way
@@ -370,6 +399,18 @@ describe('publish screen footer', () => {
       expect(markup).not.toContain('disabled');
       expect(markup).toContain('Publish library');
     }
+  });
+
+  /**
+   * The download needs no identity (see downloadBlock: "No account needed"),
+   * so it can be running before infoKnown is true. Busy must still win the
+   * label: "Checking…" here would claim the wrong kind of wait.
+   */
+  it('still reports a running download honestly when the publish identity is not known yet', () => {
+    const markup = publishFooterMarkup(state({ status: 'collecting', intent: 'download', infoKnown: false }));
+    expect(markup).toContain('data-publish disabled');
+    expect(markup).toContain('Downloading…');
+    expect(markup).not.toContain('Checking…');
   });
 
   /**
@@ -530,6 +571,44 @@ describe('publish screen version block', () => {
     expect(markup).toContain('data-publish-history');
   });
 
+  it('offers Check again beside Version history, aria-disabled (not disabled) while a check runs or the screen is busy', () => {
+    const proposal: DryRunResult = {
+      ...firstPublishProposal(), currentVersion: '1.5.0', minimumBump: 'patch', proposedVersion: '1.5.1',
+    };
+    const settled = publishScrollMarkup(state({ ...PUBLISHED, proposal, proposalStatus: 'idle' }), FREE);
+    expect(settled).toContain('data-publish-recheck>Check again');
+    expect(settled).toContain('data-publish-history');
+    // Stays on screen and stays focusable rather than disappearing or
+    // dropping out of the tab order (a control that vanishes mid-interaction,
+    // or the native `disabled` attribute, can strand keyboard focus): the
+    // markup uses aria-disabled, never the disabled attribute, on this
+    // button. The controller's own guard (onPublishRecheck) is what actually
+    // makes a click while busy a no-op.
+    const loading = publishScrollMarkup(state({ ...PUBLISHED, proposal: null, proposalStatus: 'loading' }), FREE);
+    expect(loading).toContain('data-publish-recheck aria-disabled="true">Check again');
+    expect(loading).not.toMatch(/data-publish-recheck[^>]* disabled[ >]/);
+    const busy = publishScrollMarkup(state({ ...PUBLISHED, proposal, proposalStatus: 'idle', status: 'uploading' }), FREE);
+    expect(busy).toContain('data-publish-recheck aria-disabled="true">Check again');
+    expect(busy).not.toMatch(/data-publish-recheck[^>]* disabled[ >]/);
+  });
+
+  it('words the checked note by where the proposal came from', () => {
+    const checked: DryRunResult = {
+      ...firstPublishProposal(), currentVersion: '1.4.2', unchanged: true, proposedVersion: null,
+    };
+    const fromCheck = publishScrollMarkup(
+      state({ ...PUBLISHED, version: '1.4.2', proposal: checked, proposalSource: 'check' }), FREE,
+    );
+    expect(fromCheck).toContain('Checked earlier in this session. If you’ve edited the canvas since, press Check again.');
+    expect(fromCheck).not.toContain('This reflects what you just published.');
+
+    const fromPublish = publishScrollMarkup(
+      state({ ...PUBLISHED, version: '1.4.2', proposal: checked, proposalSource: 'publish' }), FREE,
+    );
+    expect(fromPublish).toContain('This reflects what you just published.');
+    expect(fromPublish).not.toContain('Checked earlier in this session.');
+  });
+
   it('before the first publish, shows an editable first version prefilled 1.0.0 and no raise control', () => {
     const markup = block(proScroll(state({ proposal: firstPublishProposal() })), 'Version');
     expect(markup).toContain('The first publish creates this version.');
@@ -626,7 +705,7 @@ describe('publish screen version block', () => {
    */
   it('says nothing yet is known rather than claiming the dry run failed', () => {
     const markup = block(proScroll(state({ libraryId: LIBRARY_ID, version: '1.4.2' })), 'Version');
-    expect(markup).toContain('Open Publish again to check what changed.');
+    expect(markup).toContain('Press Check again to see what changed.');
     expect(markup).not.toContain('Couldn’t check what changed');
   });
 

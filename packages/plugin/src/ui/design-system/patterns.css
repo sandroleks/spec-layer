@@ -856,6 +856,14 @@
   flex: none;
 }
 
+/* Same inset as the rebuild banner: a read failure or an incomplete scan
+   occupies the same slot above the filters, so it should not sit flush
+   against the panel edge either. */
+.sl-library-error,
+.sl-library-incomplete {
+  margin: 0 var(--sl-space-12) var(--sl-space-10) var(--sl-space-14);
+}
+
 .sl-library-filters {
   width: max-content;
   min-height: var(--sl-control-md);
@@ -1381,6 +1389,12 @@
   color: var(--sl-color-text);
   font-size: var(--sl-font-size-control);
   font-weight: var(--sl-font-weight-semibold);
+}
+
+/* Two small actions in the block head read as one group, not two heads. */
+.sl-publish-version-actions {
+  display: inline-flex;
+  gap: var(--sl-space-6);
 }
 
 /*
@@ -2915,6 +2929,39 @@
   justify-content: flex-end;
   gap: var(--sl-space-8);
   margin-top: var(--sl-space-14);
+}
+
+/*
+ * Tier-3 copy (ui/clipboard.ts). The same overlay and dialog as the confirm,
+ * plus a read-only monospace textarea sized for a brief. The notice is the
+ * caveat sentence the toast carries on tiers 1 and 2.
+ */
+.sl-copy-fallback-panel > h2 {
+  margin: 0 0 var(--sl-space-8);
+  color: var(--sl-color-text);
+  font-size: var(--sl-font-size-section);
+  font-weight: var(--sl-font-weight-semibold);
+}
+
+.sl-copy-fallback-panel > p {
+  margin: 0 0 var(--sl-space-8);
+  color: var(--sl-color-text-muted);
+  font-size: var(--sl-font-size-control);
+  line-height: var(--sl-line-height-body);
+}
+
+.sl-copy-fallback-panel > textarea {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  padding: var(--sl-space-6) var(--sl-space-8);
+  color: var(--sl-color-text);
+  background: var(--sl-color-surface);
+  border: 1px solid var(--sl-color-border);
+  border-radius: var(--sl-radius-sm);
+  font: inherit;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--sl-font-size-support);
 }
 
 /*

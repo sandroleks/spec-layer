@@ -3,7 +3,6 @@ import type { SerializedFoundation } from '@spec-layer/extractor';
 import {
   currentFoundationSelection,
   currentFoundationSpec,
-  isFoundationGenerating,
   onFoundationChange,
   onFoundationMessage,
   onFoundationToggleAll,
@@ -76,13 +75,6 @@ describe('foundation host', () => {
     host.progress.length = 0;
     vi.mocked(host.repaint).mockClear();
     vi.mocked(host.stopProgress).mockClear();
-  });
-
-  it('marks the build in flight so the shared lock can see it', () => {
-    setFoundationGenerating(true);
-    expect(isFoundationGenerating()).toBe(true);
-    setFoundationGenerating(false);
-    expect(isFoundationGenerating()).toBe(false);
   });
 
   it('drives busy state, progress, teardown, and repaint through the host', () => {

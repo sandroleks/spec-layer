@@ -5,6 +5,7 @@ import {
   canGenerate,
   createDocFrame,
   createState,
+  foundationAiRequested,
   generatingMessages,
   nextPhaseIndex,
   omissionsMessage,
@@ -86,6 +87,29 @@ describe('canGenerate', () => {
     const s = createState();
     s.aiEnabled = true; s.licenseKey = null; s.figmaUserId = null;
     expect(canGenerate(s)).toBe(false);
+  });
+});
+
+describe('foundationAiRequested', () => {
+  const briefs = { collections: [{}] } as unknown as import('@spec-layer/extractor').GroupDraftInput;
+
+  it('is false with AI writing off, even with an identity and something to describe', () => {
+    const s = createState();
+    s.aiEnabled = false; s.figmaUserId = 'u1';
+    expect(foundationAiRequested(s, briefs)).toBe(false);
+  });
+
+  it('is false with nothing to describe', () => {
+    const s = createState();
+    s.aiEnabled = true; s.figmaUserId = 'u1';
+    expect(foundationAiRequested(s, null)).toBe(false);
+    expect(foundationAiRequested(s, { collections: [] })).toBe(false);
+  });
+
+  it('is true with the switch on, an identity, and at least one collection brief', () => {
+    const s = createState();
+    s.aiEnabled = true; s.figmaUserId = 'u1';
+    expect(foundationAiRequested(s, briefs)).toBe(true);
   });
 });
 

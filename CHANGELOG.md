@@ -474,6 +474,40 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
 
 ### Fixed
 
+- **The Library says so when it could not read this file's docs, and
+  recovers, and so does search.** A failed read used to leave the Library
+  spinning with Refresh and Update disabled for the rest of the session,
+  while the search palette kept saying "No component docs yet" or "No
+  matches", as if the read had actually finished. The Library now says the
+  read failed and offers Refresh, which works again. If an earlier read had
+  already listed docs, those rows stay on screen, marked as not checked,
+  with a banner saying they may be out of date. When a scan stops partway
+  through instead of failing outright, the rows it did collect stay visible
+  with a note that the list may be missing some docs, and a stale note of
+  that kind no longer sits under a fresh failure banner from a later
+  attempt. The same honesty reaches every corner of the screen a partial or
+  failed read touches: the Updates and In sync filters stop claiming an
+  empty subset is certain ("None found in what could be read" replaces "No
+  updates waiting" or "No docs in sync" while either condition holds), and
+  both "Rebuild docs" and "Update all docs" refuse to run and drop their
+  claims of certainty ("Up to date" included) over a list a failed re-read
+  or an incomplete scan cannot vouch for, until a complete read clears
+  them. The search palette says the read failed when it found no docs at
+  all, and opening it retries a failed read instead of repeating the same
+  failure for the rest of the session. When a failed or partial read did
+  collect some docs and a query matches none of them, it says so ("No
+  matches in the docs that could be read") rather than claiming the whole
+  file was searched, and an empty recent list before typing says "No
+  component docs in what could be read" rather than "No component docs
+  yet".
+- **Copy for AI's manual-copy dialog is styled.** When the clipboard is
+  blocked, the text appears in a proper dialog on the shared overlay, with
+  Escape to close, Tab kept inside, and focus returned to the button that
+  opened it. It used to render unstyled below the plugin and scroll the
+  panel away. A second copy that also falls back now replaces the dialog
+  already on screen instead of stacking a second one underneath it, and a
+  caveat notice is now part of what a screen reader announces about the
+  dialog, not just body text next to it.
 - **A DTCG token that is also a group is omitted and reported, in either
   order.** A variable named `color/red` beside `color/red/dark` used to come
   out differently depending on which Figma listed first: either `dark` was
@@ -710,19 +744,16 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   under dynamic page access, a Section whose plugin data could not be read)
   left the Library spinning with Refresh and Update disabled for the rest of
   the session. The scan now returns what it read: rows collected before the
-  failure are posted as the Library. A failure with no rows now gets a
-  `libraryError` reply instead of no reply at all, but the panel does not
-  act on it yet, so that case still shows as refreshing until the next
-  build's change. The registry self-heal runs only after a complete scan,
-  so a failed one can no longer prune docs it never reached.
-  A registry read that is rejected rather than empty is no longer pruned
+  failure are posted as the Library, marked as partial so the panel says the
+  list may be missing some docs. A failure with no rows now gets a
+  `libraryError` reply instead of no reply at all, and the panel shows it as
+  a failed read with Refresh available. The registry self-heal runs only
+  after a complete scan, so a failed one can no longer prune docs it never
+  reached. A registry read that is rejected rather than empty is no longer pruned
   either, for the same reason. A source read that is rejected rather than
   empty (usually an unloaded page) no longer marks the row **Source
   missing**, matching what a failed Foundation read already did. Detach and
-  Delete reply even when the registry write fails. A scan that fails
-  part-way now marks its reply as partial, so a Library the panel shows
-  after such a failure can be told apart from a complete one; the panel
-  itself does not yet say so, that is the next build's change.
+  Delete reply even when the registry write fails.
 - **Library, Foundation docs and the change list read the file without
   per-variable publish status.** Every foundation read asked Figma for each
   variable's, collection's and style's publish status, one call each, and
@@ -777,6 +808,82 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   column, notes take the same measure as the contrast notes, and labels
   wrap at it. The text itself is unchanged, so no existing doc reports an
   update for this.
+- **A queued rebuild stays a rebuild.** Opening the Library while "Rebuild
+  docs" or "Update all docs" was running re-read the file and cleared the
+  per-row state the run was started from, so the remaining older-version
+  docs were updated without the AI top-up the banner promised. Each queued
+  row now carries its intent from the start, and navigating to the Library
+  during a run no longer re-reads the file.
+- **"Up to date" waits for the checks.** The Library footer said "Up to
+  date" while source checks were still running and when a doc's source was
+  missing. It now says "Checking…" until every check lands and "Nothing to
+  update" when a source is missing.
+- **Foundations "Create docs" spends no AI use with AI writing off.** The
+  build asked the model for group descriptions whenever an identity existed,
+  contradicting the switch's own help text. It now checks the switch first.
+- **Publish shows a neutral status until it knows the file, and waits to
+  offer an action.** Opening Publish before the file's stored library id had
+  been read showed "Not published" and a first-version field for a file that
+  was published, with the Publish button already enabled and reading "Publish
+  library" directly under both: a first-publish claim about a file that might
+  already be one. The pill, the version block, and now the button all read
+  "Checking…" (the button disabled) until the identity arrives, and the
+  screen asks again each time Publish is opened while it is still unknown, so
+  a lost or late reply gets another chance instead of leaving the pane
+  waiting forever. A snapshot download started before the identity arrived,
+  or one that failed, keeps the file's library when the identity lands
+  rather than dropping it, which read as "Not published" and offered a
+  first publish for a file that was already published.
+- **Reopening Publish reuses this session's version check.** Every open
+  re-read every component and asked the server what changed. The screen now
+  keeps the answer it already has, and refreshes it on its own after a doc is
+  created, updated, or rebuilt (including a component or Foundation build
+  that fails partway, since some docs may already have landed), detached, or
+  removed, after a Library update batch, and after the file's publish
+  identity changes, so the version and change count shown stay honest about
+  what this session has actually seen. A change that lands while a check or
+  a publish is already in progress is caught too: the stale answer is
+  discarded rather than shown as current, a publish that goes through anyway
+  keeps its real result but drops the version guess that no longer applies,
+  and a publish refused as too small a change keeps the refusal but not the
+  next version it named. "Check again", beside "Version history", stays on
+  screen and reachable by keyboard even while it is doing nothing, and is
+  for a variable, style, or layer changed straight on the canvas, which none
+  of the above can see. The note under the version
+  now says whether it reflects a check ("Checked earlier in this session")
+  or the publish that was just made ("This reflects what you just
+  published"), instead of one claim that did not fit either.
+- **The snapshot download no longer races its own cleanup.** The blob URL
+  was revoked in the same tick as the click, which some browsers treat as
+  a cancelled save. It is now revoked a minute later.
+- **Publish recovers when a doc cannot be built into the library.** A doc
+  the library could not be built from left Publish stuck on "Checking…" or
+  "Publishing…", with every Publish action ignored until the plugin was
+  reopened. A version check that hits one now says it couldn't check what
+  changed, and a publish says nothing was published, with the error's own
+  text after it in parentheses; both can be tried again straight away.
+- **Source checks no longer repaint the whole Library.** In the All view,
+  each check that lands redraws only its row, the counts, and the footer,
+  and focus stays where it was, including on a menu item, the menu's own
+  close button, or a footer button such as Publish. The Updates and In sync
+  views still redraw in full, since a check can move a row in or out of
+  them. A check landing while Publish was open no longer repaints Publish.
+  "Rebuild docs" now re-enables the moment the last check lands rather than staying
+  disabled until the next unrelated repaint, and an open row menu's "Update
+  this doc" item and on-screen position stay correct too, even when the row
+  itself did not change status.
+- **Hovering quick-search results no longer rebuilds the list** on every
+  pointer move; only the highlighted row changes.
+- **Typing a first version keeps the caret.** The field's validity is now
+  updated in place instead of repainting the Publish screen per keystroke.
+- **The font list says when it is open, and a late font list shows its
+  warning.** Typing into a font field opened the list without marking the
+  field expanded, and a font list that arrived after Settings had drawn
+  computed the fallback warning without showing it.
+- **Settings, License, and Publish fields respond while a build runs**, and
+  the Library rail no longer re-runs source checks when the Library is
+  already open. An empty state's shortcut now leaves focus on the rail item
+  it opened instead of dropping it.
 
 - **AI-written group descriptions in DTCG are marked as such.** Figma has no
   group descriptions, so every folder description a Foundation doc carries

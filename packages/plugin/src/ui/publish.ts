@@ -461,6 +461,41 @@ export interface PublishState {
   note: string;
   /** The editable first version, only sent on a create. */
   initialVersion: string;
+  /**
+   * Whether this session has heard the file's publish identity: a
+   * `publishInfo` reply, or a `publishSources` reply (which carries it).
+   * Until then the screen shows neither "Published" nor "Not published" and
+   * proposes no version, since either would be a guess about the file.
+   */
+  infoKnown: boolean;
+  /**
+   * Bumped by `invalidatePublishProposal` every time something in this
+   * session could have changed what a publish would contain: a doc created,
+   * updated, or rebuilt; a Foundation build; a doc detached or removed; or a
+   * Library update batch finishing. Compared against `collectGeneration` so a
+   * collect already in flight when one of those lands can tell its own
+   * answer is about to be stale (see `onPublishSources`).
+   */
+  proposalGeneration: number;
+  /**
+   * The `proposalGeneration` in effect when the current (or most recent)
+   * collect for a dry run or a publish was sent (`requestPublishSources`).
+   * Checked against `proposalGeneration` both when that collect's sources
+   * reply lands and again after the proxy call it triggers resolves, so an
+   * invalidation landing while sources were being gathered, or while the
+   * network call was in flight, is caught rather than the stale answer it
+   * produced landing as if it were still current. A download never reads
+   * this: a snapshot is not a proposal and cannot go stale the same way.
+   */
+  collectGeneration: number;
+  /**
+   * Where the current `proposal` came from, so the version block can word
+   * its "checked" note honestly. A dry run only ever answers for the moment
+   * it ran; canvas edits since then are invisible to it. A publish's own
+   * result is different: it reflects exactly what that publish just sent,
+   * with nothing for "Check again" to add until something changes after it.
+   */
+  proposalSource: 'check' | 'publish';
 }
 
 export function createPublishState(): PublishState {
@@ -468,6 +503,7 @@ export function createPublishState(): PublishState {
     status: 'idle', message: null, libraryId: null, pullKey: null, lastPublishedAt: null, intent: 'publish',
     downloadFormat: DEFAULT_COMPONENT_FORMAT,
     version: null, proposal: null, proposalStatus: 'idle', chosenBump: null, note: '', initialVersion: '1.0.0',
+    infoKnown: false, proposalGeneration: 0, collectGeneration: 0, proposalSource: 'check',
   };
 }
 
@@ -584,7 +620,19 @@ export function publishState(): Readonly<PublishState> {
  */
 export function onPublishClick(_auth: ProxyAuth): void {
   if (state.status === 'collecting' || state.status === 'uploading') return;
-  state = { ...state, status: 'collecting', message: null, intent: 'publish' };
+  // The button is disabled until the identity is known (see
+  // publishFooterMarkup), so this only guards a click that reached here some
+  // other way; it must not start a publish that has not decided create or
+  // update yet.
+  if (!state.infoKnown) return;
+  state = {
+    ...state, status: 'collecting', message: null, intent: 'publish',
+    // Stamped for the same reason startDryRun stamps it: so the outcome that
+    // eventually lands (created/updated/unchanged, below) can tell whether
+    // something invalidated the proposal while this publish's own network
+    // call was in flight.
+    collectGeneration: state.proposalGeneration,
+  };
   host.repaint();
   host.send({ type: 'requestPublishSources' });
 }
@@ -603,21 +651,85 @@ export function onDownloadSkillClick(format: ComponentFormat): void {
 }
 
 /**
- * Open the publish screen for a known library: start a dry run so the
- * proposed version and change counts are on screen before the publisher
- * commits to anything. A library with no id yet has nothing to diff against,
- * so it gets the fixed 1.0.0 proposal locally, with no round trip.
+ * Open the publish screen. A library with no id yet has nothing to diff
+ * against, so it gets the fixed 1.0.0 proposal locally, with no round trip.
+ * A known library gets a dry run once per session: a proposal this session
+ * already holds stands until the publisher asks again (onPublishRecheck) or
+ * publishes. Every open used to re-extract every component and post a dry
+ * run, for a screen that had not changed.
  */
 export function onPublishOpen(): void {
   if (state.status === 'collecting' || state.status === 'uploading') return;
+  if (!state.infoKnown) {
+    // Nothing is known about this file yet: no first-publish proposal (it
+    // would read as "not published" for a file that is) and no dry run
+    // (there is no id to run it against). The controller re-enters here
+    // when publishInfo lands. Ask again rather than leaving the pane
+    // waiting forever on a reply that may have been lost: the request is
+    // idempotent, and this is the one path that gets another try each time
+    // the reader opens Publish.
+    host.repaint();
+    host.send({ type: 'requestPublishInfo' });
+    return;
+  }
   if (!state.libraryId) {
     state = { ...state, proposal: firstPublishProposal(), proposalStatus: 'idle' };
     host.repaint();
     return;
   }
-  state = { ...state, status: 'collecting', intent: 'dryRun', proposalStatus: 'loading', message: null };
+  if (state.proposal && state.proposalStatus === 'idle') {
+    host.repaint();
+    return;
+  }
+  startDryRun();
+}
+
+/** The version block's "Check again": a dry run the publisher asked for,
+ *  replacing whatever proposal this session holds. */
+export function onPublishRecheck(): void {
+  if (state.status === 'collecting' || state.status === 'uploading' || !state.libraryId) return;
+  startDryRun();
+}
+
+function startDryRun(): void {
+  state = {
+    ...state, status: 'collecting', intent: 'dryRun', proposalStatus: 'loading', message: null,
+    // The sources this collect is about to gather answer for the file as it
+    // stands right now: stamp the request with the current generation so
+    // onPublishSources can tell, when the reply lands, whether anything
+    // invalidated the proposal in the meantime.
+    collectGeneration: state.proposalGeneration,
+  };
   host.repaint();
   host.send({ type: 'requestPublishSources' });
+}
+
+/**
+ * Called wherever something in this session could have changed what a
+ * publish would contain: a doc created, updated, or rebuilt; a Foundation
+ * build; a doc detached or removed; or a Library update batch finishing (see
+ * each call site in ui-vnext.ts). A proposal computed before any of these no
+ * longer describes the file and must not keep being shown, or land, as if it
+ * still did.
+ *
+ * The generation bump always runs, busy or not: a collect already in flight
+ * (a dry run's sources request, or a publish's) was launched against the
+ * file as it stood before this call, so its reply, and the proxy call it
+ * makes, are each checked against the generation the collect was sent with
+ * (`collectGeneration`, in `onPublishSources`, at both points) and discarded
+ * or corrected in favor of the truth, if this has moved past it. Clearing the
+ * proposal itself only happens while idle: a publish in flight, or a dry run
+ * already loading, ends with its own true answer (the outcome branches in
+ * `onPublishSources`), so clearing here first would only be overwritten a
+ * moment later, or would blank a "Checking…" note that is already honest
+ * about not having an answer yet.
+ */
+export function invalidatePublishProposal(): void {
+  state = { ...state, proposalGeneration: state.proposalGeneration + 1 };
+  if (state.status === 'collecting' || state.status === 'uploading') return;
+  if (!state.proposal && state.proposalStatus === 'idle') return;
+  state = { ...state, proposal: null, proposalStatus: 'idle', chosenBump: null };
+  host.repaint();
 }
 
 export function onBumpChoice(bump: Bump): void {
@@ -681,6 +793,19 @@ export function emptyBundleMessage(
 const DOWNLOAD_FAILED_MESSAGE =
   'Couldn’t create the download. Nothing was saved. Try again, or reopen the plugin if it keeps happening.';
 
+/**
+ * Shown when building the bundle for a publish throws (a source the extractor
+ * cannot read). The fixed sentence says what happened; the caught error's own
+ * text is technical detail, so it goes last, in parentheses, the way
+ * `sourcesErrorMessage` places it.
+ */
+function buildFailedMessage(err: unknown): string {
+  const sentence = 'Couldn’t build the library from this file’s docs. Nothing was published. '
+    + 'Try again, or reopen the plugin if it keeps happening.';
+  const detail = (err instanceof Error ? err.message : String(err ?? '')).trim().replace(/\.$/, '');
+  return detail ? `${sentence} (${detail})` : sentence;
+}
+
 const GONE_MESSAGE =
   'Couldn’t publish. Spec Layer no longer has this library. '
   + 'Publish again to create a new one, then share its new setup command with your developers.';
@@ -706,6 +831,28 @@ export async function onPublishSources(
   auth: ProxyAuth,
   fetcher?: typeof fetch,
 ): Promise<void> {
+  // The reply carries the file's identity, so from here it is known whatever
+  // else this reply says. Until now it was not known, so no publish or rotate
+  // can have run (a publish waits for the identity, a rotate needs the id it
+  // carries): take it from the reply rather than mark it known with no id,
+  // which would read as "Not published" for a file that is. Only a download
+  // can get here first, since it needs no identity.
+  state = state.infoKnown
+    ? state
+    : {
+      ...state, infoKnown: true,
+      libraryId: msg.publishInfo.libraryId, pullKey: msg.publishInfo.pullKey,
+      lastPublishedAt: msg.publishInfo.publishedAt, version: msg.publishInfo.version,
+    };
+  if (state.intent === 'dryRun' && state.collectGeneration !== state.proposalGeneration) {
+    // Something invalidated the proposal (a doc changed, a library update
+    // batch finished, ...) after this collect was sent: the sources it
+    // carries answer for a file that no longer exists. Discard them and ask
+    // again against the file as it stands now, rather than showing a
+    // proposal computed from stale sources as if it were current.
+    startDryRun();
+    return;
+  }
   if (msg.skipped.length > 0) {
     if (state.intent === 'dryRun') {
       state = { ...state, status: 'idle', proposalStatus: 'failed', message: null };
@@ -743,8 +890,9 @@ export async function onPublishSources(
       return;
     }
     // No completion message comes back from a download, so the presenter
-    // returns to idle itself. Nothing about the library identity changes:
-    // a snapshot is not a publish.
+    // returns to idle itself. Nothing about the library identity changes
+    // (the file's stored one may have been learned above, which is not a
+    // change): a snapshot is not a publish.
     state = { ...state, status: 'idle', message: null };
     host.repaint();
     // The file is handed to the browser, which can still refuse to save it,
@@ -763,10 +911,30 @@ export async function onPublishSources(
       host.repaint();
       return;
     }
-    const { bundle } = buildPublishArtifacts(msg, new Date().toISOString());
+    let bundle: PublishBundleV1;
+    try {
+      ({ bundle } = buildPublishArtifacts(msg, new Date().toISOString()));
+    } catch {
+      // A source the extractor cannot build from. Leaving `collecting` here
+      // would block every Publish entry for the rest of the session; a failed
+      // check is honest, and publishing stays possible (the proxy still
+      // applies the minimum).
+      state = { ...state, status: 'idle', proposal: null, proposalStatus: 'failed', message: null };
+      host.repaint();
+      return;
+    }
     const answer = await dryRunBundle(bundle, { auth, libraryId, pullKey, fetcher });
+    if (state.collectGeneration !== state.proposalGeneration) {
+      // Invalidated while the dry-run POST itself was in flight (not just
+      // between the collect being sent and its sources landing, which the
+      // check above this branch already covers): what came back answers for
+      // the file as it stood before that change. Discard it and ask again
+      // against the file as it stands now.
+      startDryRun();
+      return;
+    }
     state = answer.kind === 'ok'
-      ? { ...state, status: 'idle', proposal: answer.result, proposalStatus: 'idle' }
+      ? { ...state, status: 'idle', proposal: answer.result, proposalStatus: 'idle', proposalSource: 'check' }
       : { ...state, status: 'idle', proposal: null, proposalStatus: 'failed' };
     host.repaint();
     return;
@@ -791,7 +959,18 @@ export async function onPublishSources(
   state = { ...state, status: 'uploading', libraryId, pullKey, lastPublishedAt };
   host.repaint();
 
-  const { bundle, stamps } = buildPublishArtifacts(msg, new Date().toISOString());
+  let artifacts: { bundle: PublishBundleV1; stamps: PublishStamps };
+  try {
+    artifacts = buildPublishArtifacts(msg, new Date().toISOString());
+  } catch (err) {
+    // Nothing reached the proxy, so nothing was published. Leaving
+    // `uploading` here would block every Publish entry for the rest of the
+    // session with nothing on screen to say why.
+    state = { ...state, status: 'error', message: buildFailedMessage(err) };
+    host.repaint();
+    return;
+  }
+  const { bundle, stamps } = artifacts;
   const { outcome, quota } = await publishBundle(bundle, {
     auth, libraryId, pullKey, fetcher,
     bump: effectiveBump(state),
@@ -801,6 +980,17 @@ export async function onPublishSources(
   // Before the repaint below, so one paint shows both the result and the count
   // it left behind.
   if (quota) host.onPublishQuota(quota);
+
+  // Something invalidated the proposal while this publish's own network call
+  // was in flight. The result below is still correct either way: the library
+  // id, the version, and the stamps all come from the proxy's real answer to
+  // the bundle that was actually sent. But "nothing changed since <version>"
+  // would not be, since something has changed since the sources for that
+  // bundle were collected, and this session no longer knows what: the
+  // created, updated, unchanged and below_minimum cases below fall back to
+  // no proposal at all (`Press Check again to see what changed.`) rather
+  // than guess.
+  const collectStale = state.collectGeneration !== state.proposalGeneration;
 
   switch (outcome.kind) {
     case 'created':
@@ -818,8 +1008,9 @@ export async function onPublishSources(
         // dry run has run since, so the block must not read as a failed one.
         // A proxy that predates versioning names no version, and there is
         // nothing to propose against; the next Publish open dry-runs afresh.
-        proposal: outcome.version ? publishedProposal(outcome.version) : null,
+        proposal: !collectStale && outcome.version ? publishedProposal(outcome.version) : null,
         proposalStatus: 'idle',
+        proposalSource: 'publish',
       };
       host.send({ type: 'setPublishInfo', libraryId: outcome.libraryId, pullKey: outcome.pullKey });
       stamp(outcome.libraryId, outcome.version, outcome.publishedAt, stamps);
@@ -841,9 +1032,11 @@ export async function onPublishSources(
         note: '',
         // See the 'created' case just above: an unchanged proposal for the
         // version just published, not null, so the block never reads as a
-        // failed dry run under a publish that just succeeded.
-        proposal: outcome.version ? publishedProposal(outcome.version) : null,
+        // failed dry run under a publish that just succeeded, unless the
+        // collect it was built from went stale mid-upload.
+        proposal: !collectStale && outcome.version ? publishedProposal(outcome.version) : null,
         proposalStatus: 'idle',
+        proposalSource: 'publish',
       };
       stamp(outcome.libraryId, outcome.version, outcome.publishedAt, stamps);
       host.notify(
@@ -857,7 +1050,9 @@ export async function onPublishSources(
       // is the true last-published time, so it is recorded like the others.
       // Nothing changed, so no doc gets a fresh stamp, and the proposal
       // settles to "nothing changed" so the screen stops offering a next
-      // version the proxy just said it would not assign.
+      // version the proxy just said it would not assign (unless the collect
+      // it was computed from went stale mid-upload, in which case that
+      // "nothing changed" is exactly what can no longer be trusted).
       const version = outcome.version ?? state.version;
       state = {
         ...state,
@@ -867,8 +1062,9 @@ export async function onPublishSources(
         version,
         message: null,
         chosenBump: null,
-        proposal: version ? publishedProposal(version) : null,
+        proposal: !collectStale && version ? publishedProposal(version) : null,
         proposalStatus: 'idle',
+        proposalSource: 'publish',
       };
       host.send({ type: 'setPublishedAt', libraryId: outcome.libraryId, publishedAt: outcome.publishedAt });
       host.notify('Nothing changed since the last publish.');
@@ -877,12 +1073,19 @@ export async function onPublishSources(
     case 'below_minimum':
       // Re-render with the server's own minimum and the version it would
       // produce, so the screen shows the real floor without a second dry run.
+      // Nothing was actually published (the proxy refused this attempt), so
+      // this is a fresh check, not "what you just published": 'check' is the
+      // honest source label regardless of what an earlier publish this
+      // session set it to. The refusal message stands either way (it is the
+      // proxy's answer to what was sent), but if something changed while the
+      // upload was in flight, that floor and its next version describe a
+      // bundle that no longer matches the file, so no proposal is kept.
       state = {
         ...state,
         status: 'error',
         chosenBump: null,
         message: BELOW_MINIMUM_MESSAGE(outcome.minimumBump),
-        proposal: {
+        proposal: collectStale ? null : {
           ...(state.proposal ?? firstPublishProposal()),
           currentVersion: state.proposal?.currentVersion ?? state.version,
           unchanged: false,
@@ -890,6 +1093,7 @@ export async function onPublishSources(
           proposedVersion: outcome.proposedVersion,
         },
         proposalStatus: 'idle',
+        proposalSource: 'check',
       };
       break;
     case 'gone':
@@ -959,15 +1163,46 @@ export function onPublishSourcesError(message: string): void {
  * reply landing afterward must not clobber it.
  */
 export function onPublishInfo(msg: PublishInfoMsg): void {
-  if (state.status !== 'idle') return;
+  if (state.status !== 'idle') {
+    if (!state.infoKnown) {
+      // Busy or finished, but before the identity was known no publish or
+      // rotate can have run (a publish waits for it, a rotate needs the id
+      // it carries), so this is a download, running or failed, which never
+      // touches the identity. Take it from the reply: marking it known
+      // without it would read as "Not published" for a file that is.
+      state = {
+        ...state, infoKnown: true,
+        libraryId: msg.libraryId, pullKey: msg.pullKey, lastPublishedAt: msg.publishedAt, version: msg.version,
+      };
+      host.repaint();
+      return;
+    }
+    // A publish or rotate is the truth for the identity now; only the fact
+    // that one is known may land.
+    state = { ...state, infoKnown: true };
+    host.repaint();
+    return;
+  }
+  // A different library id than this (idle) session already holds means the
+  // file's saved identity changed since: whatever this session computed
+  // against the old one (a proposal, a chosen bump) can no longer answer for
+  // the new one.
+  const identityChanged = msg.libraryId !== state.libraryId;
   state = {
-    ...state, libraryId: msg.libraryId, pullKey: msg.pullKey, lastPublishedAt: msg.publishedAt, version: msg.version,
+    ...state, infoKnown: true,
+    libraryId: msg.libraryId, pullKey: msg.pullKey, lastPublishedAt: msg.publishedAt, version: msg.version,
+    ...(identityChanged ? { proposal: null, proposalStatus: 'idle' as const, chosenBump: null } : {}),
   };
   host.repaint();
 }
 
 export const isPublishBusy = (s: Readonly<PublishState>): boolean =>
   s.status === 'collecting' || s.status === 'uploading';
+
+/** A `data-publish-bump` value is one of the three bumps, or it is ignored. */
+export function isBump(value: string): value is Bump {
+  return value === 'patch' || value === 'minor' || value === 'major';
+}
 
 export async function onRotateClick(auth: ProxyAuth, fetcher?: typeof fetch): Promise<void> {
   const libraryId = state.libraryId;

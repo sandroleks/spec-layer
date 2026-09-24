@@ -490,6 +490,27 @@ describe('library screen presentation', () => {
     expect(noneInSync).toContain('<p>Docs appear here when they match their source.</p>');
   });
 
+  it('claims "Up to date" only when every check landed and no source is missing', () => {
+    const inSync = [row('buttonPrimary', 'inSync')];
+    const one = { all: 1, updates: 0, inSync: 1 };
+    expect(libraryFooterMarkup(model({ allRows: inSync, rows: inSync, counts: one })))
+      .toContain('Up to date');
+
+    const checking = libraryFooterMarkup(model({ allRows: inSync, rows: inSync, counts: one, refreshing: true }));
+    expect(checking).toContain('Checking…');
+    expect(checking).not.toContain('Up to date');
+
+    const withOrphan = [row('buttonPrimary', 'inSync'), row('buttonMissing', 'orphaned', { canOpenSource: false, canUpdate: false })];
+    const missing = libraryFooterMarkup(model({ allRows: withOrphan, rows: withOrphan, counts: { all: 2, updates: 0, inSync: 1 } }));
+    expect(missing).toContain('Nothing to update');
+    expect(missing).not.toContain('Up to date');
+    expect(missing).toContain('data-library-update-all disabled');
+
+    const failed = libraryFooterMarkup(model({ allRows: inSync, rows: inSync, counts: one, checksIncomplete: true }));
+    expect(failed).toContain('Refresh to retry');
+    expect(failed).not.toContain('Up to date');
+  });
+
   it('shows real batch progress without rendering an in-plugin toast', () => {
     const markup = libraryFooterMarkup(model({
       updatingAll: true,
@@ -854,5 +875,183 @@ describe('library footer publish action', () => {
 
   it('keeps the plugin voice in the new label', () => {
     expect(libraryFooterMarkup(model())).not.toContain('\u2014');
+  });
+});
+
+describe('library read failure', () => {
+  it('says the read failed instead of claiming there are no docs', () => {
+    const markup = libraryScrollMarkup(model({
+      allRows: [], rows: [], counts: { all: 0, updates: 0, inSync: 0 },
+      error: 'Could not read the registry.',
+    }));
+    expect(markup).toContain('Couldn’t read the docs in this file');
+    expect(markup).toContain('Could not read the registry.');
+    expect(markup).toContain('data-library-refresh');
+    expect(markup).not.toContain('No docs yet');
+    expect(markup).not.toContain('sl-library-filters');
+  });
+
+  it('keeps the last rows and says they may be out of date when a re-read fails', () => {
+    const markup = libraryScrollMarkup(model({ error: 'Could not read the registry.' }));
+    expect(markup).toContain('sl-library-error');
+    expect(markup).toContain('may be out of date');
+    expect(markup).toContain('data-doc-id="buttonPrimary"');
+    // The raw exception text is detail, so it reads as a parenthetical after
+    // the sentence rather than as a second sentence of its own.
+    expect(markup).toContain('may be out of date. (Could not read the registry)</span>');
+  });
+
+  it('adds no empty parentheses to the banner when the error text is blank', () => {
+    const markup = libraryScrollMarkup(model({ error: '  ' }));
+    expect(markup).toContain('may be out of date.</span>');
+    expect(markup).not.toContain('()');
+  });
+
+  it('escapes the message', () => {
+    const markup = libraryScrollMarkup(model({
+      allRows: [], rows: [], counts: { all: 0, updates: 0, inSync: 0 },
+      error: '<img src=x onerror=alert(1)>',
+    }));
+    expect(markup).not.toContain('<img');
+    expect(markup).toContain('&lt;img');
+  });
+
+  it('refuses a batch update over stale rows a failed re-read cannot vouch for, whether or not it counted updates', () => {
+    // Stale rows do include an update (ROWS has one updateAvailable row):
+    // enabled would run a batch against a count the failed re-read never
+    // confirmed.
+    const withUpdates = libraryFooterMarkup(model({ error: 'Could not read the registry.' }));
+    expect(withUpdates).toContain('data-library-update-all disabled');
+    expect(withUpdates).toContain('Refresh to retry');
+    expect(withUpdates).not.toContain('Update all docs');
+
+    // Stale rows show none: "Up to date" would still be an absolute claim
+    // the failed re-read never earned.
+    const noUpdatesRows = [row('buttonPrimary', 'inSync')];
+    const withoutUpdates = libraryFooterMarkup(model({
+      allRows: noUpdatesRows,
+      rows: noUpdatesRows,
+      counts: { all: 1, updates: 0, inSync: 1 },
+      error: 'Could not read the registry.',
+    }));
+    expect(withoutUpdates).toContain('data-library-update-all disabled');
+    expect(withoutUpdates).toContain('Refresh to retry');
+    expect(withoutUpdates).not.toContain('Up to date');
+  });
+});
+
+describe('library read incomplete', () => {
+  it('notes the scan stopped early and offers Refresh, without hiding the rows it did read', () => {
+    const markup = libraryScrollMarkup(model({ readIncomplete: true }));
+    expect(markup).toContain('sl-library-incomplete');
+    expect(markup).toContain('may be missing some docs');
+    expect(markup).toContain('data-library-refresh');
+    expect(markup).toContain('data-doc-id="buttonPrimary"');
+  });
+
+  it('never claims the library is up to date while the read is incomplete', () => {
+    const footer = libraryFooterMarkup(model({
+      readIncomplete: true,
+      allRows: [row('buttonPrimary', 'inSync')],
+      rows: [row('buttonPrimary', 'inSync')],
+      counts: { all: 1, updates: 0, inSync: 1 },
+    }));
+    expect(footer).not.toContain('Up to date');
+    expect(footer).toContain('data-library-update-all disabled');
+  });
+
+  it('does not show the incomplete note once a read comes back complete', () => {
+    const markup = libraryScrollMarkup(model());
+    expect(markup).not.toContain('sl-library-incomplete');
+    expect(markup).not.toContain('may be missing some docs');
+  });
+
+  it('says the scan stopped before finding any docs, not that there are none, with nothing read yet', () => {
+    const markup = libraryScrollMarkup(model({
+      allRows: [], rows: [], counts: { all: 0, updates: 0, inSync: 0 },
+      readIncomplete: true,
+    }));
+    expect(markup).toContain('The scan stopped before it found any docs');
+    expect(markup).toContain('data-library-refresh');
+    expect(markup).not.toContain('No docs yet');
+    expect(markup).not.toContain('data-empty-nav');
+  });
+
+  it('still shows the error state, not the incomplete one, when both are set with nothing read', () => {
+    // A read that both failed and never found a row: the explicit failure
+    // is the more specific, more actionable thing to say.
+    const markup = libraryScrollMarkup(model({
+      allRows: [], rows: [], counts: { all: 0, updates: 0, inSync: 0 },
+      error: 'Could not read the registry.',
+      readIncomplete: true,
+    }));
+    expect(markup).toContain('Couldn’t read the docs in this file');
+    expect(markup).not.toContain('The scan stopped before it found any docs');
+  });
+
+  it('does not claim a filtered subset is certainly empty while a read failed or is incomplete', () => {
+    const updateRows = [row('a', 'updateAvailable')];
+    const filteredSyncWithError = libraryScrollMarkup(model({
+      allRows: updateRows,
+      filter: 'sync',
+      counts: { all: 1, updates: 1, inSync: 0 },
+      error: 'Could not read the registry.',
+    }));
+    expect(filteredSyncWithError).not.toContain('No docs in sync');
+    expect(filteredSyncWithError).toContain('None found in what could be read');
+
+    const syncRows = [row('b', 'inSync')];
+    const filteredUpdatesWithIncomplete = libraryScrollMarkup(model({
+      allRows: syncRows,
+      filter: 'updates',
+      counts: { all: 1, updates: 0, inSync: 1 },
+      readIncomplete: true,
+    }));
+    expect(filteredUpdatesWithIncomplete).not.toContain('No updates waiting');
+    expect(filteredUpdatesWithIncomplete).toContain('None found in what could be read');
+
+    // Complete and successful: the filter's own absolute claim still stands.
+    const filteredSyncClean = libraryScrollMarkup(model({
+      allRows: updateRows,
+      filter: 'sync',
+      counts: { all: 1, updates: 1, inSync: 0 },
+    }));
+    expect(filteredSyncClean).toContain('No docs in sync');
+  });
+
+  it('disables Rebuild docs, like Update all docs, over a list a read did not fully cover', () => {
+    const rebuildRows = [row('a', 'rebuildNeeded')];
+    const withReadIncomplete = libraryScrollMarkup(model({
+      allRows: rebuildRows, rows: rebuildRows, readIncomplete: true,
+    }));
+    expect(withReadIncomplete).toContain('data-library-rebuild-all disabled');
+
+    const withError = libraryScrollMarkup(model({
+      allRows: rebuildRows, rows: rebuildRows, error: 'Could not read the registry.',
+    }));
+    expect(withError).toContain('data-library-rebuild-all disabled');
+
+    // Guard the guard: a clean, complete read still leaves it enabled.
+    const clean = libraryScrollMarkup(model({ allRows: rebuildRows, rows: rebuildRows }));
+    expect(clean).toContain('data-library-rebuild-all');
+    expect(clean).not.toContain('data-library-rebuild-all disabled');
+  });
+});
+
+describe('library error and incomplete banner layout', () => {
+  const css = readFileSync(
+    new URL('../src/ui/design-system/patterns.css', import.meta.url),
+    'utf-8',
+  );
+  const rule = (selector: string) =>
+    new RegExp(`\\n\\${selector}\\s*\\{([^}]*)\\}`).exec(css)?.[1] ?? '';
+  const rebuildMargin = rule('.sl-library-rebuild-banner').match(/margin:[^;]+;/)?.[0];
+
+  it('gives the error and incomplete banners the same inset as the rebuild banner', () => {
+    expect(rebuildMargin).toBeTruthy();
+    for (const selector of ['.sl-library-error', '.sl-library-incomplete']) {
+      const block = css.includes(selector) ? css.slice(css.indexOf(selector)) : '';
+      expect(block.slice(0, block.indexOf('}'))).toContain(rebuildMargin);
+    }
   });
 });

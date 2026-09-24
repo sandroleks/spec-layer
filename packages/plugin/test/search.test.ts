@@ -214,6 +214,69 @@ describe('global search presentation', () => {
     expect(beforeTyping).not.toContain('No component docs yet');
   });
 
+  it('says the read failed rather than claiming nothing is documented or nothing matched', () => {
+    const beforeTyping = globalSearchMarkup(buildSearchModel([]), {
+      libraryUnreadable: true,
+    });
+    expect(beforeTyping).toContain('Couldn’t read the docs in this file');
+    expect(beforeTyping).not.toContain('No component docs yet');
+
+    const withQuery = globalSearchMarkup(buildSearchModel([], 'button'), {
+      libraryUnreadable: true,
+    });
+    expect(withQuery).toContain('Couldn’t read the docs in this file');
+    expect(withQuery).not.toContain('No matches for');
+  });
+
+  it('prefers an in-flight refresh over the unreadable state when both are set', () => {
+    const markup = globalSearchMarkup(buildSearchModel([]), {
+      libraryLoading: true,
+      libraryUnreadable: true,
+    });
+    expect(markup).toContain('Finding docs in this file…');
+    expect(markup).not.toContain('Couldn’t read the docs in this file');
+  });
+
+  it('qualifies "no matches" instead of claiming certainty when the read that found these docs failed or stopped early', () => {
+    const markup = globalSearchMarkup(buildSearchModel(DOCUMENTS, 'zzz-no-match'), {
+      libraryReadUnreliable: true,
+    });
+    expect(markup).toContain('No matches in the docs that could be read');
+    expect(markup).not.toContain('No matches for');
+    expect(markup).not.toContain('Couldn’t read the docs in this file');
+    expect(markup.match(/data-search-clear/g)).toHaveLength(1);
+  });
+
+  it('qualifies an empty recent list instead of claiming no component docs when the read failed or stopped early', () => {
+    const foundationOnly = DOCUMENTS.filter((doc) => doc.kind === 'foundation');
+    const markup = globalSearchMarkup(buildSearchModel(foundationOnly), {
+      libraryReadUnreliable: true,
+    });
+    expect(markup).toContain('No component docs in what could be read');
+    expect(markup).toContain('The library read failed or stopped early');
+    expect(markup).not.toContain('No component docs yet');
+    expect(markup).not.toContain('No matches');
+    // Nothing typed, so there is no search to clear.
+    expect(markup).not.toContain('data-search-clear');
+  });
+
+  it('keeps the plain "no matches" copy exactly, unqualified, for a clean read', () => {
+    const markup = globalSearchMarkup(buildSearchModel(DOCUMENTS, 'zzz-no-match'));
+    expect(markup).toContain('No matches for “zzz-no-match”');
+    expect(markup).toContain('Try a component or source name.');
+    expect(markup).not.toContain('No matches in the docs that could be read');
+  });
+
+  it('still shows the unreadable state when the read that failed found no docs at all', () => {
+    const markup = globalSearchMarkup(buildSearchModel([], 'zzz-no-match'), {
+      libraryUnreadable: true,
+      libraryReadUnreliable: true,
+    });
+    expect(markup).toContain('Couldn’t read the docs in this file');
+    expect(markup).not.toContain('No matches in the docs that could be read');
+    expect(markup).not.toContain('No matches for');
+  });
+
   it('names what it searches, the docs, with a screen-reader name that matches the placeholder', () => {
     const markup = globalSearchMarkup(buildSearchModel(DOCUMENTS));
     expect(markup).toContain('placeholder="Search your docs…"');

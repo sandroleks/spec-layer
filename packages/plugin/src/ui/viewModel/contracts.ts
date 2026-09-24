@@ -38,27 +38,11 @@ export type ComponentScreenState =
     }
   | { kind: "error"; componentName: string; message: string };
 
-export type LibraryStatus =
-  | "checking"
-  | "inSync"
-  | "updateAvailable"
-  | "edited"
-  | "orphaned";
-
 export type FoundationScreenState =
   | { kind: "loading" }
   | { kind: "ready" }
-  /** `waiting`: the panel has opened and no selection report has landed yet. */
-  | { kind: "empty"; waiting?: boolean }
   | { kind: "error"; message: string }
-  | { kind: "generating"; done: number; total: number; phase?: string }
-  | {
-      kind: "result";
-      created: number;
-      replaced: number;
-      note?: string;
-      error?: string;
-    };
+  | { kind: "generating"; done: number; total: number; phase?: string };
 
 export type LicenseState =
   | "free"
@@ -88,6 +72,11 @@ export const navigation: readonly NavigationItem[] = [
   { id: "settings", label: "Settings", group: "settings" },
   { id: "license", label: "License", group: "settings" },
 ] as const;
+
+/** A `data-view` value is one of the rail's destinations, or it is ignored. */
+export function isPluginView(value: string): value is PluginView {
+  return navigation.some((item) => item.id === value);
+}
 
 export interface SectionOption {
   id: string;
