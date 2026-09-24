@@ -1,9 +1,100 @@
 import { describe, expect, it } from 'vitest';
 import {
   dtcgExportFiles, dtcgPathOf, dtcgSegments, foundationDtcg, foundationDtcgDocument,
-  type UnitEvidence, type UsageUnitMap,
+  type DtcgExport, type DtcgJson, type FoundationArtifactV5, type TokenV5, type UnitEvidence,
+  type UsageUnitMap,
 } from '../../src/index';
 import { leaf, radiusMismatchArtifact, syntheticArtifact } from './dtcgFixture';
+
+/** Every dot-joined path a tree writes a `$type`/`$value` leaf at. Stops
+ *  descending at the first such leaf: a group never itself holds one. */
+function declaredPaths(tree: DtcgJson): Set<string> {
+  const found = new Set<string>();
+  const walk = (node: DtcgJson, path: string[]): void => {
+    if (typeof node !== 'object' || node === null || Array.isArray(node)) return;
+    const record = node as Record<string, DtcgJson>;
+    if ('$value' in record) { found.add(path.join('.')); return; }
+    for (const [key, value] of Object.entries(record)) {
+      if (!key.startsWith('$')) walk(value, [...path, key]);
+    }
+  };
+  walk(tree, []);
+  return found;
+}
+
+/** Every path a plain token leaf's `$value` references with `{path}`. A
+ *  typography or effect leaf's `$value` is an object or array, never a bare
+ *  ref string, so this only ever finds a plain token's own alias. */
+function references(tree: DtcgJson): string[] {
+  const refs: string[] = [];
+  const walk = (node: DtcgJson): void => {
+    if (typeof node !== 'object' || node === null || Array.isArray(node)) return;
+    const record = node as Record<string, DtcgJson>;
+    if ('$value' in record) {
+      const value = record.$value;
+      if (typeof value === 'string') {
+        const match = /^\{(.+)\}$/.exec(value);
+        if (match) refs.push(match[1]);
+      }
+      return;
+    }
+    for (const [key, value] of Object.entries(record)) {
+      if (!key.startsWith('$')) walk(value);
+    }
+  };
+  walk(tree);
+  return refs;
+}
+
+/** Every `{path}` string anywhere in a tree: plain token values, style
+ *  composite members, and extension members alike. */
+function everyReference(tree: DtcgJson): string[] {
+  const refs: string[] = [];
+  const walk = (node: DtcgJson): void => {
+    if (typeof node === 'string') {
+      const match = /^\{([^{}]+)\}$/.exec(node);
+      if (match) refs.push(match[1]);
+      return;
+    }
+    if (Array.isArray(node)) {
+      node.forEach(walk);
+      return;
+    }
+    if (node !== null && typeof node === 'object') Object.values(node).forEach(walk);
+  };
+  walk(tree);
+  return refs;
+}
+
+const sourceFiles = (sources: DtcgJson[]): string[] => sources.flatMap((s) =>
+  (typeof s === 'object' && s !== null && !Array.isArray(s) && typeof s.$ref === 'string' ? [s.$ref] : []));
+
+/**
+ * Every reference in an export that does not resolve in every resolver
+ * context. A reference resolves when the file it sits in declares the path,
+ * or when another resolution entry declares it in every one of its
+ * alternatives: a set's files, or each context of a modifier, since a
+ * resolver may select any of them. A mode file's own modifier is never that
+ * other entry, because its sibling mode files are never loaded beside it.
+ */
+function unresolvedReferences(out: DtcgExport): string[] {
+  const entries: string[][][] = [
+    ...Object.values(out.resolver.sets).map((set) => [sourceFiles(set.sources)]),
+    ...Object.values(out.resolver.modifiers).map((m) => Object.values(m.contexts).map(sourceFiles)),
+  ];
+  const declared = new Map(Object.entries(out.files).map(([name, tree]) => [name, declaredPaths(tree)]));
+  const failures: string[] = [];
+  for (const [name, tree] of Object.entries(out.files)) {
+    for (const ref of everyReference(tree)) {
+      if (declared.get(name)?.has(ref)) continue;
+      const resolves = entries.some((alternatives) =>
+        !alternatives.some((files) => files.includes(name))
+        && alternatives.every((files) => files.some((file) => declared.get(file)?.has(ref))));
+      if (!resolves) failures.push(`${name} -> {${ref}}`);
+    }
+  }
+  return failures;
+}
 
 describe('dtcgSegments', () => {
   it('splits on slash and keeps casing', () => {
@@ -403,6 +494,455 @@ describe('foundationDtcg aliases and omissions', () => {
   });
 });
 
+describe('a token whose DTCG path is also a group', () => {
+  const GROUP = 'VariableID:color-exact';
+  const LEAF = 'VariableID:color-lossy';
+
+  /** `color/red` beside `color/red/dark`, with `first` listed before `second`. */
+  const nested = (first: string, second: string) => {
+    const artifact = syntheticArtifact();
+    const group = artifact.tokens.find((t) => t.id === GROUP);
+    const nestedLeaf = artifact.tokens.find((t) => t.id === LEAF);
+    if (!group || !nestedLeaf) throw new Error('fixture lost the two Primitives colours');
+    group.name = 'color/red';
+    nestedLeaf.name = 'color/red/dark';
+    const rest = artifact.tokens.filter((t) => t.id !== GROUP && t.id !== LEAF);
+    const byId = (id: string) => (id === GROUP ? group : nestedLeaf);
+    artifact.tokens = [byId(first), byId(second), ...rest];
+    return artifact;
+  };
+
+  it('keeps the nested token and omits the one at the group path, in either order', () => {
+    for (const [first, second] of [[GROUP, LEAF], [LEAF, GROUP]]) {
+      const out = foundationDtcg(nested(first, second));
+      for (const [name, file] of Object.entries(out.files)) {
+        if (!name.startsWith('primitives.')) continue;
+        expect(leaf(file, 'Primitives.color.red.dark')?.$type, `${first} first, ${name}`).toBe('color');
+        expect(leaf(file, 'Primitives.color.red'), `${first} first, ${name}`).not.toHaveProperty('$value');
+      }
+      expect(out.report).toContainEqual(expect.objectContaining({
+        code: 'path_collision', severity: 'error', path: 'Primitives.color.red',
+        details: { id: GROUP, ids: [GROUP, LEAF], reason: 'group' },
+      }));
+      expect(out.meta['Primitives.color.red']).toMatchObject({ id: GROUP, omitted: true });
+      expect(out.meta['Primitives.color.red.dark']).toMatchObject({ id: LEAF });
+      expect(out.meta['Primitives.color.red.dark'].omitted).toBeUndefined();
+    }
+  });
+
+  it('projects both token orders to identical bytes', () => {
+    expect(dtcgExportFiles(foundationDtcg(nested(GROUP, LEAF))))
+      .toEqual(dtcgExportFiles(foundationDtcg(nested(LEAF, GROUP))));
+  });
+
+  it('does not treat a token as a group when everything beneath it was omitted', () => {
+    const artifact = nested(GROUP, LEAF);
+    const dark = artifact.tokens.find((t) => t.id === LEAF);
+    if (!dark) throw new Error('fixture lost color/red/dark');
+    dark.type = 'string';
+    for (const modeId of Object.keys(dark.values)) {
+      dark.values[modeId] = { kind: 'literal', value: { type: 'string', value: 'x' } };
+    }
+    const out = foundationDtcg(artifact);
+    expect(leaf(out.files['primitives.light.json'], 'Primitives.color.red')?.$type).toBe('color');
+    expect(out.report.filter((r) => r.code === 'path_collision')).toEqual([]);
+  });
+
+  it('omits a style whose path is a group of other styles, in either order', () => {
+    const grouped = (groupFirst: boolean) => {
+      const artifact = syntheticArtifact();
+      const regular = artifact.styles.typography[0]; // Body/Regular
+      const body = { ...structuredClone(regular), id: 'StyleID:body', name: 'Body', path: ['Body'] };
+      artifact.styles.typography = groupFirst ? [body, regular] : [regular, body];
+      return artifact;
+    };
+    for (const groupFirst of [true, false]) {
+      const out = foundationDtcg(grouped(groupFirst));
+      const file = out.files['styles.typography.json'];
+      expect(leaf(file, 'Typography styles.Body.Regular')?.$type, `group first: ${groupFirst}`).toBe('typography');
+      expect(leaf(file, 'Typography styles.Body'), `group first: ${groupFirst}`).not.toHaveProperty('$value');
+      expect(out.report.filter((r) => r.code === 'path_collision')).toEqual([
+        expect.objectContaining({
+          path: 'Typography styles.Body', details: { id: 'StyleID:body', reason: 'group' },
+        }),
+      ]);
+    }
+    expect(dtcgExportFiles(foundationDtcg(grouped(true))))
+      .toEqual(dtcgExportFiles(foundationDtcg(grouped(false))));
+  });
+});
+
+describe('an alias whose reference chain ends in an omitted token', () => {
+  /** `color/chain/terminal` renamed to `color/chain`, a group over its own
+   *  two-hop-deep dependents `color/chain/middle` and `color/chain/bridge`:
+   *  the reviewer's reproduction for Task 1's group-conflict fix. */
+  const chainGroupConflict = (): ReturnType<typeof syntheticArtifact> => {
+    const artifact = syntheticArtifact();
+    const terminal = artifact.tokens.find((t) => t.id === 'VariableID:chain-terminal');
+    if (!terminal) throw new Error('fixture lost color/chain/terminal');
+    terminal.name = 'color/chain';
+    return artifact;
+  };
+
+  it('omits a token two hops from a group conflict, reports it target_omitted, and writes no dangling reference', () => {
+    const out = chainGroupConflict();
+    const exported = foundationDtcg(out);
+
+    expect(exported.meta['Primitives.color.chain.middle'])
+      .toMatchObject({ id: 'VariableID:chain-middle', omitted: true });
+    expect(exported.meta['Primitives.color.chain.bridge'])
+      .toMatchObject({ id: 'VariableID:chain-bridge', omitted: true });
+
+    for (const id of ['VariableID:chain-middle', 'VariableID:chain-bridge']) {
+      const reports = exported.report.filter((r) => r.code === 'value_omitted' && r.details.id === id);
+      expect(reports.length, id).toBeGreaterThan(0);
+      for (const r of reports) expect(r.details.reason, id).toBe('target_omitted');
+    }
+
+    // Every reference any token file writes resolves to a path some token
+    // file actually declares -- middle and bridge are both gone, so nothing
+    // may still point at them.
+    const tokenFiles = Object.entries(exported.files).filter(([name]) => !name.startsWith('styles.'));
+    const declared = new Set<string>();
+    for (const [, tree] of tokenFiles) for (const path of declaredPaths(tree)) declared.add(path);
+    expect(declared.has('Primitives.color.chain.middle')).toBe(false);
+    expect(declared.has('Primitives.color.chain.bridge')).toBe(false);
+    for (const [name, tree] of tokenFiles) {
+      for (const ref of references(tree)) expect(declared.has(ref), `${name} references ${ref}`).toBe(true);
+    }
+  });
+
+  it('projects a dead alias chain the same regardless of token order', () => {
+    const reordered = (): ReturnType<typeof syntheticArtifact> => {
+      const artifact = chainGroupConflict();
+      artifact.tokens = [...artifact.tokens].reverse();
+      return artifact;
+    };
+    expect(dtcgExportFiles(foundationDtcg(chainGroupConflict())))
+      .toEqual(dtcgExportFiles(foundationDtcg(reordered())));
+  });
+
+  it('propagates a dead alias chain across a collection boundary', () => {
+    const artifact = chainGroupConflict();
+    const owner = artifact.tokens.find((t) => t.id === 'VariableID:chain-owner');
+    if (!owner) throw new Error('fixture lost color/surface/primary');
+    // Both modes now alias the doomed Primitives chain; no literal fallback
+    // is left to keep this Semantic token alive.
+    owner.values['ModeID:s-light'] = owner.values['ModeID:s-dark'];
+    const out = foundationDtcg(artifact);
+
+    expect(out.meta['Semantic.color.surface.primary'])
+      .toMatchObject({ id: 'VariableID:chain-owner', omitted: true });
+    for (const [name, file] of Object.entries(out.files)) {
+      expect(leaf(file, 'Semantic.color.surface.primary'), name).toBeUndefined();
+    }
+    const reports = out.report.filter((r) => r.code === 'value_omitted' && r.details.id === 'VariableID:chain-owner');
+    expect(reports).toHaveLength(2);
+    for (const r of reports) expect(r.details.reason).toBe('target_omitted');
+  });
+
+  it('reports no stale mode_selection_not_expressible for a token that ends up fully omitted', () => {
+    const artifact = chainGroupConflict();
+    const owner = artifact.tokens.find((t) => t.id === 'VariableID:chain-owner');
+    if (!owner) throw new Error('fixture lost color/surface/primary');
+    const dark = owner.values['ModeID:s-dark'];
+    if (dark.kind !== 'alias' || dark.resolved.status !== 'resolved') {
+      throw new Error('fixture changed shape: chain-owner Dark is no longer a resolved alias');
+    }
+    // Figma resolved this hop through a target mode named differently than
+    // the consuming Semantic mode -- on its own, before bridge is recognised
+    // dead, this would report mode_selection_not_expressible and say the
+    // reference is kept. Both modes now take this shape, so no literal
+    // fallback is left to keep chain-owner alive once bridge dies.
+    const mismatchedHop = {
+      ...dark, resolved: { ...dark.resolved, chain: [{ ...dark.resolved.chain[0], mode_id: 'ModeID:p-light' }] },
+    };
+    owner.values['ModeID:s-dark'] = mismatchedHop;
+    owner.values['ModeID:s-light'] = mismatchedHop;
+
+    const out = foundationDtcg(artifact);
+    expect(out.meta['Semantic.color.surface.primary'])
+      .toMatchObject({ id: 'VariableID:chain-owner', omitted: true });
+    for (const [name, file] of Object.entries(out.files)) {
+      expect(leaf(file, 'Semantic.color.surface.primary'), name).toBeUndefined();
+    }
+    const reports = out.report.filter((r) => r.details.id === 'VariableID:chain-owner');
+    expect(reports.length).toBeGreaterThan(0);
+    for (const r of reports) expect(r.code).toBe('value_omitted');
+    expect(out.report.filter((r) => r.code === 'mode_selection_not_expressible')).toEqual([]);
+  });
+
+  it('reports no stale alias_type_mismatch for a token that ends up fully omitted', () => {
+    const artifact = syntheticArtifact();
+    const terminal = artifact.tokens.find((t) => t.id === 'VariableID:unknown-number');
+    if (!terminal) throw new Error('fixture lost Primitives.number.unknown-scope');
+    const twin = { ...structuredClone(terminal), id: 'VariableID:unknown-number-twin' };
+    artifact.tokens.push(twin); // terminal collides with its twin -- both omitted
+
+    const collectionId = terminal.collection_id;
+    const modeIds = Object.keys(terminal.values);
+    for (const modeId of modeIds) {
+      terminal.values[modeId] = { kind: 'literal', value: { type: 'number', value: 8 } };
+      twin.values[modeId] = { kind: 'literal', value: { type: 'number', value: 8 } };
+    }
+
+    /** `throughTerminal` mirrors Figma's own chain metadata: `mid` resolves in
+     *  one hop straight to `terminal`, and `outer` resolves in two, through
+     *  `mid` to `terminal`, the same as Figma would record for a real chain. */
+    const aliasChain = (targetId: string, targetPath: string[], throughTerminal: boolean) => {
+      const values: TokenV5['values'] = {};
+      for (const modeId of modeIds) {
+        values[modeId] = {
+          kind: 'alias',
+          reference: {
+            target_id: targetId, target_collection_id: collectionId, target_path: targetPath, external: false,
+          },
+          resolved: {
+            status: 'resolved',
+            value: { type: 'dimension', number: 8, unit: 'px' },
+            chain: throughTerminal
+              ? [{ token_id: targetId, mode_id: modeId }]
+              : [{ token_id: targetId, mode_id: modeId }, { token_id: terminal.id, mode_id: modeId }],
+          },
+        };
+      }
+      return values;
+    };
+    const mid = {
+      ...structuredClone(terminal), id: 'VariableID:mid', name: 'x/mid', scopes: [] as string[],
+      values: aliasChain(terminal.id, terminal.name.split('/'), true),
+    };
+    // CORNER_RADIUS pins this token's own projected type to a dimension, but
+    // its alias target (mid) is a bare number: before mid is recognised dead
+    // this would report alias_type_mismatch and fall back to a literal.
+    const outer = {
+      ...structuredClone(terminal), id: 'VariableID:outer-mismatch', name: 'x/outer', scopes: ['CORNER_RADIUS'],
+      values: aliasChain(mid.id, ['x', 'mid'], false),
+    };
+    artifact.tokens.push(mid, outer);
+
+    const out = foundationDtcg(artifact);
+    const path = Object.keys(out.meta).find((k) => out.meta[k].id === 'VariableID:outer-mismatch');
+    expect(path).toBeDefined();
+    expect(out.meta[path as string]).toMatchObject({ omitted: true });
+    for (const [name, tree] of Object.entries(out.files)) {
+      expect(leaf(tree, path as string), name).toBeUndefined();
+    }
+
+    const reports = out.report.filter((r) => r.details.id === 'VariableID:outer-mismatch');
+    expect(reports.length).toBeGreaterThan(0);
+    for (const r of reports) expect(r.code).toBe('value_omitted');
+    expect(out.report.filter((r) => r.code === 'alias_type_mismatch')).toEqual([]);
+  });
+
+  it('omits every level of a three-deep group conflict, in either order', () => {
+    const NAMES: Record<string, string> = {
+      'VariableID:color-exact': 'x', 'VariableID:color-lossy': 'x/y', 'VariableID:chain-terminal': 'x/y/z',
+    };
+    const threeDeep = (order: string[]): ReturnType<typeof syntheticArtifact> => {
+      const artifact = syntheticArtifact();
+      for (const [id, name] of Object.entries(NAMES)) {
+        const token = artifact.tokens.find((t) => t.id === id);
+        if (!token) throw new Error(`fixture lost ${id}`);
+        token.name = name;
+      }
+      const targeted = new Set(Object.keys(NAMES));
+      const rest = artifact.tokens.filter((t) => !targeted.has(t.id));
+      const byId = (id: string) => artifact.tokens.find((t) => t.id === id);
+      const picked = order.map(byId);
+      if (picked.some((t) => !t)) throw new Error('fixture lost one of the three chained tokens');
+      artifact.tokens = [...picked, ...rest] as typeof artifact.tokens;
+      return artifact;
+    };
+    const orders = [
+      Object.keys(NAMES),
+      [...Object.keys(NAMES)].reverse(),
+    ];
+    for (const order of orders) {
+      const out = foundationDtcg(threeDeep(order));
+      for (const [name, file] of Object.entries(out.files)) {
+        if (!name.startsWith('primitives.')) continue;
+        expect(leaf(file, 'Primitives.x.y.z')?.$type, name).toBe('color');
+        expect(leaf(file, 'Primitives.x'), name).not.toHaveProperty('$value');
+        expect(leaf(file, 'Primitives.x.y'), name).not.toHaveProperty('$value');
+      }
+      const groupReports = out.report.filter((r) => r.code === 'path_collision' && r.details.reason === 'group');
+      expect(groupReports.map((r) => r.path).sort()).toEqual(['Primitives.x', 'Primitives.x.y']);
+    }
+    expect(dtcgExportFiles(foundationDtcg(threeDeep(orders[0]))))
+      .toEqual(dtcgExportFiles(foundationDtcg(threeDeep(orders[1]))));
+  });
+});
+
+describe('a reference to a token that has no value in some mode', () => {
+  const find = (artifact: FoundationArtifactV5, id: string): TokenV5 => {
+    const token = artifact.tokens.find((t) => t.id === id);
+    if (!token) throw new Error(`fixture lost ${id}`);
+    return token;
+  };
+
+  /** A resolved alias to `target`, through `hops` (token, mode) in order. */
+  const aliasTo = (
+    target: TokenV5, hops: Array<[TokenV5, string]>, value: TokenV5['values'][string],
+  ): TokenV5['values'][string] => {
+    if (value.kind !== 'literal') throw new Error('aliasTo needs a literal to resolve to');
+    return {
+      kind: 'alias',
+      reference: {
+        target_id: target.id, target_collection_id: target.collection_id,
+        target_path: target.name.split('/'), external: false,
+      },
+      resolved: {
+        status: 'resolved', value: value.value,
+        chain: hops.map(([token, modeId]) => ({ token_id: token.id, mode_id: modeId })),
+      },
+    };
+  };
+
+  /**
+   * The reviewer's reproduction. `color/red` is omitted as a group beside
+   * `color/red/dark`; `brand/primary` is a literal in both Light modes and
+   * aliases `color/red` in Dark; `button/bg` aliases `brand/primary` in every
+   * mode. So `brand/primary` is alive, but has no leaf in the Dark file.
+   */
+  const perModeChain = (): FoundationArtifactV5 => {
+    const artifact = syntheticArtifact();
+    const red = find(artifact, 'VariableID:color-exact');
+    find(artifact, 'VariableID:color-lossy').name = 'color/red/dark';
+    red.name = 'color/red';
+    const brand: TokenV5 = { ...structuredClone(red), id: 'VariableID:brand-primary', name: 'brand/primary' };
+    delete brand.code_syntax;
+    brand.values['ModeID:p-dark'] = aliasTo(red, [[red, 'ModeID:p-dark']], red.values['ModeID:p-dark']);
+    const button: TokenV5 = { ...structuredClone(brand), id: 'VariableID:button-bg', name: 'button/bg' };
+    for (const modeId of Object.keys(button.values)) {
+      const hops: Array<[TokenV5, string]> = modeId === 'ModeID:p-dark'
+        ? [[brand, modeId], [red, modeId]] : [[brand, modeId]];
+      button.values[modeId] = aliasTo(brand, hops, red.values[modeId]);
+    }
+    artifact.tokens.push(brand, button);
+    return artifact;
+  };
+
+  /** `perModeChain`, plus the Semantic Dark mode of `color/surface/primary`
+   *  aliasing `brand/primary` across the collection boundary. */
+  const crossCollection = (): FoundationArtifactV5 => {
+    const artifact = perModeChain();
+    const brand = find(artifact, 'VariableID:brand-primary');
+    const red = find(artifact, 'VariableID:color-exact');
+    find(artifact, 'VariableID:chain-owner').values['ModeID:s-dark'] = aliasTo(
+      brand, [[brand, 'ModeID:p-dark'], [red, 'ModeID:p-dark']], red.values['ModeID:p-dark'],
+    );
+    return artifact;
+  };
+
+  /** The style bindings' targets each lose their Dark value. */
+  const stylesBoundToPartialTokens = (): FoundationArtifactV5 => {
+    const artifact = syntheticArtifact();
+    const missing = find(artifact, 'VariableID:local-collision').values['ModeID:p-light-duplicate'];
+    for (const id of ['VariableID:font-family', 'VariableID:shadow-blur']) {
+      find(artifact, id).values['ModeID:p-dark'] = structuredClone(missing);
+    }
+    return artifact;
+  };
+
+  it('omits a same-collection reference in the one mode whose file lacks the target', () => {
+    const out = foundationDtcg(perModeChain());
+
+    expect(leaf(out.files['primitives.dark.json'], 'Primitives.brand.primary')).toBeUndefined();
+    expect(leaf(out.files['primitives.dark.json'], 'Primitives.button.bg')).toBeUndefined();
+    for (const file of ['primitives.light.json', 'primitives.light-2.json']) {
+      expect(leaf(out.files[file], 'Primitives.button.bg'), file)
+        .toMatchObject({ $type: 'color', $value: '{Primitives.brand.primary}' });
+    }
+    expect(out.report.filter((r) => r.details.id === 'VariableID:button-bg')).toEqual([
+      expect.objectContaining({
+        code: 'value_omitted', severity: 'warning', path: 'Primitives.button.bg', mode: 'Dark',
+        details: {
+          id: 'VariableID:button-bg', reason: 'target_omitted',
+          target_path: 'brand/primary', target_id: 'VariableID:brand-primary',
+        },
+      }),
+    ]);
+    // Alive in two of three modes, so it is not an omitted token.
+    expect(out.meta['Primitives.button.bg'].omitted).toBeUndefined();
+    expect(out.meta['Primitives.button.bg'].transform).toEqual({
+      'Light [ModeID:p-light-duplicate]': 'alias', 'Light [ModeID:p-light]': 'alias',
+    });
+    expect(unresolvedReferences(out)).toEqual([]);
+  });
+
+  it('omits a cross-collection reference to a token some context of its collection lacks', () => {
+    const out = foundationDtcg(crossCollection());
+
+    expect(leaf(out.files['semantic.dark.json'], 'Semantic.color.surface.primary')).toBeUndefined();
+    expect(leaf(out.files['semantic.light.json'], 'Semantic.color.surface.primary')?.$type).toBe('color');
+    expect(out.report.filter((r) => r.details.id === 'VariableID:chain-owner')).toEqual([
+      expect.objectContaining({
+        code: 'value_omitted', path: 'Semantic.color.surface.primary', mode: 'Dark',
+        details: expect.objectContaining({ reason: 'target_omitted', target_id: 'VariableID:brand-primary' }),
+      }),
+    ]);
+    expect(out.meta['Semantic.color.surface.primary'].omitted).toBeUndefined();
+    expect(unresolvedReferences(out)).toEqual([]);
+  });
+
+  it('marks a token omitted when the per-mode search leaves it no mode at all', () => {
+    const artifact = perModeChain();
+    const brand = find(artifact, 'VariableID:brand-primary');
+    const red = find(artifact, 'VariableID:color-exact');
+    // Every mode of brand/primary now aliases the omitted colour, so it and
+    // button/bg are dead everywhere.
+    for (const modeId of Object.keys(brand.values)) {
+      brand.values[modeId] = aliasTo(red, [[red, modeId]], red.values[modeId]);
+    }
+    const out = foundationDtcg(artifact);
+    expect(out.meta['Primitives.brand.primary']).toMatchObject({ omitted: true });
+    expect(out.meta['Primitives.button.bg']).toMatchObject({ omitted: true });
+    expect(unresolvedReferences(out)).toEqual([]);
+  });
+
+  it('writes a literal for a style bound to a token some context lacks, and reports the binding', () => {
+    const out = foundationDtcg(stylesBoundToPartialTokens());
+    const body = leaf(out.files['styles.typography.json'], 'Typography styles.Body.Regular');
+    expect((body?.$value as Record<string, DtcgJson>).fontFamily).toBe('Inter');
+    expect((body?.$value as Record<string, DtcgJson>).fontWeight).toBe('{Primitives.typography.weight.strong}');
+    const card = leaf(out.files['styles.effects.json'], 'Effect styles.Shadow.Card');
+    const shadow = (card?.$value as DtcgJson[])[0] as Record<string, DtcgJson>;
+    expect(typeof shadow.blur).not.toBe('string');
+    const dropped = out.report.filter((r) => r.code === 'binding_dropped');
+    expect(dropped.map((r) => r.details)).toEqual([
+      { property: 'effects[0].blur', target_id: 'VariableID:shadow-blur', reason: 'target_omitted' },
+      { property: 'fontFamily', target_id: 'VariableID:font-family', reason: 'target_omitted' },
+    ]);
+    expect(unresolvedReferences(out)).toEqual([]);
+  });
+
+  it('projects a per-mode dead chain the same regardless of token order', () => {
+    const reversed = crossCollection();
+    reversed.tokens.reverse();
+    expect(dtcgExportFiles(foundationDtcg(reversed))).toEqual(dtcgExportFiles(foundationDtcg(crossCollection())));
+  });
+
+  it('writes no reference that fails to resolve in some resolver context, for every fixture here', () => {
+    const chainGroup = syntheticArtifact();
+    find(chainGroup, 'VariableID:chain-terminal').name = 'color/chain';
+    const radiusDerived: UsageUnitMap = new Map<string, UnitEvidence>([
+      ['VariableID:unknown-number', { unit: 'px', via: 'alias-scope', source: 'Radius.rd-sm', reason: 'CORNER_RADIUS' }],
+    ]);
+    const cases: Array<[string, DtcgExport]> = [
+      ['synthetic', foundationDtcg(syntheticArtifact())],
+      ['synthetic legacy', foundationDtcg(syntheticArtifact(), { values: 'legacy' })],
+      ['radius mismatch', foundationDtcg(radiusMismatchArtifact())],
+      ['radius mismatch, derived unit', foundationDtcg(radiusMismatchArtifact(), {}, radiusDerived)],
+      ['chain group conflict', foundationDtcg(chainGroup)],
+      ['per-mode chain', foundationDtcg(perModeChain())],
+      ['cross collection', foundationDtcg(crossCollection())],
+      ['styles bound to partial tokens', foundationDtcg(stylesBoundToPartialTokens())],
+    ];
+    for (const [name, out] of cases) expect(unresolvedReferences(out), name).toEqual([]);
+  });
+});
+
 describe('foundationDtcg styles', () => {
   const out = foundationDtcg(syntheticArtifact());
 
@@ -678,6 +1218,29 @@ describe('foundationDtcg resolver and document', () => {
     expect(Object.keys(doc.modifiers).sort()).toEqual([first, second]);
   });
 
+  it('keeps a collection named like a style set apart from that set', () => {
+    const artifact = syntheticArtifact();
+    const semantic = artifact.collections.find((c) => c.id === 'CollectionID:semantic');
+    if (!semantic) throw new Error('fixture lost Semantic');
+    // One mode, so the collection becomes a resolver set rather than a modifier.
+    const keep = semantic.modes[0];
+    semantic.modes = [keep];
+    semantic.default_mode_id = keep.id;
+    for (const token of artifact.tokens) {
+      if (token.collection_id === semantic.id) token.values = { [keep.id]: token.values[keep.id] };
+    }
+    semantic.name = 'Typography styles';
+    const out = foundationDtcg(artifact);
+    const label = 'Typography styles [CollectionID:semantic]';
+    expect(out.resolver.sets['Typography styles']).toEqual({ sources: [{ $ref: 'styles.typography.json' }] });
+    expect(out.resolver.sets[label]).toEqual({ sources: [{ $ref: 'typography-styles.light.json' }] });
+    expect(out.resolver.resolutionOrder).toContainEqual({ $ref: `#/sets/${label}` });
+    expect(out.report).toContainEqual(expect.objectContaining({
+      code: 'collection_name_collision', severity: 'warning', path: label,
+      details: { id: 'CollectionID:semantic', reserved: 'Typography styles' },
+    }));
+  });
+
   it('escapes JSON pointer characters in set and modifier names', () => {
     const renamed = syntheticArtifact();
     renamed.collections[1].name = 'a/b~c';
@@ -686,11 +1249,16 @@ describe('foundationDtcg resolver and document', () => {
     expect(Object.keys(r.modifiers)).toContain('a/b~c');
   });
 
-  it('puts generated group descriptions on the matching group', () => {
+  it('puts generated group descriptions under the spec-layer extension, never $description', () => {
     const annotated = syntheticArtifact();
     annotated.guidelines = { origin: 'generated', group_descriptions: { Primitives: { color: 'Brand ramps.' } } };
     const files = foundationDtcg(annotated).files;
-    expect(leaf(files['primitives.light.json'], 'Primitives.color')?.$description).toBe('Brand ramps.');
+    const group = leaf(files['primitives.light.json'], 'Primitives.color');
+    expect(group?.$description).toBeUndefined();
+    expect(group?.$extensions).toEqual({ 'com.spec-layer': { generated_description: 'Brand ramps.' } });
+    // A token's own $description is the designer's, and stays where it was.
+    expect(leaf(files['primitives.light.json'], 'Primitives.color.exact.red')?.$description)
+      .toBe('Exactly representable source channels.');
   });
 
   it('keeps annotating later groups after one folder is absent from a mode', () => {
@@ -700,7 +1268,8 @@ describe('foundationDtcg resolver and document', () => {
       group_descriptions: { Primitives: { cycle: 'Cycles.', color: 'Brand ramps.' } },
     };
     const files = foundationDtcg(annotated).files;
-    expect(leaf(files['primitives.light.json'], 'Primitives.color')?.$description).toBe('Brand ramps.');
+    expect(leaf(files['primitives.light.json'], 'Primitives.color')?.$extensions)
+      .toEqual({ 'com.spec-layer': { generated_description: 'Brand ramps.' } });
     expect(leaf(files['primitives.light.json'], 'Primitives.cycle')).toBeUndefined();
   });
 
@@ -838,13 +1407,27 @@ describe('units derived from stated usage', () => {
     expect(out.report.find((r) => r.code === 'unit_derived_from_usage')).toBeUndefined();
   });
 
-  it('reports a derived unit even when the token it pinned has no leaf of its own', () => {
+  it('never reports a derived unit through a chain terminal projection the final build does not reach', () => {
     // A -> B -> C, where C lost its DTCG path to a collision and so is never
-    // built as a leaf. A's own leaf is still typed from C (its direct target B
-    // survives), so C's derived unit reaches the output through a call site
-    // that projects the chain TERMINAL rather than the token being built. If
-    // only the owning call site reported, this unit would be applied with
-    // nothing naming it anywhere.
+    // built as a leaf. B's only value aliases C directly, so B dies exactly
+    // as C does, from a consumer's point of view; A's only value aliases B,
+    // so A dies the same way, one hop further out (see "an alias whose
+    // reference chain ends in an omitted token" below -- this is that fix's
+    // own reporting machinery interacting with a chain that dies for a
+    // different reason, a collision rather than a group conflict).
+    //
+    // Before the fixed-point search was made side-effect-free, an early
+    // attempt -- taken before B was recognised dead -- resolved A's own leaf
+    // through Figma's own resolved chain straight to C (the call site that
+    // projects the chain TERMINAL rather than the token being built) and
+    // reported C's derived unit there; that entry then survived into the
+    // final report even once B and A were both recognised dead and dropped,
+    // describing an attempt the authoritative build never actually makes.
+    // The one real, reporting build never reaches that call site here -- A
+    // returns via `target_omitted`, straight from its own direct target
+    // check, before it ever asks what type its chain resolves to -- so
+    // nothing names C's derived unit at all. The pin is simply unreachable
+    // from the finished export, and the report must not claim otherwise.
     const artifact = syntheticArtifact();
     const terminal = artifact.tokens.find((t) => t.id === 'VariableID:unknown-number');
     if (!terminal) throw new Error('fixture lost Primitives.number.unknown-scope');
@@ -884,14 +1467,17 @@ describe('units derived from stated usage', () => {
     // The collided token really has no leaf: both twins were omitted.
     expect(out.report.some((r) => r.code === 'path_collision')).toBe(true);
     expect(leaf(out.files['primitives.light.json'], PATH)).toBeUndefined();
-    // ... and the derived unit really did reach the output through the alias.
-    expect(leaf(out.files['semantic.light.json'], 'Semantic.derived.outer')?.$type).toBe('dimension');
+    // Neither hop between the collision and the surface token writes a leaf
+    // either: a reference to a token that itself resolves to nothing is
+    // exactly as dangling as a reference straight to the collision.
+    expect(leaf(out.files['semantic.light.json'], 'Semantic.derived.inner')).toBeUndefined();
+    expect(leaf(out.files['semantic.light.json'], 'Semantic.derived.outer')).toBeUndefined();
+    expect(out.meta['Semantic.derived.inner']).toMatchObject({ omitted: true });
+    expect(out.meta['Semantic.derived.outer']).toMatchObject({ omitted: true });
 
-    const entries = out.report.filter((r) => r.code === 'unit_derived_from_usage');
-    expect(entries).toHaveLength(1);
-    // Keyed by path plus id, the same way the sidecar names a collided token.
-    expect(entries[0].path).toBe(`${PATH} [VariableID:unknown-number]`);
-    expect(entries[0].details).toMatchObject({ id: 'VariableID:unknown-number', via: 'binding' });
+    // ... and nothing reports the derived unit either: the report describes
+    // only the final build, and the final build never reaches C.
+    expect(out.report.filter((r) => r.code === 'unit_derived_from_usage')).toEqual([]);
   });
 
   it('leaves a number alone when nothing states a unit for it', () => {
@@ -1125,5 +1711,58 @@ describe('determinism', () => {
     const b = foundationDtcg(syntheticArtifact());
     expect(Object.keys(a.extension.census)).toEqual(Object.keys(b.extension.census));
     expect(Object.keys(a.meta)).toEqual(Object.keys(b.meta));
+  });
+
+  it('writes the same report for a duplicate path collision whatever the token order', () => {
+    const collided = (reverse: boolean): FoundationArtifactV5 => {
+      const artifact = syntheticArtifact();
+      for (const token of artifact.tokens) {
+        if (token.id === 'VariableID:color-exact' || token.id === 'VariableID:color-lossy') token.name = 'color/twin';
+        // A shared identifier lists its tokens too, and must not follow token order either.
+        if (token.id === 'VariableID:gap' || token.id === 'VariableID:shadow-blur') token.code_syntax = { WEB: '--dup' };
+      }
+      if (reverse) artifact.tokens.reverse();
+      return artifact;
+    };
+    const forward = foundationDtcg(collided(false));
+    const backward = foundationDtcg(collided(true));
+    expect(forward.report.filter((r) => r.code === 'path_collision').map((r) => r.details)).toEqual([
+      { id: 'VariableID:color-exact', ids: ['VariableID:color-exact', 'VariableID:color-lossy'] },
+      { id: 'VariableID:color-lossy', ids: ['VariableID:color-exact', 'VariableID:color-lossy'] },
+    ]);
+    expect(dtcgExportFiles(backward)['report.json']).toBe(dtcgExportFiles(forward)['report.json']);
+    expect(dtcgExportFiles(backward)).toEqual(dtcgExportFiles(forward));
+  });
+});
+
+describe('dtcg.units overrides', () => {
+  it('matches a collection whose name contains a slash by its whole name', () => {
+    const artifact = syntheticArtifact();
+    artifact.collections[0].name = 'Brand/Core';
+    const out = foundationDtcg(artifact, { units: { 'Brand/Core/number/*': 'px' } });
+    expect(leaf(out.files['brand-core.light.json'], 'Brand.Core.number.unknown-scope'))
+      .toMatchObject({ $type: 'dimension', $value: { value: 1.5, unit: 'px' } });
+    expect(out.report.filter((r) => r.code === 'unit_override_unmatched')).toEqual([]);
+  });
+
+  it('reports an override that names no collection, and one whose glob matches nothing', () => {
+    const out = foundationDtcg(syntheticArtifact(), {
+      units: { 'Nowhere/number/*': 'px', 'Primitives/no-such-token/*': 'rem' },
+    });
+    expect(out.report.filter((r) => r.code === 'unit_override_unmatched')).toEqual([
+      expect.objectContaining({
+        severity: 'info', path: 'Nowhere/number/*',
+        details: { override: 'Nowhere/number/*', unit: 'px', reason: 'no_such_collection' },
+      }),
+      expect.objectContaining({
+        severity: 'info', path: 'Primitives',
+        details: { override: 'Primitives/no-such-token/*', unit: 'rem', reason: 'no_matching_token' },
+      }),
+    ]);
+  });
+
+  it('reports nothing for an override that named a token', () => {
+    const out = foundationDtcg(syntheticArtifact(), { units: { 'Primitives/number/*': 'px' } });
+    expect(out.report.filter((r) => r.code === 'unit_override_unmatched')).toEqual([]);
   });
 });

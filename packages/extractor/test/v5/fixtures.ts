@@ -19,6 +19,7 @@ import type { CanonicalValue, TokenType, TypedValue } from '../../src/v5/value';
 import type { CollectionV5, TokenV5 } from '../../src/v5/entities';
 import type { ArtifactSource, FoundationArtifactV5, SemanticPayload } from '../../src/v5/canonical';
 import { buildEnvelope } from '../../src/v5/canonical';
+import { computeFoundationStatistics } from '../../src/v5/statistics';
 
 const SOURCE: ArtifactSource = {
   provider: 'figma',
@@ -78,7 +79,7 @@ export const OK_ARTIFACT: FoundationArtifactV5 = {
   ...PAYLOAD,
   spec_layer: buildEnvelope(PAYLOAD, META),
   diagnostics: [],
-  statistics: {},
+  statistics: computeFoundationStatistics({ ...PAYLOAD, diagnostics: [] }),
 };
 
 export interface FixtureCase { name: string; artifact: unknown }
@@ -397,6 +398,15 @@ export const INVALID_CASES: FixtureCase[] = [
     }),
   },
   { name: 'missing value has no reason', artifact: withValue({ kind: 'missing' }) },
+  {
+    name: 'unresolved alias reason is outside the vocabulary',
+    artifact: withValue({
+      kind: 'alias',
+      reference: (UNRESOLVED_ALIAS as Extract<CanonicalValue, { kind: 'alias' }>).reference,
+      resolved: { status: 'unresolved', reason: 'gremlins', value: null, chain: [] },
+    }),
+  },
+  { name: 'missing value reason is outside the vocabulary', artifact: withValue({ kind: 'missing', reason: 'gremlins' }) },
 
   // -- §9.5/§9.6 typed value content: well-formed shape, unrepresentable data --
   { name: 'color hex is uppercase', artifact: withValue({ kind: 'literal', value: { type: 'color', color_space: 'srgb', hex: '#FFFFFF', alpha: 1 } }) },
@@ -713,10 +723,10 @@ export function artifactWithDanglingCollectionId(): FoundationArtifactV5 {
   return root;
 }
 
-/** A collection whose `default_mode_id` names none of its declared modes —
- *  §7's "The default mode MUST reference a declared mode ID". This is the
- *  shape `normalizeV4` now deliberately emits when v4 states no usable
- *  default, so validation MUST reject it. */
+/** A collection whose `default_mode_id` names none of its declared modes:
+ *  §7's "The default mode MUST reference a declared mode ID". A hand-edited
+ *  artifact, or one from an older extractor, can carry this shape, so
+ *  validation MUST reject it. */
 export function artifactWithUndeclaredDefaultMode(): FoundationArtifactV5 {
   const root = structuredClone(OK_ARTIFACT);
   root.collections[0].default_mode_id = '1:2/there-is-no-such-mode';
@@ -880,8 +890,15 @@ export function artifactWithCrossCollectionCycle(): FoundationArtifactV5 {
 
 /** A chain of `length` tokens, each aliasing the next under one mode of a
  *  dedicated collection, terminating in a literal -- long enough to blow a
- *  recursive walk's call stack, and to make an O(n^2) resolution slow. */
-export function artifactWithChainOfLength(length: number): FoundationArtifactV5 {
+ *  recursive walk's call stack, and to make an O(n^2) resolution slow.
+ *
+ *  By default each token records ONE hop and claims `resolved`, the truncated
+ *  claim `checkChainTruth` must diagnose. With `completeChains` every token
+ *  records every hop down to the literal, so the replay walks the whole
+ *  depth from every root and must find nothing. */
+export function artifactWithChainOfLength(
+  length: number, options: { completeChains?: boolean } = {},
+): FoundationArtifactV5 {
   const root = structuredClone(OK_ARTIFACT);
   const collectionId = 'VariableCollectionId:chain';
   root.collections.push({
@@ -901,7 +918,9 @@ export function artifactWithChainOfLength(length: number): FoundationArtifactV5 
           },
           resolved: {
             status: 'resolved', value: sampleTypedValue('number'),
-            chain: [{ token_id: ids[i + 1], mode_id: 'm1' }],
+            chain: options.completeChains
+              ? ids.slice(i + 1).map((hop) => ({ token_id: hop, mode_id: 'm1' }))
+              : [{ token_id: ids[i + 1], mode_id: 'm1' }],
           },
         };
     return {

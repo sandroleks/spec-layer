@@ -5,6 +5,7 @@ import {
   buildFoundation, type RawCollection, type RawExternalRef, type RawVariable,
   type SerializedFoundation,
 } from '../../src/foundation';
+import type { EffectLayer } from '../../src/effects';
 import { buildFoundationArtifactV5 } from '../../src/v5/fromFoundation';
 import { canonicalJson } from '../../src/v5/canonical';
 import { validateLevel1, validateLevel2 } from '../../src/v5/validate';
@@ -533,6 +534,33 @@ describe('buildFoundationArtifactV5 — composite styles and publication', () =>
         property: 'font_weight', token_id: 'weight',
         style_value: { type: 'number', value: 400 },
         token_value: { type: 'number', value: 500 },
+      }),
+    }));
+  });
+
+  it('does not report drift when an unscoped number is bound to a dimension the style states', () => {
+    // An unnarrowed FLOAT carries ALL_SCOPES, so the token is a bare `number`,
+    // while the style's own fontSize is `dimension 16px`. The same 16 seen
+    // through two scopes is one value, not drift.
+    const source = styledSource();
+    const size = variable('size', 'type/size/body', 'FLOAT', { light: 16, dark: 16 }, ['ALL_SCOPES']);
+    source.collections[0].variables.push(size);
+    source.textStyles[0].bindingIds = { ...source.textStyles[0].bindingIds, fontSize: 'size' };
+    (source.effectStyles[0].effects[0] as Extract<EffectLayer, { type: 'drop-shadow' }>).radius = 16;
+    source.effectStyles[0].bindings = [{ property: 'effects[0].blur', tokenId: 'size' }];
+
+    const artifact = artifactOf(source);
+    expect(artifact.tokens.find((token) => token.id === 'size')).toMatchObject({ type: 'number' });
+    expect(artifact.diagnostics.filter((finding) => finding.code === 'STYLE_BINDING_DRIFT')).toEqual([]);
+
+    // The tolerance is about the unit the token cannot state, not the number.
+    size.valuesByMode = { light: 14, dark: 14 };
+    expect(artifactOf(source).diagnostics).toContainEqual(expect.objectContaining({
+      code: 'STYLE_BINDING_DRIFT', entity_id: 'style:text',
+      details: expect.objectContaining({
+        property: 'font_size', token_id: 'size',
+        style_value: { type: 'dimension', number: 16, unit: 'px' },
+        token_value: { type: 'number', value: 14 },
       }),
     }));
   });

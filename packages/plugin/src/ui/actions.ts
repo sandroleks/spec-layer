@@ -216,6 +216,17 @@ export function canGenerate(state: UiState): boolean {
   return state.aiEnabled && Boolean(state.licenseKey || state.figmaUserId);
 }
 
+/**
+ * Whether a Foundations build asks the model for group descriptions.
+ *
+ * The AI writing switch governs every AI call, this one included: its help
+ * text says a draft costs a free AI use, so a build with the switch off must
+ * not spend one. Identity is required as for a component build (canGenerate).
+ */
+export function foundationAiRequested(state: UiState, briefs: GroupDraftInput | null): boolean {
+  return canGenerate(state) && briefs !== null && briefs.collections.length > 0;
+}
+
 export function willGenerateProseFor(state: UiState, sections: Set<SectionId>): boolean {
   if (!canGenerate(state)) return false;
   const requested = proseKeysForSections(sections);
@@ -863,12 +874,6 @@ export function setFoundationGroupDescriptions(
   foundationGroupDescriptions = groupDescriptions;
 }
 
-// True from the moment the create-frames click handler sends its request until
-// foundationDone/foundationFrameError comes back. Threaded into the disabled
-// computation so a repaint mid-generation (e.g. the user toggling a checkbox)
-// can't re-enable the button and let a second request through.
-let foundationGenerating = false;
-
 /**
  * How foundation state reaches a UI.
  *
@@ -1081,7 +1086,6 @@ export async function copyFoundationBriefForScope(
  *  thread rejected whichever request lost, and the UI had no way to tell that
  *  rejection apart from the winner's own reply. */
 export function setFoundationGenerating(value: boolean): void {
-  foundationGenerating = value;
   foundationHost.setBusy(value);
   // The loader lives with the flag rather than at the call sites, so a build
   // cannot end up running with no loader (or a loader with no build): both
@@ -1106,12 +1110,6 @@ function foundationBuildMessages(): string[] {
     'Laying out the tables',
     'Placing docs on the canvas',
   ];
-}
-
-/** Whether the Foundations tab's bulk build is in flight. Read by ui-vnext.ts's
- *  shared build guard, so the other two entry points can see this one. */
-export function isFoundationGenerating(): boolean {
-  return foundationGenerating;
 }
 
 export function onFoundationMessage(

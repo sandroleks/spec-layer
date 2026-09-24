@@ -4,6 +4,7 @@ import {
   type VariablesSource,
   type StylesSource,
   type VariableSource,
+  type TextStyleSource,
 } from '../src/foundationReader';
 
 function variable(id: string, over: Partial<VariableSource> = {}): VariableSource {
@@ -83,5 +84,57 @@ describe('createFoundationReader', () => {
     await createFoundationReader(variables, styles).variable('a');
     await createFoundationReader(variables, styles).variable('a');
     expect(variables.getLocalVariablesAsync).toHaveBeenCalledTimes(2);
+  });
+
+  describe('publishStatus option', () => {
+    const status = () => vi.fn(async (): Promise<PublishStatus> => 'CURRENT');
+
+    function sourcesWith(read: ReturnType<typeof status>) {
+      const variables: VariablesSource = {
+        getLocalVariableCollectionsAsync: vi.fn(async () => [{
+          id: 'c1', name: 'C', modes: [{ modeId: 'm1', name: 'M' }], defaultModeId: 'm1',
+          variableIds: ['a'], hiddenFromPublishing: false, remote: false, getPublishStatusAsync: read,
+        }]),
+        getLocalVariablesAsync: vi.fn(async () => [variable('a', { getPublishStatusAsync: read })]),
+        getVariableByIdAsync: vi.fn(async () => null),
+        getVariableCollectionByIdAsync: vi.fn(async () => null),
+      };
+      const styles: StylesSource = {
+        getLocalTextStylesAsync: vi.fn(async (): Promise<TextStyleSource[]> => [{
+          id: 't1', name: 'Body', description: '', fontName: { family: 'Inter', style: 'Regular' },
+          fontSize: 16, lineHeight: { unit: 'AUTO' }, letterSpacing: { unit: 'PERCENT', value: 0 },
+          paragraphSpacing: 0, paragraphIndent: 0, textCase: 'ORIGINAL', textDecoration: 'NONE',
+          remote: false, getPublishStatusAsync: read,
+        }]),
+        getLocalEffectStylesAsync: vi.fn(async () => [{
+          id: 'e1', name: 'Shadow', description: '', effects: [], remote: false, getPublishStatusAsync: read,
+        }]),
+      };
+      return { variables, styles };
+    }
+
+    it('reads publish status for every source by default', async () => {
+      const read = status();
+      const { variables, styles } = sourcesWith(read);
+      const reader = createFoundationReader(variables, styles);
+      expect((await reader.collections())[0].publishStatus).toBe('CURRENT');
+      expect((await reader.variable('a'))?.publishStatus).toBe('CURRENT');
+      expect((await reader.textStyles())[0].publishStatus).toBe('CURRENT');
+      expect((await reader.effectStyles())[0].publishStatus).toBe('CURRENT');
+      expect(read).toHaveBeenCalledTimes(4);
+    });
+
+    it('skips every publish status read when told not to, leaving the status null', async () => {
+      const read = status();
+      const { variables, styles } = sourcesWith(read);
+      const reader = createFoundationReader(variables, styles, { publishStatus: false });
+      expect((await reader.collections())[0].publishStatus).toBeNull();
+      expect((await reader.variable('a'))?.publishStatus).toBeNull();
+      expect((await reader.textStyles())[0].publishStatus).toBeNull();
+      expect((await reader.effectStyles())[0].publishStatus).toBeNull();
+      // hidden/remote are synchronous properties and still travel.
+      expect((await reader.variable('a'))?.hiddenFromPublishing).toBe(false);
+      expect(read).not.toHaveBeenCalled();
+    });
   });
 });

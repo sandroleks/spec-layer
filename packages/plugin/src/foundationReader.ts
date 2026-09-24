@@ -72,6 +72,21 @@ async function publishStatusOf(source: PublishStatusSource): Promise<PublishStat
   try { return await source.getPublishStatusAsync(); } catch { return null; }
 }
 
+/** The status read a reader that skips publication makes: none. */
+const noPublishStatus = async (): Promise<PublishStatus | null> => null;
+
+export interface FoundationReaderOptions {
+  /**
+   * Read `getPublishStatusAsync` for every variable, collection and style. It
+   * is one bridge call each, so a 5,000-variable file pays 5,000 of them. Only
+   * the v5 projections read `publication.publishStatus`; the drift, render and
+   * change-list paths never do, and foundationContentHash does not hash it
+   * (pinned in the extractor's foundationHash.test.ts), so they pass false and
+   * every status comes back null, which the schema already reads as unknown.
+   */
+  publishStatus: boolean;
+}
+
 function readerVariable(v: VariableSource, publishStatus: PublishStatus | null): ReaderVariable {
   return {
     id: v.id,
@@ -100,10 +115,12 @@ function readerVariable(v: VariableSource, publishStatus: PublishStatus | null):
  * return (or a bulk read that failed) falls back to getVariableByIdAsync, so
  * nothing is reported missing that Figma can still hand over.
  *
- * Publication status stays per variable and is not deferred: an absent
+ * Publication status is per source and read concurrently under
+ * serializeFoundation's Promise.all when `options.publishStatus` is true; see
+ * FoundationReaderOptions for which callers turn it off. An absent
  * `publication` drops the field from every v5 artifact built from this dump,
  * and the selection-time dump is the same session cache the publish path
- * reads. The reads run concurrently under serializeFoundation's Promise.all.
+ * reads, so those two callers always read it.
  *
  * Create one per pass. The index is a snapshot; a reader kept across passes
  * would serve stale values after an edit.
@@ -111,7 +128,9 @@ function readerVariable(v: VariableSource, publishStatus: PublishStatus | null):
 export function createFoundationReader(
   variables: VariablesSource,
   styles: StylesSource,
+  options: FoundationReaderOptions = { publishStatus: true },
 ): FoundationReader {
+  const statusOf = options.publishStatus ? publishStatusOf : noPublishStatus;
   let index: Promise<Map<string, VariableSource>> | null = null;
   const localVariables = (): Promise<Map<string, VariableSource>> => {
     if (!index) {
@@ -134,14 +153,14 @@ export function createFoundationReader(
         defaultModeId: c.defaultModeId,
         variableIds: [...c.variableIds],
         hiddenFromPublishing: c.hiddenFromPublishing,
-        publishStatus: await publishStatusOf(c),
+        publishStatus: await statusOf(c),
         remote: c.remote,
       })));
     },
     async variable(id) {
       const v = (await localVariables()).get(id) ?? await variables.getVariableByIdAsync(id);
       if (!v) return null;
-      return readerVariable(v, await publishStatusOf(v));
+      return readerVariable(v, await statusOf(v));
     },
     async textStyles() {
       const list = await styles.getLocalTextStylesAsync();
@@ -163,7 +182,7 @@ export function createFoundationReader(
             .map(([k, v]) => [k, { id: v.id }]),
         ),
         remote: s.remote,
-        publishStatus: await publishStatusOf(s),
+        publishStatus: await statusOf(s),
       })));
     },
     async effectStyles() {
@@ -176,7 +195,7 @@ export function createFoundationReader(
         // this, which keeps the effect union in the extractor rather than here.
         effects: s.effects as unknown as RawEffect[],
         remote: s.remote,
-        publishStatus: await publishStatusOf(s),
+        publishStatus: await statusOf(s),
       })));
     },
     async collectionName(id) {

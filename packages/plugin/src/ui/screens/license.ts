@@ -9,6 +9,7 @@ import type { LicenseState } from '../viewModel/contracts';
 import { LOW_REMAINING } from '../viewModel/allowance';
 import { icon } from '../shell/icons';
 import type { ShellRefs } from '../shell/shell';
+import { esc } from '../escape';
 
 export interface LicenseScreenModel {
   state: LicenseState;
@@ -80,14 +81,6 @@ const STATUS_MESSAGES: Partial<Record<LicenseState, {
     detail: 'This device is back on the free plan.',
   },
 };
-
-function esc(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
 
 function resetCopy(value: string): string {
   if (!value) return '';

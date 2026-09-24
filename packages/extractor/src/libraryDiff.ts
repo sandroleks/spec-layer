@@ -89,22 +89,44 @@ export function compareBump(a: Bump, b: Bump): number {
   return BUMP_RANK[a] - BUMP_RANK[b];
 }
 
-const SEMVER_RE = /^(\d+)\.(\d+)\.(\d+)$/;
+/** Three dotted numeric identifiers as semver 2.0.0 writes them: digits only,
+ *  no leading zero on a multi-digit run. Each must also be a safe integer so
+ *  `nextVersion` can add one without rounding: a 22-digit run passed the old
+ *  `\d+`, came back from `nextVersion` as `1e+21.0.0`, and no later check
+ *  accepted that, so the library could never publish again. */
+const SEMVER_RE = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 
-/** Three dotted integers. No prerelease, no build metadata, no leading `v`. */
+/** Three dotted integers. No prerelease, no build metadata, no leading `v`,
+ *  no leading zeros, each a safe integer. */
 export function isSemver(value: unknown): value is string {
-  return typeof value === 'string' && SEMVER_RE.test(value);
+  if (typeof value !== 'string') return false;
+  const match = SEMVER_RE.exec(value);
+  return match !== null && match.slice(1).every((n) => Number.isSafeInteger(Number(n)));
 }
 
-/** `null` means no version yet, and the first version is always 1.0.0. */
+/** Reads the stored version, where leading zeros are allowed: an older proxy
+ *  could store `01.0.0`, and it bumped then. Each part must still be a safe
+ *  integer, so the arithmetic below never rounds. */
+const STORED_VERSION_RE = /^(\d+)\.(\d+)\.(\d+)$/;
+
+/** `null` means no version yet, and the first version is always 1.0.0. The
+ *  current version is read leniently (leading zeros allowed, so `01.0.0` plus
+ *  a patch gives `1.0.1`), but the version it returns always passes the strict
+ *  `isSemver`. Throws rather than returning a string `isSemver` would refuse,
+ *  so a version can never be stored that the next publish cannot read. */
 export function nextVersion(current: string | null, bump: Bump): string {
   if (current === null) return '1.0.0';
-  const match = SEMVER_RE.exec(current);
-  if (!match) throw new RangeError(`Not a semantic version: ${current}`);
-  const [major, minor, patch] = [Number(match[1]), Number(match[2]), Number(match[3])];
-  if (bump === 'major') return `${major + 1}.0.0`;
-  if (bump === 'minor') return `${major}.${minor + 1}.0`;
-  return `${major}.${minor}.${patch + 1}`;
+  const match = STORED_VERSION_RE.exec(current);
+  const parts = match === null ? [] : match.slice(1).map(Number);
+  if (parts.length !== 3 || !parts.every((n) => Number.isSafeInteger(n))) {
+    throw new RangeError(`Not a semantic version: ${current}`);
+  }
+  const [major, minor, patch] = parts;
+  const next = bump === 'major' ? `${major + 1}.0.0`
+    : bump === 'minor' ? `${major}.${minor + 1}.0`
+      : `${major}.${minor}.${patch + 1}`;
+  if (!isSemver(next)) throw new RangeError(`Cannot bump ${current}: ${next} is not a semantic version`);
+  return next;
 }
 
 /** Foundation first (null component sorts before any name), then by component, entity, id, scope, kind, from, to. */
@@ -409,7 +431,10 @@ function diffBindingsPerVariant(before: ComponentFacts, after: ComponentFacts, o
   const defaults = new Map<string, string>();
   for (const axis of after.axes) if (axis.default !== null) defaults.set(axis.name, axis.default);
 
-  // property key -> variant key -> sorted token names bound there.
+  // property key -> variant key -> sorted source ids bound there. Ids, not
+  // display names: a token rename is one `renamed` change on the foundation's
+  // `token` entity, and comparing names here reported it again as a
+  // `binding` change on every variant of every component bound to the token.
   const cells = (facts: ComponentFacts): Map<string, Map<string, string[]>> => {
     const sets = new Map<string, Map<string, Set<string>>>();
     for (const combo of shared) {
@@ -419,18 +444,22 @@ function diffBindingsPerVariant(before: ComponentFacts, after: ComponentFacts, o
         const pk = `${binding.path} / ${binding.property}`;
         let byVariant = sets.get(pk);
         if (!byVariant) sets.set(pk, (byVariant = new Map()));
-        const name = facts.tokenNames[binding.sourceId] ?? binding.sourceId;
-        const tokens = byVariant.get(vk);
-        if (tokens) tokens.add(name);
-        else byVariant.set(vk, new Set([name]));
+        const ids = byVariant.get(vk);
+        if (ids) ids.add(binding.sourceId);
+        else byVariant.set(vk, new Set([binding.sourceId]));
       }
     }
     const result = new Map<string, Map<string, string[]>>();
     for (const [pk, byVariant] of sets) {
-      result.set(pk, new Map([...byVariant].map(([vk, tokens]) => [vk, [...tokens].sort(compareCodeUnits)])));
+      result.set(pk, new Map([...byVariant].map(([vk, ids]) => [vk, [...ids].sort(compareCodeUnits)])));
     }
     return result;
   };
+  // `from` and `to` still read as display names, each side's own, sorted by
+  // code unit exactly as the cells were sorted when they held names, so a
+  // real rebinding renders as it did before.
+  const names = (facts: ComponentFacts, ids: string[]): string =>
+    ids.map((id) => facts.tokenNames[id] ?? id).sort(compareCodeUnits).join(', ');
   const b = cells(before);
   const a = cells(after);
   const properties = [...new Set([...a.keys(), ...b.keys()])].sort(compareCodeUnits);
@@ -444,10 +473,10 @@ function diffBindingsPerVariant(before: ComponentFacts, after: ComponentFacts, o
       const gained = to.filter((t) => !from.includes(t));
       if (lost.length === 0 && gained.length === 0) continue;
       const movement: { kind: ChangeKind; from: string | null; to: string | null } = lost.length > 0 && gained.length > 0
-        ? { kind: 'changed', from: lost.join(', '), to: gained.join(', ') }
+        ? { kind: 'changed', from: names(before, lost), to: names(after, gained) }
         : gained.length > 0
-          ? { kind: 'added', from: null, to: gained.join(', ') }
-          : { kind: 'removed', from: lost.join(', '), to: null };
+          ? { kind: 'added', from: null, to: names(after, gained) }
+          : { kind: 'removed', from: names(before, lost), to: null };
       const key = JSON.stringify([movement.kind, movement.from, movement.to]);
       const bucket = buckets.get(key);
       if (bucket) bucket.combos.push(combo);

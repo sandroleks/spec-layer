@@ -27,10 +27,18 @@ export function zipFiles(files: Record<string, string>): Uint8Array {
 }
 
 /**
+ * How long the object URL outlives the click. The browser starts reading a
+ * `blob:` URL after `click()` returns, and revoking it in the same tick can
+ * cancel the save in WebKit hosts. A minute is far past that and still frees
+ * the bytes within the session.
+ */
+export const REVOKE_DELAY_MS = 60_000;
+
+/**
  * Hand the bytes to the browser as a download. Recovered from the Markdown
  * export this plugin shipped until commit 77f1412. There is no completion
  * signal available to script, so callers return to idle themselves rather
- * than waiting for one.
+ * than waiting for one, and the toast says only that the download started.
  */
 export function downloadBytes(bytes: Uint8Array, filename: string, type: string): void {
   // Copy into a plain ArrayBuffer to satisfy Blob constructor typings for byte
@@ -44,5 +52,5 @@ export function downloadBytes(bytes: Uint8Array, filename: string, type: string)
   a.href = url;
   a.download = filename;
   a.click();
-  URL.revokeObjectURL(url);
+  setTimeout(() => URL.revokeObjectURL(url), REVOKE_DELAY_MS);
 }

@@ -429,7 +429,14 @@ export function valueText(value: unknown): string {
   if (value === null || value === undefined) return 'unknown';
   if (typeof value === 'object') {
     const record = value as Record<string, unknown>;
-    if ('value' in record) return String(record.value);
+    if ('value' in record) {
+      // The typed envelope `{ type, value }` that `compactTypedValue` writes
+      // when a value's type differs from its token's carries an OBJECT here
+      // for a dimension, a duration or a lossy colour: read through it.
+      return record.value !== null && typeof record.value === 'object'
+        ? valueText(record.value)
+        : String(record.value);
+    }
     if ('number' in record) {
       const unit = typeof record.unit === 'string' ? record.unit : '';
       return `${String(record.number)}${unit}`;

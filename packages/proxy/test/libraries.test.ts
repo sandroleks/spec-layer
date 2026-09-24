@@ -135,7 +135,12 @@ async function publishedLibrary(
   return { deps: d, libraryId: body.libraryId, pullKey: body.pullKey };
 }
 
-function deps(overrides: Partial<HandlerDeps> = {}): HandlerDeps {
+/** The handler deps with the in-memory store kept at its concrete type, so a
+ *  test can read `libraryStore.map` without a cast. `MemKV` satisfies
+ *  `LibraryStore`, so the intersection costs nothing at the call sites. */
+type TestDeps = HandlerDeps & { libraryStore: MemKV };
+
+function deps(overrides: Partial<TestDeps> = {}): TestDeps {
   const now = overrides.now ?? (() => Date.parse('2026-07-01T00:00:00Z'));
   return {
     salt: 'salt',

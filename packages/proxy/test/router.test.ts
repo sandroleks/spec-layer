@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { sha256 } from 'js-sha256';
 import { route, MAX_INSTANCE_NAME_LENGTH } from '../src/handlers';
+import type { KVLike } from '../src/license';
 import { memQuota } from './quotaHarness';
 import { SlidingWindowLimiter } from '../src/ratelimit';
 import { hashFigmaId } from '../src/identity';
@@ -25,7 +26,9 @@ const baseDeps = () => ({
   salt: 'salt',
   anthropicKey: 'sk',
   fetcher: vi.fn(async () => new Response('{}', { status: 200 })) as unknown as typeof fetch,
-  licenseCache: new MemKV(),
+  // The interface, not the class: the activation test at the bottom swaps in
+  // a three-method stub whose `put` throws.
+  licenseCache: new MemKV() as KVLike,
   now: () => Date.parse('2026-07-01T00:00:00Z'),
   quotaFor: memQuota(() => Date.parse('2026-07-01T00:00:00Z')),
   log: vi.fn(),

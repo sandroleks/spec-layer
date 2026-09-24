@@ -18,8 +18,10 @@
  *
  * Matching is deliberately narrow to avoid false positives on a bundled
  * artifact: constructor globals are matched only as `new X(`, and
- * namespace globals only as `X.` or `X(`. That catches real use while ignoring
- * the same word appearing in a comment or a string literal.
+ * namespace globals only as `X.` or `X(`. That skips the bare word in prose,
+ * but it does not understand strings or comments: a string literal or comment
+ * containing `document.title` or `fetch(` still matches. The bundle test in
+ * scripts/check-main-sandbox.test.ts is what shows the shipped bundle has none.
  *
  * The bundle is minified since 2026-09; minifiers rename locals, never
  * globals, and they drop the parentheses on a zero-argument `new`, so
@@ -27,8 +29,16 @@
  * than `new X(`.
  *
  * Portable: plain Node, no shell pipeline, no `grep -P`.
+ *
+ * Since 2026-09-23 the lists also carry the WHATWG URL, fetch and abort
+ * classes, `crypto`, `performance` and `self`, the two extra scheduler calls,
+ * a bare-identifier pass for a global used as a value, and a pass for a listed
+ * name reached through `globalThis`, `self` or `window`. `globalThis` itself
+ * is standard ES2020 and is not an offence.
+ * The shapes that pass are pinned in scripts/check-main-sandbox.test.ts.
  */
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, realpathSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
 
 const DEFAULT_BUNDLE = 'packages/plugin/dist/main.js';
 
@@ -36,12 +46,36 @@ const DEFAULT_BUNDLE = 'packages/plugin/dist/main.js';
 const CONSTRUCTORS = [
   'TextEncoder', 'TextDecoder', 'Blob', 'File', 'FileReader',
   'DOMParser', 'XMLHttpRequest', 'WebSocket', 'Worker', 'Image',
+  'URL', 'URLSearchParams', 'AbortController', 'Headers', 'Request', 'Response',
 ];
 const NAMESPACES = [
   'document', 'window', 'navigator', 'localStorage', 'sessionStorage',
   'indexedDB', 'location', 'history',
+  'crypto', 'performance', 'self',
 ];
-const CALLS = ['fetch', 'atob', 'btoa', 'structuredClone', 'requestAnimationFrame'];
+const CALLS = [
+  'fetch', 'atob', 'btoa', 'structuredClone', 'requestAnimationFrame',
+  'setImmediate', 'queueMicrotask',
+];
+
+/**
+ * A global used as a value rather than called or constructed: aliased
+ * (`const f = fetch;`), passed along (`parts.map(atob)`), returned
+ * (`return fetch`). The identifier has to sit in an expression position, so a
+ * property (`obj.fetch`), an object key (`{ fetch: 1 }`), a `typeof` guard and
+ * a longer identifier (`fetchAll`) do not match. A string literal could still
+ * match if the word sits between these delimiters; the bundle test in
+ * scripts/check-main-sandbox.test.ts is what keeps that honest.
+ */
+const bare = (name) => new RegExp(`(?<=(?:[=(,\\[?:!&|]|\\breturn)\\s*)${name}(?=\\s*[,;)\\]}])`, 'g');
+
+/**
+ * A forbidden global reached through a global object: `globalThis.fetch(u)`,
+ * `window.atob(s)`. `globalThis` itself is ES2020 and exists in the sandbox,
+ * so `globalThis.figma`, `globalThis.Symbol` and a `typeof globalThis` guard
+ * pass; only a name from the lists above after the dot is an offence.
+ */
+const viaGlobal = (name) => new RegExp(`(?<![.\\w$])(?:globalThis|self|window)\\s*\\.\\s*${name}\\b`, 'g');
 
 function record(offenders, src, name, pattern) {
   const hits = src.match(pattern);
@@ -55,9 +89,11 @@ function record(offenders, src, name, pattern) {
 export function scanSandboxBundle(src) {
   const offenders = [];
   for (const name of CONSTRUCTORS) record(offenders, src, name, new RegExp(`\\bnew\\s+${name}\\b`, 'g'));
-  // A leading (?<![.\w]) keeps `foo.document` and `myWindow` from matching.
-  for (const name of NAMESPACES) record(offenders, src, name, new RegExp(`(?<![.\\w])${name}\\s*[.(]`, 'g'));
-  for (const name of CALLS) record(offenders, src, name, new RegExp(`(?<![.\\w])${name}\\s*\\(`, 'g'));
+  // A leading (?<![.\w$]) keeps `foo.document`, `myWindow` and `$self` from matching.
+  for (const name of NAMESPACES) record(offenders, src, name, new RegExp(`(?<![.\\w$])${name}\\s*[.(]`, 'g'));
+  for (const name of CALLS) record(offenders, src, name, new RegExp(`(?<![.\\w$])${name}\\s*\\(`, 'g'));
+  for (const name of [...CONSTRUCTORS, ...CALLS]) record(offenders, src, name, bare(name));
+  for (const name of [...CONSTRUCTORS, ...CALLS, ...NAMESPACES]) record(offenders, src, name, viaGlobal(name));
   return offenders;
 }
 
@@ -67,25 +103,48 @@ function main(bundlePath = DEFAULT_BUNDLE) {
     process.exit(1);
   }
 
-  const src = readFileSync(bundlePath, 'utf8');
-  const offenders = scanSandboxBundle(src);
+  const bytes = readFileSync(bundlePath);
+  const offenders = scanSandboxBundle(bytes.toString('utf8'));
 
   if (offenders.length > 0) {
     console.error(`The plugin main-thread bundle (${bundlePath}) references globals the`);
-    console.error('Figma sandbox does not provide:\n');
+    console.error('Figma main thread does not allow:\n');
     for (const { name, count } of offenders) {
       console.error(`  ${name}  (${count} reference${count === 1 ? '' : 's'})`);
     }
     console.error(
-      '\nThe main thread has the figma API and the ECMAScript built-ins, nothing'
-      + '\nmore. Node and the browser both provide these, so tests and typecheck'
-      + '\nwill not catch it. Either move the work to the UI iframe, or implement'
-      + '\nit against the built-ins (see utf8ByteLength in src/docLink.ts).',
+      '\nEach of these is either absent from the main thread or kept out of it on'
+      + '\npurpose: DOM and network work belong in the UI iframe. Node and the'
+      + '\nbrowser both provide them, so tests and typecheck will not catch it.'
+      + '\nEither move the work to the UI iframe, or implement it against the'
+      + '\nECMAScript built-ins (see utf8ByteLength in src/docLink.ts).',
     );
     process.exit(1);
   }
+
+  // One line on success, so a scan that never ran cannot pass for a clean one.
+  console.log(`Sandbox scan: ${bundlePath} clean (${bytes.length} bytes).`);
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+/**
+ * The real path of the invoked script, or null when there is none. Node sets
+ * import.meta.url to the real path of the entry module, so argv[1] has to be
+ * resolved through any symlink before the two can be compared.
+ */
+function invokedRealPath() {
+  if (!process.argv[1]) return null;
+  try {
+    return realpathSync(process.argv[1]);
+  } catch {
+    return null;
+  }
+}
+
+// Compare URL to URL, real path to real path. The string form (`file://` +
+// argv[1]) never matched on a checkout whose path has a space, because
+// import.meta.url is percent-encoded, and resolve() alone never matched when
+// the script was reached through a symlink. Both exited 0 without scanning.
+const invoked = invokedRealPath();
+if (invoked && pathToFileURL(invoked).href === import.meta.url) {
   main(process.argv[2]);
 }

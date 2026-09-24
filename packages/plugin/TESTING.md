@@ -68,6 +68,28 @@ requests carry token names and resolved values without an image.
    must not change the canvas. Then open **Library**, use a row menu's **Copy
    for AI**, and confirm that brief still includes saved guidelines when the
    document has them.
+6. Move a generated Section to another page, reselect its component on the
+   first page, and run **Create docs** again. The doc is rebuilt on the page
+   it was moved to, the toast says it was updated, and the component screen
+   still shows the component: the page switch that places the rebuilt
+   Section must not empty the panel. Then start a Foundation build and, while
+   it runs, try **Create docs** on a component. No component build starts
+   (the panel refuses a second build before asking the canvas for one), and
+   the finished Foundation docs carry the brand theme, not the component
+   doc's leftovers.
+7. Start a Foundation build with enough collections selected that it takes a
+   few seconds, and while it runs, select a different component on the page
+   you are viewing. Once the toast says the build finished, confirm the
+   component screen shows the component you selected during the build, not
+   whatever was selected before you clicked **Create docs**.
+8. From **Library**, click **Update** on a Foundation doc that lives on a
+   different page than the one you are viewing, and while it runs, select a
+   different component on your own page. The canvas returns to your page
+   once the toast says the doc updated (it never stays on the other doc's
+   page), and the panel shows the component you picked there during the
+   build. Repeat clearing your selection instead of picking a component
+   partway through: the panel goes back to its empty state once the toast
+   shows, rather than keeping the last component shown.
 
 Also verify a nested selection resolves to its enclosing component and a
 non-component selection shows an actionable empty state with no toast. Click
@@ -110,6 +132,18 @@ open: nothing should pop up on the canvas.
 6. If AI group descriptions are enabled, confirm a failed or refused AI
    request still creates deterministic Foundation Sections and reports that it
    went without descriptions.
+7. In a collection with a variable whose Web code syntax is longer than the
+   Name column (about forty characters), and a text-styles or effect-styles
+   source with more than four modes' worth of omitted names, generate the
+   docs. The code-syntax chip wraps inside its cell instead of running under
+   the next column, and the "Modes not shown" footer line wraps at the prose
+   measure.
+8. In a color collection with two or more modes, name the colors so contrast
+   pairs are found (for example, include "background" and "foreground" in
+   the token names), rename one mode to something about forty characters or
+   longer, and generate the docs with contrast shown. The long mode name,
+   used as the label over its own contrast grid, wraps rather than widening
+   the card.
 
 ### Foundation Context v5 Copy matrix
 

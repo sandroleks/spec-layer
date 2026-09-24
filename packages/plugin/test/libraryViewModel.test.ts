@@ -4,8 +4,10 @@ import {
   buildLibraryModel,
   buildLibraryRow,
   formatLibraryAge,
+  isLibraryFilter,
   libraryBadgeVisible,
   libraryDriftForEntry,
+  libraryUpdateIntent,
   resolveLibraryChanges,
   resolveLibraryRowStatus,
   type LibraryChangeResult,
@@ -508,5 +510,25 @@ describe('resolveLibraryChanges', () => {
   it('turns a throwing diff into unavailable rather than propagating', () => {
     const broken = { ...component, projection: null as unknown as SpecHashProjection };
     expect(resolveLibraryChanges({ baseline: broken, liveProjection: projection })).toEqual({ state: 'unavailable', reason: 'other' });
+  });
+});
+
+describe('libraryUpdateIntent', () => {
+  it('asks for a rebuild only for a stale-version row', () => {
+    expect(libraryUpdateIntent('staleVersion')).toBe('rebuild');
+  });
+
+  it('is a plain update for every other drift, including none', () => {
+    const others: Array<LibraryDriftState | undefined> = ['pending', 'inSync', 'drifted', 'unavailable', undefined];
+    for (const drift of others) expect(libraryUpdateIntent(drift)).toBe('update');
+  });
+});
+
+describe('isLibraryFilter', () => {
+  it('accepts the three filters and nothing else', () => {
+    expect(isLibraryFilter('all')).toBe(true);
+    expect(isLibraryFilter('updates')).toBe(true);
+    expect(isLibraryFilter('sync')).toBe(true);
+    expect(isLibraryFilter('drifted')).toBe(false);
   });
 });

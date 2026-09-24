@@ -66,7 +66,11 @@ function proseReq(body: unknown, headers: Record<string, string>) {
 }
 
 function deps(overrides: Partial<Parameters<typeof handleProse>[1]> = {}) {
-  const anthropic = vi.fn(async () => new Response(JSON.stringify({ id: 'msg_1', content: [{ type: 'text', text: 'ok' }] }), { status: 200 }));
+  // Declared as the two-argument call the handler makes, so `mock.calls[0]`
+  // is a `[string, RequestInit]` tuple and the assertions below need no cast.
+  const anthropic = vi.fn<(input: string, init: RequestInit) => Promise<Response>>(
+    async () => new Response(JSON.stringify({ id: 'msg_1', content: [{ type: 'text', text: 'ok' }] }), { status: 200 }),
+  );
   return {
     salt: 'salt',
     anthropicKey: 'sk-ant-test',
@@ -91,15 +95,15 @@ describe('handleProse', () => {
     expect(res.headers.get('X-Tier')).toBe('free');
     expect(res.headers.get('X-Quota-Used')).toBe('1');
     expect(res.headers.get('X-Quota-Limit')).toBe('20'); // boost window
-    const call = d._anthropic.mock.calls[0] as [string, { headers: Record<string, string> }];
-    expect(call[0]).toBe('https://api.anthropic.com/v1/messages');
-    expect(call[1].headers['x-api-key']).toBe('sk-ant-test');
+    const [url, init] = d._anthropic.mock.calls[0];
+    expect(url).toBe('https://api.anthropic.com/v1/messages');
+    expect((init.headers as Record<string, string>)['x-api-key']).toBe('sk-ant-test');
   });
 
   it('forwards the free request with Haiku 4.5 and no output_config', async () => {
     const d = deps();
     await handleProse(proseReq(GOOD_BODY, { 'X-Figma-User': 'u1' }), d);
-    const sent = JSON.parse(String((d._anthropic.mock.calls[0] as [string, RequestInit])[1].body)) as Record<string, unknown>;
+    const sent = JSON.parse(String(d._anthropic.mock.calls[0][1].body)) as Record<string, unknown>;
     expect(sent.model).toBe('claude-haiku-4-5');
     expect(sent.output_config).toBeUndefined();
     expect(sent.thinking).toBeUndefined();
@@ -110,7 +114,7 @@ describe('handleProse', () => {
     await d.licenseCache.put(`lic:${sha256(`${UUID_KEY}:inst-1`)}`, JSON.stringify({ status: 'active', validatedAt: Date.parse('2026-07-01T00:00:00Z') }));
     const res = await handleProse(proseReq(PRO_BODY, { Authorization: `Bearer ${UUID_KEY}:inst-1` }), d);
     expect(res.status).toBe(200);
-    const sent = JSON.parse(String((d._anthropic.mock.calls[0] as [string, RequestInit])[1].body)) as Record<string, unknown>;
+    const sent = JSON.parse(String(d._anthropic.mock.calls[0][1].body)) as Record<string, unknown>;
     expect(sent.model).toBe('claude-sonnet-5');
     expect(sent.output_config).toEqual({ effort: 'low' });
   });
@@ -146,7 +150,7 @@ describe('handleProse', () => {
     const d = deps();
     const res = await handleProse(proseReq(LEGACY_BODY, { 'X-Figma-User': 'u1' }), d);
     expect(res.status).toBe(200);
-    const sent = JSON.parse(String((d._anthropic.mock.calls[0] as [string, RequestInit])[1].body)) as Record<string, unknown>;
+    const sent = JSON.parse(String(d._anthropic.mock.calls[0][1].body)) as Record<string, unknown>;
     expect(sent.model).toBe('claude-haiku-4-5');
   });
 
