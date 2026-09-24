@@ -83,10 +83,12 @@ requests carry token names and resolved values without an image.
    whatever was selected before you clicked **Create docs**.
 8. From **Library**, click **Update** on a Foundation doc that lives on a
    different page than the one you are viewing, and while it runs, select a
-   different component on your own page. Confirm the panel ends up showing
-   that component once the toast says the doc updated. This path's page hop
-   back has no long wait after it, so the timing differs from item 7's and is
-   worth checking on its own.
+   different component on your own page. The canvas returns to your page
+   once the toast says the doc updated (it never stays on the other doc's
+   page), and the panel shows the component you picked there during the
+   build. Repeat clearing your selection instead of picking a component
+   partway through: the panel goes back to its empty state once the toast
+   shows, rather than keeping the last component shown.
 
 Also verify a nested selection resolves to its enclosing component and a
 non-component selection shows an actionable empty state with no toast. Click

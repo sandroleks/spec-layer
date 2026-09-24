@@ -654,11 +654,19 @@ figma.ui.onmessage = async (raw: unknown) => {
         figma.ui.postMessage({ type: 'docFrameError', message } as MainToUi);
         break;
       }
-      // The selection when this build took the gate, and what the build
-      // itself (not the user) selects on success: selectionToReplay's two
-      // "nothing really changed" cases, checked once the gate releases below.
-      const atBegin = figma.currentPage.selection.map((node) => node.id);
-      let programmaticIds: string[] = [];
+      // The page the user invoked this build from, and the selection there
+      // when this build took the gate. A successful build deliberately
+      // leaves the user on the new Section's page with it selected (see the
+      // cosmetic tail below), so only a failure needs to hop back to this
+      // page — done in the catch block, mirroring renderFoundation's own
+      // restore. `programmaticIds` stays null until a programmatic selection
+      // actually happens below: null (not `[]`) is what tells
+      // selectionToReplay this build has made no claim yet about what its
+      // own selection is, so a genuine mid-build deselect (`current` also
+      // `[]`) is never mistaken for it.
+      const invokingPage = figma.currentPage;
+      const atBegin = invokingPage.selection.map((node) => node.id);
+      let programmaticIds: string[] | null = null;
       let section: SectionNode | null = null;
       let committed = false; // true once the old doc has been replaced by the new one
       try {
@@ -766,6 +774,19 @@ figma.ui.onmessage = async (raw: unknown) => {
         // after commit the section is the live doc and must not be removed.
         if (section && !committed) {
           try { section.remove(); } catch { /* already gone */ }
+        }
+        // A build that switched pages before failing must not strand the
+        // user there: unlike the success path above (which deliberately
+        // leaves them on the new Section's page), a failure has no section
+        // to show for it, and leaving `figma.currentPage` on the target page
+        // would also make `current` below describe a different page than
+        // `atBegin`. This is itself a fallible async Figma call, wrapped
+        // separately so its own failure can never replace the error the
+        // user needs to see.
+        try {
+          if (figma.currentPage.id !== invokingPage.id) await figma.setCurrentPageAsync(invokingPage);
+        } catch {
+          // Best-effort only.
         }
         const message = err instanceof Error ? err.message : String(err);
         figma.ui.postMessage({ type: 'docFrameError', message } as MainToUi);
@@ -1062,11 +1083,16 @@ figma.ui.onmessage = async (raw: unknown) => {
         figma.ui.postMessage({ type: 'foundationFrameError', message, created } as MainToUi);
       } finally {
         canvasBuild.end();
-        // Same replay as renderDocFrame above, with an empty programmatic
-        // list: this path never selects anything of its own.
+        // Same replay as renderDocFrame above, with programmatic: null, not
+        // []: this path never selects anything of its own, so it has no
+        // basis to claim its own selection was empty, and a genuine
+        // mid-build deselect must still replay (see selectionToReplay).
+        // The loop above already returns to invokedPage after every unit,
+        // success or replaced, and the catch just above restores it too, so
+        // `current` here already describes the same page as `atBegin`.
         const current = figma.currentPage.selection.map((node) => node.id);
         if (selectionToReplay({
-          skipped: canvasBuild.skippedSelection, current, atBegin, programmatic: [],
+          skipped: canvasBuild.skippedSelection, current, atBegin, programmatic: null,
         })) {
           void postSelection().catch(() => {/* handled inside */});
         }
@@ -1082,9 +1108,15 @@ figma.ui.onmessage = async (raw: unknown) => {
         figma.ui.postMessage({ type: 'docSourceError', docId: msg.docId, message } as MainToUi);
         break;
       }
-      // See renderDocFrame's atBegin: this path never selects anything of
-      // its own either, same as renderFoundation.
-      const atBegin = figma.currentPage.selection.map((node) => node.id);
+      // The page the user invoked this Update from, and the selection there
+      // when this build took the gate. Unlike renderDocFrame, an Update has
+      // no new page for the user to land on: it switches to the prior doc's
+      // page to rebuild it (below) and, unlike renderFoundation's per-unit
+      // loop, never switches back on its own — so the finally block hops
+      // back before checking `current` against `atBegin`, or the two would
+      // describe different pages.
+      const invokingPage = figma.currentPage;
+      const atBegin = invokingPage.selection.map((node) => node.id);
       try {
         const node = await figma.getNodeByIdAsync(msg.docId);
         if (!node || node.type !== 'SECTION') {
@@ -1214,15 +1246,29 @@ figma.ui.onmessage = async (raw: unknown) => {
         const message = err instanceof Error ? err.message : String(err);
         figma.ui.postMessage({ type: 'docSourceError', docId: msg.docId, message } as MainToUi);
       } finally {
+        // Hop back to the invoking page before releasing the gate, success
+        // or failure: unlike renderDocFrame there is no new page for the
+        // user to land on here, and unlike renderFoundation's per-unit loop
+        // this path never returns on its own. Left un-hopped, a page the
+        // build switched to (the prior doc's own page) leaves `current`
+        // below describing that page's remembered selection instead of
+        // this one's — replaying it as if the user chose it, or, if it's
+        // empty, resolving to node: null and emptying the pane, the
+        // original bug. This is itself a fallible async Figma call, guarded
+        // so its failure can never skip end() or the replay check after it.
+        try {
+          if (figma.currentPage.id !== invokingPage.id) await figma.setCurrentPageAsync(invokingPage);
+        } catch {
+          // Best-effort only.
+        }
         canvasBuild.end();
-        // Same replay as the two paths above. This one's own page hop has no
-        // later long await, so a real event can arrive after the gate has
-        // already released and be posted by the listener's normal path
-        // instead of noted here — either way the user's real choice reaches
-        // the UI once.
+        // Same replay as the two paths above, with programmatic: null, not
+        // []: this path never selects anything of its own, so it has no
+        // basis to claim its own selection was empty, and a genuine
+        // mid-build deselect must still replay (see selectionToReplay).
         const current = figma.currentPage.selection.map((node) => node.id);
         if (selectionToReplay({
-          skipped: canvasBuild.skippedSelection, current, atBegin, programmatic: [],
+          skipped: canvasBuild.skippedSelection, current, atBegin, programmatic: null,
         })) {
           void postSelection().catch(() => {/* handled inside */});
         }

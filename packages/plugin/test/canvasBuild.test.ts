@@ -37,13 +37,13 @@ describe('CanvasBuildGate', () => {
 describe('selectionToReplay', () => {
   it('does not replay when nothing was skipped', () => {
     expect(selectionToReplay({
-      skipped: false, current: ['b'], atBegin: ['a'], programmatic: [],
+      skipped: false, current: ['b'], atBegin: ['a'], programmatic: null,
     })).toBe(false);
   });
 
   it('does not replay when the current selection is unchanged from begin()', () => {
     expect(selectionToReplay({
-      skipped: true, current: ['a'], atBegin: ['a'], programmatic: [],
+      skipped: true, current: ['a'], atBegin: ['a'], programmatic: null,
     })).toBe(false);
   });
 
@@ -56,6 +56,15 @@ describe('selectionToReplay', () => {
   it('replays a genuinely new user selection made during the build', () => {
     expect(selectionToReplay({
       skipped: true, current: ['b'], atBegin: ['a'], programmatic: ['section-1'],
+    })).toBe(true);
+  });
+
+  it('replays a cleared selection when the build made no programmatic selection of its own', () => {
+    // programmatic: null (not []): a Foundation path never selects anything,
+    // so it has no basis to claim "my own selection was empty" -- an empty
+    // current here can only be the user's own deselect, and must replay.
+    expect(selectionToReplay({
+      skipped: true, current: [], atBegin: ['a'], programmatic: null,
     })).toBe(true);
   });
 });

@@ -604,6 +604,14 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   whatever was selected before the build started. The plugin now replays
   that selection once the build finishes, unless it turns out to be nothing
   new or just the build's own generated doc coming into view.
+- **Updating a Foundation doc from Library no longer strands you on its
+  page, or shows a stray selection from it.** Update rebuilds the doc on
+  whatever page it lives on and never returned to yours, so a leftover
+  selection there could replay as if you had chosen it, and a component you
+  actually picked on your own page could be missed. The canvas now returns
+  to your page before the doc-updated toast shows. Clearing your selection
+  during any of these builds is also no longer mistaken for the build's own
+  generated content and is replayed correctly.
 
 ### Added
 

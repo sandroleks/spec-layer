@@ -69,22 +69,30 @@ export class CanvasBuildGate {
  *   the build began (nothing actually changed, even though an event fired,
  *   e.g. the user reselected the same node);
  * - nothing replays when the current selection is exactly the build's own
- *   programmatic selection (renderDocFrame's generated Section on success;
- *   empty for the two Foundation paths, which never select anything).
+ *   programmatic selection (renderDocFrame's generated Section on success).
  *   Posting that would resolve to `node: null` and empty the pane, the
  *   original bug this whole gate exists to fix.
- * Only a selection that differs from both counts as something to tell the
- * UI about.
+ *
+ * `programmatic` is `null`, not `[]`, for a build that never selects
+ * anything of its own (both Foundation paths): an empty array would mean
+ * "this build's own selection was empty", which is a claim those two paths
+ * have no basis to make, and would wrongly swallow a genuine mid-build
+ * deselect (the user clearing their selection, so `current` is also `[]`).
+ * `null` says there is no programmatic selection to compare against at all,
+ * so that case falls through to the atBegin comparison alone.
+ *
+ * Only a selection that differs from both atBegin and (when there is one)
+ * programmatic counts as something to tell the UI about.
  */
 export function selectionToReplay(input: {
   skipped: boolean;
   current: readonly string[];
   atBegin: readonly string[];
-  programmatic: readonly string[];
+  programmatic: readonly string[] | null;
 }): boolean {
   if (!input.skipped) return false;
   if (sameSelection(input.current, input.atBegin)) return false;
-  if (sameSelection(input.current, input.programmatic)) return false;
+  if (input.programmatic !== null && sameSelection(input.current, input.programmatic)) return false;
   return true;
 }
 
