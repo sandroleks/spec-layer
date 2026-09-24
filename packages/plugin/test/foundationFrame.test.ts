@@ -3,10 +3,10 @@ import {
   valueLines, swatchColorOf, footerNotes, cellText, swatchCell, headerCell,
   buildFoundationFrame, headerSubtitle, tableColumns, cardWidth, rowWidth,
   rgbLabel, hslLabel, swatchValueLines, isColorRow, swatchRowWidth,
-  referenceChips, nameCell, PLATFORM_LABEL,
+  referenceChips, nameCell, PLATFORM_LABEL, buildFooter,
   type TableColumn,
 } from '../src/foundationFrame';
-import { hstack, vstack, solidFill, palette } from '../src/frameKit';
+import { hstack, vstack, solidFill, palette, PROSE_MEASURE } from '../src/frameKit';
 import { SPECIMEN_TEXT } from '../src/foundationSpecimens';
 import {
   installFakeFigma, uninstallFakeFigma, FakeFrame, FakeSection, TEXT_H,
@@ -445,13 +445,13 @@ describe('referenceChips', () => {
   afterEach(() => uninstallFakeFigma());
 
   it('draws one chip per defined platform with a readable label, and nothing when none is defined', () => {
-    expect(referenceChips({})).toBeNull();
-    const row = referenceChips({ WEB: '--brand-primary', iOS: 'brandPrimary' }) as unknown as FakeFrame;
+    expect(referenceChips({}, 240)).toBeNull();
+    const row = referenceChips({ WEB: '--brand-primary', iOS: 'brandPrimary' }, 240) as unknown as FakeFrame;
     expect(row.children).toHaveLength(2);
     expect(row.textChars()).toEqual(['Web', '--brand-primary', 'iOS', 'brandPrimary']);
   });
   it('shows an unknown platform key as stored rather than guessing a name', () => {
-    const row = referenceChips({ FLUTTER: 'brandPrimary' }) as unknown as FakeFrame;
+    const row = referenceChips({ FLUTTER: 'brandPrimary' }, 240) as unknown as FakeFrame;
     expect(row.textChars()).toEqual(['FLUTTER', 'brandPrimary']);
     expect(PLATFORM_LABEL.ANDROID).toBe('Android');
   });
@@ -459,6 +459,31 @@ describe('referenceChips', () => {
     const cell = nameCell({ kind: 'variable', name: 'space/4', description: '', resolvedType: 'FLOAT',
       codeSyntax: { WEB: '--space-4' }, glyph: null, cells: [] }, 240) as unknown as FakeFrame;
     expect(cell.textChars()).toEqual(['space/4', 'Web', '--space-4']);
+  });
+  it('caps each chip at the cell width and lets a long identifier wrap inside it', () => {
+    const row = referenceChips({ WEB: '--color-background-brand-primary-hover-strong' }, 240) as unknown as FakeFrame;
+    const chip = row.children[0] as FakeFrame;
+    expect(chip.maxWidth).toBe(240);
+    expect(chip.layoutWrap).toBe('WRAP');
+    const identifier = chip.children[1] as Record<string, unknown>;
+    expect(identifier.characters).toBe('--color-background-brand-primary-hover-strong');
+    // 6px padding each side: the bound is the cell's, less the chip's own inset.
+    expect(identifier.maxWidth).toBe(228);
+  });
+});
+
+describe('buildFooter', () => {
+  beforeEach(() => installFakeFigma());
+  afterEach(() => uninstallFakeFigma());
+
+  it('sets its notes to the prose measure so a long list of omitted modes wraps', () => {
+    const footer = buildFooter(['Modes not shown: Light high contrast, Dark high contrast, Wireframe, Print']) as unknown as FakeFrame;
+    expect(footer.layoutSizingHorizontal).toBe('FIXED');
+    expect(footer.width).toBe(PROSE_MEASURE);
+    expect(footer.children).toHaveLength(1);
+    const note = footer.children[0] as Record<string, unknown>;
+    expect(note.layoutSizingHorizontal).toBe('FILL');
+    expect(note.textAutoResize).toBe('HEIGHT');
   });
 });
 
@@ -542,6 +567,41 @@ describe('buildFoundationFrame', () => {
   function cardOf(section: FakeSection): FakeFrame {
     return section.children[0] as unknown as FakeFrame;
   }
+
+  it('removes the card it drew when the Section cannot be made, so a failed build leaves nothing on the canvas', async () => {
+    class TrackedFrame extends FakeFrame {
+      removed = false;
+      remove(): void { this.removed = true; }
+    }
+    const made: TrackedFrame[] = [];
+    installFakeFigma({
+      createFrame: () => { const f = new TrackedFrame(); made.push(f); return f; },
+      createSection: () => { throw new Error('sections are off'); },
+    });
+    await expect(build()).rejects.toThrow('sections are off');
+    // The card is named after the unit's title; every other frame is inside it.
+    const card = made.find((f) => f.name === 'Primitives');
+    expect(card).toBeDefined();
+    expect(card?.removed).toBe(true);
+  });
+
+  it('removes a Section it made when placing the card in it throws', async () => {
+    class TrackedSection extends FakeSection {
+      removed = false;
+      remove(): void { this.removed = true; }
+      resizeWithoutConstraints(): void { throw new Error('resize refused'); }
+    }
+    let section: TrackedSection | null = null;
+    installFakeFigma({ createSection: () => { section = new TrackedSection(); return section; } });
+    await expect(build()).rejects.toThrow('resize refused');
+    // A non-null assertion, not optional chaining: TS's control flow analysis
+    // does not track an assignment made inside a closure, so it keeps treating
+    // `section` as its initial `null` here regardless of which we'd use; only
+    // `!` (rather than `?.`, which types the access as never on that narrowed
+    // null) gets a type the property access on the next line can pass.
+    expect(section).not.toBeNull();
+    expect(section!.removed).toBe(true);
+  });
 
   it('opens with a header band painted in the theme header colour', async () => {
     const card = cardOf(await build());
@@ -809,6 +869,15 @@ describe('buildFoundationFrame', () => {
     expect((hex.fontName as { style: string }).style).toBe('Medium');
     expect((rgb.fontName as { style: string }).style).toBe('Regular');
     expect(Number(rgb.fontSize)).toBeLessThan(Number(hex.fontSize));
+  });
+
+  it('caps a block label at the prose measure so a long mode name wraps under its block', async () => {
+    // The fixture holds colours and a float, so both layouts render and each
+    // gets a label; "Other values" is the table's.
+    const card = cardOf(await build());
+    const label = card.findText('Other values') as unknown as Record<string, unknown> | undefined;
+    expect(label).toBeDefined();
+    expect(label?.maxWidth).toBe(PROSE_MEASURE);
   });
 
 });

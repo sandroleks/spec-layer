@@ -17,6 +17,9 @@ import {
   PROSE_MEASURE,
   matchVariableModes,
   revealBooleanParts,
+  collectionById,
+  nodeById,
+  resetBuildCaches,
 } from '../src/frameKit';
 import { FakeFrame as RealFakeFrame } from './fakeFigma';
 
@@ -420,5 +423,73 @@ describe('revealBooleanParts', () => {
       { setProperties } as unknown as InstanceNode,
       { parent: { type: 'PAGE' }, componentPropertyDefinitions: { 'A#1': { type: 'BOOLEAN' } } } as unknown as ComponentNode,
     )).resolves.toBeUndefined();
+  });
+});
+
+describe('per-build caches', () => {
+  it('fetches a collection once per build however many instances match it', async () => {
+    const get = vi.fn(async () => ({ id: 'c1' }));
+    installFigma({ variables: { getVariableCollectionByIdAsync: get } });
+    const comp = { resolvedVariableModes: { c1: 'm1' } } as unknown as ComponentNode;
+    const setMode = vi.fn();
+    const inst = { setExplicitVariableModeForCollection: setMode } as unknown as InstanceNode;
+    await matchVariableModes(inst, comp);
+    await matchVariableModes(inst, comp);
+    expect(get).toHaveBeenCalledTimes(1);
+    expect(setMode).toHaveBeenCalledTimes(2);
+  });
+
+  it('issues one read per collection in a component, not one after another', async () => {
+    const started: string[] = [];
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => { release = r; });
+    installFigma({
+      variables: {
+        getVariableCollectionByIdAsync: async (id: string) => { started.push(id); await gate; return { id }; },
+      },
+    });
+    const done = matchVariableModes(
+      { setExplicitVariableModeForCollection: vi.fn() } as unknown as InstanceNode,
+      { resolvedVariableModes: { c1: 'm1', c2: 'm2', c3: 'm3' } } as unknown as ComponentNode,
+    );
+    await Promise.resolve();
+    expect(started).toEqual(['c1', 'c2', 'c3']);
+    release();
+    await done;
+  });
+
+  it('starts every build with empty caches', async () => {
+    const get = vi.fn(async () => ({ id: 'c1' }));
+    installFigma({ variables: { getVariableCollectionByIdAsync: get }, loadFontAsync: async () => {} });
+    await collectionById('c1');
+    resetBuildCaches();
+    await collectionById('c1');
+    expect(get).toHaveBeenCalledTimes(2);
+    await applyThemeToKit({
+      headerBg: '#000000', accent: '#ffffff', bodyText: '#000000', tableHeadBg: '#ffffff',
+      cornerStyle: 'soft', headingFont: 'Inter', bodyFont: 'Inter',
+    });
+    await collectionById('c1');
+    expect(get).toHaveBeenCalledTimes(3);
+  });
+
+  it('fetches a previewed node once across a width read and instancing', async () => {
+    const inst = { width: 10, height: 10, remove: vi.fn() };
+    const get = vi.fn(async () => ({ type: 'COMPONENT', width: 120, createInstance: () => inst }));
+    installFigma({ getNodeByIdAsync: get });
+    expect(((await nodeById('n1')) as unknown as { width: number }).width).toBe(120);
+    await buildSlot('n1', 200);
+    expect(get).toHaveBeenCalledTimes(1);
+  });
+
+  it('resolves null for a node or collection whose read throws, and remembers that for the build', async () => {
+    const getNode = vi.fn(async () => { throw new Error('gone'); });
+    const getColl = vi.fn(async () => { throw new Error('detached'); });
+    installFigma({ getNodeByIdAsync: getNode, variables: { getVariableCollectionByIdAsync: getColl } });
+    expect(await nodeById('n1')).toBeNull();
+    expect(await nodeById('n1')).toBeNull();
+    expect(await collectionById('c1')).toBeNull();
+    expect(getNode).toHaveBeenCalledTimes(1);
+    expect(getColl).toHaveBeenCalledTimes(1);
   });
 });

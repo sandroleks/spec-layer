@@ -23,7 +23,7 @@ import type { resolveTheme } from './brandColors';
 import type { PillState } from './publishPill';
 import {
   palette, solidFill, vstack, hstack, makeText, buildSlot, font, SLOT_PAD,
-  headingFont, radius, applyThemeToKit,
+  headingFont, radius, applyThemeToKit, nodeById,
 } from './frameKit';
 import { buildBrandHeader, HEADER_PAD_X } from './brandHeader';
 import { buildMeasureSection } from './measureSection';
@@ -617,14 +617,14 @@ async function fitFrameWidth(model: DocFrameModel): Promise<void> {
     (s): s is Extract<SectionBlock, { kind: 'anatomy' | 'measure' }> => s.kind === 'anatomy' || s.kind === 'measure',
   );
   if (drawn) {
-    try {
-      const comp = await figma.getNodeByIdAsync(drawn.componentId);
-      if (comp && 'width' in comp) {
-        const needed = (comp as SceneNode).width + CARD_PAD * 2 + PAD_X * 2 + CALLOUT_ZONE;
-        CARD_WIDTH = Math.max(CARD_WIDTH, Math.min(CARD_WIDTH_MAX, Math.ceil(needed)));
-        CONTENT_WIDTH = CARD_WIDTH - PAD_X * 2;
-      }
-    } catch { /* keep the token-fitted width */ }
+    // Through the per-build cache: the anatomy and measure builders read this
+    // node again when they instance it.
+    const comp = await nodeById(drawn.componentId);
+    if (comp && 'width' in comp) {
+      const needed = (comp as SceneNode).width + CARD_PAD * 2 + PAD_X * 2 + CALLOUT_ZONE;
+      CARD_WIDTH = Math.max(CARD_WIDTH, Math.min(CARD_WIDTH_MAX, Math.ceil(needed)));
+      CONTENT_WIDTH = CARD_WIDTH - PAD_X * 2;
+    }
   }
 
   // The widest variant in a matrix widens the frame too. The matrices never
@@ -636,12 +636,12 @@ async function fitFrameWidth(model: DocFrameModel): Promise<void> {
     if (s.kind !== 'statesMatrix' && s.kind !== 'variantsMatrix') continue;
     for (const row of s.rows) for (const id of row.cells) if (id) cellIds.add(id);
   }
+  // One batch, and each cell node stays cached for buildMatrixSection, which
+  // instances the same ids a moment later.
+  const cellNodes = await Promise.all([...cellIds].map((id) => nodeById(id)));
   let widestCell = 0;
-  for (const id of cellIds) {
-    try {
-      const node = await figma.getNodeByIdAsync(id);
-      if (node && 'width' in node) widestCell = Math.max(widestCell, (node as SceneNode).width);
-    } catch { /* an unknown width widens nothing */ }
+  for (const node of cellNodes) {
+    if (node && 'width' in node) widestCell = Math.max(widestCell, (node as SceneNode).width);
   }
   if (widestCell > 0) {
     const needed = widestCell + SLOT_PAD * 2 + PAD_X * 2;

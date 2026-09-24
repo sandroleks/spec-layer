@@ -358,18 +358,26 @@ export function cellText(label: string, width: number, muted = false): FrameNode
 /** Figma's code-syntax platform keys as people read them; an unknown key is shown as stored. */
 export const PLATFORM_LABEL: Record<string, string> = { WEB: 'Web', iOS: 'iOS', ANDROID: 'Android' };
 
-function referenceChip(platform: string, identifier: string): FrameNode {
+function referenceChip(platform: string, identifier: string, width: number): FrameNode {
   const c = hstack(4);
   c.paddingTop = c.paddingBottom = 2;
   c.paddingLeft = c.paddingRight = 6;
   c.cornerRadius = radius(6);
   c.fills = solidFill(palette.chipBg);
   c.counterAxisAlignItems = 'CENTER';
+  // A chip hugs its text, so a long identifier used to run past the Name
+  // column and get clipped by the table. The chip is capped at the cell width
+  // and drops the identifier under the platform label when the two no longer
+  // fit side by side; the identifier wraps inside the chip's own inset. Both
+  // bounds derive from `width`: nothing here guesses how wide a label is.
+  c.maxWidth = width;
+  c.layoutWrap = 'WRAP';
   const label = makeText(PLATFORM_LABEL[platform] ?? platform, 'Regular', 10, palette.muted);
   label.textAutoResize = 'WIDTH_AND_HEIGHT';
   c.appendChild(label);
   const id = makeText(identifier, 'Medium', 11, palette.heading);
   id.textAutoResize = 'WIDTH_AND_HEIGHT';
+  id.maxWidth = Math.max(1, width - 12); // 6 + 6 chip padding
   c.appendChild(id);
   return c;
 }
@@ -379,13 +387,13 @@ function referenceChip(platform: string, identifier: string): FrameNode {
  * platform, in code-unit key order (the projection already sorted them). Null
  * when the variable defines none: no chip is ever derived from the token name.
  */
-export function referenceChips(codeSyntax: Record<string, string>): FrameNode | null {
+export function referenceChips(codeSyntax: Record<string, string>, width: number): FrameNode | null {
   const entries = Object.entries(codeSyntax);
   if (entries.length === 0) return null;
   const row = hstack(6);
   row.name = 'Code syntax';
   row.layoutWrap = 'WRAP';
-  for (const [platform, identifier] of entries) row.appendChild(referenceChip(platform, identifier));
+  for (const [platform, identifier] of entries) row.appendChild(referenceChip(platform, identifier, width));
   return row;
 }
 
@@ -393,7 +401,7 @@ export function referenceChips(codeSyntax: Record<string, string>): FrameNode | 
 export function nameCell(row: FoundationVariableRow, width: number): FrameNode {
   const cell = cellText(row.name, width);
   cell.itemSpacing = 6;
-  const chips = referenceChips(row.codeSyntax);
+  const chips = referenceChips(row.codeSyntax, width);
   if (chips) { cell.appendChild(chips); chips.layoutSizingHorizontal = 'FILL'; }
   return cell;
 }
@@ -525,7 +533,10 @@ function nameBlock(
     const desc = makeText(row.description, 'Regular', 11, palette.muted);
     block.appendChild(desc);
   }
-  const chips = referenceChips(row.codeSyntax);
+  // The single-mode column FILLs a row whose total width is fixed
+  // (swatchRowWidth), and that fill resolves to exactly NAME_MIN: there is no
+  // unbounded case here to guess at.
+  const chips = referenceChips(row.codeSyntax, width === 'fill' ? NAME_MIN : width);
   if (chips) block.appendChild(chips);
   return block;
 }
@@ -719,7 +730,12 @@ function buildSwatchList(
  */
 function labelledBlock(text: string, block: FrameNode): FrameNode {
   const group = vstack(10);
-  group.appendChild(makeText(text, 'Medium', 11, palette.muted));
+  const label = makeText(text, 'Medium', 11, palette.muted);
+  // The fixed labels are a word or two; a mode name is user-authored and
+  // unbounded. Capped at the prose measure so a long one wraps instead of
+  // widening the group past its block and out of the card.
+  label.maxWidth = PROSE_MEASURE;
+  group.appendChild(label);
   group.appendChild(block);
   return group;
 }
@@ -800,11 +816,16 @@ function tableRow(children: FrameNode[], divider: boolean): FrameNode {
   return row;
 }
 
-/** The footer note block. Shared by both exits from the frame builder. */
-function buildFooter(notes: string[]): FrameNode {
+/** The footer note block. Shared by both exits from the frame builder.
+ *  Exported for its sizing test. */
+export function buildFooter(notes: string[]): FrameNode {
   const footer = vstack(2);
   footer.name = 'Notes';
-  for (const n of notes) footer.appendChild(makeText(n, 'Regular', 10, palette.muted));
+  // The measure the contrast notes use. A long list of omitted mode names is
+  // the one footer line that can outrun the card; it used to run past the
+  // card edge and be clipped rather than wrap.
+  fixWidthHugHeight(footer, PROSE_MEASURE);
+  for (const n of notes) wrappingText(footer, n, 'Regular', 10, palette.muted);
   return footer;
 }
 
@@ -817,12 +838,20 @@ function buildFooter(notes: string[]): FrameNode {
  */
 function finishCard(card: FrameNode, title: string): SectionNode {
   const section = figma.createSection();
-  section.name = `Foundations: ${title}`;
-  section.appendChild(card);
-  card.x = 40;
-  card.y = 40;
-  section.resizeWithoutConstraints(card.width + 80, card.height + 80);
-  return section;
+  try {
+    section.name = `Foundations: ${title}`;
+    section.appendChild(card);
+    card.x = 40;
+    card.y = 40;
+    section.resizeWithoutConstraints(card.width + 80, card.height + 80);
+    return section;
+  } catch (err) {
+    // createSection auto-appends to the current page, so a throw here would
+    // leave an empty or half-filled Section behind. The card is the caller's
+    // to remove (it may not have been appended yet).
+    try { section.remove(); } catch { /* already gone */ }
+    throw err;
+  }
 }
 
 /**
@@ -918,143 +947,152 @@ export async function buildFoundationFrame(
   );
 
   const card = vstack(0);
-  card.name = title;
-  card.fills = solidFill(palette.bg);
-  card.strokes = solidFill(palette.border);
-  card.strokeWeight = 1;
-  card.cornerRadius = radius(16);
-  card.clipsContent = true; // so the header band's corners follow the card's
-  card.effects = [
-    {
-      type: 'DROP_SHADOW',
-      color: { r: 0.06, g: 0.09, b: 0.16, a: 0.08 },
-      offset: { x: 0, y: 12 },
-      radius: 32,
-      spread: 0,
-      visible: true,
-      blendMode: 'NORMAL',
-    },
-  ];
-  // Fix the width BEFORE appending: a child can only be set to FILL once its
-  // parent is FIXED on that axis.
-  fixWidthHugHeight(card, width);
-
-  // --- brand header band ---
-  const header = await buildBrandHeader({
-    eyebrow: 'Foundations',
-    title,
-    subtitle: headerSubtitle(content, unit.scope.target),
-    logoBase64,
-    pill,
-  });
-  card.appendChild(header);
-  header.layoutSizingHorizontal = 'FILL';
-
-  const body = vstack(28);
-  body.name = 'Content';
-  body.paddingTop = 40;
-  body.paddingBottom = 48;
-  body.paddingLeft = HEADER_PAD_X;
-  body.paddingRight = HEADER_PAD_X;
-  card.appendChild(body);
-  body.layoutSizingHorizontal = 'FILL';
-
-  // The AI paragraph about the whole collection. Untagged on purpose: it is
-  // generated text, so selfHash covers it and a hand edit reads as Edited,
-  // exactly like the group lines. Never read back from canvas.
-  const overview = unit.scope.target === 'collection' ? collectionOverview?.trim() : undefined;
-  if (overview) {
-    const box = vstack(0);
-    box.name = 'Overview';
-    body.appendChild(box);
-    fixWidthHugHeight(box, PROSE_MEASURE);
-    wrappingText(box, overview, 'Regular', 13, palette.body);
-  }
-
-  // A frame holding both layouts labels them, so the split reads as deliberate
-  // rather than as two unrelated blocks. A frame with only one needs no label.
-  const bothLayouts = colorRows.length > 0 && tableRows.length > 0;
-
-  // --- swatch list (colours) ---
-  if (colorRows.length > 0) {
-    const list = buildSwatchList(
-      colorRows, content.modeNames, includeDescriptions, groupDescriptions);
-    body.appendChild(bothLayouts ? labelledBlock('Colors', list) : list);
-  }
-
-  // --- contrast grids ---
-  // After the colours it measures and before the table of everything else, and
-  // ahead of the early return below so a colours-only frame gets it too.
-  if (contrastModel) body.appendChild(buildContrastBlock(contrastModel));
-
-  // --- text-style specimens (in place of a table for this unit) ---
-  // A text-styles unit holds nothing but textStyle rows, so it never reaches
-  // the generic table below: the specimen list IS its body.
-  if (unit.scope.target === 'textStyles') {
-    const textRows = content.rows.filter((r): r is FoundationTextRow => r.kind === 'textStyle');
-    body.appendChild(buildTextSpecimenList(textRows, CONTENT_WIDTH, includeDescriptions, failedFamilies));
-    const notes = footerNotes(content);
-    if (notes.length > 0) body.appendChild(buildFooter(notes));
-    return finishCard(card, title);
-  }
-
-  // --- effect-style specimens (in place of a table for this unit) ---
-  // Same shape as the text-styles exit above, and for the same reason: an
-  // effect-styles unit holds nothing but effectStyle rows.
-  if (unit.scope.target === 'effectStyles') {
-    const effectRows = content.rows.filter((r): r is FoundationEffectRow => r.kind === 'effectStyle');
-    body.appendChild(buildEffectSpecimenList(effectRows, CONTENT_WIDTH, includeDescriptions));
-    const notes = footerNotes(content);
-    if (notes.length > 0) body.appendChild(buildFooter(notes));
-    return finishCard(card, title);
-  }
-
-  // --- table (everything else) ---
-  if (tableRows.length === 0) {
-    const notes = footerNotes(content);
-    if (notes.length > 0) body.appendChild(buildFooter(notes));
-    return finishCard(card, title);
-  }
-
-  const table = vstack(0);
-  table.name = 'Table';
-  table.cornerRadius = radius(8);
-  table.clipsContent = true;
-  table.strokes = solidFill(palette.border);
-  table.strokeWeight = 1;
-  body.appendChild(bothLayouts ? labelledBlock('Other values', table) : table);
-
-  const head = tableRow(columns.map((c) => headerCell(c.label, c.width)), false);
-  head.fills = solidFill(palette.tableHeadBg);
-  table.appendChild(head);
-
-  tableRows.forEach((row) => {
-    // Cells are filled in column order, so a cell's width is always the width
-    // its own heading was measured at.
-    let next = 0;
-    const widthOf = (): number => columns[next++]?.width ?? COL_MODE;
-
-    const cells: FrameNode[] = [
-      row.kind === 'variable' ? nameCell(row, widthOf()) : cellText(row.name, widthOf()),
+  try {
+    card.name = title;
+    card.fills = solidFill(palette.bg);
+    card.strokes = solidFill(palette.border);
+    card.strokeWeight = 1;
+    card.cornerRadius = radius(16);
+    card.clipsContent = true; // so the header band's corners follow the card's
+    card.effects = [
+      {
+        type: 'DROP_SHADOW',
+        color: { r: 0.06, g: 0.09, b: 0.16, a: 0.08 },
+        offset: { x: 0, y: 12 },
+        radius: 32,
+        spread: 0,
+        visible: true,
+        blendMode: 'NORMAL',
+      },
     ];
-    if (hasDescriptions) cells.push(cellText(row.description, widthOf(), true));
+    // Fix the width BEFORE appending: a child can only be set to FILL once its
+    // parent is FIXED on that axis.
+    fixWidthHugHeight(card, width);
 
-    if (row.kind === 'variable') {
-      for (const cell of row.cells) cells.push(swatchCell(cell.value, widthOf(), row.glyph));
+    // --- brand header band ---
+    const header = await buildBrandHeader({
+      eyebrow: 'Foundations',
+      title,
+      subtitle: headerSubtitle(content, unit.scope.target),
+      logoBase64,
+      pill,
+    });
+    card.appendChild(header);
+    header.layoutSizingHorizontal = 'FILL';
+
+    const body = vstack(28);
+    body.name = 'Content';
+    body.paddingTop = 40;
+    body.paddingBottom = 48;
+    body.paddingLeft = HEADER_PAD_X;
+    body.paddingRight = HEADER_PAD_X;
+    card.appendChild(body);
+    body.layoutSizingHorizontal = 'FILL';
+
+    // The AI paragraph about the whole collection. Untagged on purpose: it is
+    // generated text, so selfHash covers it and a hand edit reads as Edited,
+    // exactly like the group lines. Never read back from canvas.
+    const overview = unit.scope.target === 'collection' ? collectionOverview?.trim() : undefined;
+    if (overview) {
+      const box = vstack(0);
+      box.name = 'Overview';
+      body.appendChild(box);
+      fixWidthHugHeight(box, PROSE_MEASURE);
+      wrappingText(box, overview, 'Regular', 13, palette.body);
     }
-    // A textStyle or effectStyle row never reaches this table: buildFoundationFrame
-    // renders the matching specimen list for that unit and returns before this loop runs.
 
-    // Every row after the header carries the hairline above it, so the table's
-    // own border is never doubled at the last row.
-    table.appendChild(tableRow(cells, true));
-  });
+    // A frame holding both layouts labels them, so the split reads as deliberate
+    // rather than as two unrelated blocks. A frame with only one needs no label.
+    const bothLayouts = colorRows.length > 0 && tableRows.length > 0;
 
-  // --- footer notes ---
-  // Derived from `content` alone, never from `unit` or from parameters: the
-  // renderer must read the same object the drift hash reads.
-  const notes = footerNotes(content);
-  if (notes.length > 0) body.appendChild(buildFooter(notes));
+    // --- swatch list (colours) ---
+    if (colorRows.length > 0) {
+      const list = buildSwatchList(
+        colorRows, content.modeNames, includeDescriptions, groupDescriptions);
+      body.appendChild(bothLayouts ? labelledBlock('Colors', list) : list);
+    }
 
-  return finishCard(card, title);
+    // --- contrast grids ---
+    // After the colours it measures and before the table of everything else, and
+    // ahead of the early return below so a colours-only frame gets it too.
+    if (contrastModel) body.appendChild(buildContrastBlock(contrastModel));
+
+    // --- text-style specimens (in place of a table for this unit) ---
+    // A text-styles unit holds nothing but textStyle rows, so it never reaches
+    // the generic table below: the specimen list IS its body.
+    if (unit.scope.target === 'textStyles') {
+      const textRows = content.rows.filter((r): r is FoundationTextRow => r.kind === 'textStyle');
+      body.appendChild(buildTextSpecimenList(textRows, CONTENT_WIDTH, includeDescriptions, failedFamilies));
+      const notes = footerNotes(content);
+      if (notes.length > 0) body.appendChild(buildFooter(notes));
+      return finishCard(card, title);
+    }
+
+    // --- effect-style specimens (in place of a table for this unit) ---
+    // Same shape as the text-styles exit above, and for the same reason: an
+    // effect-styles unit holds nothing but effectStyle rows.
+    if (unit.scope.target === 'effectStyles') {
+      const effectRows = content.rows.filter((r): r is FoundationEffectRow => r.kind === 'effectStyle');
+      body.appendChild(buildEffectSpecimenList(effectRows, CONTENT_WIDTH, includeDescriptions));
+      const notes = footerNotes(content);
+      if (notes.length > 0) body.appendChild(buildFooter(notes));
+      return finishCard(card, title);
+    }
+
+    // --- table (everything else) ---
+    if (tableRows.length === 0) {
+      const notes = footerNotes(content);
+      if (notes.length > 0) body.appendChild(buildFooter(notes));
+      return finishCard(card, title);
+    }
+
+    const table = vstack(0);
+    table.name = 'Table';
+    table.cornerRadius = radius(8);
+    table.clipsContent = true;
+    table.strokes = solidFill(palette.border);
+    table.strokeWeight = 1;
+    body.appendChild(bothLayouts ? labelledBlock('Other values', table) : table);
+
+    const head = tableRow(columns.map((c) => headerCell(c.label, c.width)), false);
+    head.fills = solidFill(palette.tableHeadBg);
+    table.appendChild(head);
+
+    tableRows.forEach((row) => {
+      // Cells are filled in column order, so a cell's width is always the width
+      // its own heading was measured at.
+      let next = 0;
+      const widthOf = (): number => columns[next++]?.width ?? COL_MODE;
+
+      const cells: FrameNode[] = [
+        row.kind === 'variable' ? nameCell(row, widthOf()) : cellText(row.name, widthOf()),
+      ];
+      if (hasDescriptions) cells.push(cellText(row.description, widthOf(), true));
+
+      if (row.kind === 'variable') {
+        for (const cell of row.cells) cells.push(swatchCell(cell.value, widthOf(), row.glyph));
+      }
+      // A textStyle or effectStyle row never reaches this table: buildFoundationFrame
+      // renders the matching specimen list for that unit and returns before this loop runs.
+
+      // Every row after the header carries the hairline above it, so the table's
+      // own border is never doubled at the last row.
+      table.appendChild(tableRow(cells, true));
+    });
+
+    // --- footer notes ---
+    // Derived from `content` alone, never from `unit` or from parameters: the
+    // renderer must read the same object the drift hash reads.
+    const notes = footerNotes(content);
+    if (notes.length > 0) body.appendChild(buildFooter(notes));
+
+    return finishCard(card, title);
+  } catch (err) {
+    // Never litter the canvas on failure, the same rule buildDocFrames keeps:
+    // every frame this build made is inside `card` (or was removed with the
+    // Section by finishCard), and createFrame auto-appends to the page, so an
+    // orphan here is a visible card with no link and no registry entry.
+    try { card.remove(); } catch { /* already gone */ }
+    throw err;
+  }
 }

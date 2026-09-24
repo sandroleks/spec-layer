@@ -75,6 +75,20 @@ describe('foundationContentHash', () => {
     expect(hashOf(dump())).toBe(SEMANTIC_HASH);
   });
 
+  it('ignores publication metadata, so a dump read without publish status hashes the same', () => {
+    // The plugin's drift, render and change-list paths read the file with
+    // publish status skipped (a bridge call per variable saved). That is only
+    // sound if the status never reaches this hash; this pins it.
+    const withStatus = dump();
+    withStatus.collections[0].publication = { hiddenFromPublishing: false, publishStatus: 'CURRENT', remote: false };
+    withStatus.collections[0].variables[0].publication = { hiddenFromPublishing: true, publishStatus: 'CHANGED', remote: false };
+    const without = dump();
+    without.collections[0].publication = { hiddenFromPublishing: false, publishStatus: null, remote: false };
+    without.collections[0].variables[0].publication = { hiddenFromPublishing: true, publishStatus: null, remote: false };
+    expect(hashOf(withStatus)).toBe(hashOf(without));
+    expect(hashOf(withStatus)).toBe(SEMANTIC_HASH);
+  });
+
   it('ignores extractedAt', () => {
     const d = dump();
     d.extractedAt = '2030-01-01T00:00:00.000Z';

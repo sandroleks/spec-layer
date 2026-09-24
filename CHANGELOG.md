@@ -453,6 +453,18 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   without it. Your written sections are kept. The Library row says so, and if
   your AI allowance runs out part-way it says that too rather than reporting a
   clean rebuild.
+- **Registry lookups are issued together, output unchanged.** The Library,
+  publish, and build paths look up every documented section at once instead
+  of one round trip per section, with the same results in the same order.
+- **A doc build reads each variable collection and each previewed node
+  once.** Every placed instance asked Figma for its component's collections
+  again, one after another, and the frame-width pass read every matrix cell
+  that the matrix then read a second time to instance it. Both now go
+  through a cache that lives for one build, and a component's collections
+  are read together. Same documents, fewer round trips on large matrices.
+- **Repainting pills uses native Figma filtering, output unchanged.** The pill
+  repaint now uses `findAllWithCriteria` so Figma filters frames by pluginData
+  key natively, instead of evaluating a predicate once per node across the bridge.
 
 ### Removed
 
@@ -693,6 +705,78 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   executable oracles in `redos.test.ts`. Output is unchanged for every line
   the upgrade can pass them. Closes CodeQL alerts 65 and 66
   (`js/polynomial-redos`).
+- **A Library refresh that fails part-way shows what it read.** The main
+  thread's Library scan had no failure reply, so one throw (an unloaded page
+  under dynamic page access, a Section whose plugin data could not be read)
+  left the Library spinning with Refresh and Update disabled for the rest of
+  the session. The scan now returns what it read: rows collected before the
+  failure are posted as the Library. A failure with no rows now gets a
+  `libraryError` reply instead of no reply at all, but the panel does not
+  act on it yet, so that case still shows as refreshing until the next
+  build's change. The registry self-heal runs only after a complete scan,
+  so a failed one can no longer prune docs it never reached.
+  A registry read that is rejected rather than empty is no longer pruned
+  either, for the same reason. A source read that is rejected rather than
+  empty (usually an unloaded page) no longer marks the row **Source
+  missing**, matching what a failed Foundation read already did. Detach and
+  Delete reply even when the registry write fails. A scan that fails
+  part-way now marks its reply as partial, so a Library the panel shows
+  after such a failure can be told apart from a complete one; the panel
+  itself does not yet say so, that is the next build's change.
+- **Library, Foundation docs and the change list read the file without
+  per-variable publish status.** Every foundation read asked Figma for each
+  variable's, collection's and style's publish status, one call each, and
+  the Library scan, Create docs, Update docs and the change-list read all
+  did it although none of them shows or exports it (only Copy for AI and
+  Publish do, and they still read it). On a large file that is a lot of
+  calls saved on every read. The change list for a drifted Foundation row now
+  compares against the read the Library badge came from instead of reading
+  the file again, so the list and the badge can no longer describe two
+  different moments.
+- **Rebuilding a doc on another page no longer empties the component
+  screen.** Placing a rebuilt Section switches pages, and Figma reports the
+  destination page's empty selection as a selection change; the plugin
+  posted it and the panel showed "select a component" right after
+  "Updated". Selection changes during a build are no longer posted. The
+  same gate now covers both frame families, so a component build and a
+  Foundation build can no longer interleave over the shared theme state.
+- **Selecting a different component while a build runs is no longer lost.**
+  A real selection made mid-build was swallowed along with the build's own
+  page-hop noise, so the component screen and Copy for AI kept acting on
+  whatever was selected before the build started. The plugin now replays
+  that selection once the build finishes, unless it turns out to be nothing
+  new or just the build's own generated doc coming into view.
+- **Updating a Foundation doc from Library no longer strands you on its
+  page, or shows a stray selection from it.** Update rebuilds the doc on
+  whatever page it lives on and never returned to yours, so a leftover
+  selection there could replay as if you had chosen it, and a component you
+  actually picked on your own page could be missed. The canvas now returns
+  to your page before the plugin reports the doc as updated, so Update all
+  moves on to its next doc only once you are back. Clearing your selection
+  during any of these builds is also no longer mistaken for the build's own
+  generated content and is replayed correctly.
+- **A Foundation build that fails part-way cleans up after itself.** The
+  frame builder appended its card to the page before anything could go
+  wrong and removed nothing on a throw, and the two build handlers could
+  throw between placing a new Section and registering it. Either left a
+  visible, unlinked duplicate beside the doc it was replacing, invisible to
+  Library. The builder now removes its card and Section on failure, as the
+  component builder already did, and the handlers remove a Section they had
+  not yet handed to the registry. Once the old doc is gone the new one is
+  kept, whatever fails after that.
+- **A setting that cannot be saved on this device says so.** Saving the
+  license key, the AI writing switch, the export format, the brand theme or
+  a new library's pull key could fail silently when Figma's per-device
+  storage refused the write; the plugin now shows a toast and keeps the
+  value for the session. A library's id is recorded in the file even when
+  its pull key could not be stored, so the next publish updates that
+  library instead of creating another.
+- **Foundation docs wrap their long text.** A code-syntax chip, a footer
+  note listing omitted modes, and a block label carrying a long mode name
+  each ran past the card edge and were clipped. Chips are capped at their
+  column, notes take the same measure as the contrast notes, and labels
+  wrap at it. The text itself is unchanged, so no existing doc reports an
+  update for this.
 
 - **AI-written group descriptions in DTCG are marked as such.** Figma has no
   group descriptions, so every folder description a Foundation doc carries
