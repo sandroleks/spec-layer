@@ -598,6 +598,12 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   "Updated". Selection changes during a build are no longer posted. The
   same gate now covers both frame families, so a component build and a
   Foundation build can no longer interleave over the shared theme state.
+- **Selecting a different component while a build runs is no longer lost.**
+  A real selection made mid-build was swallowed along with the build's own
+  page-hop noise, so the component screen and Copy for AI kept acting on
+  whatever was selected before the build started. The plugin now replays
+  that selection once the build finishes, unless it turns out to be nothing
+  new or just the build's own generated doc coming into view.
 
 ### Added
 

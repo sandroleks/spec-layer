@@ -32,7 +32,7 @@ import { readCanvasProse, mergeProse, collectGeneratedText, type ProseNodeLike }
 import { repaintPills } from './pillNode';
 import { pageOf, resolveRegistrySections } from './registryNodes';
 import { scanLibrary, libraryReply, type LibraryScan } from './libraryScan';
-import { CanvasBuildGate } from './canvasBuild';
+import { CanvasBuildGate, selectionToReplay } from './canvasBuild';
 import {
   PUBLISH_RECORD_KEY, parsePublishRecord, serializePublishRecord, pillState,
   type DocPublishRecord, type PillState,
@@ -347,12 +347,20 @@ figma.on('selectionchange', () => {
   // still held cannot leave its expectation armed for the user's next click.
   if (programmaticDocSelection.consume(selected.map((node) => node.id))) return;
   // A build switches pages to place a doc beside its predecessor and back;
-  // each switch reports the new page's selection, which is nobody's choice.
-  // Posting it would empty the component pane the moment "Updated" shows.
-  // The selection the user made before the build is still what the panel
-  // shows, and it is still true. A selection the user changes mid-build is
-  // picked up by their next click; nothing is posted for it here.
-  if (canvasBuild.busy) return;
+  // each switch reports the new page's selection, which is nobody's choice,
+  // and posting it would empty the component pane the moment "Updated"
+  // shows. But a real selection the user makes while the gate is held is
+  // somebody's choice, and dropping it for good would leave the panel and
+  // Copy for AI acting on a stale node once the build finishes. So this does
+  // not post it now (posting mid-build is exactly the bug above), it only
+  // notes that one was missed; each build's own `finally` block checks that
+  // note after the gate releases and replays the selection itself, through
+  // `selectionToReplay`, which is what tells a page hop's own selection
+  // apart from a genuine one worth telling the UI about.
+  if (canvasBuild.busy) {
+    canvasBuild.noteSkipped();
+    return;
+  }
   void postSelection().catch(() => {/* handled inside */});
 });
 
@@ -646,6 +654,11 @@ figma.ui.onmessage = async (raw: unknown) => {
         figma.ui.postMessage({ type: 'docFrameError', message } as MainToUi);
         break;
       }
+      // The selection when this build took the gate, and what the build
+      // itself (not the user) selects on success: selectionToReplay's two
+      // "nothing really changed" cases, checked once the gate releases below.
+      const atBegin = figma.currentPage.selection.map((node) => node.id);
+      let programmaticIds: string[] = [];
       let section: SectionNode | null = null;
       let committed = false; // true once the old doc has been replaced by the new one
       try {
@@ -733,6 +746,11 @@ figma.ui.onmessage = async (raw: unknown) => {
         try {
           programmaticDocSelection.expect(section.id);
           figma.currentPage.selection = [section];
+          // Captured as its own value, not re-read off `section` later: a
+          // failure after this point can still remove `section` (see the
+          // outer catch), and a removed node throws on any property read
+          // other than `.removed`.
+          programmaticIds = [section.id];
         } catch {
           programmaticDocSelection.cancel();
         }
@@ -753,6 +771,18 @@ figma.ui.onmessage = async (raw: unknown) => {
         figma.ui.postMessage({ type: 'docFrameError', message } as MainToUi);
       } finally {
         canvasBuild.end();
+        // A real selection made while this build held the gate was noted,
+        // not posted (see the selectionchange listener above). Replay it now
+        // that the gate has released, unless it turns out to be nothing new
+        // (unchanged from atBegin) or just this build's own generated
+        // Section landing in view (programmaticIds) — either of those would
+        // be the original bug, an empty pane, all over again.
+        const current = figma.currentPage.selection.map((node) => node.id);
+        if (selectionToReplay({
+          skipped: canvasBuild.skippedSelection, current, atBegin, programmatic: programmaticIds,
+        })) {
+          void postSelection().catch(() => {/* handled inside */});
+        }
       }
       break;
     }
@@ -856,6 +886,10 @@ figma.ui.onmessage = async (raw: unknown) => {
       // or prior.remove() happens only after the loop has already switched
       // pages, and skips the loop's own restore near the bottom.
       const invokedPage = figma.currentPage;
+      // The selection when this build took the gate; see renderDocFrame's
+      // atBegin. Neither Foundation path selects anything of its own, so
+      // there is no programmatic id to compare against below.
+      const atBegin = invokedPage.selection.map((node) => node.id);
       try {
         // Re-extract rather than trusting the UI's dump: the Foundations tab
         // fetches its data once per session and never refreshes, so the file
@@ -1028,6 +1062,14 @@ figma.ui.onmessage = async (raw: unknown) => {
         figma.ui.postMessage({ type: 'foundationFrameError', message, created } as MainToUi);
       } finally {
         canvasBuild.end();
+        // Same replay as renderDocFrame above, with an empty programmatic
+        // list: this path never selects anything of its own.
+        const current = figma.currentPage.selection.map((node) => node.id);
+        if (selectionToReplay({
+          skipped: canvasBuild.skippedSelection, current, atBegin, programmatic: [],
+        })) {
+          void postSelection().catch(() => {/* handled inside */});
+        }
       }
       break;
     }
@@ -1040,6 +1082,9 @@ figma.ui.onmessage = async (raw: unknown) => {
         figma.ui.postMessage({ type: 'docSourceError', docId: msg.docId, message } as MainToUi);
         break;
       }
+      // See renderDocFrame's atBegin: this path never selects anything of
+      // its own either, same as renderFoundation.
+      const atBegin = figma.currentPage.selection.map((node) => node.id);
       try {
         const node = await figma.getNodeByIdAsync(msg.docId);
         if (!node || node.type !== 'SECTION') {
@@ -1170,6 +1215,17 @@ figma.ui.onmessage = async (raw: unknown) => {
         figma.ui.postMessage({ type: 'docSourceError', docId: msg.docId, message } as MainToUi);
       } finally {
         canvasBuild.end();
+        // Same replay as the two paths above. This one's own page hop has no
+        // later long await, so a real event can arrive after the gate has
+        // already released and be posted by the listener's normal path
+        // instead of noted here — either way the user's real choice reaches
+        // the UI once.
+        const current = figma.currentPage.selection.map((node) => node.id);
+        if (selectionToReplay({
+          skipped: canvasBuild.skippedSelection, current, atBegin, programmatic: [],
+        })) {
+          void postSelection().catch(() => {/* handled inside */});
+        }
       }
       break;
     }
