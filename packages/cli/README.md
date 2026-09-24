@@ -86,6 +86,8 @@ Markdown pages, so every CLI that pulls a repository using Markdown needs
 | `skill [--install] [--agent HOST]... [--platform P] [--json]` | Prints a guide for a coding agent, adapted to this repository and the last pull; `--install` writes it where the agent reads instructions. |
 
 `--api URL` overrides the API origin (default `https://api.spec-layer.com`).
+It must be `https`; plain `http` is accepted only for `localhost`, `127.0.0.1`,
+or `[::1]`, since the pull key travels with every request.
 
 ## For a coding agent
 

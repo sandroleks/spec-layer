@@ -435,6 +435,10 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   with one sentence before touching the network or writing `speclayer.json`,
   and `..cache` is accepted. The same rule applies to `componentSpecsDir` and
   `outputs[].path`, which share the check.
+- **`--api` and `SPEC_LAYER_API` must be https.** The pull key travels in the
+  Authorization header of every request, and a plain `http://` origin sent it
+  in the clear. Only `localhost`, `127.0.0.1`, and `[::1]` may use http, for a
+  local proxy build.
 - **Publish and the snapshot download refuse a file with nothing in it.** The
   proxy accepts an empty bundle, so a file with no local variables or styles
   and no component docs used to publish anyway: a first publish created a

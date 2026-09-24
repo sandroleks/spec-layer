@@ -30,6 +30,28 @@ export function resolveOutDir(cwd: string, out: string | undefined, configOutDir
   return outDir;
 }
 
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
+
+/**
+ * The API origin, checked before any request carries the key. The key
+ * travels in the Authorization header of every request, so plain http is
+ * refused except to this machine, where a local proxy build is the only
+ * thing listening. A trailing slash is dropped: it would build "//v1/..."
+ * paths the proxy router 404s on.
+ */
+export function apiOrigin(value: string): string {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error(`--api must be an origin such as ${DEFAULT_API}, not "${value}".`);
+  }
+  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && LOOPBACK_HOSTS.has(url.hostname))) {
+    throw new Error(`--api must use https, since the pull key travels with every request. Plain http is allowed only for localhost. Got "${value}".`);
+  }
+  return value.replace(/\/+$/, '');
+}
+
 /** How component-specs/ is written: the published AI YAML, or a Markdown page projected from the artifact. */
 export const COMPONENT_FORMATS = ['yaml', 'md'] as const;
 export type ComponentFormat = typeof COMPONENT_FORMATS[number];
@@ -222,8 +244,7 @@ export function resolveOptions(
     libraryId,
     outDir,
     componentSpecsDir: config?.componentSpecsDir ?? DEFAULT_COMPONENT_SPECS_DIR,
-    // A trailing slash would build "//v1/..." paths the proxy router 404s on.
-    api: (flags.api ?? env.SPEC_LAYER_API ?? DEFAULT_API).replace(/\/+$/, ''),
+    api: apiOrigin(flags.api ?? env.SPEC_LAYER_API ?? DEFAULT_API),
     key: supplied ?? storedKey,
     ...(config?.componentSpecsFormat ? { componentSpecsFormat: config.componentSpecsFormat } : {}),
     ...(config?.include ? { include: config.include } : {}),

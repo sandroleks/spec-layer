@@ -80,11 +80,11 @@ describe('resolveOptions precedence', () => {
   it('api comes from --api, then SPEC_LAYER_API, else DEFAULT_API', () => {
     const stub = (_outDir: string) => null;
 
-    const resultFromFlag = resolveOptions('/some/cwd', { api: 'from-flag' }, {}, stub);
-    expect(resultFromFlag.api).toBe('from-flag');
+    const resultFromFlag = resolveOptions('/some/cwd', { api: 'https://from-flag.test' }, {}, stub);
+    expect(resultFromFlag.api).toBe('https://from-flag.test');
 
-    const resultFromEnv = resolveOptions('/some/cwd', {}, { SPEC_LAYER_API: 'from-env' }, stub);
-    expect(resultFromEnv.api).toBe('from-env');
+    const resultFromEnv = resolveOptions('/some/cwd', {}, { SPEC_LAYER_API: 'https://from-env.test' }, stub);
+    expect(resultFromEnv.api).toBe('https://from-env.test');
 
     const resultDefault = resolveOptions('/some/cwd', {}, {}, stub);
     expect(resultDefault.api).toBe(DEFAULT_API);
@@ -92,11 +92,11 @@ describe('resolveOptions precedence', () => {
     // Flag beats env
     const resultFlagBeatsEnv = resolveOptions(
       '/some/cwd',
-      { api: 'from-flag' },
-      { SPEC_LAYER_API: 'from-env' },
+      { api: 'https://from-flag.test' },
+      { SPEC_LAYER_API: 'https://from-env.test' },
       stub,
     );
-    expect(resultFlagBeatsEnv.api).toBe('from-flag');
+    expect(resultFlagBeatsEnv.api).toBe('https://from-flag.test');
   });
 
   it('outDir comes from --out, then config, else .speclayer, and must stay a relative path inside cwd', () => {
@@ -245,6 +245,20 @@ describe('api origin normalization', () => {
     const none = (_outDir: string) => null;
     expect(resolveOptions('/some/cwd', { api: 'https://example.test/' }, {}, none).api).toBe('https://example.test');
     expect(resolveOptions('/some/cwd', {}, { SPEC_LAYER_API: 'https://example.test//' }, none).api).toBe('https://example.test');
+  });
+});
+
+describe('api origin scheme', () => {
+  const none = (_outDir: string) => null;
+
+  it('refuses plain http except to this machine, and a value that is not a URL', () => {
+    expect(() => resolveOptions('/some/cwd', { api: 'http://api.example.com' }, {}, none)).toThrow(/must use https/);
+    expect(() => resolveOptions('/some/cwd', {}, { SPEC_LAYER_API: 'http://api.example.com' }, none)).toThrow(/must use https/);
+    expect(() => resolveOptions('/some/cwd', { api: 'api.example.com' }, {}, none)).toThrow(/must be an origin/);
+    for (const local of ['http://localhost:8787', 'http://127.0.0.1:8787', 'http://[::1]:8787']) {
+      expect(resolveOptions('/some/cwd', { api: local }, {}, none).api).toBe(local);
+    }
+    expect(resolveOptions('/some/cwd', { api: 'https://api.example.com/' }, {}, none).api).toBe('https://api.example.com');
   });
 });
 

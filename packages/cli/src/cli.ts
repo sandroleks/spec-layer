@@ -27,7 +27,7 @@ Selection (setup, pull and init; flags replace the include block in speclayer.js
   --component NAME                 write only this component (repeatable, matched by slug)
 
 Options:
-  --api URL   override the API origin (default https://api.spec-layer.com)
+  --api URL   override the API origin (default https://api.spec-layer.com); https only, except http to localhost
   --platform web|ios|android|flutter   the target this repo builds for (repeatable); applies to setup, init, pull, and skill; setup and init store it, pull uses it for the run
   --component-format yaml|md   how component-specs/ is written and show prints a component (default yaml); setup and init store it, pull and show use it for the run
 The pull key comes from --key, SPEC_LAYER_KEY, or speclayer.local.json written by setup.`;
