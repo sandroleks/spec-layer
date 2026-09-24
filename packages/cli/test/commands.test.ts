@@ -190,10 +190,10 @@ describe('runInit', () => {
   it('writes speclayer.json from --id and prints where the key comes from', () => {
     const io = makeIo();
 
-    const code = runInit(cwd, { id: 'lib_abc' }, io);
+    const code = runInit(cwd, { id: 'lib_abcabcabcabcabcabcabcabc' }, io);
 
     expect(code).toBe(0);
-    expect(readConfig(cwd)).toEqual({ libraryId: 'lib_abc', outDir: '.speclayer', componentSpecsDir: 'component-specs' });
+    expect(readConfig(cwd)).toEqual({ libraryId: 'lib_abcabcabcabcabcabcabcabc', outDir: '.speclayer', componentSpecsDir: 'component-specs' });
     expect(io.outLines.join('\n')).toMatch(/spec-layer setup/);
   });
 
@@ -210,21 +210,30 @@ describe('runInit', () => {
   it('refuses an --out outside the working directory and writes nothing', () => {
     const io = makeIo();
 
-    const code = runInit(cwd, { id: 'lib_abc', out: '../elsewhere' }, io);
+    const code = runInit(cwd, { id: 'lib_abcabcabcabcabcabcabcabc', out: '../elsewhere' }, io);
 
     expect(code).toBe(1);
     expect(io.errLines).toEqual([OUT_DIR_RULE]);
     expect(existsSync(join(cwd, 'speclayer.json'))).toBe(false);
   });
 
+  it('refuses an id that is not lib_ plus 24 hex characters, before writing anything', () => {
+    for (const id of ['lib_abc', 'lib_ABCABCABCABCABCABCABCABC', 'abcabcabcabcabcabcabcabc', 'lib_abcabcabcabcabcabcabcabc/x']) {
+      const io = makeIo();
+      expect(runInit(cwd, { id }, io), id).toBe(1);
+      expect(io.errLines.join('\n')).toContain('24 hex characters');
+    }
+    expect(existsSync(join(cwd, 'speclayer.json'))).toBe(false);
+  });
+
   it('--platform web writes platforms and the default output, and prints where it lands', () => {
     const io = makeIo();
 
-    const code = runInit(cwd, { id: 'lib_abc', platform: ['web'] }, io);
+    const code = runInit(cwd, { id: 'lib_abcabcabcabcabcabcabcabc', platform: ['web'] }, io);
 
     expect(code).toBe(0);
     expect(readConfig(cwd)).toEqual({
-      libraryId: 'lib_abc', outDir: '.speclayer', componentSpecsDir: 'component-specs', platforms: ['web'],
+      libraryId: 'lib_abcabcabcabcabcabcabcabc', outDir: '.speclayer', componentSpecsDir: 'component-specs', platforms: ['web'],
       outputs: [{ platform: 'web', format: 'css', path: 'tokens', case: 'kebab' }],
     });
     expect(io.outLines).toContain('Token files for web: tokens/ (css, kebab names), written by the next pull.');
@@ -233,7 +242,7 @@ describe('runInit', () => {
   it('--platform ios names the missing format and writes no output entry', () => {
     const io = makeIo();
 
-    const code = runInit(cwd, { id: 'lib_abc', platform: ['ios'] }, io);
+    const code = runInit(cwd, { id: 'lib_abcabcabcabcabcabcabcabc', platform: ['ios'] }, io);
 
     expect(code).toBe(0);
     expect(readConfig(cwd)).not.toHaveProperty('outputs');
@@ -244,30 +253,30 @@ describe('runInit', () => {
     writeFileSync(join(cwd, 'Package.swift'), '// swift-tools-version:5.9\n');
     const io = makeIo();
 
-    const code = runInit(cwd, { id: 'lib_abc' }, io);
+    const code = runInit(cwd, { id: 'lib_abcabcabcabcabcabcabcabc' }, io);
 
     expect(code).toBe(0);
-    expect(readConfig(cwd)).toEqual({ libraryId: 'lib_abc', outDir: '.speclayer', componentSpecsDir: 'component-specs', platforms: ['ios'] });
+    expect(readConfig(cwd)).toEqual({ libraryId: 'lib_abcabcabcabcabcabcabcabc', outDir: '.speclayer', componentSpecsDir: 'component-specs', platforms: ['ios'] });
     expect(readConfig(cwd)).not.toHaveProperty('outputs');
     expect(io.outLines).toContain('No token files exist yet for ios: no output format is available for that platform. Web has css.');
   });
 
   it('--component-format md writes componentSpecsFormat', () => {
-    const code = runInit(cwd, { id: 'lib_abc', 'component-format': 'md' }, makeIo());
+    const code = runInit(cwd, { id: 'lib_abcabcabcabcabcabcabcabc', 'component-format': 'md' }, makeIo());
     expect(code).toBe(0);
     expect(readConfig(cwd)).toEqual({
-      libraryId: 'lib_abc', outDir: '.speclayer', componentSpecsDir: 'component-specs', componentSpecsFormat: 'md',
+      libraryId: 'lib_abcabcabcabcabcabcabcabc', outDir: '.speclayer', componentSpecsDir: 'component-specs', componentSpecsFormat: 'md',
     });
   });
 
   it('--component-format yaml is written too, because it was asked for', () => {
-    expect(runInit(cwd, { id: 'lib_abc', 'component-format': 'yaml' }, makeIo())).toBe(0);
+    expect(runInit(cwd, { id: 'lib_abcabcabcabcabcabcabcabc', 'component-format': 'yaml' }, makeIo())).toBe(0);
     expect(readConfig(cwd)?.componentSpecsFormat).toBe('yaml');
   });
 
   it('refuses an unknown --component-format before writing anything', () => {
     const io = makeIo();
-    expect(runInit(cwd, { id: 'lib_abc', 'component-format': 'markdown' }, io)).toBe(1);
+    expect(runInit(cwd, { id: 'lib_abcabcabcabcabcabcabcabc', 'component-format': 'markdown' }, io)).toBe(1);
     expect(io.errLines).toEqual(['--component-format takes yaml or md, not "markdown".']);
     expect(existsSync(join(cwd, 'speclayer.json'))).toBe(false);
   });
@@ -283,7 +292,7 @@ describe('runPull', () => {
   });
 
   it('pulls and writes files with config present', async () => {
-    runInit(cwd, { id: 'lib_abc' }, makeIo());
+    runInit(cwd, { id: 'lib_abcabcabcabcabcabcabcabc' }, makeIo());
     const io = makeIo();
 
     const code = await runPull(cwd, {}, { SPEC_LAYER_KEY: 'sl_secret' }, io, stub200());
@@ -301,7 +310,7 @@ describe('runPull', () => {
   it('works bare with --id and --key (no config), then status resolves id from the manifest', async () => {
     const pullIo = makeIo();
 
-    const pullCode = await runPull(cwd, { id: 'lib_abc', key: 'sl_secret' }, {}, pullIo, stub200());
+    const pullCode = await runPull(cwd, { id: 'lib_abcabcabcabcabcabcabcabc', key: 'sl_secret' }, {}, pullIo, stub200());
 
     expect(pullCode).toBe(0);
     expect(existsSync(join(cwd, 'speclayer.json'))).toBe(false);
@@ -315,11 +324,11 @@ describe('runPull', () => {
     expect(statusCode).toBe(0);
     expect(fetcher).toHaveBeenCalledTimes(1);
     const [url] = (fetcher as unknown as ReturnType<typeof vi.fn>).mock.calls[0] as [string];
-    expect(url).toBe('https://api.spec-layer.com/v1/libraries/lib_abc');
+    expect(url).toBe('https://api.spec-layer.com/v1/libraries/lib_abcabcabcabcabcabcabcabc');
   });
 
   it('errors without a key', async () => {
-    runInit(cwd, { id: 'lib_abc' }, makeIo());
+    runInit(cwd, { id: 'lib_abcabcabcabcabcabcabcabc' }, makeIo());
     const io = makeIo();
 
     const code = await runPull(cwd, {}, {}, io);
@@ -352,7 +361,7 @@ describe('runPull', () => {
   });
 
   it('propagates api errors with exit 1 and no partial directory', async () => {
-    runInit(cwd, { id: 'lib_abc' }, makeIo());
+    runInit(cwd, { id: 'lib_abcabcabcabcabcabcabcabc' }, makeIo());
     const io = makeIo();
 
     const code = await runPull(cwd, {}, { SPEC_LAYER_KEY: 'sl_secret' }, io, stub401());
@@ -364,7 +373,7 @@ describe('runPull', () => {
   });
 
   it('re-pull with unchanged content leaves identical bytes', async () => {
-    runInit(cwd, { id: 'lib_abc' }, makeIo());
+    runInit(cwd, { id: 'lib_abcabcabcabcabcabcabcabc' }, makeIo());
 
     await runPull(cwd, {}, { SPEC_LAYER_KEY: 'sl_secret' }, makeIo(), stub200());
     const beforeBundle = readFileSync(join(cwd, '.speclayer/bundle.json'), 'utf8');
@@ -382,7 +391,7 @@ describe('runPull', () => {
   });
 
   it('prints the version beside the publish date and stores it in the manifest', async () => {
-    runInit(cwd, { id: 'lib_abc' }, makeIo());
+    runInit(cwd, { id: 'lib_abcabcabcabcabcabcabcabc' }, makeIo());
     const io = makeIo();
     await runPull(cwd, {}, { SPEC_LAYER_KEY: 'sl_secret' }, io, stub200(JSON.stringify(GOOD_BUNDLE), '2026-09-01T00:00:00.000Z', '1.5.0'));
     expect(io.outLines.join('\n')).toMatch(/\(v1\.5\.0, published 2026-09-01T00:00:00\.000Z\)/);
@@ -391,7 +400,7 @@ describe('runPull', () => {
   });
 
   it('keeps the current form when the proxy sends no version', async () => {
-    runInit(cwd, { id: 'lib_abc' }, makeIo());
+    runInit(cwd, { id: 'lib_abcabcabcabcabcabcabcabc' }, makeIo());
     const io = makeIo();
     await runPull(cwd, {}, { SPEC_LAYER_KEY: 'sl_secret' }, io, stub200());
     expect(io.outLines.join('\n')).toMatch(/\(published 2026-09-01T00:00:00\.000Z\)\./);
@@ -411,7 +420,7 @@ describe('runStatus', () => {
   });
 
   it('reports up to date on 304 with exit 0', async () => {
-    runInit(cwd, { id: 'lib_abc' }, makeIo());
+    runInit(cwd, { id: 'lib_abcabcabcabcabcabcabcabc' }, makeIo());
     await runPull(cwd, {}, { SPEC_LAYER_KEY: 'sl_secret' }, makeIo(), stub200());
     const io = makeIo();
 
@@ -422,7 +431,7 @@ describe('runStatus', () => {
   });
 
   it('reports behind on 200 with exit 2 and names the remote publishedAt', async () => {
-    runInit(cwd, { id: 'lib_abc' }, makeIo());
+    runInit(cwd, { id: 'lib_abcabcabcabcabcabcabcabc' }, makeIo());
     await runPull(cwd, {}, { SPEC_LAYER_KEY: 'sl_secret' }, makeIo(), stub200(JSON.stringify(GOOD_BUNDLE), '2026-09-01T00:00:00.000Z'));
     const io = makeIo();
 
@@ -436,7 +445,7 @@ describe('runStatus', () => {
   });
 
   it('reports no local pull with exit 2 when manifest is missing', async () => {
-    runInit(cwd, { id: 'lib_abc' }, makeIo());
+    runInit(cwd, { id: 'lib_abcabcabcabcabcabcabcabc' }, makeIo());
     const io = makeIo();
 
     const code = await runStatus(cwd, {}, { SPEC_LAYER_KEY: 'sl_secret' }, io);
@@ -456,7 +465,7 @@ describe('runStatus', () => {
   });
 
   it('names the version when up to date and when behind', async () => {
-    runInit(cwd, { id: 'lib_abc' }, makeIo());
+    runInit(cwd, { id: 'lib_abcabcabcabcabcabcabcabc' }, makeIo());
     await runPull(cwd, {}, { SPEC_LAYER_KEY: 'sl_secret' }, makeIo(), stub200(JSON.stringify(GOOD_BUNDLE), '2026-09-01T00:00:00.000Z', '1.5.0'));
     const upToDate = makeIo();
     expect(await runStatus(cwd, {}, { SPEC_LAYER_KEY: 'sl_secret' }, upToDate, stub304('1.5.0'))).toBe(0);
@@ -482,7 +491,7 @@ describe('runPull with a selection', () => {
   let cwd: string;
   beforeEach(() => {
     cwd = mkdtempSync(join(tmpdir(), 'sl-cli-sel-'));
-    runInit(cwd, { id: 'lib_abc' }, makeIo());
+    runInit(cwd, { id: 'lib_abcabcabcabcabcabcabcabc' }, makeIo());
   });
   afterEach(() => {
     rmSync(cwd, { recursive: true, force: true });
@@ -523,7 +532,7 @@ describe('runPull with a selection', () => {
   });
 
   it('uses the include block from speclayer.json when no flag is given, and a flag replaces it', async () => {
-    runInit(cwd, { id: 'lib_abc', component: ['Card'] }, makeIo());
+    runInit(cwd, { id: 'lib_abcabcabcabcabcabcabcabc', component: ['Card'] }, makeIo());
 
     await runPull(cwd, {}, ENV, makeIo(), stubThree());
     expect(existsSync(join(cwd, 'component-specs/card.yaml'))).toBe(true);
@@ -957,21 +966,21 @@ describe('runInit with a selection', () => {
   });
 
   it('persists --only and --component as the include block', () => {
-    const code = runInit(cwd, { id: 'lib_abc', only: 'components', component: ['Button'] }, makeIo());
+    const code = runInit(cwd, { id: 'lib_abcabcabcabcabcabcabcabc', only: 'components', component: ['Button'] }, makeIo());
 
     expect(code).toBe(0);
     expect(readConfig(cwd)?.include).toEqual({ foundation: false, components: ['Button'] });
   });
 
   it('writes no include block when no selection flag is given', () => {
-    runInit(cwd, { id: 'lib_abc' }, makeIo());
+    runInit(cwd, { id: 'lib_abcabcabcabcabcabcabcabc' }, makeIo());
     expect(readConfig(cwd)?.include).toBeUndefined();
   });
 
   it('rejects contradictory selection flags without writing config', () => {
     const io = makeIo();
 
-    const code = runInit(cwd, { id: 'lib_abc', only: 'foundation', component: ['Button'] }, io);
+    const code = runInit(cwd, { id: 'lib_abcabcabcabcabcabcabcabc', only: 'foundation', component: ['Button'] }, io);
 
     expect(code).toBe(1);
     expect(io.errLines.join('\n')).toMatch(/--only foundation/);
@@ -983,7 +992,7 @@ describe('runList', () => {
   let cwd: string;
   beforeEach(() => {
     cwd = mkdtempSync(join(tmpdir(), 'sl-cli-list-'));
-    runInit(cwd, { id: 'lib_abc' }, makeIo());
+    runInit(cwd, { id: 'lib_abcabcabcabcabcabcabcabc' }, makeIo());
   });
   afterEach(() => {
     rmSync(cwd, { recursive: true, force: true });
@@ -1006,7 +1015,7 @@ describe('runList', () => {
 
     expect(code).toBe(0);
     const out = io.outLines.join('\n');
-    expect(out).toMatch(/lib_abc/);
+    expect(out).toMatch(/lib_abcabcabcabcabcabcabcabc/);
     expect(out).toMatch(/2026-09-01T00:00:00\.000Z/);
     expect(out).toMatch(/foundation\s+foundation\s+\.speclayer\/tokens\/resolver\.json\s+sha256:[0-9a-f]{64}/);
     expect(out).toMatch(/component\s+Button\s+not written\s+a{64}/);
@@ -1014,11 +1023,11 @@ describe('runList', () => {
   });
 
   it('prints the version in the header line when the manifest has one', async () => {
-    runInit(cwd, { id: 'lib_abc' }, makeIo());
+    runInit(cwd, { id: 'lib_abcabcabcabcabcabcabcabc' }, makeIo());
     await runPull(cwd, {}, { SPEC_LAYER_KEY: 'sl_secret' }, makeIo(), stub200(JSON.stringify(GOOD_BUNDLE), '2026-09-01T00:00:00.000Z', '1.5.0'));
     const io = makeIo();
     runList(cwd, {}, io);
-    expect(io.outLines[0]).toBe('Library lib_abc, v1.5.0, published 2026-09-01T00:00:00.000Z.');
+    expect(io.outLines[0]).toBe('Library lib_abcabcabcabcabcabcabcabc, v1.5.0, published 2026-09-01T00:00:00.000Z.');
   });
 });
 
@@ -1026,7 +1035,7 @@ describe('runShow', () => {
   let cwd: string;
   beforeEach(async () => {
     cwd = mkdtempSync(join(tmpdir(), 'sl-cli-show-'));
-    runInit(cwd, { id: 'lib_abc' }, makeIo());
+    runInit(cwd, { id: 'lib_abcabcabcabcabcabcabcabc' }, makeIo());
   });
   afterEach(() => {
     rmSync(cwd, { recursive: true, force: true });
@@ -1117,7 +1126,7 @@ describe('runShow', () => {
   });
 
   it('prints the markdown page when speclayer.json says md', async () => {
-    runInit(cwd, { id: 'lib_abc', 'component-format': 'md' }, makeIo());
+    runInit(cwd, { id: 'lib_abcabcabcabcabcabcabcabc', 'component-format': 'md' }, makeIo());
     await runPull(cwd, {}, ENV, makeIo(), stub200(JSON.stringify(MD_BUNDLE)));
     const io = makeIo();
     expect(runShow(cwd, {}, ['component', 'Button'], io)).toBe(0);
@@ -1179,7 +1188,7 @@ describe('runPull safety and freshness', () => {
   let cwd: string;
   beforeEach(() => {
     cwd = mkdtempSync(join(tmpdir(), 'sl-cli-safe-'));
-    runInit(cwd, { id: 'lib_abc' }, makeIo());
+    runInit(cwd, { id: 'lib_abcabcabcabcabcabcabcabc' }, makeIo());
   });
   afterEach(() => {
     rmSync(cwd, { recursive: true, force: true });
@@ -1218,7 +1227,7 @@ describe('runPull safety and freshness', () => {
   it('still sends the hash on a 304 check when the pull never writes the Foundation, ' +
     'so an --only components style config does not redownload forever', async () => {
     writeFileSync(join(cwd, 'speclayer.json'), JSON.stringify({
-      libraryId: 'lib_abc', outDir: '.speclayer', platforms: ['web'],
+      libraryId: 'lib_abcabcabcabcabcabcabcabc', outDir: '.speclayer', platforms: ['web'],
       include: { foundation: false, components: null },
     }));
     await runPull(cwd, {}, ENV, makeIo(), stub200());
@@ -1318,7 +1327,7 @@ describe('runPull component format', () => {
   let cwd: string;
   beforeEach(() => {
     cwd = mkdtempSync(join(tmpdir(), 'sl-cli-fmt-'));
-    runInit(cwd, { id: 'lib_abc' }, makeIo());
+    runInit(cwd, { id: 'lib_abcabcabcabcabcabcabcabc' }, makeIo());
   });
   afterEach(() => { rmSync(cwd, { recursive: true, force: true }); });
 
@@ -1353,7 +1362,7 @@ describe('runPull component format', () => {
   });
 
   it('reads componentSpecsFormat from speclayer.json, and a flag beats it for the run', async () => {
-    runInit(cwd, { id: 'lib_abc', 'component-format': 'md' }, makeIo());
+    runInit(cwd, { id: 'lib_abcabcabcabcabcabcabcabc', 'component-format': 'md' }, makeIo());
     expect(await runPull(cwd, {}, ENV, makeIo(), stub200(JSON.stringify(MD_BUNDLE)))).toBe(0);
     expect(existsSync(join(cwd, 'component-specs/button.md'))).toBe(true);
 
@@ -1441,6 +1450,17 @@ describe('runSetup', () => {
     const io = makeIo();
     expect(await runSetup(cwd, { key: KEY }, {}, io, stub200())).toBe(1);
     expect(io.errLines.join('\n')).toMatch(/--id/);
+    expect(existsSync(join(cwd, 'speclayer.json'))).toBe(false);
+    expect(existsSync(join(cwd, 'speclayer.local.json'))).toBe(false);
+  });
+
+  it('refuses a malformed id before writing config or key', async () => {
+    gitInit();
+    const io = makeIo();
+
+    expect(await runSetup(cwd, { id: 'lib_abc', key: KEY }, {}, io, stub200())).toBe(1);
+
+    expect(io.errLines.join('\n')).toContain('24 hex characters');
     expect(existsSync(join(cwd, 'speclayer.json'))).toBe(false);
     expect(existsSync(join(cwd, 'speclayer.local.json'))).toBe(false);
   });

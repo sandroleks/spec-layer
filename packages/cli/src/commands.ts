@@ -4,7 +4,7 @@ import type { DtcgOptions } from '@spec-layer/extractor';
 import { parseBundle, type BundleV1 } from './bundle';
 import {
   readConfig, resolveOptions, resolveOutDir, writeConfig, DEFAULT_COMPONENT_SPECS_DIR, DEFAULT_COMPONENT_FORMAT,
-  COMPONENT_FORMATS, isComponentFormat, type CliConfig, type ComponentFormat, type ResolvedOptions,
+  COMPONENT_FORMATS, isComponentFormat, isLibraryId, type CliConfig, type ComponentFormat, type ResolvedOptions,
 } from './config';
 import { fetchBundle } from './api';
 import { componentMarkdownPage, readLocalBundle, readManifest, slugify, writeBundleFiles, type Manifest } from './files';
@@ -134,9 +134,16 @@ function missingFormatNote(platforms: Platform[]): string {
 
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
+const badLibraryId = (id: string): string =>
+  `--id must be "lib_" followed by 24 hex characters, as the plugin shows it, not "${id}".`;
+
 export function runInit(cwd: string, flags: Flags, io: Io): number {
   if (!flags.id) {
     io.err('spec-layer init needs --id lib_... (shown in the plugin after publishing).');
+    return 1;
+  }
+  if (!isLibraryId(flags.id)) {
+    io.err(badLibraryId(flags.id));
     return 1;
   }
   let include: Selection | null;
@@ -250,6 +257,10 @@ export async function runSetup(
 ): Promise<number> {
   if (!flags.id) {
     io.err('spec-layer setup needs --id lib_... (shown in the plugin after publishing).');
+    return 1;
+  }
+  if (!isLibraryId(flags.id)) {
+    io.err(badLibraryId(flags.id));
     return 1;
   }
   const key = flags.key ?? env.SPEC_LAYER_KEY;

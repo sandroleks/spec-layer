@@ -25,7 +25,7 @@ export async function fetchBundle(opts: {
   const signal = AbortSignal.timeout(timeoutMs);
   let res: Response;
   try {
-    res = await doFetch(`${opts.api}/v1/libraries/${opts.libraryId}`, {
+    res = await doFetch(`${opts.api}/v1/libraries/${encodeURIComponent(opts.libraryId)}`, {
       headers: {
         Authorization: `Bearer ${opts.key}`,
         ...(opts.etag ? { 'If-None-Match': `"${opts.etag}"` } : {}),

@@ -411,6 +411,10 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
 
 ### Fixed
 
+- **`--id` is checked against the shape the plugin issues.** `init` and
+  `setup` refuse an id that is not `lib_` followed by 24 hex characters, with
+  one sentence, before writing `speclayer.json` or the key. On the wire the id
+  is URL-encoded, so a stray slash cannot change the request path.
 - **`spec-layer pull` no longer deletes a directory it did not create.** The
   record was staged in a fixed `.speclayer.partial`, which the pull removed
   recursively first, whatever was there. Staging now happens in a fresh

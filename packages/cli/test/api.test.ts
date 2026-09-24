@@ -129,4 +129,13 @@ describe('fetchBundle', () => {
 
     expect(result).toEqual({ kind: 'error', message: 'The response from https://api.example.com could not be read.' });
   });
+
+  it('URL-encodes the library id, so an id with a slash cannot change the path', async () => {
+    const fetcher = vi.fn(async () => new Response(null, { status: 404 })) as unknown as typeof fetch;
+
+    await fetchBundle({ api: 'https://api.example.com', libraryId: 'lib_1/../../admin', key: 'sl_secret', fetcher });
+
+    const [url] = (fetcher as unknown as ReturnType<typeof vi.fn>).mock.calls[0] as [string];
+    expect(url).toBe('https://api.example.com/v1/libraries/lib_1%2F..%2F..%2Fadmin');
+  });
 });

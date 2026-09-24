@@ -52,6 +52,19 @@ export function apiOrigin(value: string): string {
   return value.replace(/\/+$/, '');
 }
 
+/**
+ * The id shape the publish service issues: `newLibraryId` in
+ * packages/proxy/src/libraries.ts writes `lib_` plus 24 hex characters, and
+ * its `LIBRARY_ID_RE` accepts nothing else. Checked at init and setup so a
+ * typo is caught before it is written to speclayer.json and the server is
+ * left to answer 404.
+ */
+export const LIBRARY_ID_RE = /^lib_[0-9a-f]{24}$/;
+
+export function isLibraryId(value: string): boolean {
+  return LIBRARY_ID_RE.test(value);
+}
+
 /** How component-specs/ is written: the published AI YAML, or a Markdown page projected from the artifact. */
 export const COMPONENT_FORMATS = ['yaml', 'md'] as const;
 export type ComponentFormat = typeof COMPONENT_FORMATS[number];
