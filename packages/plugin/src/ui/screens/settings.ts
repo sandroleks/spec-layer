@@ -22,6 +22,7 @@ import {
   DEFAULT_COMPONENT_FORMAT,
   type ComponentFormat,
 } from '../../componentFormat';
+import { esc } from '../escape';
 
 export type FontField = 'headingFont' | 'bodyFont';
 export type ColorField = 'headerBg' | 'accent' | 'bodyText' | 'tableHeadBg';
@@ -117,6 +118,27 @@ export function fontMenuMarkup(model: FontMenuPresentation): string {
   );
 }
 
+/**
+ * The open state of a font field's combobox, kept in sync when the list opens
+ * or closes without a repaint. Typing opens the list through renderFontMenu,
+ * which never set this, so a screen reader heard a closed combobox with a
+ * list under it.
+ */
+export function syncFontFieldExpanded(root: ParentNode, field: FontField, open: boolean): void {
+  root.querySelector<HTMLInputElement>(`[data-theme-font="${field}"]`)
+    ?.setAttribute('aria-expanded', String(open));
+}
+
+/**
+ * Writes the fallback warning under the font fields in place. The font list
+ * usually arrives after Settings has painted, and re-checking a typed value
+ * against it changed the state without changing the screen.
+ */
+export function paintFontWarning(root: ParentNode, text: string): void {
+  const hint = root.querySelector<HTMLElement>('[data-settings-font-hint]');
+  if (hint) hint.textContent = text;
+}
+
 function fontField(field: FontField, label: string, value: string, open: boolean): string {
   return (
     '<label><span>' + label + '</span>' +
@@ -130,14 +152,6 @@ function fontField(field: FontField, label: string, value: string, open: boolean
     `aria-label="Browse fonts for ${label}">${icon('chevronDown', 13)}</button>` +
     '</span></label>'
   );
-}
-
-function esc(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
 }
 
 /**

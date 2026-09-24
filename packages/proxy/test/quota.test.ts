@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { QuotaEngine, BOOST_LIMIT, BOOST_WINDOW_MS, MONTHLY_LIMIT, RESERVATION_TTL_MS, RESPONSE_TTL_MS, RATE_LIMIT_PER_MIN, PRO_SOFT_THRESHOLD, QUOTA_PROFILES, PUBLISH_MONTHLY_LIMIT } from '../src/quota';
-import { quotaObjectName } from '../src/index';
+import { QuotaEngine, BOOST_LIMIT, BOOST_WINDOW_MS, MONTHLY_LIMIT, RESERVATION_TTL_MS, RESPONSE_TTL_MS, HEAD_TTL_MS, RATE_LIMIT_PER_MIN, PRO_SOFT_THRESHOLD, QUOTA_PROFILES, PUBLISH_MONTHLY_LIMIT, MAX_RETAINED_RESPONSES, quotaObjectName } from '../src/quota';
 
 const T0 = Date.parse('2026-07-01T00:00:00Z');
 const DAY = 864e5;
@@ -21,7 +20,7 @@ function burn(e: QuotaEngine, n: number, at: number, prefix = 'k') {
     const t = at + i * 60_000;
     const r = e.reserve('free', `${prefix}${i}`, t);
     expect(r.kind).toBe('proceed');
-    e.commit(`${prefix}${i}`, '{}', t);
+    e.commit(`${prefix}${i}`, t);
   }
 }
 
@@ -52,7 +51,7 @@ describe('QuotaEngine free tier', () => {
   it('only commit decrements; an un-committed reserve does not count', () => {
     const e = new QuotaEngine();
     e.reserve('free', 'a', T0);           // reserved, never committed
-    e.release('a');
+    e.release('a', T0);
     const s = e.snapshot('free', T0 + 1);
     expect(s.used).toBe(0);
     expect(s.limit).toBe(BOOST_LIMIT);
@@ -67,19 +66,19 @@ describe('QuotaEngine free tier', () => {
 });
 
 describe('QuotaEngine idempotency', () => {
-  it('returns the cached response for a committed cacheKey (no double bill)', () => {
+  it('reports a committed cacheKey as cached without counting it again; the body is the store\'s', () => {
     const e = new QuotaEngine();
     e.reserve('free', 'dup', T0);
-    e.commit('dup', '{"id":"msg_1"}', T0);
+    e.commit('dup', T0);
     const r = e.reserve('free', 'dup', T0 + 60_000);
-    expect(r).toEqual({ kind: 'cached', body: '{"id":"msg_1"}' });
+    expect(r).toEqual({ kind: 'cached' });
     expect(e.snapshot('free', T0 + 60_000).used).toBe(1); // still 1
   });
 
   it('expires the response cache after 24h', () => {
     const e = new QuotaEngine();
     e.reserve('free', 'dup', T0);
-    e.commit('dup', '{}', T0);
+    e.commit('dup', T0);
     expect(e.reserve('free', 'dup', T0 + RESPONSE_TTL_MS + 1).kind).toBe('proceed');
   });
 
@@ -95,13 +94,71 @@ describe('QuotaEngine idempotency', () => {
     expect(e.reserve('free', 'crashed', T0 + RESERVATION_TTL_MS + 1).kind).toBe('proceed');
   });
 
-  it('prunes expired responses from serialized state (bounded growth)', () => {
+  it('prunes expired index entries and hands their keys to the store for deletion', () => {
     const e = new QuotaEngine();
     e.reserve('pro', 'old', T0);
-    e.commit('old', '{"big":"body"}', T0);
+    e.commit('old', T0);
+    expect(e.takeEvicted()).toEqual([]);
     // A later unrelated request past the TTL sweeps the old entry out.
     e.reserve('pro', 'new', T0 + RESPONSE_TTL_MS + 1);
-    expect(e.toJSON()).not.toContain('big');
+    expect(e.toJSON()).not.toContain('old');
+    expect(e.takeEvicted()).toEqual(['old']);
+    expect(e.takeEvicted()).toEqual([]); // drained
+  });
+
+  it('lifts inline bodies out of a pre-split blob and keeps the index', () => {
+    const e = new QuotaEngine(JSON.stringify({
+      firstSeen: T0, boostUsed: 1, months: {}, reservations: {}, recent: [],
+      responses: { a: { body: '{"id":"a"}', at: T0 }, b: { at: T0 + 1 } },
+    }));
+    expect(e.drainLegacyBodies()).toEqual([{ cacheKey: 'a', body: '{"id":"a"}', at: T0 }]);
+    expect(e.drainLegacyBodies()).toEqual([]);
+    expect(e.toJSON()).not.toContain('"body"');
+    expect(e.reserve('free', 'a', T0 + 2)).toEqual({ kind: 'cached' });
+    expect(e.reserve('free', 'b', T0 + 3)).toEqual({ kind: 'cached' });
+  });
+
+  it('caps the index at MAX_RETAINED_RESPONSES, evicting the oldest first', () => {
+    const e = new QuotaEngine();
+    for (let i = 0; i <= MAX_RETAINED_RESPONSES; i += 1) {
+      const t = T0 + i * 60_000;
+      e.reserve('pro', `k${i}`, t);
+      e.commit(`k${i}`, t);
+    }
+    expect(e.takeEvicted()).toEqual(['k0']);
+    expect(e.reserve('pro', 'k0', T0 + (MAX_RETAINED_RESPONSES + 2) * 60_000).kind).toBe('proceed');
+  });
+
+  it('commit never reports its own key as evicted when it prunes a stale entry for it', () => {
+    const e = new QuotaEngine();
+    e.reserve('pro', 'k', T0);
+    e.commit('k', T0);
+    e.commit('k', T0 + RESPONSE_TTL_MS + 1); // prunes the old 'k', then re-adds it
+    expect(e.takeEvicted()).toEqual([]);
+    expect(e.reserve('pro', 'k', T0 + RESPONSE_TTL_MS + 2)).toEqual({ kind: 'cached' });
+  });
+
+  it('caps a pre-split blob at MAX_RETAINED_RESPONSES on load, keeping the newest, without evicting unwritten bodies', () => {
+    const responses: Record<string, { body: string; at: number }> = {};
+    for (let i = 0; i < MAX_RETAINED_RESPONSES + 2; i += 1) responses[`k${i}`] = { body: `{"n":${i}}`, at: T0 + i };
+    const e = new QuotaEngine(JSON.stringify({ firstSeen: T0, boostUsed: 0, months: {}, reservations: {}, recent: [], responses }));
+    const lifted = e.drainLegacyBodies().map((l) => l.cacheKey);
+    expect(lifted).toHaveLength(MAX_RETAINED_RESPONSES);
+    expect(lifted).not.toContain('k0');
+    expect(lifted).not.toContain('k1');
+    expect(lifted).toContain(`k${MAX_RETAINED_RESPONSES + 1}`);
+    expect(e.takeEvicted()).toEqual([]);
+    expect(Object.keys((JSON.parse(e.toJSON()) as { responses: object }).responses)).toHaveLength(MAX_RETAINED_RESPONSES);
+  });
+
+  it('forgetResponse removes one entry and reports it once', () => {
+    const e = new QuotaEngine();
+    e.reserve('pro', 'k', T0);
+    e.commit('k', T0);
+    e.forgetResponse('k');
+    e.forgetResponse('k');
+    expect(e.takeEvicted()).toEqual(['k']);
+    expect(e.reserve('pro', 'k', T0 + 1).kind).toBe('proceed');
   });
 });
 
@@ -121,7 +178,7 @@ describe('QuotaEngine rate limit + pro', () => {
   it('cached hits are not rate-limited (free redraws)', () => {
     const e = new QuotaEngine();
     e.reserve('pro', 'c', T0);
-    e.commit('c', '{}', T0);
+    e.commit('c', T0);
     for (let i = 0; i < 30; i++) {
       expect(e.reserve('pro', 'c', T0 + 1000 + i).kind).toBe('cached');
     }
@@ -166,5 +223,123 @@ describe('QuotaEngine publish profile', () => {
   it('the ai profile is the default and keeps the boost window', () => {
     expect(QUOTA_PROFILES.ai).toEqual({ boostLimit: BOOST_LIMIT, boostWindowMs: BOOST_WINDOW_MS, monthlyLimit: MONTHLY_LIMIT });
     expect(new QuotaEngine().snapshot('free', T0).limit).toBe(BOOST_LIMIT);
+  });
+});
+
+describe('QuotaEngine locks and create slots', () => {
+  it('a reserve whose base matches the recorded head proceeds, and one that read an older head is pending', () => {
+    const e = new QuotaEngine(undefined, QUOTA_PROFILES.publish);
+    expect(e.reserve('pro', 'publish:lib_1:100->a', T0, { lock: 'publish:lib_1', base: 100 }).kind).toBe('proceed');
+    e.commit('publish:lib_1:100->a', T0 + 1, { head: { lock: 'publish:lib_1', at: 200 } });
+    // Read before that commit: its base is the head the commit replaced.
+    expect(e.reserve('pro', 'publish:lib_1:100->b', T0 + 2, { lock: 'publish:lib_1', base: 100 })).toEqual({ kind: 'pending' });
+    // Read after it: the base is the recorded head.
+    expect(e.reserve('pro', 'publish:lib_1:200->b', T0 + 3, { lock: 'publish:lib_1', base: 200 }).kind).toBe('proceed');
+  });
+
+  it('accepts any base when no head is recorded, and a base newer than the recorded one', () => {
+    const e = new QuotaEngine(undefined, QUOTA_PROFILES.publish);
+    // Nothing committed under this lock yet (a library from before heads existed).
+    expect(e.reserve('pro', 'publish:lib_1:5->a', T0, { lock: 'publish:lib_1', base: 5 }).kind).toBe('proceed');
+    e.commit('publish:lib_1:5->a', T0 + 1, { head: { lock: 'publish:lib_1', at: 200 } });
+    // Another identity wrote at 300: a read that has seen it is not stale.
+    expect(e.reserve('pro', 'publish:lib_1:300->b', T0 + 2, { lock: 'publish:lib_1', base: 300 }).kind).toBe('proceed');
+    // Another library's head is independent.
+    expect(e.reserve('pro', 'publish:lib_2:1->a', T0 + 3, { lock: 'publish:lib_2', base: 1 }).kind).toBe('proceed');
+  });
+
+  it('a release that names a head records it while freeing the lock', () => {
+    // A publish whose commit threw after its meta was written: the lock goes,
+    // but the head it left in KV must still refuse a read from before it.
+    const e = new QuotaEngine(undefined, QUOTA_PROFILES.publish);
+    e.reserve('pro', 'publish:lib_1:100->a', T0, { lock: 'publish:lib_1', base: 100 });
+    e.release('publish:lib_1:100->a', T0 + 1, { head: { lock: 'publish:lib_1', at: 200 } });
+    expect(e.reserve('pro', 'publish:lib_1:100->b', T0 + 2, { lock: 'publish:lib_1', base: 100 })).toEqual({ kind: 'pending' });
+    expect(e.reserve('pro', 'publish:lib_1:200->b', T0 + 3, { lock: 'publish:lib_1', base: 200 }).kind).toBe('proceed');
+    // Nothing was counted.
+    expect(e.snapshot('pro', T0 + 3).used).toBe(0);
+    // It is forgotten after HEAD_TTL_MS like a committed one.
+    expect(e.reserve('pro', 'publish:lib_1:100->c', T0 + 1 + HEAD_TTL_MS, { lock: 'publish:lib_1', base: 100 }).kind).toBe('proceed');
+  });
+
+  it('records no head on a plain release, and forgets a committed one after HEAD_TTL_MS', () => {
+    const e = new QuotaEngine(undefined, QUOTA_PROFILES.publish);
+    e.reserve('pro', 'publish:lib_1:100->a', T0, { lock: 'publish:lib_1', base: 100 });
+    e.release('publish:lib_1:100->a', T0);
+    expect((JSON.parse(e.toJSON()) as { heads: Record<string, unknown> }).heads).toEqual({});
+    expect(e.reserve('pro', 'publish:lib_1:100->b', T0 + 1, { lock: 'publish:lib_1', base: 100 }).kind).toBe('proceed');
+    e.commit('publish:lib_1:100->b', T0 + 2, { head: { lock: 'publish:lib_1', at: 200 } });
+    const later = new QuotaEngine(e.toJSON(), QUOTA_PROFILES.publish);
+    expect(later.reserve('pro', 'publish:lib_1:100->c', T0 + 3, { lock: 'publish:lib_1', base: 100 })).toEqual({ kind: 'pending' });
+    expect(later.reserve('pro', 'publish:lib_1:100->c', T0 + 2 + HEAD_TTL_MS, { lock: 'publish:lib_1', base: 100 }).kind).toBe('proceed');
+  });
+
+  it('a live lock held by another cache key answers pending until it is released', () => {
+    const e = new QuotaEngine(undefined, QUOTA_PROFILES.publish);
+    expect(e.reserve('pro', 'publish:lib_1:a->h1', T0, { lock: 'publish:lib_1' }).kind).toBe('proceed');
+    expect(e.reserve('pro', 'publish:lib_1:a->h2', T0 + 1, { lock: 'publish:lib_1' })).toEqual({ kind: 'pending' });
+    // A different library's lock is independent.
+    expect(e.reserve('pro', 'publish:lib_2:a->h1', T0 + 2, { lock: 'publish:lib_2' }).kind).toBe('proceed');
+    e.release('publish:lib_1:a->h1', T0 + 2);
+    expect(e.reserve('pro', 'publish:lib_1:a->h2', T0 + 3, { lock: 'publish:lib_1' }).kind).toBe('proceed');
+  });
+
+  it('commit frees the lock, and the lock expires with the reservation', () => {
+    const e = new QuotaEngine(undefined, QUOTA_PROFILES.publish);
+    e.reserve('pro', 'k1', T0, { lock: 'L' });
+    e.commit('k1', T0 + 1);
+    expect(e.reserve('pro', 'k2', T0 + 2, { lock: 'L' }).kind).toBe('proceed');
+    // Crashed holder: nothing commits or releases k2; the lock lapses with its reservation.
+    expect(e.reserve('pro', 'k3', T0 + 3, { lock: 'L' })).toEqual({ kind: 'pending' });
+    expect(e.reserve('pro', 'k3', T0 + 2 + RESERVATION_TTL_MS, { lock: 'L' }).kind).toBe('proceed');
+  });
+
+  it('refuses a create once committed, listed and in-flight creates reach the limit', () => {
+    const e = new QuotaEngine(undefined, QUOTA_PROFILES.publish);
+    expect(e.reserve('free', 'publish:new:a', T0, { create: { limit: 1, listed: 0 } }).kind).toBe('proceed');
+    // In flight: the slot is taken before anything commits.
+    expect(e.reserve('free', 'publish:new:b', T0 + 1, { create: { limit: 1, listed: 0 } }))
+      .toEqual({ kind: 'library_limit', limit: 1, owned: 0 });
+    e.release('publish:new:a', T0 + 1);
+    expect(e.reserve('free', 'publish:new:b', T0 + 2, { create: { limit: 1, listed: 0 } }).kind).toBe('proceed');
+    e.commit('publish:new:b', T0 + 3, { create: true });
+    // Committed: the count is the object's own, whatever the listing says.
+    expect(e.reserve('free', 'publish:new:c', T0 + 4, { create: { limit: 1, listed: 0 } }))
+      .toEqual({ kind: 'library_limit', limit: 1, owned: 1 });
+    expect(e.snapshot('free', T0 + 4).used).toBe(1);
+  });
+
+  it('trusts the caller\'s listing when it knows more than the counter', () => {
+    const e = new QuotaEngine(undefined, QUOTA_PROFILES.publish);
+    expect(e.reserve('pro', 'publish:new:a', T0, { create: { limit: 10, listed: 10 } }))
+      .toEqual({ kind: 'library_limit', limit: 10, owned: 10 });
+    expect(e.reserve('pro', 'publish:new:a', T0 + 1, { create: { limit: 10, listed: 9 } }).kind).toBe('proceed');
+  });
+
+  it('an update never holds a create slot, and a create slot is released with its reservation', () => {
+    const e = new QuotaEngine(undefined, QUOTA_PROFILES.publish);
+    e.reserve('free', 'publish:lib_1:x->y', T0, { lock: 'publish:lib_1' });
+    e.commit('publish:lib_1:x->y', T0 + 1);
+    expect(e.reserve('free', 'publish:new:a', T0 + 2, { create: { limit: 1, listed: 0 } }).kind).toBe('proceed');
+    const later = new QuotaEngine(e.toJSON(), QUOTA_PROFILES.publish);
+    expect(later.reserve('free', 'publish:new:b', T0 + 2 + RESERVATION_TTL_MS, { create: { limit: 1, listed: 0 } }).kind).toBe('proceed');
+  });
+
+  it('counts a create from its commit marker even after the slot expired, and a replayed commit only once', () => {
+    const e = new QuotaEngine(undefined, QUOTA_PROFILES.publish);
+    const libraries = () => (JSON.parse(e.toJSON()) as { libraries: number }).libraries;
+    expect(e.reserve('free', 'publish:new:a', T0, { create: { limit: 1, listed: 0 } }).kind).toBe('proceed');
+    // The write outlived its reservation: commit prunes the slot before it settles.
+    const late = T0 + RESERVATION_TTL_MS + 1;
+    e.commit('publish:new:a', late, { create: true });
+    expect(libraries()).toBe(1);
+    expect(e.reserve('free', 'publish:new:b', late + 1, { create: { limit: 1, listed: 0 } }))
+      .toEqual({ kind: 'library_limit', limit: 1, owned: 1 });
+    e.commit('publish:new:a', late + 2, { create: true });
+    expect(libraries()).toBe(1);
+    // Without the marker a commit never counts a library, slot or no slot.
+    expect(e.reserve('free', 'publish:new:c', late + 3, { create: { limit: 5, listed: 0 } }).kind).toBe('proceed');
+    e.commit('publish:new:c', late + 4);
+    expect(libraries()).toBe(1);
   });
 });

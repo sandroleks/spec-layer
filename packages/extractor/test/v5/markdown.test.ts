@@ -174,6 +174,48 @@ describe('componentMarkdown anatomy', () => {
     expect(out).toContain('- root: `Root`, frame\n  - kid: `Root/kid`, text, shown when `Show icon` is true');
   });
 
+  it('escapes a part name that would open a heading, a nested list, or a fence inside its bullet', () => {
+    const artifact = buildComponentV5GoldenArtifact();
+    const out = componentMarkdown({
+      ...artifact,
+      anatomy: [
+        { part: '# heading', path: 'Root/a', type: 'FRAME' },
+        { part: '- item', path: 'Root/b', type: 'FRAME' },
+        { part: '1. step', path: 'Root/c', type: 'FRAME' },
+        { part: '```code', path: 'Root/d', type: 'FRAME' },
+      ],
+    } as typeof artifact);
+    expect(out).toContain('- \\# heading: `Root/a`, frame');
+    expect(out).toContain('- \\- item: `Root/b`, frame');
+    expect(out).toContain('- 1\\. step: `Root/c`, frame');
+    expect(out).toContain('- \\```code: `Root/d`, frame');
+  });
+
+  it('escapes a part name that is only a marker, with no trailing text', () => {
+    const artifact = buildComponentV5GoldenArtifact();
+    const out = componentMarkdown({
+      ...artifact,
+      anatomy: [
+        { part: '-', path: 'Root/a', type: 'FRAME' },
+        { part: '#', path: 'Root/b', type: 'FRAME' },
+      ],
+    } as typeof artifact);
+    expect(out).toContain('- \\-: `Root/a`, frame');
+    expect(out).toContain('- \\#: `Root/b`, frame');
+  });
+
+  it('escapes a marker part name at nested anatomy depth', () => {
+    const artifact = buildComponentV5GoldenArtifact();
+    const out = componentMarkdown({
+      ...artifact,
+      anatomy: [{
+        part: 'root', path: 'Root', type: 'FRAME',
+        children: [{ part: '- nested', path: 'Root/kid', type: 'TEXT' }],
+      }],
+    } as typeof artifact);
+    expect(out).toContain('- root: `Root`, frame\n  - \\- nested: `Root/kid`, text');
+  });
+
   it('omits the section when anatomy is empty', () => {
     const artifact = buildComponentV5GoldenArtifact();
     expect(componentMarkdown({ ...artifact, anatomy: [] })).not.toContain('## Anatomy');

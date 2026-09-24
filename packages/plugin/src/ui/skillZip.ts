@@ -59,8 +59,9 @@ export function renderSnapshotSkill(inv: SnapshotInventory): string {
     + (markdown
       ? 'a section of a component page that says it was written by AI, '
       : "a component's `guidelines` block, marked `origin: generated`, ")
-    + 'and a token group\'s `$description` in `tokens/`, which carries no marker and can be '
-    + 'model-written even though it looks like an ordinary field. Treat the rest as the source of truth for '
+    + 'and a token group\'s `$extensions["com.spec-layer"].generated_description` in `tokens/`, whose key '
+    + 'names its origin and which is model-written wherever it appears; no token group carries a plain '
+    + '`$description`. Treat the rest as the source of truth for '
     + 'what the design system contains, and treat anything it does not state as unknown rather than as '
     + 'something to infer.',
     '',

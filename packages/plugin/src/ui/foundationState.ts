@@ -19,13 +19,6 @@ function plural(n: number, one: string, many: string): string {
   return `${n} ${n === 1 ? one : many}`;
 }
 
-/** Joins prose parts the way a sentence does: "a", "a and b", "a, b and c". */
-function joinAnd(parts: string[]): string {
-  if (parts.length <= 1) return parts.join('');
-  if (parts.length === 2) return parts.join(' and ');
-  return `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`;
-}
-
 /**
  * Which row icon a collection gets. Derived in foundationIcon.ts because My
  * Library's foundation rows must answer this the same way from a stored scope
@@ -165,28 +158,6 @@ export function canGenerate(sel: FoundationSelection): boolean {
   return sel.collections.length > 0 || sel.textStyles || sel.effectStyles;
 }
 
-/**
- * Zero or one line explaining what the file does not have. Each case names the
- * reason rather than leaving an unexplained gap in the docs.
- */
-export function emptyStateLines(spec: FoundationSpec): string[] {
-  const hasCollections = spec.collections.length > 0;
-  const hasTextStyles = spec.textStyles.length > 0;
-  const hasEffectStyles = spec.effectStyles.length > 0;
-
-  if (!hasCollections && !hasTextStyles && !hasEffectStyles) {
-    return ['This file has no local variable collections, text styles, or effect styles.'];
-  }
-  if (!hasCollections) return ['This file has no local variable collections.'];
-  if (!hasTextStyles) return ['This file has no local text styles.'];
-
-  const hasColor = spec.collections.some((c) =>
-    c.variables.some((v) => v.resolvedType === 'COLOR'));
-  if (!hasColor) return ['No color variables found, so the docs will have no swatches.'];
-
-  return [];
-}
-
 // ---------------------------------------------------------------------------
 // How many frames a build will produce
 //
@@ -257,26 +228,6 @@ export function allSelected(spec: FoundationSpec, sel: FoundationSelection): boo
   const stylesSettled = spec.textStyles.length === 0 || sel.textStyles;
   const effectsSettled = spec.effectStyles.length === 0 || sel.effectStyles;
   return everyCollection && stylesSettled && effectsSettled;
-}
-
-// ---------------------------------------------------------------------------
-// Copy
-// ---------------------------------------------------------------------------
-
-/** One line describing what the file holds. */
-export function fileSummary(summary: FoundationSummary): string {
-  const parts: string[] = [];
-  if (summary.collectionCount > 0) {
-    parts.push(plural(summary.collectionCount, 'variable collection', 'variable collections'));
-  }
-  if (summary.textStyleCount > 0) {
-    parts.push(plural(summary.textStyleCount, 'text style', 'text styles'));
-  }
-  if (summary.effectStyleCount > 0) {
-    parts.push(plural(summary.effectStyleCount, 'effect style', 'effect styles'));
-  }
-  if (parts.length === 0) return 'Nothing to document in this file yet.';
-  return `This file has ${joinAnd(parts)}.`;
 }
 
 /** A collection row's second line. */

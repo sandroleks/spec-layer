@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { buildPillNode, repaintPills } from '../src/pillNode';
+import { buildPillNode, repaintPills, type PillHost } from '../src/pillNode';
 import { PILL_KEY, PILL_NODE_NAME } from '../src/publishPill';
 import { buildBrandHeader } from '../src/brandHeader';
 import { collectGeneratedText, type ProseNodeLike } from '../src/canvasProse';
@@ -12,15 +12,25 @@ const theme = {
   headingFont: 'Inter', bodyFont: 'Inter',
 };
 
-/** Walk a fake tree the way SectionNode.findAll would. */
-function findAll(root: FakeFrame, predicate: (node: SceneNode) => boolean): SceneNode[] {
-  const out: SceneNode[] = [];
-  const visit = (node: unknown): void => {
-    if (predicate(node as SceneNode)) out.push(node as SceneNode);
-    for (const child of ((node as FakeFrame).children ?? []) as unknown[]) visit(child);
+/**
+ * Walk a fake tree the way findAllWithCriteria({ types: ['FRAME'],
+ * pluginData: { keys } }) would: frames carrying any of the keys, in tree
+ * order. The criteria the code passed are recorded so a test can check them.
+ */
+function pillHost(root: FakeFrame, seen: unknown[] = []): PillHost {
+  const find = (criteria: { types?: string[]; pluginData?: { keys?: string[] } }): SceneNode[] => {
+    seen.push(criteria);
+    const keys = criteria.pluginData?.keys ?? [];
+    const out: SceneNode[] = [];
+    const visit = (node: unknown): void => {
+      const n = node as FakeFrame;
+      if (n.type === 'FRAME' && keys.some((k) => n.getPluginData(k) !== '')) out.push(node as SceneNode);
+      for (const child of (n.children ?? []) as unknown[]) visit(child);
+    };
+    for (const child of root.children as unknown[]) visit(child);
+    return out;
   };
-  for (const child of root.children as unknown[]) visit(child);
-  return out;
+  return { findAllWithCriteria: find as unknown as PillHost['findAllWithCriteria'] };
 }
 
 const textOf = (pill: FakeFrame): FakeText => pill.children.find((c) => c.type === 'TEXT') as FakeText;
@@ -106,7 +116,7 @@ describe('the pill and the hand-edit hash', () => {
     const band = await buildBrandHeader({ eyebrow: 'Buttons', title: 'Button', pill: { kind: 'unpublished' } }) as unknown as FakeFrame;
     const before = collectGeneratedText(band as unknown as ProseNodeLike);
     expect(before).toEqual(['BUTTONS', 'Button']);
-    const repainted = await repaintPills({ findAll: (p) => findAll(band, p) }, { kind: 'published', version: '2.0.0' });
+    const repainted = await repaintPills(pillHost(band), { kind: 'published', version: '2.0.0' });
     expect(repainted).toBe(1);
     expect(band.textChars()).toContain('v2.0.0 · Published');
     expect(collectGeneratedText(band as unknown as ProseNodeLike)).toEqual(before);
@@ -117,7 +127,7 @@ describe('the pill and the hand-edit hash', () => {
     const root = new FakeFrame();
     root.appendChild(await buildBrandHeader({ eyebrow: 'A', title: 'A', pill: { kind: 'unpublished' } }));
     root.appendChild(await buildBrandHeader({ eyebrow: 'B', title: 'B', pill: { kind: 'unpublished' } }));
-    const count = await repaintPills({ findAll: (p) => findAll(root, p) }, { kind: 'changed', version: '1.1.0' });
+    const count = await repaintPills(pillHost(root), { kind: 'changed', version: '1.1.0' });
     expect(count).toBe(2);
     for (const pill of root.findAllNamed(PILL_NODE_NAME)) {
       expect(textOf(pill).characters).toBe('Changed since v1.1.0');
@@ -128,6 +138,14 @@ describe('the pill and the hand-edit hash', () => {
   it('repaintPills returns 0 on a doc rendered before pills existed', async () => {
     await applyThemeToKit(theme);
     const band = await buildBrandHeader({ eyebrow: 'A', title: 'A' });
-    expect(await repaintPills({ findAll: (p) => findAll(band as unknown as FakeFrame, p) }, { kind: 'unpublished' })).toBe(0);
+    expect(await repaintPills(pillHost(band as unknown as FakeFrame), { kind: 'unpublished' })).toBe(0);
+  });
+
+  it('asks Figma for frames carrying the pill key, not for every node', async () => {
+    await applyThemeToKit(theme);
+    const band = await buildBrandHeader({ eyebrow: 'A', title: 'A', pill: { kind: 'unpublished' } }) as unknown as FakeFrame;
+    const seen: unknown[] = [];
+    await repaintPills(pillHost(band, seen), { kind: 'published', version: '1.0.0' });
+    expect(seen).toEqual([{ types: ['FRAME'], pluginData: { keys: [PILL_KEY] } }]);
   });
 });

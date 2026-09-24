@@ -59,38 +59,116 @@ export async function copyText(text: string): Promise<CopyTier> {
   return 'manual';
 }
 
+// Tracks the currently open manual-copy dialog's disposer, so a second call
+// while one is open can close it first rather than stacking a second
+// `.sl-overlay` with a second capture-phase keydown listener.
+let openManualCopyDialog: (() => void) | null = null;
+
 /**
- * Tier 3. Renders the payload in a pre-selected textarea so the user can copy
- * it with the keyboard. Returns a disposer the caller uses to dismiss it.
+ * Tier 3. The same `.sl-overlay` / `.sl-dialog` the confirm dialog draws
+ * (shell/confirmDialog.ts), with the payload in a pre-selected textarea so
+ * the user can copy it with the keyboard. Returns a disposer.
  *
- * `notice` carries the same honesty caveats the toast path already computes
- * (missing token values, missing guidelines, payload size) — a tier-3 user
- * gets a payload that can be just as incomplete as a tier-1/2 one, and this
- * is the only place left to tell them. Rendered via textContent, not
- * interpolated into the innerHTML template, so the notice can never be
- * mistaken for markup.
+ * `notice` carries the same honesty caveats the toast path computes (missing
+ * token values, missing guidelines, payload size): a tier-3 user gets a
+ * payload that can be just as incomplete, and this is the only place left
+ * to say so. Every string lands through textContent, never innerHTML.
+ *
+ * Escape closes, Tab stays between the textarea and Close, and focus goes
+ * back to whatever opened it. Escape runs in the capture phase and stops
+ * there, so it never also backs the shell out of the screen underneath.
+ *
+ * One dialog at a time. Calling this again while one is already open closes
+ * it first (running its own disposer, which restores focus to that dialog's
+ * opener) before capturing the opener for the new one, so a second quick
+ * copy replaces the dialog underneath instead of stacking on top of it, and
+ * closing the replacement still returns focus to the control that started
+ * the first one, not to anything inside the dialog being replaced.
  */
 export function renderManualCopyModal(text: string, notice?: string): () => void {
+  openManualCopyDialog?.();
+
+  const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+
   const host = document.createElement('div');
-  host.className = 'sl-copy-fallback';
-  host.innerHTML =
-    '<div class="sl-copy-fallback-panel">' +
-    '<p>Couldn’t copy automatically. Press Cmd C (Ctrl C on Windows) to copy the selected text below.</p>' +
-    '<textarea readonly rows="12"></textarea>' +
-    '<button type="button" data-copy-fallback-close>Close</button>' +
-    '</div>';
-  const panel = host.querySelector('.sl-copy-fallback-panel') as HTMLDivElement;
-  const ta = host.querySelector('textarea') as HTMLTextAreaElement;
+  host.className = 'sl-overlay sl-copy-fallback';
+  host.setAttribute('data-copy-fallback', '');
+
+  const dialog = document.createElement('div');
+  dialog.className = 'sl-dialog sl-copy-fallback-panel';
+  dialog.setAttribute('role', 'dialog');
+  dialog.setAttribute('aria-modal', 'true');
+  dialog.setAttribute('aria-labelledby', 'sl-copy-fallback-title');
+
+  const title = document.createElement('h2');
+  title.id = 'sl-copy-fallback-title';
+  title.textContent = 'Copy the text yourself';
+
+  const body = document.createElement('p');
+  body.id = 'sl-copy-fallback-body';
+  body.textContent = 'Couldn’t copy automatically. Press Cmd C (Ctrl C on Windows) to copy the selected text below.';
+
+  const ta = document.createElement('textarea');
+  ta.readOnly = true;
+  ta.rows = 12;
+  ta.value = text;
+  ta.setAttribute('aria-label', 'Text to copy');
+
+  const actions = document.createElement('div');
+  actions.className = 'sl-dialog-actions';
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'sl-button';
+  close.dataset.tone = 'secondary';
+  close.setAttribute('data-copy-fallback-close', '');
+  close.textContent = 'Close';
+  actions.appendChild(close);
+
+  dialog.append(title, body);
   if (notice) {
     const p = document.createElement('p');
+    p.id = 'sl-copy-fallback-notice';
     p.className = 'sl-copy-fallback-notice';
     p.textContent = notice;
-    panel.insertBefore(p, ta);
+    dialog.appendChild(p);
+    dialog.setAttribute('aria-describedby', 'sl-copy-fallback-body sl-copy-fallback-notice');
+  } else {
+    dialog.setAttribute('aria-describedby', 'sl-copy-fallback-body');
   }
-  ta.value = text;
-  const dispose = () => { if (host.parentNode) document.body.removeChild(host); };
-  (host.querySelector('[data-copy-fallback-close]') as HTMLButtonElement)
-    .addEventListener('click', dispose);
+  dialog.append(ta, actions);
+  host.appendChild(dialog);
+
+  const dispose = (): void => {
+    if (!host.isConnected) return; // already closed; calling twice is fine
+    document.removeEventListener('keydown', onKey, true);
+    host.remove();
+    if (openManualCopyDialog === dispose) openManualCopyDialog = null;
+    opener?.focus();
+  };
+  const onKey = (event: KeyboardEvent): void => {
+    if (!host.isConnected) {
+      document.removeEventListener('keydown', onKey, true);
+      return;
+    }
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      dispose();
+      return;
+    }
+    if (event.key === 'Tab') {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      (document.activeElement === ta ? close : ta).focus();
+    }
+  };
+  document.addEventListener('keydown', onKey, true);
+  host.addEventListener('click', (event) => {
+    if (event.target === host) dispose();
+  });
+  close.addEventListener('click', dispose);
+
+  openManualCopyDialog = dispose;
   document.body.appendChild(host);
   ta.focus();
   ta.select();

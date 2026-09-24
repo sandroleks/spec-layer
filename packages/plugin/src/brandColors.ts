@@ -1,7 +1,8 @@
 /**
  * brandColors — the user-customizable brand colors used in the generated
  * Guidelines frame, plus pure helpers shared by the UI (validation/preview)
- * and the main thread (resolving stored overrides to concrete values).
+ * and the main thread (resolving a stored theme to concrete values, and
+ * migrating the 1.x two-color shape).
  *
  * Only two colors are customizable: the header band and the accent color.
  * The rest of the frame palette (body ink, borders, table tints) stays fixed.
@@ -21,17 +22,6 @@ export interface BrandColors {
 }
 
 /**
- * Empty overrides — both colors fall back to their defaults.
- *
- * No production callers post-migration to BrandTheme; kept as the 1.x public
- * shape for stored-settings compatibility and test coverage of the migration
- * source format.
- */
-export function emptyBrandColors(): BrandColors {
-  return { headerBg: null, accent: null };
-}
-
-/**
  * Validate + normalize a hex color string. Accepts `#rrggbb` or `rrggbb`
  * (case-insensitive) and returns a lowercase `#rrggbb`. Returns null for any
  * input that isn't a 6-digit hex color, so callers can reject it.
@@ -40,23 +30,6 @@ export function parseBrandHex(input: string): string | null {
   const trimmed = input.trim().replace(/^#/, '');
   if (!/^[0-9a-fA-F]{6}$/.test(trimmed)) return null;
   return `#${trimmed.toLowerCase()}`;
-}
-
-/**
- * Resolve stored overrides to concrete `#rrggbb` values, substituting defaults
- * for any null/missing field. The single source of truth for what the frame
- * actually paints.
- *
- * No production callers post-migration to BrandTheme/resolveTheme; kept as
- * the 1.x public shape for stored-settings compatibility and test coverage of
- * the migration source format.
- */
-export function resolveBrand(stored: BrandColors | null | undefined): {
-  headerBg: string;
-  accent: string;
-} {
-  const resolved = resolveTheme(stored as BrandTheme | null | undefined);
-  return { headerBg: resolved.headerBg, accent: resolved.accent };
 }
 
 /**

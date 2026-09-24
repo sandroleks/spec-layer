@@ -5,18 +5,12 @@
  * loader. A determinate bar is added only when the host has real counts.
  */
 
+import { esc } from '../escape';
+
 export interface ProgressPresentation {
   label: string;
   current?: number;
   total?: number;
-}
-
-function esc(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
 }
 
 export function progressMarkup(progress: ProgressPresentation): string {

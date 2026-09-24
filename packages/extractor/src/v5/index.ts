@@ -13,7 +13,6 @@ export * from './units';
 export * from './diagnostics';
 export * from './canonical';
 export * from './validate';
-export * from './normalize';
 export * from './statistics';
 export * from './fromFoundation';
 export * from './fonts';

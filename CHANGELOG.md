@@ -58,6 +58,18 @@ path, where the files already are, and says so in one line.
   `SPEC_LAYER_KEY` remains the way for CI. Nothing arriving is an error
   rather than an empty key, and a stdin that cannot be read, such as a
   closed descriptor, is refused in one sentence rather than a stack trace.
+- **A self-describing DTCG output** (CLI 0.8.2, on npm since 2026-09-10; the
+  plugin's clipboard side of it landed after the `v5.1.0` tag in #59 and #60
+  and has not been in a tagged plugin release). The document extension now
+  carries a `census` of what each emitted file holds and a `config_hash` of the
+  projection options that produced it, and `resolver.json` carries that
+  extension instead of only the clipboard document doing so. The sidecar
+  records the `transform` behind each token's value in each mode, and the value
+  each alias resolves to. Every field is descriptive: no canvas hash and no
+  artifact identity moved, and `EXTRACTOR_VERSION` is unchanged, so no document
+  needs regenerating. A repository pulling with an earlier CLI gets the same
+  files without these fields. The census reports what the projection produced;
+  `report.json` keeps its own job of naming what it could not express.
 - **`spec-layer pull` can write components as Markdown.** Set
   `componentSpecsFormat: "md"` in `speclayer.json`, or pass
   `--component-format md` to `setup`, `init`, `pull`, or `show`, and
@@ -223,6 +235,39 @@ path, where the files already are, and says so in one line.
 
 ### Changed
 
+- **The published Foundation Context v5 schema pins its envelope, diagnostics
+  and statistics.** `spec_layer`, each `diagnostics` entry and `statistics`
+  were untyped objects, and an alias or missing value's `reason` was any
+  string, while the Component Context schema pinned all of them. The
+  Foundation schema now states the envelope field by field, lists the
+  diagnostic codes and severities, types every statistic as a count, and
+  lists both reason vocabularies; `validateLevel1` learns the two reason
+  lists so the plugin's own check and the published schema keep agreeing.
+  The same check gates `spec-layer pull`, which refuses a published
+  Foundation that fails it and asks for a republish.
+  `completeness.styles` documents why it is `partial` or `unavailable` for
+  any file with a style, a partial read, or a scoped export. Every committed
+  golden validates, including a real synthetic artifact carrying diagnostics
+  and both style kinds. The schema is tightened in place with no version
+  bump: no artifact any released plugin has ever emitted changes or stops
+  validating. The live schema at
+  `spec-layer.com/schemas/foundation-context/v5.json` serves the old bytes
+  until the private site redeploys, so `npm run check:site-live` fails from
+  this change until that deploy; it is not part of `npm run check`.
+- **The repository gates cover what they claimed to.** `npm run typecheck`
+  now compiles `packages/proxy/test` and `packages/cli/test`; both had type
+  errors that vitest's type stripping hid, all in test code.
+  The main-thread sandbox scan now knows the URL, fetch and abort classes,
+  `crypto`, `performance`, `self` and the scheduler calls, catches a global
+  used as a value or reached through `globalThis`, `self` or `window`
+  (`globalThis` itself exists in the sandbox and passes), and runs from a
+  checkout path with a space in it or through a symlink, which it had not.
+  The sandbox and NUL scans each print one line when they pass, so a scan
+  that never ran can no longer look like a clean one.
+  The pre-commit hook recognises Spec Layer pull keys, npm tokens and
+  Cloudflare token assignments, and `npm ci` now wires it into the clone.
+  The NUL scan reads every tracked text file, including `.github/`, the root
+  configs and the hook, not only `packages/` and `scripts/`.
 - **The Foundations and Library empty states teach the next move.** Each gets
   an animated drawing in the same family as the component screen's (a file
   whose color, text, and effect slots fill after a refresh; a doc dropping
@@ -439,6 +484,41 @@ path, where the files already are, and says so in one line.
   without it. Your written sections are kept. The Library row says so, and if
   your AI allowance runs out part-way it says that too rather than reporting a
   clean rebuild.
+- **Registry lookups are issued together, output unchanged.** The Library,
+  publish, and build paths look up every documented section at once instead
+  of one round trip per section, with the same results in the same order.
+- **A doc build reads each variable collection and each previewed node
+  once.** Every placed instance asked Figma for its component's collections
+  again, one after another, and the frame-width pass read every matrix cell
+  that the matrix then read a second time to instance it. Both now go
+  through a cache that lives for one build, and a component's collections
+  are read together. Same documents, fewer round trips on large matrices.
+- **Repainting pills uses native Figma filtering, output unchanged.** The pill
+  repaint now uses `findAllWithCriteria` so Figma filters frames by pluginData
+  key natively, instead of evaluating a predicate once per node across the bridge.
+
+### Removed
+
+- **The legacy foundation YAML brief and the component brief's unused
+  foundation option.** Neither had a shipping caller, and no shipped output
+  changes.
+
+- **Successful generations and publishes cost one Durable Object hop fewer.**
+  The commit returns the quota snapshot the response headers need, so the
+  proxy no longer calls back for it. Refusals are unchanged, and every
+  response carries the same headers and body as before.
+
+- **Pull streams the bundle, understands `If-None-Match` lists, and says
+  `no-store`.** The Worker passes the stored bytes through as a stream instead
+  of reading them into a string first, a conditional request may send several
+  or weak entity tags, and every pull and versions answer, the 401, 404 and
+  429 errors included, carries `Cache-Control: private, no-store`.
+
+- **The proxy's in-isolate rate limiters hold ten thousand keys for each
+  surface that shares them** instead of ten thousand in total across the
+  routes that share one map, so ordinary traffic on one route no longer uses
+  up the room the others need. The map is still shared, so a flood from
+  enough distinct addresses can still fill it.
 
 ### Fixed
 
@@ -524,6 +604,171 @@ path, where the files already are, and says so in one line.
   in the clear. Only `localhost`, `127.0.0.1`, and `[::1]` may use http, for a
   local proxy build. The refusal names `--api` or `SPEC_LAYER_API`, whichever
   held the value.
+- **An Anthropic call that hangs is cut off before its reservation expires.**
+  The proxy aborts the upstream call at 150 seconds and answers
+  `502 upstream_timeout` with nothing charged; the reservation window is now
+  180 seconds, so a generation can no longer outlive its reservation and let a
+  retry pay twice for one answer. An answer whose body fails to arrive for
+  any other reason still answers 500, and now frees its reservation too, so
+  a retry runs at once instead of answering `409 generation_pending` for three
+  minutes. Every proxy log line now carries the
+  request's ray id and route, and an upstream error carries Anthropic's
+  request id.
+- **Publishes from one identity no longer race a library or the library
+  ceiling.** A changed publish holds a per-library lock in the publisher's
+  quota object until its writes commit, and that object checks the library
+  state the publish read, the older of its meta and its version log, against
+  the last one it saw written. A concurrent
+  changed publish, or one that read the library before another publish
+  finished, answers `409 publish_pending` instead of assigning the same
+  version, dropping the other publish from the version history, or leaving
+  the meta and bundle from different writers. A publish's `publishedAt` is
+  taken after those reads and always lands after the state it read, so a
+  Worker whose clock runs behind cannot move the library back in time, and a
+  publish that fails after writing its meta still records it, so a stale read
+  is refused as if that publish had finished. A create records the same state,
+  so a new library's first update is checked too. The library ceiling is counted
+  in that same object, so two concurrent creates no longer both pass an
+  eventually consistent KV listing, and a create is counted even when its
+  writes take longer than its reservation lives. Publishes under two
+  different identities, and a publish that runs past its three-minute
+  reservation, are not covered; the proxy README lists these limits. When the refused create's
+  library has not reached the listing yet, `library_limit.existing` is
+  `null`. A create refused only because another create by the same identity
+  is still in flight answers `409 publish_pending`, since that one may yet
+  fail.
+- **The proxy answers from one origin.** `workers_dev` is off, so the
+  `workers.dev` hostname that the zone's license rate rule never covered no
+  longer serves the Worker; `api.spec-layer.com` is the only origin. Workers
+  observability is on with every invocation sampled.
+- **Oversized bodies are refused as they stream in.** Publish and prose read
+  the request in chunks and stop at the first byte over the cap instead of
+  buffering the whole body first when no `Content-Length` was sent. The 413's
+  `size` is the declared length when there is one, else the byte count at the
+  cut.
+- **A busy identity's quota state no longer grows into one oversized Durable
+  Object value.** Each cached response now sits under its own storage key
+  beside a small counter record, the newest 500 are retained, and a record
+  written before the split is migrated the first time it is read. Before, a
+  Pro identity with a day of generations could push the single value past
+  the storage limit and get a 500 on every quota operation until entries
+  aged out. Rolling the proxy back past this change breaks cached replays
+  for up to 24 hours while counters are unaffected, so a fix should roll
+  forward.
+- **The Library says so when it could not read this file's docs, and
+  recovers, and so does search.** A failed read used to leave the Library
+  spinning with Refresh and Update disabled for the rest of the session,
+  while the search palette kept saying "No component docs yet" or "No
+  matches", as if the read had actually finished. The Library now says the
+  read failed and offers Refresh, which works again. If an earlier read had
+  already listed docs, those rows stay on screen, marked as not checked,
+  with a banner saying they may be out of date. When a scan stops partway
+  through instead of failing outright, the rows it did collect stay visible
+  with a note that the list may be missing some docs, and a stale note of
+  that kind no longer sits under a fresh failure banner from a later
+  attempt. The same honesty reaches every corner of the screen a partial or
+  failed read touches: the Updates and In sync filters stop claiming an
+  empty subset is certain ("None found in what could be read" replaces "No
+  updates waiting" or "No docs in sync" while either condition holds), and
+  both "Rebuild docs" and "Update all docs" refuse to run and drop their
+  claims of certainty ("Up to date" included) over a list a failed re-read
+  or an incomplete scan cannot vouch for, until a complete read clears
+  them. The search palette says the read failed when it found no docs at
+  all, and opening it retries a failed read instead of repeating the same
+  failure for the rest of the session. When a failed or partial read did
+  collect some docs and a query matches none of them, it says so ("No
+  matches in the docs that could be read") rather than claiming the whole
+  file was searched, and an empty recent list before typing says "No
+  component docs in what could be read" rather than "No component docs
+  yet".
+- **Copy for AI's manual-copy dialog is styled.** When the clipboard is
+  blocked, the text appears in a proper dialog on the shared overlay, with
+  Escape to close, Tab kept inside, and focus returned to the button that
+  opened it. It used to render unstyled below the plugin and scroll the
+  panel away. A second copy that also falls back now replaces the dialog
+  already on screen instead of stacking a second one underneath it, and a
+  caveat notice is now part of what a screen reader announces about the
+  dialog, not just body text next to it.
+- **A DTCG token that is also a group is omitted and reported, in either
+  order.** A variable named `color/red` beside `color/red/dark` used to come
+  out differently depending on which Figma listed first: either `dark` was
+  written inside the `red` token's own object, or the `red` token replaced
+  the group and `dark` vanished, with nothing in the report either way. The
+  token at the group path is now omitted whichever order the file lists them
+  in, and `report.json` names it under `path_collision` with
+  `details.reason: "group"`; its values stay in `spec-layer.meta.json`. The
+  entry is an error, so `spec-layer pull --strict` fails on a library that
+  has one. A style whose path is also a group of other styles, such as
+  `Body` beside `Body/Regular`, gets the same treatment. Nothing here touches
+  a content hash.
+
+- **A DTCG reference is written only into a file where it resolves.** An
+  alias writes nothing in a mode, and is reported `target_omitted`, when its
+  target has no value in that mode's file or, for a target in another
+  collection, lacks one in any mode of that collection, since a resolver can
+  select any of them. That covers an alias two or more hops from an omitted
+  token, and one whose target has no value in a single mode; both used to
+  write a reference that did not resolve. A style bound to such a token
+  writes its resolved value and reports `binding_dropped`, as it already did
+  for an omitted one. A token that ends up with no value in any mode, for
+  any reason, is now marked `omitted` in `spec-layer.meta.json` with its
+  values and counted as omitted in the census, like every other omitted
+  token. Nothing here touches a content hash.
+
+- **`report.json` is the same whatever order the file lists its tokens.**
+  Tokens that share a DTCG path or a code syntax identifier are listed by
+  id, and entries that tie on path, code and mode are ordered by their
+  details.
+
+- **Copy for AI on a component no longer fails on a Foundation whose default
+  mode is undeclared.** The component copy read the token's value under the
+  collection's `default_mode_id` and crashed when that mode did not exist;
+  the Foundation's own `UNRESOLVED_REFERENCE` finding is carried instead.
+
+- **A style bound to an unscoped number no longer reports drift against
+  itself.** A Figma variable with no unit-pinning scope is a bare number in
+  the Foundation artifact, while a text style's font size or an effect's
+  blur is always a pixel dimension. Comparing the two whole made every such
+  binding a `STYLE_BINDING_DRIFT` warning, in every artifact and every
+  `report.json` a pull wrote. The check now compares the number when one
+  side states no unit, the same rule the Level 2 chain replay already
+  applied, and still reports two different numbers or two different units.
+  `content_hash` is unchanged: diagnostics are outside it.
+
+- **A multi-line description whose first line begins with a space no longer
+  breaks the YAML.** The emitter wrote a literal block scalar without an
+  indentation indicator, so a parser took that line's leading spaces as the
+  block's indentation and the next line ended the block early: one such
+  description made the whole copied brief, the published artifact and the
+  pulled file unparseable, and a description whose every line was indented
+  parsed with its indentation silently stripped. The emitter now writes the
+  indicator (`|2-`) exactly when the first non-empty line begins with a
+  space, which is the rule js-yaml's own writer follows; every other string
+  is emitted byte for byte as before.
+- **Renaming a token no longer floods the version log.** The per-variant
+  binding comparison behind Publish compared token display names, so
+  renaming one token reported `binding changed` on every component and
+  variant bound to it, on top of the one `token renamed` change the
+  foundation diff already reports. Bindings are now compared by the token's
+  source id and rendered by name, so a rename is one major change and a real
+  rebinding reads exactly as before.
+- **An oversized first version is refused before it can wedge a library.**
+  `isSemver` accepted any run of digits, and a 22-digit number came back from
+  the next bump as `1e+21.0.0`, which no later check accepted, so that
+  library could never publish again. Each of the three numbers must now fit a
+  safe integer, and a bump that would leave that range is refused rather than
+  written. A new version with a leading zero, such as `01.0.0`, is refused
+  too, as semver requires. A library already stored at such a version still
+  publishes: its next bump drops the zero, so `01.0.0` plus a patch becomes
+  `1.0.1`. The proxy and the plugin's first-version field already call the
+  same check, so both refuse the same strings.
+- **The Tokens table keeps a hardcoded value on each of two same-named
+  layers.** Unbound values were deduplicated by layer name and property, so
+  when two layers in different branches shared a name (two `Label` texts,
+  say) the second one's hardcoded fill, padding, gap or radius was dropped
+  from the table. Values are now keyed by the layer's path, as token bindings
+  and gaps already are. The canvas drift hash never covered these rows, so no
+  document reports an update.
 - **Publish and the snapshot download refuse a file with nothing in it.** The
   proxy accepts an empty bundle, so a file with no local variables or styles
   and no component docs used to publish anyway: a first publish created a
@@ -533,6 +778,10 @@ path, where the files already are, and says so in one line.
   arrives empty, gets its own message instead of being told to add
   variables. Foundation docs are still not required: publish reads the
   file's variables and styles directly.
+- **File names and device names are capped before they are stored or
+  forwarded.** A library's recorded `fileName` is cut to 256 characters and a
+  license activation's `instanceName` to 64; the published bundle bytes are
+  untouched.
 - **Publish errors show above the Publish button.** They were the last line
   of the scrolling body, so on a library with setup blocks every error sat
   below the fold, out of sight of the button that caused it. They now float
@@ -675,6 +924,186 @@ path, where the files already are, and says so in one line.
   executable oracles in `redos.test.ts`. Output is unchanged for every line
   the upgrade can pass them. Closes CodeQL alerts 65 and 66
   (`js/polynomial-redos`).
+- **A Library refresh that fails part-way shows what it read.** The main
+  thread's Library scan had no failure reply, so one throw (an unloaded page
+  under dynamic page access, a Section whose plugin data could not be read)
+  left the Library spinning with Refresh and Update disabled for the rest of
+  the session. The scan now returns what it read: rows collected before the
+  failure are posted as the Library, marked as partial so the panel says the
+  list may be missing some docs. A failure with no rows now gets a
+  `libraryError` reply instead of no reply at all, and the panel shows it as
+  a failed read with Refresh available. The registry self-heal runs only
+  after a complete scan, so a failed one can no longer prune docs it never
+  reached. A registry read that is rejected rather than empty is no longer pruned
+  either, for the same reason. A source read that is rejected rather than
+  empty (usually an unloaded page) no longer marks the row **Source
+  missing**, matching what a failed Foundation read already did. Detach and
+  Delete reply even when the registry write fails.
+- **Library, Foundation docs and the change list read the file without
+  per-variable publish status.** Every foundation read asked Figma for each
+  variable's, collection's and style's publish status, one call each, and
+  the Library scan, Create docs, Update docs and the change-list read all
+  did it although none of them shows or exports it (only Copy for AI and
+  Publish do, and they still read it). On a large file that is a lot of
+  calls saved on every read. The change list for a drifted Foundation row now
+  compares against the read the Library badge came from instead of reading
+  the file again, so the list and the badge can no longer describe two
+  different moments.
+- **Rebuilding a doc on another page no longer empties the component
+  screen.** Placing a rebuilt Section switches pages, and Figma reports the
+  destination page's empty selection as a selection change; the plugin
+  posted it and the panel showed "select a component" right after
+  "Updated". Selection changes during a build are no longer posted. The
+  same gate now covers both frame families, so a component build and a
+  Foundation build can no longer interleave over the shared theme state.
+- **Selecting a different component while a build runs is no longer lost.**
+  A real selection made mid-build was swallowed along with the build's own
+  page-hop noise, so the component screen and Copy for AI kept acting on
+  whatever was selected before the build started. The plugin now replays
+  that selection once the build finishes, unless it turns out to be nothing
+  new or just the build's own generated doc coming into view.
+- **Updating a Foundation doc from Library no longer strands you on its
+  page, or shows a stray selection from it.** Update rebuilds the doc on
+  whatever page it lives on and never returned to yours, so a leftover
+  selection there could replay as if you had chosen it, and a component you
+  actually picked on your own page could be missed. The canvas now returns
+  to your page before the plugin reports the doc as updated, so Update all
+  moves on to its next doc only once you are back. Clearing your selection
+  during any of these builds is also no longer mistaken for the build's own
+  generated content and is replayed correctly.
+- **A Foundation build that fails part-way cleans up after itself.** The
+  frame builder appended its card to the page before anything could go
+  wrong and removed nothing on a throw, and the two build handlers could
+  throw between placing a new Section and registering it. Either left a
+  visible, unlinked duplicate beside the doc it was replacing, invisible to
+  Library. The builder now removes its card and Section on failure, as the
+  component builder already did, and the handlers remove a Section they had
+  not yet handed to the registry. Once the old doc is gone the new one is
+  kept, whatever fails after that.
+- **A setting that cannot be saved on this device says so.** Saving the
+  license key, the AI writing switch, the export format, the brand theme or
+  a new library's pull key could fail silently when Figma's per-device
+  storage refused the write; the plugin now shows a toast and keeps the
+  value for the session. A library's id is recorded in the file even when
+  its pull key could not be stored, so the next publish updates that
+  library instead of creating another.
+- **Foundation docs wrap their long text.** A code-syntax chip, a footer
+  note listing omitted modes, and a block label carrying a long mode name
+  each ran past the card edge and were clipped. Chips are capped at their
+  column, notes take the same measure as the contrast notes, and labels
+  wrap at it. The text itself is unchanged, so no existing doc reports an
+  update for this.
+- **A queued rebuild stays a rebuild.** Opening the Library while "Rebuild
+  docs" or "Update all docs" was running re-read the file and cleared the
+  per-row state the run was started from, so the remaining older-version
+  docs were updated without the AI top-up the banner promised. Each queued
+  row now carries its intent from the start, and navigating to the Library
+  during a run no longer re-reads the file.
+- **"Up to date" waits for the checks.** The Library footer said "Up to
+  date" while source checks were still running and when a doc's source was
+  missing. It now says "Checking…" until every check lands and "Nothing to
+  update" when a source is missing.
+- **Foundations "Create docs" spends no AI use with AI writing off.** The
+  build asked the model for group descriptions whenever an identity existed,
+  contradicting the switch's own help text. It now checks the switch first.
+- **Publish shows a neutral status until it knows the file, and waits to
+  offer an action.** Opening Publish before the file's stored library id had
+  been read showed "Not published" and a first-version field for a file that
+  was published, with the Publish button already enabled and reading "Publish
+  library" directly under both: a first-publish claim about a file that might
+  already be one. The pill, the version block, and now the button all read
+  "Checking…" (the button disabled) until the identity arrives, and the
+  screen asks again each time Publish is opened while it is still unknown, so
+  a lost or late reply gets another chance instead of leaving the pane
+  waiting forever. A snapshot download started before the identity arrived,
+  or one that failed, keeps the file's library when the identity lands
+  rather than dropping it, which read as "Not published" and offered a
+  first publish for a file that was already published.
+- **Reopening Publish reuses this session's version check.** Every open
+  re-read every component and asked the server what changed. The screen now
+  keeps the answer it already has, and refreshes it on its own after a doc is
+  created, updated, or rebuilt (including a component or Foundation build
+  that fails partway, since some docs may already have landed), detached, or
+  removed, after a Library update batch, and after the file's publish
+  identity changes, so the version and change count shown stay honest about
+  what this session has actually seen. A change that lands while a check or
+  a publish is already in progress is caught too: the stale answer is
+  discarded rather than shown as current, a publish that goes through anyway
+  keeps its real result but drops the version guess that no longer applies,
+  and a publish refused as too small a change keeps the refusal but not the
+  next version it named. "Check again", beside "Version history", stays on
+  screen and reachable by keyboard even while it is doing nothing, and is
+  for a variable, style, or layer changed straight on the canvas, which none
+  of the above can see. The note under the version
+  now says whether it reflects a check ("Checked earlier in this session")
+  or the publish that was just made ("This reflects what you just
+  published"), instead of one claim that did not fit either.
+- **The snapshot download no longer races its own cleanup.** The blob URL
+  was revoked in the same tick as the click, which some browsers treat as
+  a cancelled save. It is now revoked a minute later.
+- **Publish recovers when a doc cannot be built into the library.** A doc
+  the library could not be built from left Publish stuck on "Checking…" or
+  "Publishing…", with every Publish action ignored until the plugin was
+  reopened. A version check that hits one now says it couldn't check what
+  changed, and a publish says nothing was published, with the error's own
+  text after it in parentheses; both can be tried again straight away.
+- **Source checks no longer repaint the whole Library.** In the All view,
+  each check that lands redraws only its row, the counts, and the footer,
+  and focus stays where it was, including on a menu item, the menu's own
+  close button, or a footer button such as Publish. The Updates and In sync
+  views still redraw in full, since a check can move a row in or out of
+  them. A check landing while Publish was open no longer repaints Publish.
+  "Rebuild docs" now re-enables the moment the last check lands rather than staying
+  disabled until the next unrelated repaint, and an open row menu's "Update
+  this doc" item and on-screen position stay correct too, even when the row
+  itself did not change status.
+- **Hovering quick-search results no longer rebuilds the list** on every
+  pointer move; only the highlighted row changes.
+- **Typing a first version keeps the caret.** The field's validity is now
+  updated in place instead of repainting the Publish screen per keystroke.
+- **The font list says when it is open, and a late font list shows its
+  warning.** Typing into a font field opened the list without marking the
+  field expanded, and a font list that arrived after Settings had drawn
+  computed the fallback warning without showing it.
+- **Settings, License, and Publish fields respond while a build runs**, and
+  the Library rail no longer re-runs source checks when the Library is
+  already open. An empty state's shortcut now leaves focus on the rail item
+  it opened instead of dropping it.
+
+- **AI-written group descriptions in DTCG are marked as such.** Figma has no
+  group descriptions, so every folder description a Foundation doc carries
+  is written by AI, yet each one used to land in every DTCG token file as the
+  group's `$description`, the field a consumer reads as the author's own
+  text. They now sit under `$extensions["com.spec-layer"].generated_description`, and no
+  token group carries a `$description` at all. The CLI skill guide and the
+  plugin's downloadable skill say so instead of describing the old field.
+  Token `$description` values, which come from Figma, are unchanged. A
+  repository's pulled `tokens/` change on the next re-projection.
+
+- **`dtcg.units` overrides reach a collection whose name contains a slash,
+  and say when they did nothing.** The key `"Brand/Core/spacing/*"` was cut
+  at its first slash and compared to a collection called `Brand`, so a
+  collection named `Brand/Core` could never be overridden. The key is now
+  read as the collection's whole name followed by `/` and a glob. An
+  override that names no collection, or whose glob matches no token, is
+  reported in `report.json` as `unit_override_unmatched` (info) instead of
+  being ignored. The glob is compiled once per pull rather than once per
+  token per mode. `config_hash` is unchanged: it digests the overrides as
+  written.
+
+- **A collection named `Typography styles` or `Effect styles` keeps its own
+  resolver set.** It used to share the set name with the style file, and
+  the file written last won. The collection is now labelled by its name and
+  id, like two collections that share a name, and the report says why.
+
+- **A Markdown anatomy part named like a heading or list marker renders as
+  text.** A part named `# Icon` or `- Label` began a list item whose content
+  CommonMark reads as a heading or a nested list. Part names now get the
+  same leading-marker escape as the component description.
+
+- **A drift message never prints `[object Object]`.** `valueText` now reads
+  through the typed envelope a value carries when its type differs from its
+  token's, so a dimension or colour inside it renders as `16px` or its hex.
 
 ### Added
 
@@ -998,6 +1427,12 @@ path, where the files already are, and says so in one line.
   it. The CLI-side half of that pairing is the `skill --install` entry above:
   it is what actually notices the collision and reports it.
 
+### Removed
+
+- **The unused v4 brief to v5 normalizer.** Nothing in the plugin or the CLI
+  called it, and the Foundation Context v5 artifact is built from the Figma
+  read alone.
+
 ## [5.1.0] - 2026-09-10
 
 ### Fixed
@@ -1078,16 +1513,6 @@ path, where the files already are, and says so in one line.
   is on, the Measurements diagram measures its size rails, padding bands, and
   spacing from the revealed instance rather than the source component, so the
   overlay matches what is drawn.
-- **A self-describing DTCG output** (CLI 0.8.2). The document extension now
-  carries a `census` of what each emitted file holds and a `config_hash` of the
-  projection options that produced it, and `resolver.json` carries that
-  extension instead of only the clipboard document doing so. The sidecar
-  records the `transform` behind each token's value in each mode, and the value
-  each alias resolves to. Every field is descriptive: no canvas hash and no
-  artifact identity moved, and `EXTRACTOR_VERSION` is unchanged, so no document
-  needs regenerating. A repository pulling with an earlier CLI gets the same
-  files without these fields. The census reports what the projection produced;
-  `report.json` keeps its own job of naming what it could not express.
 
 ### Removed
 

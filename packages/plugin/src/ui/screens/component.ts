@@ -21,6 +21,7 @@ import type { ComponentFacts, VariantChip } from '../viewModel/componentFacts';
 import { icon, type IconName } from '../shell/icons';
 import type { ShellRefs } from '../shell/shell';
 import { loadingRowsMarkup, progressMarkup } from './progress';
+import { esc } from '../escape';
 
 /** The user's picks. Held here, handed to createDocFrame at build time. */
 export interface ComponentSelection {
@@ -103,14 +104,6 @@ const CHECK_GLYPH =
   '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" ' +
   'stroke-width="3" stroke-linecap="round" stroke-linejoin="round">' +
   '<path d="M20 6L9 17l-5-5"/></svg>';
-
-function esc(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
 
 /**
  * A small drawing of the act the screen is waiting for: a cursor selects a

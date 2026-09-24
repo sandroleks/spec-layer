@@ -204,6 +204,18 @@ function asFlow(value: YamlValue): string | null {
 }
 
 /**
+ * A literal block scalar cannot auto-detect its indentation when the first
+ * non-empty content line begins with a space: YAML takes that line's leading
+ * spaces as the indentation, so a later line with fewer spaces ends the
+ * scalar early (js-yaml: "bad indentation of a mapping entry"), and when
+ * every line begins with spaces the parse succeeds and drops them. Blank
+ * lines before the first non-empty one are emitted empty by
+ * blockScalarLines, so `\n*` is exactly what can precede it. The same test
+ * js-yaml's own dumper applies before it writes an indentation indicator.
+ */
+const LEADING_SPACE = /^\n* /;
+
+/**
  * A multi-line string as a YAML block scalar. Only called for strings that
  * contain `\n` and no `\r` -- isInline() routes anything containing `\r` to
  * the double-quoted inline form instead, since a literal block scalar has no
@@ -222,15 +234,26 @@ function asFlow(value: YamlValue): string | null {
  * because clip strips a wholly-blank scalar's only line along with it).
  * Keep chomping reproduces every trailing newline exactly in both cases, so
  * it is used uniformly whenever the count is nonzero -- clip is never used.
+ *
+ * Indentation indicator (YAML 1.2, 8.1.1.1) only when LEADING_SPACE says
+ * auto-detection would fail, so every string that parsed before is emitted
+ * byte for byte as it was. It is the content indentation relative to the
+ * parent node's: a map value's parent is its key's column and a list item's
+ * is its dash, both `indent - 2`; the top-level node's parent indentation is
+ * -1 (9.1.4, `s-l+block-node(-1, block-in)`), so a top-level scalar at column
+ * 2 carries `3`. Verified against js-yaml for the map, list and top-level
+ * shapes and for keep chomping.
  */
-function blockScalarLines(s: string, indent: number): string[] {
+function blockScalarLines(s: string, indent: number, parentIndent: number): string[] {
   const pad = ' '.repeat(indent);
   let trailingNewlines = 0;
   while (trailingNewlines < s.length && s[s.length - 1 - trailingNewlines] === '\n') {
     trailingNewlines++;
   }
   const core = trailingNewlines === 0 ? s : s.slice(0, s.length - trailingNewlines);
-  const indicator = trailingNewlines === 0 ? '|-' : '|+';
+  const chomping = trailingNewlines === 0 ? '-' : '+';
+  const indentation = LEADING_SPACE.test(core) ? String(indent - parentIndent) : '';
+  const indicator = `|${indentation}${chomping}`;
   const extraBlankLines = trailingNewlines >= 1 ? trailingNewlines - 1 : 0;
   const contentLines = core.split('\n').concat(Array(extraBlankLines).fill(''));
   return [indicator, ...contentLines.map((l) => (l === '' ? '' : pad + l))];
@@ -248,7 +271,7 @@ function emitMapEntry(key: string, value: YamlValue, indent: number): string[] {
     return [`${pad}${k}: ${flow}`];
   }
   if (typeof value === 'string') {
-    const [indicator, ...lines] = blockScalarLines(value, indent + 2);
+    const [indicator, ...lines] = blockScalarLines(value, indent + 2, indent);
     return [`${pad}${k}: ${indicator}`, ...lines];
   }
   return [`${pad}${k}:`, ...blockLines(value, indent + 2)];
@@ -265,7 +288,7 @@ function emitListItem(value: YamlValue, indent: number): string[] {
     return [`${pad}- ${flow}`];
   }
   if (typeof value === 'string') {
-    const [indicator, ...lines] = blockScalarLines(value, indent + 2);
+    const [indicator, ...lines] = blockScalarLines(value, indent + 2, indent);
     return [`${pad}- ${indicator}`, ...lines];
   }
   // Non-empty nested array or map: its lines are already indented by indent+2,
@@ -294,7 +317,8 @@ function blockLines(value: YamlValue, indent: number): string[] {
 export function toYaml(value: YamlValue): string {
   if (isInline(value)) return inlineText(value) + '\n';
   if (typeof value === 'string') {
-    const [indicator, ...lines] = blockScalarLines(value, 2);
+    // The bare document's parent indentation is -1 (YAML 1.2, 9.1.4).
+    const [indicator, ...lines] = blockScalarLines(value, 2, -1);
     return [indicator, ...lines].join('\n') + '\n';
   }
   return blockLines(value, 0).join('\n') + '\n';

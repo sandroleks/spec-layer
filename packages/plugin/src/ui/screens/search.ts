@@ -15,14 +15,7 @@ import type {
   SearchDocumentResult,
   SearchModel,
 } from '../viewModel/search';
-
-function esc(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
+import { esc } from '../escape';
 
 function resultId(index: number): string {
   return `sl-global-search-result-${index}`;
@@ -89,12 +82,72 @@ function emptyMarkup(model: SearchModel): string {
 }
 
 /**
+ * The Library's last (or only) read found nothing at all: it failed outright,
+ * or stopped partway before collecting a single doc. Either way, "No
+ * component docs yet" and "No matches for …" would both claim a fact this
+ * file's read never established. Distinct from `emptyMarkup`'s two branches,
+ * and from the loading state above it: nothing is in flight here, so this
+ * points at the Library rather than promising the palette itself will
+ * resolve it. Only for a read that produced nothing; see
+ * `partialNoMatchesMarkup` for a read that did produce docs but cannot vouch
+ * for the rest of the file.
+ */
+function unreadableMarkup(): string {
+  return (
+    '<div class="sl-global-search-empty">' +
+    '<strong>Couldn’t read the docs in this file</strong>' +
+    '<small>Open the Library and refresh to try again.</small>' +
+    '</div>'
+  );
+}
+
+/**
+ * A query matched none of the docs a failed or partial read did collect.
+ * Plain "No matches for …" would claim the whole file was searched, which
+ * this read cannot back: the doc that matches may be one the read never
+ * reached. Only reached with `results.length === 0` and at least one doc on
+ * screen (`libraryUnreadable` above takes the zero-doc case first), so this
+ * never doubles up with it.
+ */
+function partialNoMatchesMarkup(): string {
+  return (
+    '<div class="sl-global-search-empty">' +
+    '<strong>No matches in the docs that could be read</strong>' +
+    '<small>The library read failed or stopped early, so this is not the ' +
+    'whole file. Refresh the Library to check the rest.</small>' +
+    '<button type="button" data-search-clear>Clear search</button>' +
+    '</div>'
+  );
+}
+
+/**
+ * The recent list is empty, but the read behind it failed or stopped early.
+ * "No component docs yet" would claim the whole file was read; a component
+ * doc may be one the read never reached. Only reached with at least one doc
+ * on screen (`libraryUnreadable` takes the zero-doc case first). No Clear
+ * button: nothing has been typed.
+ */
+function partialNoRecentMarkup(): string {
+  return (
+    '<div class="sl-global-search-empty">' +
+    '<strong>No component docs in what could be read</strong>' +
+    '<small>The library read failed or stopped early, so this is not the ' +
+    'whole file. Refresh the Library to check the rest.</small>' +
+    '</div>'
+  );
+}
+
+/**
  * Just the results list, which is the only part that changes as the user
  * types. Exported for patchGlobalSearch.
  */
 export function globalSearchResultsMarkup(
   model: SearchModel,
-  options: { libraryLoading?: boolean } = {},
+  options: {
+    libraryLoading?: boolean;
+    libraryUnreadable?: boolean;
+    libraryReadUnreliable?: boolean;
+  } = {},
 ): string {
   if (model.results.length) {
     return (
@@ -114,6 +167,22 @@ export function globalSearchResultsMarkup(
       '</div></section>'
     );
   }
+  // A refresh already in flight (checked above) gets the benefit of the
+  // doubt; a read that failed or came up empty with nothing further running
+  // does not. `libraryUnreadable` is only set when the read produced no docs
+  // at all (the host guards it on `libraryEntries.length === 0`), so a file
+  // with docs on screen never hits this branch, however unreliable the read
+  // behind them is.
+  if (options.libraryUnreadable === true) {
+    return unreadableMarkup();
+  }
+  // Docs exist, so the file is not "unreadable", but a query with no matches
+  // among them still cannot be reported as a complete negative when the read
+  // that produced those docs failed or stopped early: the doc that matches
+  // may be the one it never reached. The same goes for an empty recent list.
+  if (options.libraryReadUnreliable === true) {
+    return model.recent ? partialNoRecentMarkup() : partialNoMatchesMarkup();
+  }
   return emptyMarkup(model);
 }
 
@@ -123,7 +192,11 @@ export function globalSearchResultsMarkup(
  */
 export function globalSearchMarkup(
   model: SearchModel,
-  options: { libraryLoading?: boolean } = {},
+  options: {
+    libraryLoading?: boolean;
+    libraryUnreadable?: boolean;
+    libraryReadUnreliable?: boolean;
+  } = {},
 ): string {
   const activeDescendant = model.results.length
     ? ` aria-activedescendant="${resultId(model.activeIndex)}"`
@@ -171,7 +244,11 @@ export function globalSearchMarkup(
 export function patchGlobalSearch(
   root: HTMLElement,
   model: SearchModel,
-  options: { libraryLoading?: boolean } = {},
+  options: {
+    libraryLoading?: boolean;
+    libraryUnreadable?: boolean;
+    libraryReadUnreliable?: boolean;
+  } = {},
 ): boolean {
   const dialog = root.querySelector<HTMLElement>('[data-global-search-dialog]');
   if (!dialog) return false;
@@ -191,4 +268,25 @@ export function patchGlobalSearch(
     }
   }
   return true;
+}
+
+/**
+ * Moves the active row without rebuilding the list. Hover and focus report an
+ * index on every pointer move, so re-rendering the results for each one did
+ * the whole list's work to change two attributes.
+ */
+export function setSearchActive(root: HTMLElement, activeIndex: number): void {
+  const dialog = root.querySelector<HTMLElement>('[data-global-search-dialog]');
+  if (!dialog) return;
+  let found = false;
+  for (const option of dialog.querySelectorAll<HTMLElement>('[data-search-index]')) {
+    const active = Number(option.dataset.searchIndex) === activeIndex;
+    option.classList.toggle('is-active', active);
+    option.setAttribute('aria-selected', String(active));
+    if (active) found = true;
+  }
+  const input = dialog.querySelector<HTMLInputElement>('[data-global-search-input]');
+  if (!input) return;
+  if (found) input.setAttribute('aria-activedescendant', resultId(activeIndex));
+  else input.removeAttribute('aria-activedescendant');
 }

@@ -65,13 +65,16 @@ function escapeHeading(text: string): string {
 }
 
 /** @internal `escapeInline` plus the constructs that open a BLOCK when they
- * lead a line. Used for the one slot where designer-authored free text is
- * pushed as its own top-level block: the component description, which sits
- * directly under the H1. `escapeInline` alone is not enough there, because it
- * neutralises inline markup only: a description beginning with a triple
- * backtick would open a fenced code block that swallows every table and
- * section below it, one beginning with `##` would forge a section heading the
- * renderer never produced, and one beginning with `#` would emit a second H1.
+ * lead a line. Used for the two slots where designer-authored free text is
+ * pushed to the start of a line: the component description, which sits
+ * directly under the H1, and an anatomy part name, which begins a list
+ * item's content and would open a heading, a nested list or a fence there
+ * exactly as it would at column zero. `escapeInline` alone is not enough,
+ * because it neutralises inline markup only: a description beginning with a
+ * triple backtick would open a fenced code block that swallows every table
+ * and section below it, one beginning with `##` would forge a section
+ * heading the renderer never produced, and one beginning with `#` would emit
+ * a second H1.
  *
  * `escapeInline` has already collapsed every newline to a space and trimmed
  * the result, so only the START of that single line can open anything and one
@@ -244,7 +247,7 @@ function anatomyBullets(nodes: unknown[], depth: number): string[] {
   const lines: string[] = [];
   for (const raw of nodes) {
     const node = asRecord(raw);
-    const part = escapeInline(str(node.part) ?? '');
+    const part = escapeBlock(str(node.part) ?? '');
     const path = str(node.path);
     const type = str(node.type);
     const parts: string[] = [];

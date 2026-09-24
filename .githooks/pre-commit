@@ -8,6 +8,9 @@ PATTERNS=(
   'AKIA[A-Z0-9]{16}'                # AWS access key
   'ghp_[A-Za-z0-9]{36}'            # GitHub personal access token (classic)
   'github_pat_[A-Za-z0-9_]{82}'    # GitHub fine-grained PAT
+  'sl_[0-9a-f]{48}'                # Spec Layer pull key (PULL_KEY_RE in packages/proxy/src/libraries.ts)
+  'npm_[A-Za-z0-9]{36}'            # npm granular access token
+  'CLOUDFLARE_API_TOKEN=[A-Za-z0-9_-]{20,}'  # Cloudflare API token pasted as an env assignment
 )
 
 STAGED=$(git diff --cached --name-only)

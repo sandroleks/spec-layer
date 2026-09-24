@@ -175,7 +175,10 @@ describe('resolveOptions precedence', () => {
     const tmpDir = mkdtempSync(join(tmpdir(), 'sl-'));
     try {
       // Only set outDir in config, not libraryId, so manifestLibraryId gets called
-      writeConfig(tmpDir, { outDir: '.custom-output' });
+      // A config with no libraryId is the case under test, and writeConfig
+      // requires one, so write the file the way a hand-edited speclayer.json
+      // would look.
+      writeFileSync(join(tmpDir, 'speclayer.json'), JSON.stringify({ outDir: '.custom-output' }));
       let loaderCalledWith: string | null = null;
       const manifestLibraryId = (outDir: string) => {
         loaderCalledWith = outDir;

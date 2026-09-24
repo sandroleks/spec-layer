@@ -27,9 +27,10 @@
 import { compareCodeUnits, diagnostic } from './diagnostics';
 import type { Diagnostic } from './diagnostics';
 import {
-  SUPPORTED_DURATION_UNITS, SUPPORTED_TOKEN_TYPES, SUPPORTED_UNITS, SUPPORTED_VALUE_KINDS,
+  SUPPORTED_DURATION_UNITS, SUPPORTED_MISSING_REASONS, SUPPORTED_TOKEN_TYPES, SUPPORTED_UNITS,
+  SUPPORTED_UNRESOLVED_REASONS, SUPPORTED_VALUE_KINDS,
 } from './value';
-import type { CanonicalValue, TokenType, TypedValue, Unit } from './value';
+import type { CanonicalValue, MissingReason, TokenType, TypedValue, Unit, UnresolvedReason } from './value';
 import type { EffectStyleV5, TokenV5 } from './entities';
 import { canonicalJson } from './canonical';
 import type { FoundationArtifactV5 } from './canonical';
@@ -48,6 +49,14 @@ const isStringArray = (v: unknown): v is string[] =>
   Array.isArray(v) && v.every((item) => typeof item === 'string');
 
 const HEX_RE = /^#[0-9a-f]{6}$/;
+
+/** `JSON.stringify(undefined)` is `undefined`, not a string, so splicing it
+ *  into a template literal for an absent reason prints the bare word
+ *  "undefined" with no quotes -- indistinguishable from a reason that is
+ *  literally the string `"undefined"`. Named here instead. */
+function describeReason(value: unknown): string {
+  return value === undefined ? 'no reason at all' : JSON.stringify(value);
+}
 
 function shape(
   entityId: string, message: string, modeId?: string,
@@ -208,8 +217,9 @@ function validateAliasResolution(
   if (status === 'resolved') {
     validateTypedValueEnvelope(resolved.value, entityId, out, modeId, expectedType);
   } else if (status === 'unresolved') {
-    if (!isNonEmptyString(resolved.reason)) {
-      out.push(shape(entityId, 'An unresolved alias must carry a non-empty reason.', modeId));
+    if (!isNonEmptyString(resolved.reason)
+      || !SUPPORTED_UNRESOLVED_REASONS.includes(resolved.reason as UnresolvedReason)) {
+      out.push(shape(entityId, `An unresolved alias must carry a reason from the v5 vocabulary, not ${describeReason(resolved.reason)}.`, modeId));
     }
     if (resolved.value !== null) {
       out.push(shape(entityId, 'An unresolved alias must carry a null value.', modeId));
@@ -253,8 +263,9 @@ function validateValue(
       validateAliasResolution(value.resolved, entityId, out, modeId, expectedType);
     }
   } else if (kind === 'missing') {
-    if (!isNonEmptyString(value.reason)) {
-      out.push(shape(entityId, 'A missing value must carry a non-empty reason.', modeId));
+    if (!isNonEmptyString(value.reason)
+      || !SUPPORTED_MISSING_REASONS.includes(value.reason as MissingReason)) {
+      out.push(shape(entityId, `A missing value must carry a reason from the v5 vocabulary, not ${describeReason(value.reason)}.`, modeId));
     }
   }
 }
@@ -729,29 +740,45 @@ function scalarOf(value: TypedValue): number | string | undefined {
   return undefined;
 }
 
+/**
+ * Whether two typed values state the same thing, allowing the two pairs of
+ * v5 types that are one raw Figma type. A FLOAT reads as `number` when its
+ * scopes state no unit and as `dimension` when they do, and a STRING reads
+ * as `font_family` under the FONT_FAMILY scope, so `number 16` and
+ * `dimension 16px` are one Figma value seen through two scopes, not a
+ * disagreement. Two dimensions with different units ARE a disagreement, and
+ * stay one: the same-type branch compares them whole.
+ *
+ * Shared by the Level 2 chain replay below and by the style-binding drift
+ * check in `fromFoundation.ts`, so the two can never judge one pair
+ * differently.
+ */
+export function typedValuesAgree(a: TypedValue, b: TypedValue): boolean {
+  if (a.type === b.type) return canonicalJson(a) === canonicalJson(b);
+  if ((a.type === 'dimension' && b.type === 'number')
+    || (a.type === 'number' && b.type === 'dimension')) {
+    return scalarOf(a) === scalarOf(b);
+  }
+  if ((a.type === 'font_family' && b.type === 'string')
+    || (a.type === 'string' && b.type === 'font_family')) {
+    return scalarOf(a) === scalarOf(b);
+  }
+  return false;
+}
+
 function snapshotMatchesTerminal(
   snapshot: TypedValue,
   terminal: TypedValue,
   owner: TokenV5,
 ): boolean {
-  if (snapshot.type === terminal.type) return canonicalJson(snapshot) === canonicalJson(terminal);
-
-  if ((snapshot.type === 'dimension' && terminal.type === 'number')
-    || (snapshot.type === 'number' && terminal.type === 'dimension')) {
-    const scalar = scalarOf(terminal);
-    if (typeof scalar !== 'number') return false;
-    if (snapshot.type === 'dimension') {
-      const specialized = numericValue(scalar, owner.scopes);
-      return specialized !== null && canonicalJson(snapshot) === canonicalJson(specialized);
-    }
-    return snapshot.value === scalar;
+  // A dimension snapshot over a bare-number terminal must be the OWNER's own
+  // specialization of that number: the unit came from the owner's scopes, so
+  // those scopes have to reproduce exactly this dimension.
+  if (snapshot.type === 'dimension' && terminal.type === 'number') {
+    const specialized = numericValue(terminal.value, owner.scopes);
+    return specialized !== null && canonicalJson(snapshot) === canonicalJson(specialized);
   }
-
-  if ((snapshot.type === 'font_family' && terminal.type === 'string')
-    || (snapshot.type === 'string' && terminal.type === 'font_family')) {
-    return scalarOf(snapshot) === scalarOf(terminal);
-  }
-  return false;
+  return typedValuesAgree(snapshot, terminal);
 }
 
 function provenanceFinding(

@@ -773,4 +773,18 @@ describe('exported scope helpers', () => {
     expect(describeScope({}, 3, 3, 1, new Map())).toBeUndefined();
     expect(comboKey({ b: '1', a: '2' })).toBe(comboKey({ a: '2', b: '1' }));
   });
+
+  it('covers a non-rectangular subset with the same two rules, in the same order (pin for the key cache)', () => {
+    const universe = [
+      { size: 'Small', tone: 'A' }, { size: 'Small', tone: 'B' },
+      { size: 'Large', tone: 'A' }, { size: 'Large', tone: 'B' },
+    ];
+    const axes = axisModel([{ prop: 'size', values: ['Small', 'Large'] }, { prop: 'tone', values: ['A', 'B'] }], universe);
+    // Greedy from Small/A: size frees (both tone A variants are in), tone
+    // cannot; then from Small/B: tone frees. Overlap on Small/A is by design.
+    expect(coverConditions([universe[0], universe[1], universe[2]], universe, axes)).toEqual([
+      { conditions: { tone: ['A'] }, count: 2 },
+      { conditions: { size: ['Small'] }, count: 2 },
+    ]);
+  });
 });

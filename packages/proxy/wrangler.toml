@@ -2,7 +2,7 @@ name = "spec-layer-proxy"
 main = "src/index.ts"
 compatibility_date = "2026-07-01"
 account_id = "f3ea0f8b485b5b11e917f415c224b1cb"
-workers_dev = true
+workers_dev = false
 
 routes = [{ pattern = "api.spec-layer.com", custom_domain = true }]
 
@@ -17,3 +17,10 @@ class_name = "QuotaDO"
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["QuotaDO"]
+
+# Every invocation's logs reach the Workers dashboard. The log volume is a
+# few JSON lines per request, so sampling would only hide the rare
+# `upstream_error` or `fair_use_flag` this is for.
+[observability]
+enabled = true
+head_sampling_rate = 1

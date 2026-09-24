@@ -52,7 +52,7 @@ written, and are not an invitation to add more.
 
 ```bash
 npm run check                        # full local gate
-npm test                             # vitest run (139 files, 2761 tests, 9 todo, ~11s)
+npm test                             # vitest run
 npm run typecheck
 npm run lint
 npm run build:plugin                 # runs the brand build first, so a contrast failure stops it
@@ -129,14 +129,14 @@ shared core, and the piece a future `spec-layer diff` reuses.
 
 **`EXTRACTOR_VERSION` is a rebuild request.** Bump it only when extraction
 output can change for unchanged source. A spurious bump asks every user to
-regenerate every document. It is currently `'3'`, and the next sanctioned
-bump belongs to the Component Frame Quality plan below.
+regenerate every document. It is `'3'` on `main` since #66 (97bfed1,
+2026-09-18); `v5.1.0` shipped `'2'`, so the next plugin cut is the one that
+asks existing documents to rebuild. Any further extraction change needs `'4'`.
 
 **Do not use `localeCompare` under `src/v5`.** Use `compareCodeUnits` from
 `v5/diagnostics.ts`. Locale ordering makes hashes machine-dependent.
-`packages/extractor/src/hash.ts` still sorts with `localeCompare`; that is a
-known defect, and fixing it moves every canvas hash, so it is deliberately
-held for the next `EXTRACTOR_VERSION` bump rather than fixed in passing.
+`packages/extractor/src/hash.ts` has sorted by code unit since #66, the same
+commit that moved `EXTRACTOR_VERSION` to `'3'`.
 
 **The published schema URL must serve the committed bytes.**
 `packages/extractor/src/v5/schema/*.json` is the only copy of the schemas now,
@@ -169,10 +169,12 @@ a failing pair stops the build. Customer-generated documentation keeps its own
 themes and must never pick up the product palette.
 
 **NUL bytes.** Some separator idioms emit raw `0x00` that lint, tests, and
-`git diff` all hide. `npm run check:nul` covers git-tracked text under
-`packages/` and `scripts/`, plus the root documents. This has bitten the repo
-three times, every time in a plan document; those now live privately and are
-scanned there.
+`git diff` all hide. `npm run check:nul` reads every git-tracked file with a
+text extension, plus the extensionless files named in `EXTENSIONLESS_TEXT` in
+`scripts/check-nul-bytes.mjs` (the hook, `CODEOWNERS`, `.gitignore`,
+`LICENSE`), so `.github/` and the root configs are covered. This has bitten
+the repo three times, every time in a plan document; those now live privately
+and are scanned there.
 
 **No em dashes in plugin UI copy.** Ever. Sentence case, second person, no hype
 words, honest about limits, and never a claim the extractor cannot back. The
@@ -183,19 +185,20 @@ private Figma URLs, no proprietary component exports, no credentials. A real
 design-system artifact needs explicit approval covering ids, names,
 descriptions, and diagnostics before it can be committed.
 
-## Where things stand (2026-09-16)
+## Where things stand (2026-09-23)
 
-`main` is clean, green, and fully pushed: 139 test files, 2761 tests passing,
-9 todo. `npm audit` reports no vulnerabilities, and `npm run check:site-live`
-passes, so `spec-layer.com/schemas/**` serves exactly the committed bytes.
+`npm run check` passes at `5985255` and `npm audit` reports no
+vulnerabilities. Suite size lives in the test output, not here.
 
-The CLI is shipped and the plugin is not. `spec-layer@0.9.0` is the published
-`latest` on npm. `packages/plugin/manifest.json` reads 5.1.0 and `CHANGELOG.md`
-dates its 5.1.0 section 2026-09-10, but `v5.0.0` is still the only release tag
-in the repository, so 5.1.0 was merged and never cut. Whether the Figma
-Community listing serves 5.1.0 has not been verified. Five further pull
-requests (#59 to #63) landed after that section was written and sit under
-`[Unreleased]`.
+Both surfaces are tagged. `v5.1.0` is an annotated tag (0b84a9c, 2026-09-16)
+on 28a55c9 (`chore(release): cut 5.1.0 (#57)`, 2026-09-10), and the GitHub
+Release "Spec Layer v5.1.0" was published 2026-09-16. `spec-layer@0.10.0` is
+`latest` on npm (published 2026-09-23). The plugin version source is
+`packages/plugin/package.json` (5.1.0); `manifest.json` carries no version
+field. Whether the Figma Community listing serves 5.1.0 cannot be verified
+from this repository. Everything merged after the tag, #59 through #80,
+sits under `[Unreleased]` in `CHANGELOG.md`, including `EXTRACTOR_VERSION`
+`'3'`.
 
 **`CHANGELOG.md` is the record of what shipped and why.** This section restated
 it once and went stale for its trouble. Keep it to what is not yet in the
@@ -205,15 +208,21 @@ Open, in rough priority order:
 
 1. **The manual Figma matrix in `packages/plugin/TESTING.md` has no recorded
    run.** 5.0.0 shipped without one, so never cite a passing matrix as
-   evidence; unit tests cannot reach what it covers. Three questions the
-   2026-09-05 review could not answer are still open: whether `window.confirm`
-   shows a dialog in the plugin iframe, how often the non-component toast
-   fires, and the real size and paste behaviour of the DTCG clipboard.
-2. **Component Frame Quality Round 1**, planned and not started; the plan and
-   design are in the private repository. It replaces the Configuration section
-   with a Properties table, trims the Anatomy legend, fixes the radius gap
-   check and the anatomy wrapper descent, and is the change that bumps
-   `EXTRACTOR_VERSION` to `'3'` and makes `hash.ts` locale-safe.
+   evidence; unit tests cannot reach what it covers. Two questions the
+   2026-09-05 review could not answer are still open: how often the
+   non-component toast fires, and the real size and paste behaviour of the
+   DTCG clipboard. The third, whether `window.confirm` shows a dialog in the
+   plugin iframe, is closed: 8eebf78 (2026-09-05) replaced it with the
+   in-shell `confirmDialog`, no `confirm(`, `alert(` or `prompt(` call site
+   remains under `packages/plugin/src/ui`, and `TESTING.md` step 10 already
+   exercises the in-shell dialog.
+2. **Component Frame Quality Round 1**, planned; the plan and design are in
+   the private repository. #66 (97bfed1, 2026-09-18) landed four of its items
+   with `EXTRACTOR_VERSION` `'3'`: `hash.ts` sorts by code unit, the radius
+   gap check honours every per-corner binding, the Properties table replaces
+   the Configuration section, and the Anatomy legend is trimmed. Only the
+   single-wrapper anatomy descent remains, and it takes `'4'` if it changes
+   extraction output.
 3. **Patterns and nested components**, design only, in the private repository.
 4. **Real design-system grading** for v5 criteria 3, 10, and 11. The synthetic
    golden passes; a reviewed real artifact does not exist in-repo, and cannot be
@@ -249,8 +258,10 @@ rejected; the bet is deterministic extraction depth.
   `feat(v5): group repeated component bindings`, `fix(proxy): ...`,
   `docs: ...`, `chore(plugin): ...`. Add a body when the change needs
   explaining. Commits carry a `Co-Authored-By` trailer.
-- A pre-commit hook (`.githooks/pre-commit`, wired via `core.hooksPath`) rejects
-  known secret patterns.
+- A pre-commit hook (`.githooks/pre-commit`) rejects known secret patterns,
+  including this product's own `sl_` pull keys. `npm ci` runs `prepare`,
+  which points `core.hooksPath` at it; `scripts/pre-commit.test.ts` pins
+  the shapes.
 - Update `CHANGELOG.md` alongside behavior changes and the JSON Schema
   alongside contract changes, in the same commit. `CHANGELOG.md` is the only
   place shipped work is described; do not mirror it into this file.

@@ -14,7 +14,7 @@
     "statistics"
   ],
   "properties": {
-    "spec_layer": { "type": "object" },
+    "spec_layer": { "$ref": "#/$defs/envelope" },
     "completeness": { "$ref": "#/$defs/completeness" },
     "collections": {
       "type": "array",
@@ -38,11 +38,142 @@
         }
       }
     },
-    "diagnostics": { "type": "array" },
-    "statistics": { "type": "object" },
+    "diagnostics": { "type": "array", "items": { "$ref": "#/$defs/diagnostic" } },
+    "statistics": { "$ref": "#/$defs/statistics" },
     "guidelines": { "$ref": "#/$defs/guidelines" }
   },
   "$defs": {
+    "envelope": {
+      "type": "object",
+      "required": ["kind", "schema_version", "schema_uri", "extractor", "export", "source"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "const": "foundation" },
+        "schema_version": { "const": "5.1.0" },
+        "schema_uri": { "const": "https://spec-layer.com/schemas/foundation-context/v5.json" },
+        "extractor": {
+          "type": "object",
+          "required": ["name", "version", "build"],
+          "additionalProperties": false,
+          "properties": {
+            "name": { "const": "spec-layer-foundation" },
+            "version": { "type": "string", "minLength": 1 },
+            "build": { "type": ["string", "null"] }
+          }
+        },
+        "export": {
+          "type": "object",
+          "required": ["id", "generated_at", "deterministic", "content_hash"],
+          "additionalProperties": false,
+          "properties": {
+            "id": { "type": "string", "minLength": 1 },
+            "generated_at": { "type": "string" },
+            "deterministic": { "const": true },
+            "content_hash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+          }
+        },
+        "source": {
+          "type": "object",
+          "required": ["provider", "file_id", "file_name", "file_version", "library_enabled"],
+          "additionalProperties": false,
+          "properties": {
+            "provider": { "const": "figma" },
+            "file_id": { "type": ["string", "null"] },
+            "file_name": { "type": ["string", "null"] },
+            "file_version": { "type": ["string", "null"] },
+            "library_enabled": {
+              "type": ["boolean", "null"],
+              "description": "null when the source API does not expose whether this file publishes a library. null is unknown; it never means disabled."
+            }
+          }
+        }
+      }
+    },
+    "diagnostic": {
+      "type": "object",
+      "required": ["code", "severity", "entity_id", "message"],
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "enum": [
+            "UNRESOLVED_ALIAS", "UNRESOLVED_EXTERNAL_ALIAS", "ALIAS_CYCLE",
+            "ALIAS_TYPE_MISMATCH", "MISSING_MODE_VALUE", "DUPLICATE_SOURCE_ID",
+            "PATH_COLLISION", "UNSUPPORTED_VALUE_TYPE", "INCONSISTENT_VALUE_SHAPE",
+            "STYLE_BINDING_DRIFT", "CONFUSABLE_NAME", "INFERRED_LIFECYCLE",
+            "DEPRECATED_REFERENCE", "MODE_VALUES_IDENTICAL", "MISSING_DESCRIPTION",
+            "GENERATED_NAME_COLLISION", "SYNTHETIC_IDENTITY", "AMBIGUOUS_ALIAS_TARGET",
+            "UNIT_METADATA_UNAVAILABLE", "SOURCE_PARTIALLY_UNAVAILABLE", "METADATA_UNAVAILABLE",
+            "EXPORT_SCOPED", "INVALID_SOURCE_COLOR", "UNRESOLVED_REFERENCE"
+          ]
+        },
+        "severity": { "enum": ["error", "warning", "info"] },
+        "entity_id": { "type": "string", "minLength": 1 },
+        "mode_id": { "type": "string" },
+        "message": { "type": "string", "minLength": 1 },
+        "details": { "type": "object" }
+      }
+    },
+    "count": { "type": "integer", "minimum": 0 },
+    "statistics": {
+      "description": "Derived from the artifact's own sections (spec §15), so every number here can be rebuilt by a consumer. Outside the content hash.",
+      "type": "object",
+      "required": ["collections", "modes", "tokens", "styles", "aliases", "lifecycle", "diagnostics"],
+      "additionalProperties": false,
+      "properties": {
+        "collections": { "$ref": "#/$defs/count" },
+        "modes": { "$ref": "#/$defs/count" },
+        "tokens": { "$ref": "#/$defs/count" },
+        "styles": {
+          "type": "object",
+          "required": ["typography", "effects"],
+          "additionalProperties": false,
+          "properties": {
+            "typography": { "$ref": "#/$defs/count" },
+            "effects": { "$ref": "#/$defs/count" }
+          }
+        },
+        "aliases": {
+          "type": "object",
+          "required": ["total", "resolved", "unresolved"],
+          "additionalProperties": false,
+          "properties": {
+            "total": { "$ref": "#/$defs/count" },
+            "resolved": { "$ref": "#/$defs/count" },
+            "unresolved": { "$ref": "#/$defs/count" }
+          }
+        },
+        "lifecycle": {
+          "type": "object",
+          "required": ["active", "deprecated", "archived"],
+          "additionalProperties": false,
+          "properties": {
+            "active": { "$ref": "#/$defs/count" },
+            "deprecated": { "$ref": "#/$defs/count" },
+            "archived": { "$ref": "#/$defs/count" }
+          }
+        },
+        "diagnostics": {
+          "type": "object",
+          "required": ["error", "warning", "info"],
+          "additionalProperties": false,
+          "properties": {
+            "error": { "$ref": "#/$defs/count" },
+            "warning": { "$ref": "#/$defs/count" },
+            "info": { "$ref": "#/$defs/count" }
+          }
+        }
+      }
+    },
+    "unresolved_reason": {
+      "enum": [
+        "source_library_unavailable", "target_not_found", "cycle", "type_mismatch",
+        "depth_exceeded", "ambiguous_target", "target_mode_unresolvable",
+        "target_mode_value_missing"
+      ]
+    },
+    "missing_reason": {
+      "enum": ["no_value_for_mode", "unsupported_value_type", "invalid_source_value", "source_unavailable"]
+    },
     "guidelines": {
       "type": "object",
       "required": ["origin", "group_descriptions"],
@@ -133,7 +264,10 @@
       "required": ["collections", "styles", "unavailable_sources"],
       "properties": {
         "collections": { "$ref": "#/$defs/completeness_value" },
-        "styles": { "$ref": "#/$defs/completeness_value" },
+        "styles": {
+          "$ref": "#/$defs/completeness_value",
+          "description": "`complete` only when the file has no typography or effect styles at all. Otherwise `partial` or `unavailable`, for any of three distinct causes, each named by its own diagnostic on the artifact root: styles exist but Figma exposes no publication state, lifecycle, or consuming mode for them (METADATA_UNAVAILABLE, always `partial`); one style kind failed to read while the artifact still carries the other (SOURCE_PARTIALLY_UNAVAILABLE, `partial`, or `unavailable` when both failed); or the export was deliberately scoped to one collection or one style family, which excludes the other style kind outright (EXPORT_SCOPED, `unavailable` for a collection scope, `partial` or `unavailable` for a style-family scope depending on whether that family's own read succeeded)."
+        },
         "unavailable_sources": {
           "type": "array",
           "items": { "type": "string" }
@@ -443,7 +577,7 @@
       "required": ["kind", "reason"],
       "properties": {
         "kind": { "const": "missing" },
-        "reason": { "type": "string", "minLength": 1 }
+        "reason": { "$ref": "#/$defs/missing_reason" }
       }
     },
 
@@ -494,7 +628,7 @@
           "required": ["status", "reason", "value"],
           "properties": {
             "status": { "const": "unresolved" },
-            "reason": { "type": "string", "minLength": 1 },
+            "reason": { "$ref": "#/$defs/unresolved_reason" },
             "value": { "const": null }
           }
         }

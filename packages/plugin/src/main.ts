@@ -2,7 +2,7 @@
 import { serializeNode, mainComponentRef } from './serialize';
 import type { NodeResolver, ResolvedStyle } from './serialize';
 import { memoizedResolver } from './resolverMemo';
-import type { MainToUi, UiToMain, LibraryEntry, PublishComponentSource, PublishInfo } from './messages';
+import type { MainToUi, UiToMain, PublishComponentSource, PublishInfo } from './messages';
 import { resolveFileKey } from './fileKey';
 import { ProgrammaticSelection } from './programmaticSelection';
 import { serializeFoundation } from './serializeFoundation';
@@ -15,7 +15,6 @@ import {
   type FoundationVariableRow, type SerializedFoundation,
   type ProseV2,
 } from '@spec-layer/extractor';
-import { scopeIconKind } from './foundationIcon';
 import { buildDocFrames } from './docFrame';
 import { buildFoundationFrame, isColorRow } from './foundationFrame';
 import { emptyBrandTheme, resolveTheme, migrateBrandColors, type BrandTheme, type BrandColors } from './brandColors';
@@ -23,7 +22,7 @@ import { familiesWithRequiredStyles } from './fonts';
 import { isComponentFormat, storedComponentFormat } from './componentFormat';
 import {
   DOC_LINK_KEY, DOC_REGISTRY_KEY, DOC_PROSE_KEY, DOC_BASELINE_KEY,
-  parseDocLink, serializeDocLink, parseRegistry, serializeRegistry, addDoc, pruneRegistry,
+  parseDocLink, serializeDocLink, parseRegistry, serializeRegistry, addDoc, removeDoc, pruneRegistry,
   textContentHash, isFoundationLink, foundationScopeKey, retargetScope,
   serializeProse, parseProse, mergeFoundationGroupDescriptions,
   serializeBaseline, baselineFor,
@@ -31,6 +30,10 @@ import {
 } from './docLink';
 import { readCanvasProse, mergeProse, collectGeneratedText, type ProseNodeLike } from './canvasProse';
 import { repaintPills } from './pillNode';
+import { pageOf, resolveRegistrySections } from './registryNodes';
+import { scanLibrary, libraryReply, type LibraryScan } from './libraryScan';
+import { CanvasBuildGate, selectionToReplay, settleBuild } from './canvasBuild';
+import { writeSetting, deleteSetting, storePublishIdentity } from './settingsStore';
 import {
   PUBLISH_RECORD_KEY, parsePublishRecord, serializePublishRecord, pillState,
   type DocPublishRecord, type PillState,
@@ -127,14 +130,39 @@ const resolver: NodeResolver = {
 let foundationCache: { fileKey: string; dump: SerializedFoundation } | null = null;
 const foundationPosts = new FoundationPostGate();
 
+/**
+ * One fresh read of the file's variables and styles. `publishStatus` is read
+ * only for a dump the v5 projections will see (the selection cache below and
+ * the Foundations tab's own reply). The drift, render and change-list paths
+ * never read `publication`, and foundationContentHash does not hash it, so
+ * they pass false and save one bridge call per variable, collection and style.
+ */
+async function readFoundationDump(fileKey: string, publishStatus: boolean): Promise<SerializedFoundation> {
+  return serializeFoundation(
+    createFoundationReader(figma.variables, figma, { publishStatus }),
+    fileKey, new Date().toISOString(), figma.root.name,
+  );
+}
+
 async function foundationFor(fileKey: string): Promise<SerializedFoundation> {
   if (foundationCache?.fileKey === fileKey) return foundationCache.dump;
-  const dump = await serializeFoundation(
-    createFoundationReader(figma.variables, figma), fileKey, new Date().toISOString(), figma.root.name,
-  );
+  const dump = await readFoundationDump(fileKey, true);
   foundationCache = { fileKey, dump };
   return dump;
 }
+
+/**
+ * The spec the last Library scan hashed every foundation row against.
+ * requestDocBaseline diffs against THIS object and never a fresh read: the
+ * change list must be computed over the same read that produced the badge, or
+ * a list could disagree with the badge beside it. It also saves one whole-file
+ * read per expanded row. Replaced on every Library scan; a fresh read is the
+ * fallback only when no scan has run for this file.
+ *
+ * This spec is read WITHOUT publish status, so it must never reach a v5
+ * projection, Copy for AI or Publish; those read the file with it.
+ */
+let lastLibraryFoundation: { fileKey: string; spec: FoundationSpec } | null = null;
 
 // ---------------------------------------------------------------------------
 // Find the relevant component in the current selection (walk up if needed)
@@ -310,11 +338,33 @@ figma.clientStorage.getAsync('brandLogo').then((value: string | undefined) => {
 // this exact generated Section id, so it still posts normally.
 const programmaticDocSelection = new ProgrammaticSelection();
 
+// One build at a time across both frame families: see CanvasBuildGate. The
+// message handler is async and re-entrant, and a build mutates shared module
+// state (theme palette, layout widths, font families) assumed single-threaded.
+const canvasBuild = new CanvasBuildGate();
+
 // React to selection changes.
 // Note: selectionchange does not fire on plugin open; the UI sends requestSelection on mount to get the initial selection.
 figma.on('selectionchange', () => {
   const selected = figma.currentPage.selection;
+  // Consume first, so a programmatic selection that lands while the gate is
+  // still held cannot leave its expectation armed for the user's next click.
   if (programmaticDocSelection.consume(selected.map((node) => node.id))) return;
+  // A build switches pages to place a doc beside its predecessor and back;
+  // each switch reports the new page's selection, which is nobody's choice,
+  // and posting it would empty the component pane the moment "Updated"
+  // shows. But a real selection the user makes while the gate is held is
+  // somebody's choice, and dropping it for good would leave the panel and
+  // Copy for AI acting on a stale node once the build finishes. So this does
+  // not post it now (posting mid-build is exactly the bug above), it only
+  // notes that one was missed; each build's own `finally` block checks that
+  // note after the gate releases and replays the selection itself, through
+  // `selectionToReplay`, which is what tells a page hop's own selection
+  // apart from a genuine one worth telling the UI about.
+  if (canvasBuild.busy) {
+    canvasBuild.noteSkipped();
+    return;
+  }
   void postSelection().catch(() => {/* handled inside */});
 });
 
@@ -337,16 +387,6 @@ function mergedProse(section: SectionNode): ProseV2 | null {
   return mergeProse(prose, readCanvasProse(section as unknown as ProseNodeLike));
 }
 
-// The PageNode a node lives on, or null. Walks parents until a PAGE.
-function pageOf(node: BaseNode): PageNode | null {
-  let cur: BaseNode | null = node;
-  while (cur) {
-    if (cur.type === 'PAGE') return cur as PageNode;
-    cur = (cur as SceneNode).parent ?? null;
-  }
-  return null;
-}
-
 // Read the registry off figma.root.
 /**
  * Publish identity. `figma.fileKey` is undefined for a Community plugin, so
@@ -360,6 +400,12 @@ const PUBLISH_DATE_KEY = 'speclayer.publish.publishedAt';
 /** The library's current version as the proxy last reported it. In the file, like the date. */
 const PUBLISH_VERSION_KEY = 'speclayer.publish.version';
 const publishKeyStorageKey = (libraryId: string): string => `publishKey:${libraryId}`;
+
+/** One toast for every setting this device could not keep. True as written:
+ *  main.ts (or the UI) holds the new value in memory until the plugin closes. */
+function notifySettingNotSaved(): void {
+  figma.notify('Couldn’t save this setting on this device, so it applies to this session only.', { error: true });
+}
 
 async function readPublishInfo(): Promise<PublishInfo> {
   const libraryId = figma.root.getPluginData(PUBLISH_LIBRARY_KEY) || null;
@@ -381,17 +427,21 @@ function writeRegistry(r: { v: 1; docIds: string[] }): void {
   figma.root.setPluginData(DOC_REGISTRY_KEY, serializeRegistry(r));
 }
 
+/** Every registry id that still names a Section, read in one concurrent batch.
+ *  A rejected read is skipped here, same as before: this helper's callers
+ *  never prune, so they have no need for `rejected`, only `sections`. */
+async function registrySections() {
+  return (await resolveRegistrySections(readRegistry().docIds, figma)).sections;
+}
+
 // Every foundation doc link currently on canvas, read via the registry. A
 // dangling registry id (its Section deleted) is skipped rather than pruned
 // here: enumeration elsewhere already owns that cleanup, and this scan's only
 // job is to feed mergeFoundationGroupDescriptions.
 async function liveFoundationDocLinks(): Promise<FoundationDocLink[]> {
   const links: FoundationDocLink[] = [];
-  for (const docId of readRegistry().docIds) {
-    let node: BaseNode | null = null;
-    try { node = await figma.getNodeByIdAsync(docId); } catch { node = null; }
-    if (!node || node.type !== 'SECTION') continue;
-    const data = parseDocLink((node as SectionNode).getPluginData(DOC_LINK_KEY));
+  for (const { section } of await registrySections()) {
+    const data = parseDocLink(section.getPluginData(DOC_LINK_KEY));
     if (data && isFoundationLink(data)) links.push(data);
   }
   return links;
@@ -431,17 +481,11 @@ async function findExistingDoc(
   sourceNodeId: string,
   sectionName: string,
 ): Promise<SectionNode | null> {
-  const reg = readRegistry();
-  for (const docId of reg.docIds) {
-    try {
-      const node = await figma.getNodeByIdAsync(docId);
-      if (node && node.type === 'SECTION') {
-        const data = parseDocLink((node as SectionNode).getPluginData(DOC_LINK_KEY));
-        // Foundation docs have no sourceNodeId and resolve by scope in
-        // renderFoundation and updateFoundationDoc, never here.
-        if (data && !isFoundationLink(data) && data.sourceNodeId === sourceNodeId) return node as SectionNode;
-      }
-    } catch { /* dangling id; enumerate task prunes these */ }
+  for (const { section } of await registrySections()) {
+    const data = parseDocLink(section.getPluginData(DOC_LINK_KEY));
+    // Foundation docs have no sourceNodeId and resolve by scope in
+    // renderFoundation and updateFoundationDoc, never here.
+    if (data && !isFoundationLink(data) && data.sourceNodeId === sourceNodeId) return section;
   }
   // Legacy adoption fallback: name match on the current page. Only adopt a
   // Section that is NOT already another source's doc — a stamped link for a
@@ -461,15 +505,6 @@ async function findExistingDoc(
 }
 
 // React to UI messages
-// True while a doc-frame build is in progress. The message handler is async and
-// re-entrant, and a build mutates shared module state (theme palette, layout
-// widths, font families) assumed single-threaded; a second overlapping build
-// would corrupt widths/theme or duplicate the doc. One build at a time.
-let docFrameRendering = false;
-// Same guard as docFrameRendering, for the Foundations tab's multi-unit build:
-// a second overlapping renderFoundation would corrupt the shared theme/font
-// state in frameKit and could duplicate frames on canvas.
-let foundationRendering = false;
 
 /**
  * Pull one unit's group descriptions out of the build-wide map.
@@ -501,29 +536,35 @@ figma.ui.onmessage = async (raw: unknown) => {
       await postSelection();
       break;
 
-    case 'setLicenseKey':
+    case 'setLicenseKey': {
+      let ok: boolean;
       if (msg.value) {
-        await figma.clientStorage.setAsync('licenseKey', msg.value);
-        if (msg.instanceId) await figma.clientStorage.setAsync('licenseInstanceId', msg.instanceId);
-        else await figma.clientStorage.deleteAsync('licenseInstanceId');
+        ok = await writeSetting(figma.clientStorage, 'licenseKey', msg.value);
+        ok = (msg.instanceId
+          ? await writeSetting(figma.clientStorage, 'licenseInstanceId', msg.instanceId)
+          : await deleteSetting(figma.clientStorage, 'licenseInstanceId')) && ok;
       } else {
-        await figma.clientStorage.deleteAsync('licenseKey');
-        await figma.clientStorage.deleteAsync('licenseInstanceId');
+        ok = await deleteSetting(figma.clientStorage, 'licenseKey');
+        ok = await deleteSetting(figma.clientStorage, 'licenseInstanceId') && ok;
       }
+      if (!ok) notifySettingNotSaved();
       break;
+    }
 
     case 'setAiEnabled':
-      await figma.clientStorage.setAsync('aiEnabled', msg.value);
+      if (!await writeSetting(figma.clientStorage, 'aiEnabled', msg.value)) notifySettingNotSaved();
       break;
 
     case 'setComponentFormat':
       // The UI only sends a known value, but this is the storage boundary.
-      if (isComponentFormat(msg.value)) await figma.clientStorage.setAsync('componentFormat', msg.value);
+      if (isComponentFormat(msg.value)) {
+        if (!await writeSetting(figma.clientStorage, 'componentFormat', msg.value)) notifySettingNotSaved();
+      }
       break;
 
     case 'setBrandTheme':
       brandTheme = msg.value;
-      await figma.clientStorage.setAsync('brandTheme', brandTheme);
+      if (!await writeSetting(figma.clientStorage, 'brandTheme', brandTheme)) notifySettingNotSaved();
       break;
 
     case 'requestFonts': {
@@ -619,18 +660,29 @@ figma.ui.onmessage = async (raw: unknown) => {
       break;
 
     case 'renderDocFrame': {
-      if (docFrameRendering) {
-        // Same rule as the two foundation paths below: reply, never drop. The
-        // shared UI lock should stop this from being reached at all, but a
-        // guard that notifies and returns nothing leaves the UI holding a
-        // button it disabled for a build that will never report back.
-        // docFrameError is the failure reply this send site already handles,
-        // and the UI shows its message as a toast, so this does not notify too.
+      if (!canvasBuild.begin()) {
+        // Reply, never drop. The shared UI lock should stop this from being
+        // reached at all, but a guard that notifies and returns nothing leaves
+        // the UI holding a button it disabled for a build that will never
+        // report back. docFrameError is the failure reply this send site
+        // already handles, and the UI shows its message as a toast.
         const message = 'Another build is still running. Try again when it finishes.';
         figma.ui.postMessage({ type: 'docFrameError', message } as MainToUi);
         break;
       }
-      docFrameRendering = true;
+      // The page the user invoked this build from, and the selection there
+      // when this build took the gate. A successful build deliberately
+      // leaves the user on the new Section's page with it selected (see the
+      // cosmetic tail below), so only a failure needs to hop back to this
+      // page — done in the catch block, mirroring renderFoundation's own
+      // restore. `programmaticIds` stays null until a programmatic selection
+      // actually happens below: null (not `[]`) is what tells
+      // selectionToReplay this build has made no claim yet about what its
+      // own selection is, so a genuine mid-build deselect (`current` also
+      // `[]`) is never mistaken for it.
+      const invokingPage = figma.currentPage;
+      const atBegin = invokingPage.selection.map((node) => node.id);
+      let programmaticIds: string[] | null = null;
       let section: SectionNode | null = null;
       let committed = false; // true once the old doc has been replaced by the new one
       try {
@@ -710,7 +762,7 @@ figma.ui.onmessage = async (raw: unknown) => {
 
         // Register (idempotent), dropping the replaced doc's id if it changed.
         let reg = readRegistry();
-        if (existingId && existingId !== section.id) reg = { v: 1, docIds: reg.docIds.filter((id) => id !== existingId) };
+        if (existingId && existingId !== section.id) reg = removeDoc(reg, existingId);
         reg = addDoc(reg, section.id);
         writeRegistry(reg);
 
@@ -718,8 +770,24 @@ figma.ui.onmessage = async (raw: unknown) => {
         try {
           programmaticDocSelection.expect(section.id);
           figma.currentPage.selection = [section];
+          // Captured as its own value, not re-read off `section` later: a
+          // failure after this point can still remove `section` (see the
+          // outer catch), and a removed node throws on any property read
+          // other than `.removed`.
+          programmaticIds = [section.id];
         } catch {
           programmaticDocSelection.cancel();
+          // The build moved to the doc's page and could not select the doc
+          // there, so whatever that page already had selected is still
+          // there: that page's leftover, not a choice made during this
+          // build. Claim it as this build's own so the finally block does
+          // not replay it. Guarded: a failed read leaves null, and must not
+          // turn a placed doc into a docFrameError.
+          try {
+            if (figma.currentPage.id !== invokingPage.id) {
+              programmaticIds = figma.currentPage.selection.map((node) => node.id);
+            }
+          } catch { /* leave null */ }
         }
         try {
           figma.viewport.scrollAndZoomIntoView([section]);
@@ -734,134 +802,89 @@ figma.ui.onmessage = async (raw: unknown) => {
         if (section && !committed) {
           try { section.remove(); } catch { /* already gone */ }
         }
+        // A build that switched pages before failing must not strand the
+        // user there: unlike the success path above (which deliberately
+        // leaves them on the new Section's page), a failure has no section
+        // to show for it, and leaving `figma.currentPage` on the target page
+        // would also make `current` below describe a different page than
+        // `atBegin`. This is itself a fallible async Figma call, wrapped
+        // separately so its own failure can never replace the error the
+        // user needs to see.
+        try {
+          if (figma.currentPage.id !== invokingPage.id) await figma.setCurrentPageAsync(invokingPage);
+        } catch {
+          // Best-effort only.
+        }
         const message = err instanceof Error ? err.message : String(err);
         figma.ui.postMessage({ type: 'docFrameError', message } as MainToUi);
       } finally {
-        docFrameRendering = false;
+        canvasBuild.end();
+        // A real selection made while this build held the gate was noted,
+        // not posted (see the selectionchange listener above). Replay it now
+        // that the gate has released, unless it turns out to be nothing new
+        // (unchanged from atBegin) or just this build's own generated
+        // Section landing in view (programmaticIds) — either of those would
+        // be the original bug, an empty pane, all over again.
+        const current = figma.currentPage.selection.map((node) => node.id);
+        if (selectionToReplay({
+          skipped: canvasBuild.skippedSelection, current, atBegin, programmatic: programmaticIds,
+        })) {
+          void postSelection().catch(() => {/* handled inside */});
+        }
       }
       break;
     }
 
     case 'requestLibrary': {
-      const reg = readRegistry();
-      const entries: LibraryEntry[] = [];
-      const alive = new Set<string>();
       // Foundation drift needs one live extraction to answer every foundation
       // row, unlike component docs, which the UI checks one at a time via
-      // requestDrift. Lazy so a file with only component docs pays nothing.
-      // Caches both the success and the failure so it runs at most once here.
-      let foundationSpec: FoundationSpec | null = null;
-      let foundationExtractionFailed = false;
+      // requestDrift. scanLibrary calls this lazily and at most once, so a
+      // file with only component docs pays nothing. Resolves null on failure
+      // rather than rejecting: a foundation that cannot be read is a fact
+      // about those rows (badge unavailable), not a reason to drop the list.
       const liveFoundation = async (): Promise<FoundationSpec | null> => {
-        if (foundationSpec || foundationExtractionFailed) return foundationSpec;
         try {
           const { fileKey } = resolveFileKey(figma.fileKey, null);
-          const dump = await serializeFoundation(
-            createFoundationReader(figma.variables, figma), fileKey, new Date().toISOString(), figma.root.name,
-          );
-          foundationSpec = buildFoundation(dump);
-        } catch {
-          foundationExtractionFailed = true;
+          const spec = buildFoundation(await readFoundationDump(fileKey, false));
+          lastLibraryFoundation = { fileKey, spec };
+          return spec;
+        } catch (err) {
+          console.error('[Spec Layer] foundation read failed during the library scan', err);
+          return null;
         }
-        return foundationSpec;
       };
-      for (const docId of reg.docIds) {
-        let node: BaseNode | null = null;
-        try { node = await figma.getNodeByIdAsync(docId); } catch { node = null; }
-        if (!node || node.type !== 'SECTION') continue; // pruned below
-        const section = node as SectionNode;
-        const data = parseDocLink(section.getPluginData(DOC_LINK_KEY));
-        if (!data) continue; // detached/foreign section still in the index → prune
-        // Mark alive before branching on kind, so the self-heal prune below
-        // never drops a valid doc's registry id regardless of which branch
-        // below builds its LibraryEntry.
-        alive.add(docId);
-        const selfEdited = textContentHash(collectGeneratedLane(section)) !== data.selfHash;
-        const page = pageOf(section);
-
-        if (isFoundationLink(data)) {
-          const title = section.name.replace(/^Foundations: /, '');
-          const live = await liveFoundation();
-          // A renamed collection still resolves by name: retarget the scope to
-          // its current id before hashing, so a re-created collection reads as
-          // "Update available" (true: the frame's rendered title changed) and
-          // not "Source missing" (false: the collection is still there).
-          // retargetScope only does this on an unambiguous single name match;
-          // if several live collections share the name it leaves the dead id in
-          // place, and the row reads as orphaned rather than silently binding
-          // to a collection that may have nothing to do with this doc.
-          const scope = live ? retargetScope(data.scope, live.collections) : data.scope;
-          const currentContentHash = live ? foundationContentHash(live, scope) : undefined;
-          // A scope that no longer resolves is orphaned. unitContent returns
-          // null for a deleted collection, and foundationContentHash turns that
-          // into a stable sentinel, so compare against unitContent directly
-          // rather than re-deriving the sentinel here. When extraction failed
-          // outright, give the doc the benefit of the doubt rather than
-          // reporting it missing on no evidence.
-          const sourceExists = live ? unitContent(live, scope) !== null : true;
-          entries.push({
-            docId,
-            kind: 'foundation',
-            label: `Foundations · ${title}`,
-            componentName: `Foundations · ${title}`,
-            pageName: page?.name ?? '',
-            sourceLabel: data.scope.target === 'collection'
-              ? data.scope.collectionName
-              : data.scope.target === 'textStyles' ? 'Text styles' : 'Effect styles',
-            generatedAt: data.generatedAt,
-            sourceNodeId: '',
-            sourceExists,
-            selfEdited,
-            storedContentHash: data.contentHash,
-            currentContentHash,
-            // Read from the retargeted scope, so a renamed collection keeps the
-            // icon its variables earn rather than falling back to `mixed`.
-            foundationIcon: scopeIconKind(live, scope),
-            // The RETARGETED scope, matching foundationIcon above: a renamed
-            // collection resolves to its live id, which is the id Copy has to
-            // match against the foundation dump the UI holds.
-            foundationScope: scope,
-          });
-          continue;
-        }
-
-        let sourceNode: BaseNode | null = null;
-        try { sourceNode = await figma.getNodeByIdAsync(data.sourceNodeId); } catch { sourceNode = null; }
-        const sourceExists = sourceNode != null;
-        const sourcePage = sourceNode ? pageOf(sourceNode) : null;
-        const name = section.name.replace(/: Documentation$/, '');
-        entries.push({
-          docId,
-          kind: 'component',
-          label: name,
-          componentName: name,
-          pageName: page?.name ?? '',
-          // The source's page, and only that: a locator is worth showing only
-          // when it says something the row title does not. Falls back to the
-          // name when the source node is gone and there is no page to point at.
-          sourceLabel: sourcePage?.name || name,
-          generatedAt: data.generatedAt,
-          sourceNodeId: data.sourceNodeId,
-          sourceExists,
-          selfEdited,
-          storedContentHash: data.contentHash,
-          extractorVersion: data.extractorVersion,
-          includeHidden: data.config.includeHidden,
-        });
+      let scan: LibraryScan;
+      try {
+        const reg = readRegistry();
+        scan = await scanLibrary(reg.docIds, { getNodeByIdAsync: (id) => figma.getNodeByIdAsync(id), liveFoundation });
+      } catch (err) {
+        scan = { entries: [], alive: new Set<string>(), error: err instanceof Error ? err.message : String(err) };
       }
-      // Self-heal: keep only ids that resolved to a real, still-linked doc.
-      const pruned = pruneRegistry(reg, alive);
-      if (pruned.docIds.length !== reg.docIds.length) writeRegistry(pruned);
-      figma.ui.postMessage({ type: 'library', entries } as MainToUi);
+      if (scan.error !== null) console.error('[Spec Layer] library scan failed', scan.error);
+      // libraryReply is the one place that turns a scan into a reply and a
+      // prune decision, so its three shapes (complete, partial with rows,
+      // failed with no rows) are covered by a plain unit test.
+      const { message, prune } = libraryReply(scan);
+      if (prune) {
+        // Guarded on its own: a self-heal write that throws must not turn a
+        // healthy scan's reply into a libraryError the UI was never told to
+        // expect. The next Library scan gets another chance to prune.
+        try {
+          const reg = readRegistry();
+          const pruned = pruneRegistry(reg, scan.alive);
+          if (pruned.docIds.length !== reg.docIds.length) writeRegistry(pruned);
+        } catch (err) {
+          console.error('[Spec Layer] could not update the doc registry after a library scan', err);
+        }
+      }
+      figma.ui.postMessage(message);
       break;
     }
 
     case 'requestFoundation': {
       try {
         const { fileKey } = resolveFileKey(figma.fileKey, null);
-        const dump = await serializeFoundation(
-          createFoundationReader(figma.variables, figma), fileKey, new Date().toISOString(), figma.root.name,
-        );
+        const dump = await readFoundationDump(fileKey, true);
         // This is the Foundations tab's own fetch — both its first load and
         // its "Refresh sources" button — so it is also the one place a user
         // can force a fresh read. Updating the selection-side cache here
@@ -873,8 +896,9 @@ figma.ui.onmessage = async (raw: unknown) => {
         // Merged from every foundation doc link on canvas so the Copy button
         // can hand the agent the vocabulary the plugin already generated,
         // not just a bare token table. Omitted rather than sent empty so an
-        // absent field keeps meaning "nothing on canvas", matching
-        // foundationBrief's own absent-vs-empty rule one layer up.
+        // absent field keeps meaning "nothing on canvas" rather than "an
+        // empty map was read", the same absent-versus-empty rule the DTCG
+        // projection applies to a group with no description.
         const merged = await liveFoundationGroupDescriptions();
         const groupDescriptions = Object.keys(merged).length > 0 ? merged : undefined;
         // The 'foundation' reply hands the UI this dump, so the next
@@ -889,21 +913,25 @@ figma.ui.onmessage = async (raw: unknown) => {
     }
 
     case 'renderFoundation': {
-      if (foundationRendering) {
+      if (!canvasBuild.begin()) {
         // Post the rejection back, don't just notify. The UI holds a lock from
         // the moment it sends, and a request that gets no reply is a lock
-        // nobody ever releases: the Foundations tab's Create button stayed
-        // disabled for the rest of the session. The UI shows the reply's
-        // message as a toast, so this does not notify too.
+        // nobody ever releases.
         const message = 'Another build is still running. Try again when it finishes.';
         figma.ui.postMessage({ type: 'foundationFrameError', message, created: 0 } as MainToUi);
         break;
       }
-      foundationRendering = true;
       // Declared outside the try so the catch block can report how many frames
       // actually landed on the canvas before the failure (frames are appended
       // one at a time and are never rolled back).
       let created = 0;
+      // The Section this iteration built but has not yet handed to the
+      // registry. buildFoundationFrame appends it to the page, so a throw
+      // between there and writeRegistry would leave an untracked duplicate
+      // beside the doc it was meant to replace. Cleared once the registry owns
+      // it, or, for a replacement, once the predecessor is gone (then it IS
+      // the doc, and a later throw must not delete the user's only copy).
+      let pending: SectionNode | null = null;
       // The page the user invoked from. A non-replacing unit always lands
       // here; a replacing unit switches to its predecessor's page just long
       // enough to build and place it, then control returns here before the
@@ -914,15 +942,17 @@ figma.ui.onmessage = async (raw: unknown) => {
       // or prior.remove() happens only after the loop has already switched
       // pages, and skips the loop's own restore near the bottom.
       const invokedPage = figma.currentPage;
+      // The selection when this build took the gate; see renderDocFrame's
+      // atBegin. Neither Foundation path selects anything of its own, so
+      // there is no programmatic id to compare against below.
+      const atBegin = invokedPage.selection.map((node) => node.id);
       try {
         // Re-extract rather than trusting the UI's dump: the Foundations tab
         // fetches its data once per session and never refreshes, so the file
         // may have changed by the time the user clicks Create. Re-extracting
         // here keeps the generated frames faithful to the file as it is now.
         const { fileKey } = resolveFileKey(figma.fileKey, null);
-        const dump = await serializeFoundation(
-          createFoundationReader(figma.variables, figma), fileKey, new Date().toISOString(), figma.root.name,
-        );
+        const dump = await readFoundationDump(fileKey, false);
         const spec = buildFoundation(dump);
         const units = planFoundationUnits(spec, msg.selection);
 
@@ -945,13 +975,10 @@ figma.ui.onmessage = async (raw: unknown) => {
         // a regenerated unit replaces its predecessor in place instead of
         // duplicating it.
         const existingByScope = new Map<string, SectionNode>();
-        for (const docId of readRegistry().docIds) {
-          let existingNode: BaseNode | null = null;
-          try { existingNode = await figma.getNodeByIdAsync(docId); } catch { existingNode = null; }
-          if (!existingNode || existingNode.type !== 'SECTION') continue;
-          const link = parseDocLink((existingNode as SectionNode).getPluginData(DOC_LINK_KEY));
+        for (const { section: existing } of await registrySections()) {
+          const link = parseDocLink(existing.getPluginData(DOC_LINK_KEY));
           if (link && isFoundationLink(link)) {
-            existingByScope.set(foundationScopeKey(link.scope), existingNode as SectionNode);
+            existingByScope.set(foundationScopeKey(link.scope), existing);
           }
         }
 
@@ -1003,6 +1030,7 @@ figma.ui.onmessage = async (raw: unknown) => {
             msg.config.includeContrast, contrastReport, pill,
             overview,
           );
+          pending = section;
 
           const data: FoundationDocLink = {
             v: 1,
@@ -1046,12 +1074,14 @@ figma.ui.onmessage = async (raw: unknown) => {
             // tracking a Section that was still physically on the canvas: an
             // untracked duplicate, invisible to My Library and the self-heal
             // prune.
-            const reg: DocRegistry = { v: 1, docIds: readRegistry().docIds.filter((id) => id !== prior.id) };
+            const reg: DocRegistry = removeDoc(readRegistry(), prior.id);
             prior.remove();
+            pending = null; // the new Section is now the doc, whatever happens next
             writeRegistry(addDoc(reg, section.id));
             replaced++;
           } else {
             writeRegistry(addDoc(readRegistry(), section.id));
+            pending = null;
             x += section.width + 80;
             created++;
           }
@@ -1075,6 +1105,9 @@ figma.ui.onmessage = async (raw: unknown) => {
         const groupDescriptions = await liveFoundationGroupDescriptions();
         figma.ui.postMessage({ type: 'foundationDone', created, replaced, groupDescriptions } as MainToUi);
       } catch (err) {
+        if (pending) {
+          try { pending.remove(); } catch { /* already gone */ }
+        }
         const message = err instanceof Error ? err.message : String(err);
         // A throw earlier in the loop (buildFoundationFrame, writeRegistry, or
         // prior.remove(), all of which can run after the loop switched to a
@@ -1090,44 +1123,66 @@ figma.ui.onmessage = async (raw: unknown) => {
         }
         figma.ui.postMessage({ type: 'foundationFrameError', message, created } as MainToUi);
       } finally {
-        foundationRendering = false;
+        canvasBuild.end();
+        // Same replay as renderDocFrame above, with programmatic: null, not
+        // []: this path never selects anything of its own, so it has no
+        // basis to claim its own selection was empty, and a genuine
+        // mid-build deselect must still replay (see selectionToReplay).
+        // The loop above already returns to invokedPage after every unit,
+        // success or replaced, and the catch just above restores it too, so
+        // `current` here already describes the same page as `atBegin`.
+        const current = figma.currentPage.selection.map((node) => node.id);
+        if (selectionToReplay({
+          skipped: canvasBuild.skippedSelection, current, atBegin, programmatic: null,
+        })) {
+          void postSelection().catch(() => {/* handled inside */});
+        }
       }
       break;
     }
 
     case 'updateFoundationDoc': {
-      // Shares renderFoundation's guard: both call buildFoundationFrame, which
-      // mutates frameKit's shared theme/font module state, so the two must
-      // never run concurrently any more than two renderFoundation calls could.
-      if (foundationRendering) {
-        // Same rule as renderFoundation above: reply, never drop. docSourceError
-        // is the failure reply this send site already handles, so the row's
-        // Update releases its lock instead of wedging the button it disabled.
-        // The UI shows the reply's message as a toast, so this does not notify.
+      // Shares the gate with renderDocFrame and renderFoundation: all three
+      // call into frameKit's shared theme/font module state.
+      if (!canvasBuild.begin()) {
         const message = 'Another build is still running. Try again when it finishes.';
         figma.ui.postMessage({ type: 'docSourceError', docId: msg.docId, message } as MainToUi);
         break;
       }
-      foundationRendering = true;
+      // The page the user invoked this Update from, and the selection there
+      // when this build took the gate. Unlike renderDocFrame, an Update has
+      // no new page for the user to land on: it switches to the prior doc's
+      // page to rebuild it (below) and, unlike renderFoundation's per-unit
+      // loop, never switches back on its own — so the finally block hops
+      // back before replying and before checking `current` against
+      // `atBegin`, or the two would describe different pages.
+      const invokingPage = figma.currentPage;
+      const atBegin = invokingPage.selection.map((node) => node.id);
+      // The Section this rebuild made but has not yet handed to the registry;
+      // see renderFoundation's own `pending` for why. Declared before the try
+      // so the catch below can see it.
+      let pending: SectionNode | null = null;
+      // Every path's reply, posted from the finally block only once the page
+      // is back (see settleBuild): posting it here, before that hop, let
+      // Update all's next request reach a gate this build still held.
+      let reply: MainToUi | null = null;
       try {
         const node = await figma.getNodeByIdAsync(msg.docId);
         if (!node || node.type !== 'SECTION') {
-          figma.ui.postMessage({ type: 'docSourceError', docId: msg.docId,
-            message: 'This doc no longer exists.' } as MainToUi);
+          reply = { type: 'docSourceError', docId: msg.docId,
+            message: 'This doc no longer exists.' };
           break;
         }
         const prior = node as SectionNode;
         const link = parseDocLink(prior.getPluginData(DOC_LINK_KEY));
         if (!link || !isFoundationLink(link)) {
-          figma.ui.postMessage({ type: 'docSourceError', docId: msg.docId,
-            message: 'This doc is no longer linked to its source.' } as MainToUi);
+          reply = { type: 'docSourceError', docId: msg.docId,
+            message: 'This doc is no longer linked to its source.' };
           break;
         }
 
         const { fileKey } = resolveFileKey(figma.fileKey, null);
-        const dump = await serializeFoundation(
-          createFoundationReader(figma.variables, figma), fileKey, new Date().toISOString(), figma.root.name,
-        );
+        const dump = await readFoundationDump(fileKey, false);
         const spec = buildFoundation(dump);
 
         // Retarget a renamed/re-created collection by name before giving up,
@@ -1150,10 +1205,10 @@ figma.ui.onmessage = async (raw: unknown) => {
           const scopedCollectionId = scope.target === 'collection' ? scope.collectionId : null;
           const collectionGone = scopedCollectionId !== null
             && !spec.collections.some((c) => c.id === scopedCollectionId);
-          figma.ui.postMessage({ type: 'docSourceError', docId: msg.docId,
+          reply = { type: 'docSourceError', docId: msg.docId,
             message: collectionGone
               ? 'Couldn’t update this doc. Its collection is no longer in this file.'
-              : `Couldn’t update this doc. Nothing in this file is named “${scope.group}” anymore.` } as MainToUi);
+              : `Couldn’t update this doc. Nothing in this file is named “${scope.group}” anymore.` };
           break;
         }
 
@@ -1187,6 +1242,7 @@ figma.ui.onmessage = async (raw: unknown) => {
           pill,
           link.collectionOverview,
         );
+        pending = section;
 
         const data: FoundationDocLink = {
           v: 1, kind: 'foundation', scope,
@@ -1217,9 +1273,9 @@ figma.ui.onmessage = async (raw: unknown) => {
         // Point of no return, matching the component path (renderDocFrame
         // above): the new section is stamped and placed before the old one
         // goes, so a failure here never leaves the user having lost a good doc.
-        let reg = readRegistry();
-        reg = { v: 1, docIds: reg.docIds.filter((id) => id !== prior.id) };
+        const reg = removeDoc(readRegistry(), prior.id);
         prior.remove();
+        pending = null; // point of no return: the new Section is the doc
         writeRegistry(addDoc(reg, section.id));
 
         // Stamp the docId so the reply identifies itself as this row's Update
@@ -1233,14 +1289,49 @@ figma.ui.onmessage = async (raw: unknown) => {
         // way renderFoundation's reply does rather than special-casing "only
         // this one doc changed".
         const groupDescriptions = await liveFoundationGroupDescriptions();
-        figma.ui.postMessage({
+        reply = {
           type: 'foundationDone', created: 0, replaced: 1, docId: msg.docId, groupDescriptions,
-        } as MainToUi);
+        };
       } catch (err) {
+        if (pending) {
+          try { pending.remove(); } catch { /* already gone */ }
+        }
         const message = err instanceof Error ? err.message : String(err);
-        figma.ui.postMessage({ type: 'docSourceError', docId: msg.docId, message } as MainToUi);
+        reply = { type: 'docSourceError', docId: msg.docId, message };
       } finally {
-        foundationRendering = false;
+        // Hop back to the invoking page, then reply, then release the gate,
+        // then replay, success or failure (settleBuild owns that order and
+        // its reasons). Unlike renderDocFrame there is no new page for the
+        // user to land on here, and unlike renderFoundation's per-unit loop
+        // this path never returns on its own. Left un-hopped, a page the
+        // build switched to (the prior doc's own page) leaves `current`
+        // below describing that page's remembered selection instead of
+        // this one's — replaying it as if the user chose it, or, if it's
+        // empty, resolving to node: null and emptying the pane, the
+        // original bug. The early exits above run before any page switch,
+        // so for them the hop is a no-op.
+        const settled = reply;
+        await settleBuild({
+          restorePage: async () => {
+            if (figma.currentPage.id !== invokingPage.id) await figma.setCurrentPageAsync(invokingPage);
+          },
+          reply: () => {
+            if (settled) figma.ui.postMessage(settled);
+          },
+          release: () => canvasBuild.end(),
+          // Same replay as the two paths above, with programmatic: null, not
+          // []: this path never selects anything of its own, so it has no
+          // basis to claim its own selection was empty, and a genuine
+          // mid-build deselect must still replay (see selectionToReplay).
+          replay: () => {
+            const current = figma.currentPage.selection.map((node) => node.id);
+            if (selectionToReplay({
+              skipped: canvasBuild.skippedSelection, current, atBegin, programmatic: null,
+            })) {
+              void postSelection().catch(() => {/* handled inside */});
+            }
+          },
+        });
       }
       break;
     }
@@ -1268,7 +1359,15 @@ figma.ui.onmessage = async (raw: unknown) => {
           (node as SectionNode).setPluginData(DOC_BASELINE_KEY, '');
         }
       } catch { /* gone already */ }
-      writeRegistry({ v: 1, docIds: readRegistry().docIds.filter((id) => id !== msg.docId) });
+      // Guarded like the read above: a registry write that throws must not
+      // swallow the reply, or the UI keeps a row it has already been told is
+      // gone and its menu stays disabled. The next Library scan prunes an id
+      // this write failed to drop.
+      try {
+        writeRegistry(removeDoc(readRegistry(), msg.docId));
+      } catch (err) {
+        console.error('[Spec Layer] could not update the doc registry after detaching', msg.docId, err);
+      }
       // Detaching a foundation doc wipes its link, so the merge below no
       // longer sees it: this is the inverse staleness case, where the UI's
       // cache must be told a description set is now GONE, not just told
@@ -1284,7 +1383,11 @@ figma.ui.onmessage = async (raw: unknown) => {
         const node = await figma.getNodeByIdAsync(msg.docId);
         if (node) node.remove();
       } catch { /* gone already */ }
-      writeRegistry({ v: 1, docIds: readRegistry().docIds.filter((id) => id !== msg.docId) });
+      try {
+        writeRegistry(removeDoc(readRegistry(), msg.docId));
+      } catch (err) {
+        console.error('[Spec Layer] could not update the doc registry after deleting', msg.docId, err);
+      }
       // Same inverse-staleness reasoning as detachDoc above: a removed
       // foundation doc's descriptions must stop being offered by Copy.
       const groupDescriptions = await liveFoundationGroupDescriptions();
@@ -1363,14 +1466,14 @@ figma.ui.onmessage = async (raw: unknown) => {
       }
       if (baseline && link && isFoundationLink(link)) {
         try {
-          // A fresh read, retargeted the way requestLibrary retargets, so
-          // the live side of the diff is the object whose hash produced the
-          // badge. Not the session cache: that can lag the library refresh.
+          // The Library's own read, retargeted the way the Library retargets,
+          // so the live side of the diff is the object whose hash produced the
+          // badge. A fresh read is the fallback only when no Library scan has
+          // run for this file yet, which the UI's flow does not reach.
           const { fileKey } = resolveFileKey(figma.fileKey, null);
-          const dump = await serializeFoundation(
-            createFoundationReader(figma.variables, figma), fileKey, new Date().toISOString(), figma.root.name,
-          );
-          const spec = buildFoundation(dump);
+          const spec = lastLibraryFoundation?.fileKey === fileKey
+            ? lastLibraryFoundation.spec
+            : buildFoundation(await readFoundationDump(fileKey, false));
           live = unitContent(spec, retargetScope(link.scope, spec.collections));
         } catch (err) {
           console.error('[Spec Layer] baseline read failed for', msg.docId, err);
@@ -1432,20 +1535,13 @@ figma.ui.onmessage = async (raw: unknown) => {
         let foundation: SerializedFoundation | null = null;
         try { foundation = await foundationFor(fileKey); } catch { foundation = null; }
         const groupDescriptions = await liveFoundationGroupDescriptions();
-        const reg = readRegistry();
         const components: PublishComponentSource[] = [];
         const skipped: Array<{ name: string; reason: string }> = [];
         const seenSources = new Set<string>();
         // One memo for the whole publish pass: every doc in a file binds the
         // same few dozen variables, so per-doc caches would refetch them.
         const passResolver = memoizedResolver(resolver);
-        for (const docId of reg.docIds) {
-          let section: SectionNode | null = null;
-          try {
-            const n = await figma.getNodeByIdAsync(docId);
-            section = n && n.type === 'SECTION' ? (n as SectionNode) : null;
-          } catch { section = null; }
-          if (!section) continue;
+        for (const { docId, section } of await registrySections()) {
           const data = parseDocLink(section.getPluginData(DOC_LINK_KEY));
           if (!data || isFoundationLink(data)) continue;
           // Two docs for one source publish one context, not two.
@@ -1483,8 +1579,15 @@ figma.ui.onmessage = async (raw: unknown) => {
     }
 
     case 'setPublishInfo': {
-      figma.root.setPluginData(PUBLISH_LIBRARY_KEY, msg.libraryId);
-      await figma.clientStorage.setAsync(publishKeyStorageKey(msg.libraryId), msg.pullKey);
+      const keyStored = await storePublishIdentity(
+        figma.clientStorage, figma.root,
+        { libraryIdKey: PUBLISH_LIBRARY_KEY, pullKeyStorageKey: publishKeyStorageKey(msg.libraryId) },
+        msg.libraryId, msg.pullKey,
+      );
+      // The id is in the file either way (see storePublishIdentity). Without
+      // the key this device cannot update the library; say so now, while the
+      // UI still shows the key it was given.
+      if (!keyStored) figma.notify('Couldn’t save the pull key on this device.', { error: true });
       break;
     }
 
@@ -1521,11 +1624,7 @@ figma.ui.onmessage = async (raw: unknown) => {
           console.error('[Spec Layer] could not read the published foundation', err);
         }
       }
-      for (const docId of readRegistry().docIds) {
-        let node: BaseNode | null = null;
-        try { node = await figma.getNodeByIdAsync(docId); } catch { node = null; }
-        if (!node || node.type !== 'SECTION') continue;
-        const section = node as SectionNode;
+      for (const { section } of await registrySections()) {
         const link = parseDocLink(section.getPluginData(DOC_LINK_KEY));
         if (!link) continue;
         let sourceHash: string | null = null;
@@ -1560,11 +1659,7 @@ figma.ui.onmessage = async (raw: unknown) => {
         // Every doc's record described this library; with the library gone the
         // pills read Not published again. Nothing to sweep when the file never
         // held a library id in the first place.
-        for (const docId of readRegistry().docIds) {
-          let node: BaseNode | null = null;
-          try { node = await figma.getNodeByIdAsync(docId); } catch { node = null; }
-          if (!node || node.type !== 'SECTION') continue;
-          const section = node as SectionNode;
+        for (const { section } of await registrySections()) {
           section.setPluginData(PUBLISH_RECORD_KEY, '');
           try { await repaintPills(section, { kind: 'unpublished' }); } catch { /* cosmetic */ }
         }
