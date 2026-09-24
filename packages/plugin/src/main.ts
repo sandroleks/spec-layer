@@ -31,6 +31,7 @@ import {
 } from './docLink';
 import { readCanvasProse, mergeProse, collectGeneratedText, type ProseNodeLike } from './canvasProse';
 import { repaintPills } from './pillNode';
+import { pageOf, resolveRegistrySections } from './registryNodes';
 import {
   PUBLISH_RECORD_KEY, parsePublishRecord, serializePublishRecord, pillState,
   type DocPublishRecord, type PillState,
@@ -337,16 +338,6 @@ function mergedProse(section: SectionNode): ProseV2 | null {
   return mergeProse(prose, readCanvasProse(section as unknown as ProseNodeLike));
 }
 
-// The PageNode a node lives on, or null. Walks parents until a PAGE.
-function pageOf(node: BaseNode): PageNode | null {
-  let cur: BaseNode | null = node;
-  while (cur) {
-    if (cur.type === 'PAGE') return cur as PageNode;
-    cur = (cur as SceneNode).parent ?? null;
-  }
-  return null;
-}
-
 // Read the registry off figma.root.
 /**
  * Publish identity. `figma.fileKey` is undefined for a Community plugin, so
@@ -381,17 +372,19 @@ function writeRegistry(r: { v: 1; docIds: string[] }): void {
   figma.root.setPluginData(DOC_REGISTRY_KEY, serializeRegistry(r));
 }
 
+/** Every registry id that still names a Section, read in one concurrent batch. */
+function registrySections() {
+  return resolveRegistrySections(readRegistry().docIds, figma);
+}
+
 // Every foundation doc link currently on canvas, read via the registry. A
 // dangling registry id (its Section deleted) is skipped rather than pruned
 // here: enumeration elsewhere already owns that cleanup, and this scan's only
 // job is to feed mergeFoundationGroupDescriptions.
 async function liveFoundationDocLinks(): Promise<FoundationDocLink[]> {
   const links: FoundationDocLink[] = [];
-  for (const docId of readRegistry().docIds) {
-    let node: BaseNode | null = null;
-    try { node = await figma.getNodeByIdAsync(docId); } catch { node = null; }
-    if (!node || node.type !== 'SECTION') continue;
-    const data = parseDocLink((node as SectionNode).getPluginData(DOC_LINK_KEY));
+  for (const { section } of await registrySections()) {
+    const data = parseDocLink(section.getPluginData(DOC_LINK_KEY));
     if (data && isFoundationLink(data)) links.push(data);
   }
   return links;
@@ -431,17 +424,11 @@ async function findExistingDoc(
   sourceNodeId: string,
   sectionName: string,
 ): Promise<SectionNode | null> {
-  const reg = readRegistry();
-  for (const docId of reg.docIds) {
-    try {
-      const node = await figma.getNodeByIdAsync(docId);
-      if (node && node.type === 'SECTION') {
-        const data = parseDocLink((node as SectionNode).getPluginData(DOC_LINK_KEY));
-        // Foundation docs have no sourceNodeId and resolve by scope in
-        // renderFoundation and updateFoundationDoc, never here.
-        if (data && !isFoundationLink(data) && data.sourceNodeId === sourceNodeId) return node as SectionNode;
-      }
-    } catch { /* dangling id; enumerate task prunes these */ }
+  for (const { section } of await registrySections()) {
+    const data = parseDocLink(section.getPluginData(DOC_LINK_KEY));
+    // Foundation docs have no sourceNodeId and resolve by scope in
+    // renderFoundation and updateFoundationDoc, never here.
+    if (data && !isFoundationLink(data) && data.sourceNodeId === sourceNodeId) return section;
   }
   // Legacy adoption fallback: name match on the current page. Only adopt a
   // Section that is NOT already another source's doc — a stamped link for a
@@ -945,13 +932,10 @@ figma.ui.onmessage = async (raw: unknown) => {
         // a regenerated unit replaces its predecessor in place instead of
         // duplicating it.
         const existingByScope = new Map<string, SectionNode>();
-        for (const docId of readRegistry().docIds) {
-          let existingNode: BaseNode | null = null;
-          try { existingNode = await figma.getNodeByIdAsync(docId); } catch { existingNode = null; }
-          if (!existingNode || existingNode.type !== 'SECTION') continue;
-          const link = parseDocLink((existingNode as SectionNode).getPluginData(DOC_LINK_KEY));
+        for (const { section: existing } of await registrySections()) {
+          const link = parseDocLink(existing.getPluginData(DOC_LINK_KEY));
           if (link && isFoundationLink(link)) {
-            existingByScope.set(foundationScopeKey(link.scope), existingNode as SectionNode);
+            existingByScope.set(foundationScopeKey(link.scope), existing);
           }
         }
 
@@ -1432,20 +1416,13 @@ figma.ui.onmessage = async (raw: unknown) => {
         let foundation: SerializedFoundation | null = null;
         try { foundation = await foundationFor(fileKey); } catch { foundation = null; }
         const groupDescriptions = await liveFoundationGroupDescriptions();
-        const reg = readRegistry();
         const components: PublishComponentSource[] = [];
         const skipped: Array<{ name: string; reason: string }> = [];
         const seenSources = new Set<string>();
         // One memo for the whole publish pass: every doc in a file binds the
         // same few dozen variables, so per-doc caches would refetch them.
         const passResolver = memoizedResolver(resolver);
-        for (const docId of reg.docIds) {
-          let section: SectionNode | null = null;
-          try {
-            const n = await figma.getNodeByIdAsync(docId);
-            section = n && n.type === 'SECTION' ? (n as SectionNode) : null;
-          } catch { section = null; }
-          if (!section) continue;
+        for (const { docId, section } of await registrySections()) {
           const data = parseDocLink(section.getPluginData(DOC_LINK_KEY));
           if (!data || isFoundationLink(data)) continue;
           // Two docs for one source publish one context, not two.
@@ -1521,11 +1498,7 @@ figma.ui.onmessage = async (raw: unknown) => {
           console.error('[Spec Layer] could not read the published foundation', err);
         }
       }
-      for (const docId of readRegistry().docIds) {
-        let node: BaseNode | null = null;
-        try { node = await figma.getNodeByIdAsync(docId); } catch { node = null; }
-        if (!node || node.type !== 'SECTION') continue;
-        const section = node as SectionNode;
+      for (const { section } of await registrySections()) {
         const link = parseDocLink(section.getPluginData(DOC_LINK_KEY));
         if (!link) continue;
         let sourceHash: string | null = null;
@@ -1560,11 +1533,7 @@ figma.ui.onmessage = async (raw: unknown) => {
         // Every doc's record described this library; with the library gone the
         // pills read Not published again. Nothing to sweep when the file never
         // held a library id in the first place.
-        for (const docId of readRegistry().docIds) {
-          let node: BaseNode | null = null;
-          try { node = await figma.getNodeByIdAsync(docId); } catch { node = null; }
-          if (!node || node.type !== 'SECTION') continue;
-          const section = node as SectionNode;
+        for (const { section } of await registrySections()) {
           section.setPluginData(PUBLISH_RECORD_KEY, '');
           try { await repaintPills(section, { kind: 'unpublished' }); } catch { /* cosmetic */ }
         }
