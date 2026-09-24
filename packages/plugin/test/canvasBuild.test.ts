@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { CanvasBuildGate, selectionToReplay } from '../src/canvasBuild';
+import { CanvasBuildGate, selectionToReplay, settleBuild } from '../src/canvasBuild';
 
 describe('CanvasBuildGate', () => {
   it('lets the first build in and refuses a second until the first ends, whichever family each is', () => {
@@ -66,5 +66,61 @@ describe('selectionToReplay', () => {
     expect(selectionToReplay({
       skipped: true, current: [], atBegin: ['a'], programmatic: null,
     })).toBe(true);
+  });
+});
+
+describe('settleBuild', () => {
+  it('returns to the page before replying, then releases the gate and replays with no yield after the reply', async () => {
+    const gate = new CanvasBuildGate();
+    gate.begin();
+    const order: string[] = [];
+    await settleBuild({
+      restorePage: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        order.push('restore');
+      },
+      reply: () => {
+        order.push('reply');
+        // Anything the reply sets off, even a microtask, runs only after the
+        // gate has been released.
+        queueMicrotask(() => order.push(gate.busy ? 'next: gate held' : 'next: gate open'));
+      },
+      release: () => { gate.end(); order.push('release'); },
+      replay: () => { order.push('replay'); },
+    });
+    expect(order).toEqual(['restore', 'reply', 'release', 'replay', 'next: gate open']);
+  });
+
+  it('lets the next request the reply prompts take the gate (Update all sends the next row on each reply)', async () => {
+    const gate = new CanvasBuildGate();
+    gate.begin();
+    let nextTook: boolean | null = null;
+    let nextArrived!: () => void;
+    const arrived = new Promise<void>((resolve) => { nextArrived = resolve; });
+    await settleBuild({
+      // A real page switch back, taking a task of its own: had the reply gone
+      // out before it, the next request below would reach a held gate.
+      restorePage: () => new Promise<void>((resolve) => { setTimeout(resolve, 0); }),
+      // The UI round trip: the next updateFoundationDoc arrives as a new task.
+      reply: () => { setTimeout(() => { nextTook = gate.begin(); nextArrived(); }, 0); },
+      release: () => gate.end(),
+      replay: () => {},
+    });
+    await arrived;
+    expect(nextTook).toBe(true);
+  });
+
+  it('still replies, releases and replays when the page switch is rejected', async () => {
+    const gate = new CanvasBuildGate();
+    gate.begin();
+    const order: string[] = [];
+    await settleBuild({
+      restorePage: () => Promise.reject(new Error('page was deleted')),
+      reply: () => { order.push('reply'); },
+      release: () => { gate.end(); order.push('release'); },
+      replay: () => { order.push('replay'); },
+    });
+    expect(order).toEqual(['reply', 'release', 'replay']);
+    expect(gate.busy).toBe(false);
   });
 });

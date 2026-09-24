@@ -32,7 +32,7 @@ import { readCanvasProse, mergeProse, collectGeneratedText, type ProseNodeLike }
 import { repaintPills } from './pillNode';
 import { pageOf, resolveRegistrySections } from './registryNodes';
 import { scanLibrary, libraryReply, type LibraryScan } from './libraryScan';
-import { CanvasBuildGate, selectionToReplay } from './canvasBuild';
+import { CanvasBuildGate, selectionToReplay, settleBuild } from './canvasBuild';
 import { writeSetting, deleteSetting, storePublishIdentity } from './settingsStore';
 import {
   PUBLISH_RECORD_KEY, parsePublishRecord, serializePublishRecord, pillState,
@@ -158,6 +158,9 @@ async function foundationFor(fileKey: string): Promise<SerializedFoundation> {
  * a list could disagree with the badge beside it. It also saves one whole-file
  * read per expanded row. Replaced on every Library scan; a fresh read is the
  * fallback only when no scan has run for this file.
+ *
+ * This spec is read WITHOUT publish status, so it must never reach a v5
+ * projection, Copy for AI or Publish; those read the file with it.
  */
 let lastLibraryFoundation: { fileKey: string; spec: FoundationSpec } | null = null;
 
@@ -774,6 +777,17 @@ figma.ui.onmessage = async (raw: unknown) => {
           programmaticIds = [section.id];
         } catch {
           programmaticDocSelection.cancel();
+          // The build moved to the doc's page and could not select the doc
+          // there, so whatever that page already had selected is still
+          // there: that page's leftover, not a choice made during this
+          // build. Claim it as this build's own so the finally block does
+          // not replay it. Guarded: a failed read leaves null, and must not
+          // turn a placed doc into a docFrameError.
+          try {
+            if (figma.currentPage.id !== invokingPage.id) {
+              programmaticIds = figma.currentPage.selection.map((node) => node.id);
+            }
+          } catch { /* leave null */ }
         }
         try {
           figma.viewport.scrollAndZoomIntoView([section]);
@@ -1139,26 +1153,30 @@ figma.ui.onmessage = async (raw: unknown) => {
       // no new page for the user to land on: it switches to the prior doc's
       // page to rebuild it (below) and, unlike renderFoundation's per-unit
       // loop, never switches back on its own — so the finally block hops
-      // back before checking `current` against `atBegin`, or the two would
-      // describe different pages.
+      // back before replying and before checking `current` against
+      // `atBegin`, or the two would describe different pages.
       const invokingPage = figma.currentPage;
       const atBegin = invokingPage.selection.map((node) => node.id);
       // The Section this rebuild made but has not yet handed to the registry;
       // see renderFoundation's own `pending` for why. Declared before the try
       // so the catch below can see it.
       let pending: SectionNode | null = null;
+      // Every path's reply, posted from the finally block only once the page
+      // is back (see settleBuild): posting it here, before that hop, let
+      // Update all's next request reach a gate this build still held.
+      let reply: MainToUi | null = null;
       try {
         const node = await figma.getNodeByIdAsync(msg.docId);
         if (!node || node.type !== 'SECTION') {
-          figma.ui.postMessage({ type: 'docSourceError', docId: msg.docId,
-            message: 'This doc no longer exists.' } as MainToUi);
+          reply = { type: 'docSourceError', docId: msg.docId,
+            message: 'This doc no longer exists.' };
           break;
         }
         const prior = node as SectionNode;
         const link = parseDocLink(prior.getPluginData(DOC_LINK_KEY));
         if (!link || !isFoundationLink(link)) {
-          figma.ui.postMessage({ type: 'docSourceError', docId: msg.docId,
-            message: 'This doc is no longer linked to its source.' } as MainToUi);
+          reply = { type: 'docSourceError', docId: msg.docId,
+            message: 'This doc is no longer linked to its source.' };
           break;
         }
 
@@ -1186,10 +1204,10 @@ figma.ui.onmessage = async (raw: unknown) => {
           const scopedCollectionId = scope.target === 'collection' ? scope.collectionId : null;
           const collectionGone = scopedCollectionId !== null
             && !spec.collections.some((c) => c.id === scopedCollectionId);
-          figma.ui.postMessage({ type: 'docSourceError', docId: msg.docId,
+          reply = { type: 'docSourceError', docId: msg.docId,
             message: collectionGone
               ? 'Couldn’t update this doc. Its collection is no longer in this file.'
-              : `Couldn’t update this doc. Nothing in this file is named “${scope.group}” anymore.` } as MainToUi);
+              : `Couldn’t update this doc. Nothing in this file is named “${scope.group}” anymore.` };
           break;
         }
 
@@ -1270,42 +1288,49 @@ figma.ui.onmessage = async (raw: unknown) => {
         // way renderFoundation's reply does rather than special-casing "only
         // this one doc changed".
         const groupDescriptions = await liveFoundationGroupDescriptions();
-        figma.ui.postMessage({
+        reply = {
           type: 'foundationDone', created: 0, replaced: 1, docId: msg.docId, groupDescriptions,
-        } as MainToUi);
+        };
       } catch (err) {
         if (pending) {
           try { pending.remove(); } catch { /* already gone */ }
         }
         const message = err instanceof Error ? err.message : String(err);
-        figma.ui.postMessage({ type: 'docSourceError', docId: msg.docId, message } as MainToUi);
+        reply = { type: 'docSourceError', docId: msg.docId, message };
       } finally {
-        // Hop back to the invoking page before releasing the gate, success
-        // or failure: unlike renderDocFrame there is no new page for the
+        // Hop back to the invoking page, then reply, then release the gate,
+        // then replay, success or failure (settleBuild owns that order and
+        // its reasons). Unlike renderDocFrame there is no new page for the
         // user to land on here, and unlike renderFoundation's per-unit loop
         // this path never returns on its own. Left un-hopped, a page the
         // build switched to (the prior doc's own page) leaves `current`
         // below describing that page's remembered selection instead of
         // this one's — replaying it as if the user chose it, or, if it's
         // empty, resolving to node: null and emptying the pane, the
-        // original bug. This is itself a fallible async Figma call, guarded
-        // so its failure can never skip end() or the replay check after it.
-        try {
-          if (figma.currentPage.id !== invokingPage.id) await figma.setCurrentPageAsync(invokingPage);
-        } catch {
-          // Best-effort only.
-        }
-        canvasBuild.end();
-        // Same replay as the two paths above, with programmatic: null, not
-        // []: this path never selects anything of its own, so it has no
-        // basis to claim its own selection was empty, and a genuine
-        // mid-build deselect must still replay (see selectionToReplay).
-        const current = figma.currentPage.selection.map((node) => node.id);
-        if (selectionToReplay({
-          skipped: canvasBuild.skippedSelection, current, atBegin, programmatic: null,
-        })) {
-          void postSelection().catch(() => {/* handled inside */});
-        }
+        // original bug. The early exits above run before any page switch,
+        // so for them the hop is a no-op.
+        const settled = reply;
+        await settleBuild({
+          restorePage: async () => {
+            if (figma.currentPage.id !== invokingPage.id) await figma.setCurrentPageAsync(invokingPage);
+          },
+          reply: () => {
+            if (settled) figma.ui.postMessage(settled);
+          },
+          release: () => canvasBuild.end(),
+          // Same replay as the two paths above, with programmatic: null, not
+          // []: this path never selects anything of its own, so it has no
+          // basis to claim its own selection was empty, and a genuine
+          // mid-build deselect must still replay (see selectionToReplay).
+          replay: () => {
+            const current = figma.currentPage.selection.map((node) => node.id);
+            if (selectionToReplay({
+              skipped: canvasBuild.skippedSelection, current, atBegin, programmatic: null,
+            })) {
+              void postSelection().catch(() => {/* handled inside */});
+            }
+          },
+        });
       }
       break;
     }

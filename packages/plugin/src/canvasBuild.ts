@@ -96,6 +96,40 @@ export function selectionToReplay(input: {
   return true;
 }
 
+/**
+ * The tail of a build that may have left the invoking page: return to it,
+ * reply to the UI, release the gate, replay the selection, in that order.
+ *
+ * The reply must not go out while the build still has work that can yield.
+ * A reply can make the UI send the next request at once (Update all sends the
+ * next row's Update on the previous row's reply), and the message handler is
+ * re-entrant: a page switch awaited after the reply lets that request reach a
+ * gate that is still held, and "Another build is still running" aborts the
+ * whole batch. So the only await here is the page return, before the reply,
+ * and `reply`, `release` and `replay` then run back to back with no yield,
+ * which is what lets the next request find the gate open.
+ *
+ * `restorePage` is best effort: a rejected page switch is swallowed so it can
+ * never skip the reply or leave the gate held. Returning first also keeps the
+ * return's own `selectionchange` inside the gate, where it is noted rather
+ * than posted, and makes `replay` read the invoking page's selection.
+ */
+export async function settleBuild(steps: {
+  restorePage: () => Promise<void>;
+  reply: () => void;
+  release: () => void;
+  replay: () => void;
+}): Promise<void> {
+  try {
+    await steps.restorePage();
+  } catch {
+    // Best effort only: the reply below still has to go out.
+  }
+  steps.reply();
+  steps.release();
+  steps.replay();
+}
+
 /** Order-independent id-set equality: selection order is not a user choice. */
 function sameSelection(a: readonly string[], b: readonly string[]): boolean {
   if (a.length !== b.length) return false;

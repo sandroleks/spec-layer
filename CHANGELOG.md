@@ -619,7 +619,8 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   whatever page it lives on and never returned to yours, so a leftover
   selection there could replay as if you had chosen it, and a component you
   actually picked on your own page could be missed. The canvas now returns
-  to your page before the doc-updated toast shows. Clearing your selection
+  to your page before the plugin reports the doc as updated, so Update all
+  moves on to its next doc only once you are back. Clearing your selection
   during any of these builds is also no longer mistaken for the build's own
   generated content and is replayed correctly.
 - **A Foundation build that fails part-way cleans up after itself.** The
