@@ -1,30 +1,34 @@
 # Architecture
 
-Spec Layer is an npm-workspaces monorepo with three runtime areas: the pure extractor, the Figma plugin, and the AI proxy. A fourth workspace, the `spec-layer` CLI, delivers what the plugin publishes; it holds no extraction or serialization logic of its own.
+Spec Layer is an npm-workspaces monorepo with three runtime areas: the pure extractor, the Figma plugin, and the Cloudflare proxy. Two more workspaces support them: the `spec-layer` CLI delivers what the plugin publishes and holds no extraction or serialization logic of its own, and `@spec-layer/brand` is the one source for the shared tokens the plugin and the site build from.
 
 ## Data Flow
 
 ```text
-Figma node
-  → plugin serializer
-  → IntermediateSpec
+Figma component                         variable collections, text and effect styles
+  → plugin serializer (serialize.ts)      → serializeFoundation.ts
+  → IntermediateSpec                      → FoundationSpec
   ├─→ deterministic canvas documentation + connected Library entry
-  ├─→ compact YAML context on the clipboard (Copy for AI)
-  ├─→ readable Markdown projection of the same artifact (Copy for AI, the snapshot, spec-layer pull and show)
-  └─→ optional AI-writing proxy → Anthropic
+  └─→ Component / Foundation Context v5 artifact
+        ├─→ compact YAML brief or readable Markdown page (a component)
+        ├─→ DTCG resolver document (a Foundation)
+        │     for Copy for AI, the snapshot download (.zip), and spec-layer pull and show
+        └─→ library bundle → proxy → spec-layer pull → the repository
+
+optional AI writing → proxy → Anthropic → prose drawn on the canvas
 ```
 
-The Figma plugin owns Figma API access. `@spec-layer/extractor` receives plain JSON and has no dependency on the Figma runtime, which keeps extraction testable with fixtures. Nothing outside the plugin persists a document: the canvas and the clipboard are the two destinations.
+The Figma plugin owns Figma API access. `@spec-layer/extractor` receives plain JSON and has no dependency on the Figma runtime, which keeps extraction testable with fixtures. The plugin writes to four places: the canvas, the clipboard, a downloaded snapshot zip, and, on publish, a library bundle that the proxy stores and the CLI pulls.
 
 ## Workspaces
 
 ### `@spec-layer/extractor`
 
-Transforms serialized Figma trees into `IntermediateSpec` data and YAML briefs. Deterministic modules derive anatomy, properties, variants, states, token rules, gaps, and content hashes. The prose module is optional and receives only derived fields.
+Transforms serialized Figma trees into `IntermediateSpec` data and YAML briefs. Deterministic modules derive anatomy, properties, variants, states, token rules, gaps, and content hashes. The prose module is optional. It sends derived fields and the component's own Figma description, and gets back one structured answer (`prose/v2.ts`) whose names are checked against the spec before anything is drawn.
 
-`foundation.ts` models the layer beneath components: variable collections with their modes, local text styles, and local effect styles. It receives a raw dump and resolves alias chains synchronously, so cycles, depth limits, dangling targets, and cross-file references are fixture-testable rather than dependent on a live Figma runtime. An alias into a library carries its target's name and no value, because a remote variable's `valuesByMode` is keyed by the remote collection's mode ids and cannot be mapped onto local modes. Stable style ids and exact property binding ids sit beside the legacy name projection, so v5 can join by source identity without changing canvas hashes or v4 briefs. `planFoundationUnits` decides how many documents a file produces: one per collection, split by top-level name group past `SPLIT_THRESHOLD` rows, with mode columns capped at `MAX_MODE_COLUMNS`.
+`foundation.ts` models the layer beneath components: variable collections with their modes, local text styles, and local effect styles. It receives a raw dump and resolves alias chains synchronously, so cycles, depth limits, dangling targets, and cross-file references are fixture-testable rather than dependent on a live Figma runtime. An alias into a library carries its target's name and no value, because a remote variable's `valuesByMode` is keyed by the remote collection's mode ids and cannot be mapped onto local modes. Stable style ids and exact property binding ids sit beside the legacy name projection, so v5 can join by source identity without changing canvas hashes. `planFoundationUnits` decides how many documents a file produces: one per collection, plus one `Text styles` and one `Effect styles` unit, each split by top-level name group past `SPLIT_THRESHOLD` rows, with mode columns capped at `MAX_MODE_COLUMNS`.
 
-Foundation Copy first builds and validates the complete Foundation Context v5 artifact. The artifact includes composite typography, ordered supported shadow/blur effects, and property-to-token bindings. Composite styles have no known consuming mode; binding drift is checked only when every bound-token mode resolves to one identical value. `v5/dtcg.ts` then projects that artifact into a Design Tokens Format Module 2025.10 resolver document, the plugin's Foundation clipboard output: collections become resolver sets or mode-keyed modifiers named as in Figma, tokens carry `$type`/`$value`, local aliases become `{Collection.path}` references, and composite typography/effect styles map to `typography`/`shadow`. Anything the format cannot state, such as an unresolved library alias, a boolean or string token, or a unit DTCG has no dimension for, is omitted from the tree and recorded in the document's `$extensions["com.spec-layer"].report` array instead of being approximated. The document carries the canonical semantic content hash but does not replace the schema-valid artifact or participate in hashing. `v5/aiContext.ts` still projects the same artifact into the compact `profile: ai` form, but only as the Foundation dependency slice a Component Context v5 copy embeds; it is no longer a Foundation clipboard or bundle output.
+Foundation Copy first builds and validates the complete Foundation Context v5 artifact. The artifact includes composite typography, ordered supported shadow/blur effects, and property-to-token bindings. Composite styles have no known consuming mode; binding drift is checked only when every bound-token mode resolves to one identical value. `v5/dtcg.ts` then projects that artifact into a Design Tokens Format Module 2025.10 resolver document, the plugin's Foundation clipboard output: collections become resolver sets or mode-keyed modifiers named as in Figma, tokens carry `$type`/`$value`, local aliases become `{Collection.path}` references, and composite typography/effect styles map to `typography`/`shadow`. Anything the format cannot state, such as an unresolved library alias, a boolean or string token, or a unit DTCG has no dimension for, is omitted from the tree and recorded in the document's `$extensions["com.spec-layer"].report` array instead of being approximated. The same extension carries a `census` of what each file holds and a `config_hash` of the projection options, and a pulled `resolver.json` carries it as well. The document carries the canonical semantic content hash but does not replace the schema-valid artifact or participate in hashing. `v5/aiContext.ts` still projects the same artifact into the compact `profile: ai` form, but only as the Foundation dependency slice a Component Context v5 copy embeds; it is no longer a Foundation clipboard or bundle output.
 
 Component Copy builds Component Context v5 over the existing `IntermediateSpec`
 without changing canvas extraction or drift hashes. `v5/componentContext.ts`
@@ -42,8 +46,9 @@ a readable Markdown page, the way `v5/dtcg.ts` projects a Foundation artifact
 to a resolver document: front matter carrying the same envelope as the AI
 YAML but with `profile: markdown`, then title, description lead, Related,
 Overview, Properties, Anatomy, Layout, Token bindings, Tokens used, Effects,
-Unbound values, and Issues, with each AI-written prose section marked by an
-italic line stating the prose came from AI rather than Figma. It reuses
+Unbound values, and Issues, followed by the AI prose sections Variants, Do and
+don't, Accessibility, Interactions, Content considerations, and Design
+considerations, with each AI-written prose section marked by an italic line stating the prose came from AI rather than Figma. It reuses
 `componentFoundationAiSlice` for the Foundation dependency slice and
 `componentEnvelope` for the shared envelope rather than re-implementing
 either. Like the DTCG projection, it never feeds a hash, is never stored in a
@@ -55,9 +60,9 @@ download call it when the Component format setting is Markdown.
 
 Rendered implies hashed: any field added to `FoundationUnitContent` is rendered by definition and is therefore hashed, so nothing can reach the canvas outside drift detection. This is why `part` lives here rather than arriving as a render argument. Part numbers are a property of how one collection was split, so `unitContent` derives them from the scope's group and the source's ordered group list; deriving rather than passing is also what makes a whole-batch render and a later single-doc rebuild agree, since `updateFoundationDoc` has no batch around it to count.
 
-Hashed implies rendered: the rendered projection carries only what a frame draws. `FoundationTextMetrics` carries the four values a specimen and its metrics line use, and the rendered text row carries no `boundVariables`. A hash that moved on letter spacing or a rebound colour would offer an Update that produced a byte-identical frame. Extraction stays complete, because `FoundationTextStyle` and `FoundationVariable` keep every field, so rendering more later is a matter of moving fields back into the projection. Ids and `extractedAt` are excluded because they never appear in that output at all.
+Hashed implies rendered: the rendered projection carries only what a frame draws. `FoundationTextMetrics` carries what the specimen and its metrics line draw: family, style, size, line height, letter spacing, paragraph spacing, case, decoration, and the token bound to each metric the line names. `paragraphIndent` and any other binding reach no pixel, so they stay out: a hash that moved on them would offer an Update that produced a byte-identical frame. Extraction stays complete, because `FoundationTextStyle` and `FoundationVariable` keep every field, so rendering more later is a matter of moving fields back into the projection. Ids and `extractedAt` are excluded because they never appear in that output at all.
 
-AI-written group descriptions are the one deliberate exception to "rendered implies hashed", and it is an exception rather than an oversight. A description is not derived from the file: rewording it is not the token layer drifting, and a token changing does not make the sentence wrong. Hashing it would report every doc as out of date for a reason that has nothing to do with the source, which is precisely the noise the invariant exists to prevent. Component prose is excluded from `specContentHash` for the same reason. What does cover it is `selfHash`, the manual-edit check, since the description is part of the rendered document. Descriptions are stored on the doc's own link so an Update re-renders them rather than deleting them or spending another generation, which is the failure the part numbers already taught this branch once.
+AI-written group descriptions, and the one collection overview written in the same call, are the one deliberate exception to "rendered implies hashed", and it is an exception rather than an oversight. A description is not derived from the file: rewording it is not the token layer drifting, and a token changing does not make the sentence wrong. Hashing it would report every doc as out of date for a reason that has nothing to do with the source, which is precisely the noise the invariant exists to prevent. Component prose is excluded from `specContentHash` for the same reason. What does cover it is `selfHash`, the manual-edit check, since the description is part of the rendered document. Descriptions are stored on the doc's own link so an Update re-renders them rather than deleting them or spending another generation, which is the failure the part numbers already taught this branch once.
 
 The publish pill is the second deliberate exception, for the same shape of reason. It states a fact about the library (which version this doc's source was published as, and whether the source has moved since) rather than a fact derived from the source, so hashing it would make every publish look like drift. It lives outside all four hashes: `collectGeneratedText` skips any node carrying `specLayerPill`, so `selfHash` never sees it; it is not a field of any drift projection, so `specContentHash` and `foundationContentHash` cannot move on it; and it never reaches the extractor, so `semanticContentHash` cannot either. Its state is computed in `publishPill.ts` from the Section's `specLayerPublish` record and the doc's own drift hash, which is the hash the plugin already computes on Generate and Update, and the one the UI takes from the live source at publish. An unknown hash reads as Changed since, never Published.
 
@@ -69,8 +74,9 @@ The publish pill is the second deliberate exception, for the same shape of reaso
 
 Runs inside Figma as a small main-thread serializer plus a vanilla-DOM UI. It
 supports selected-component extraction, canvas documentation, Copy for AI,
-Foundation documents, connected-document maintenance, frame themes, and license
-management. There is one UI and one bundle.
+Foundation documents, connected-document maintenance, library publishing with
+semantic versions and a version history, a downloadable snapshot, frame themes,
+and license management. There is one UI and one bundle.
 
 Copy for AI and the snapshot download write components as YAML or Markdown,
 per the Component format setting on the Settings Export tab; the Publish
@@ -78,9 +84,9 @@ screen's setup command carries `--component-format md` when it is Markdown.
 Foundations always leave as DTCG. Both renderings come from the one artifact
 a copy or download builds.
 
-A Foundations tab documents the file's variable collections and text styles. Unlike every other tab it needs no selection, because it reads the whole file. `serializeFoundation.ts` produces the raw dump through an injected `FoundationReader`, matching the `NodeResolver` pattern in `serialize.ts`, so the dump logic stays testable and `main.ts` owns the Figma API surface. `foundationFrame.ts` renders one unit as a Section using `frameKit` primitives, so foundation frames inherit the user's brand theme.
+A Foundations tab documents the file's variable collections, text styles, and effect styles. Unlike every other tab it needs no selection, because it reads the whole file. `serializeFoundation.ts` produces the raw dump through an injected `FoundationReader`, matching the `NodeResolver` pattern in `serialize.ts`; `foundationReader.ts` implements that reader over the Figma API, so the dump logic stays testable. `foundationFrame.ts` renders one unit as a Section using `frameKit` primitives, so foundation frames inherit the user's brand theme, and draws style specimens through `foundationSpecimens.ts` and number scales through `foundationScales.ts`.
 
-A generated document is a generated document, whichever tab produced it: one fixed-width card, the brand header band across the top, then content. `brandHeader.ts` owns that band for both families, and `HEADER_PAD_X` is the single padding value the band and every content column below it use. The band was a private function in `docFrame.ts` while only components had one; foundation frames drew their own plain white heading instead, which is how they came to apply the theme's fonts while ignoring its header colour and never showing the captured logo at all. Two bands that merely agree today would drift the next time either family is restyled, so there is one. What stays with the component doc is the part that is specific to it: its subtitle is markdown lifted from the Definition, so it passes a `styleSubtitle` hook to re-apply the bold runs it parsed.
+A generated document is a generated document, whichever tab produced it: a card with the brand header band across the top, then content. A component doc is three such cards (Usage, Specifications, Accessibility) whose width starts at the frame default and widens for long tokens and the widest variant. `brandHeader.ts` owns that band for both families, and `HEADER_PAD_X` is the single padding value the band and every content column below it use. The band was a private function in `docFrame.ts` while only components had one; foundation frames drew their own plain white heading instead, which is how they came to apply the theme's fonts while ignoring its header colour and never showing the captured logo at all. Two bands that merely agree today would drift the next time either family is restyled, so there is one. What stays with the component doc is the part that is specific to it: its Usage subtitle is the component's own Figma description when it has one, otherwise the AI lede lifted from the Overview, so it passes a `styleSubtitle` hook to re-apply the bold runs it parsed.
 
 Colour rows are divided into blocks by folder, headed by the folder's final segment capitalized ("Blue", "Surface") rather than its whole path, since the path is what the tokens spell and not what a heading should read. Two folders can end in the same segment, so `groupTitles` widens every title in a document by one segment when any two would collide, keeping the set uniform instead of leaving one odd heading out. Descriptions key on the folder, never on the title, because the title moves when it widens.
 
@@ -88,29 +94,34 @@ The mode-heading row ("Light Dark Wireframe") sits in its own frame with its own
 
 Every value stack in the swatch list carries a primary/secondary hierarchy, applied by `appendSwatchValues` in `foundationFrame.ts`: the first line (the alias target, or the hex for a literal) is Medium and sits one step darker; every line after it is Regular, smaller, and muted. This is deliberately positional rather than content-based: `swatchValueLines` and `valueLines` already put the fact that matters first (the mapping for an alias, the hex for a literal), so styling by index keeps the two branches in one function and stays correct if a third value kind is ever added. The table's `swatchCell` uses the same idea at a smaller scale (11/10, both Regular) for the non-colour rows; the swatch list's version is more pronounced because colour is what these frames exist to show. A build with a mapped (multi-mode) collection widened its row rhythm at the same time (bigger chips, more row padding, wider mode blocks) for the same reason: three or four columns of small type packed tight read as a wall of text rather than a table a reader can scan. `groupOf` (the top-level segment) decides how a large collection splits into separate documents; `folderOf` (a name minus its leaf) decides how one document's rows split into blocks. Both exist because a system that names everything `color/...` has exactly one top-level group and would get no blocking at all from the split key. `groupRowsByFolder` is shared rather than done in the renderer, because the frame builder draws these blocks and any per-group description has to key on the same folders; grouping separately would let a description land on the wrong block. Block titles are derived from row names, which the hash already covers, so grouping adds nothing to the projection.
 
-Colour variables and everything else get different layouts, because a grid of hex codes is the wrong shape for colour: the value a reader wants is the colour itself, and a swatch has to be big enough to judge. A colour row is a swatch, the token's name and description, and the value in the notations a developer pastes; everything else stays a table row. A collection holding both gets both blocks, labelled, in that order. Single-mode collections take the swatch-list shape a published token reference uses, with values right-aligned at the far edge; multi-mode collections cannot, since there is one value slot and several values, so the name leads and each mode follows as its own block under a heading row that names each mode once. `rgb` and `hsl` are derived from the same hex the hash already covers, so they add nothing to the projection and cannot drift from it.
+Colour variables and everything else get different layouts, because a grid of hex codes is the wrong shape for colour: the value a reader wants is the colour itself, and a swatch has to be big enough to judge. A colour row is a swatch, the token's name and description, and the value in the notations a developer pastes; every other variable stays a table row, with a scale drawing above the value when its scopes call for one and a code-syntax chip under the name. Text and effect styles are drawn as specimens rather than rows. A collection holding both gets both blocks, labelled, in that order. Single-mode collections take the swatch-list shape a published token reference uses, with values right-aligned at the far edge; multi-mode collections cannot, since there is one value slot and several values, so the name leads and each mode follows as its own block under a heading row that names each mode once. `rgb` and `hsl` are derived from the same hex the hash already covers, so they add nothing to the projection and cannot drift from it.
 
-A foundation card's width is derived, not chosen: it is the widest of whichever layouts the card holds, each sized from its own parts (`cardWidth` from the table's columns, gaps and row padding; `swatchRowWidth` from the swatch, name and value columns), floored at the component frame's width so a single-mode collection still carries a 38px title. The card clips its contents, so a width that omits any of those terms is a clipped right-hand column rather than a cosmetic misfit; the row padding was missing from the first version of that sum. No upper cap is needed, because the widest table this can produce is a description column plus the four-mode ceiling.
+A foundation card's width is derived, not chosen: it is the widest of whichever layouts the card holds, each sized from its own parts (`cardWidth` from the table's columns, gaps and row padding; `swatchRowWidth` from the swatch, name and value columns, and `contrastBlockWidth` for a contrast matrix), floored at the component frame's width so a single-mode collection still carries a 38px title. The card clips its contents, so a width that omits any of those terms is a clipped right-hand column rather than a cosmetic misfit; the row padding was missing from the first version of that sum. No upper cap is needed, because the widest table this can produce is a description column plus the four-mode ceiling.
 
 A document's title is derived rather than stored. `foundationUnitTitle` in the extractor is the one place the format lives, and `planFoundationUnits`, the renderer, and `updateFoundationDoc` all read it: three separate copies of `` `${name} · ${group}` `` had accumulated, one per caller, and a rebuilt document that disagrees with the batch about its own name is a rename the user never asked for. Deriving it from `unitContent` also keeps it inside what the drift hash covers, which a separately stored string would not be.
 
-Foundation Sections join the same doc registry as component docs. `DocLinkData` is a union discriminated on `kind`, and a blob written before foundation support carries no `kind`, so it parses through the original component path unchanged. A foundation link addresses its source by scope rather than by node id, since its source is the file's own collections. Drift for every foundation row resolves from a single extraction during a library refresh, rather than one round trip per row. A scope stores both collection id and name, so a renamed collection retargets by name and reads as out of date rather than as missing. Beside each link, under `DOC_BASELINE_KEY`, the Section stores the exact object its content hash was computed over: `specHashProjection(spec)` for a component, `unitContent(spec, scope)` for a foundation unit. The rule is that the diff input is the hash input. "Review detected changes" diffs that stored projection against the live one (`packages/extractor/src/diff.ts`), so a change list can never disagree with the badge in either direction; comparing the v5 artifact instead was rejected for exactly that reason. The baseline is written in the same commit as the link, has its own 90 kB budget, is dropped whole rather than truncated, and is rejected on read unless its kind and `contentHash` match the link. It never participates in a hash.
+Foundation Sections join the same doc registry as component docs. `DocLinkData` is a union discriminated on `kind`, and a blob written before foundation support carries no `kind`, so it parses through the original component path unchanged. A foundation link addresses its source by scope rather than by node id, since its source is the file's own collections. Drift for every foundation row resolves from a single extraction during a library refresh, rather than one round trip per row. A scope stores both collection id and name, so a renamed collection retargets by name and reads as out of date rather than as missing. Beside each link, under `DOC_BASELINE_KEY`, the Section stores the exact object its content hash was computed over: `specHashProjection(spec)` for a component, `unitContent(spec, scope)` for a foundation unit. The rule is that the diff input is the hash input. The Library's "Show changes" panel diffs that stored projection against the live one (`packages/extractor/src/diff.ts`), so a change list can never disagree with the badge in either direction; comparing the v5 artifact instead was rejected for exactly that reason. The baseline is written in the same commit as the link, has its own 90 kB budget, is dropped whole rather than truncated, and is rejected on read unless its kind and `contentHash` match the link. It never participates in a hash.
 
 `frameKit.applyThemeToKit` is the single theme entry point for both frame families: `buildDocFrames` and `buildFoundationFrame` both call it. `docFrame` used to inline an equivalent preamble, left duplicated during the foundation work to avoid restructuring a large file mid-feature; it was merged once the legacy UI removal made the file smaller. Palette, corner style and font families are module state, so the helper sets every field on every build — a Default build after a themed one has to reset rather than inherit, which is what its tests pin down.
 
 ### `@spec-layer/proxy`
 
-The Cloudflare Worker owns the Anthropic credential, AI-writing quotas, and
-Lemon Squeezy license validation. Prose requests are restricted to the shipped
-model, prompts, message shapes, output limits, and base64 image formats; remote
-image URLs and caller-defined Anthropic options are rejected. Durable Objects
-serialize quota updates per hashed identity. Per-isolate IP throttles blunt
+The Cloudflare Worker owns the Anthropic credential, AI-writing and publish
+quotas, Lemon Squeezy license validation, and published libraries. Prose
+requests are restricted to the shipped prompts, message shapes, output limits,
+and base64 image formats; remote image URLs and caller-defined Anthropic
+options are rejected. The proxy chooses the model from the tier the request
+proves (Claude Sonnet 5 for Pro, Claude Haiku 4.5 for free), and a current
+request may not name one; the 5.1.0 plugin's cache keys still name Haiku and
+are accepted as they were. One Durable Object per hashed identity and profile
+(AI writing or publishing) serializes quota updates. Per-isolate IP throttles blunt
 simple abuse, while deployment-level rate rules remain the production
 backstop.
 
-`packages/proxy/src/libraries.ts` adds three `/v1/libraries` routes that store
-and serve a published library bundle without ever deriving it: the proxy is a
-blind blob store keyed by a proved identity, not a second implementation of v5
+`packages/proxy/src/libraries.ts` adds four `/v1/libraries` routes that store
+and serve a published library bundle without ever deriving it: the proxy
+parses the envelope and diffs it against the stored bundle only to decide the
+version, keyed by a proved identity, and is not a second implementation of v5
 extraction. Publish and rotate accept a license bearer, a Figma identity
 header, or both; ownership is any identity the request proves, so a library
 created on a free plan stays writable after upgrading, and one created on Pro
@@ -128,26 +139,36 @@ written only when the request also carries its current pull key
   not change. A free caller also spends from a monthly publish allowance
   (`PUBLISH_MONTHLY_LIMIT`, 10 changed publishes per UTC month), refused with
   402; a republish whose content matches the stored one is a no-op that
-  neither writes nor counts. The bundle body is capped at `MAX_BUNDLE_BYTES`
+  neither writes nor counts. Both answers carry the new `version` and an
+  `X-Library-Version` header, and a publish that races another on the same
+  library, or read a stale head, answers `409 publish_pending`. The body is
+  read as a stream and refused at the first byte over `MAX_BUNDLE_BYTES`
   (5,000,000 UTF-8 bytes of the request body).
 - `GET /v1/libraries/:libraryId` (pull key required, `Authorization: Bearer
-  sl_...`): returns the stored bundle verbatim, with `ETag` and
-  `X-Published-At` headers; an `If-None-Match` matching the current
-  `bundleHash` gets a bare 304.
+  sl_...`): returns the stored bundle verbatim as a stream, with `ETag`,
+  `X-Published-At` and, once the library has one, `X-Library-Version`
+  headers; an `If-None-Match` that lists the current `bundleHash`, weak or
+  strong, gets a bare 304. Every pull answer, errors included, carries
+  `Cache-Control: private, no-store`.
+- `GET /v1/libraries/:libraryId/versions` (pull key required): returns the
+  version log, newest first, with an `ETag` and a 304 on a match.
 - `POST /v1/libraries/:libraryId/rotate` (caller must own the library; there
   is no tier check): issues a new pull key. The old key stops working once
   the KV write propagates, which can take up to about a minute.
 
 `packages/proxy/src/versions.ts` gives a published library a semantic version. On every changed publish the proxy loads the stored bundle, runs the extractor's `libraryDiff` over Figma facts, and derives the minimum bump; the client may raise it and never lower it. One `VersionRecord` per publish is appended to `lib:<id>:versions`, newest first, and the bundle bytes are kept under `lib:<id>:bundle:<version>` for the newest ten versions. The log, not the meta, is the source of truth for the current version: KV writes are not atomic, and publish writes bundles, then the log, then the meta, so a stop between the last two leaves a record the meta lacks and the next publish reads the log. `dryRun: true` computes the same proposal without writing, spending quota, or taking the publish reservation, and the plugin never sends its dry-run result back: publish recomputes.
 
-KV layout, all under the `libraryStore` binding. The records a publish writes
+KV layout. Library records share the `LICENSE_CACHE` namespace with license
+verdicts; handlers reach them through the `libraryStore` dependency. The records a publish writes
 share no field with the record a rotate writes, so the two can overlap
 without clobbering each other:
 
 - `lib:<libraryId>:bundle` — the published bundle JSON, served as-is to a
   pull request.
 - `lib:<libraryId>:meta` — a `LibraryMeta` JSON record: `licenseId`,
-  `publishedAt`, `bundleHash`, `contentHash`, `size` (bytes), `fileName`.
+  `publishedAt`, `bundleHash`, `contentHash`, `size` (bytes), `fileName`
+  (capped at 256 characters), `version` (a cache of the newest log record),
+  and `figmaOwnerHash` (a second ownership proof).
   `bundleHash` is sha256 of the stored bytes and serves the pull `ETag`;
   `contentHash` is `libraryBundleContentHash`, which ignores each artifact's
   export envelope so a rebuild of unchanged sources matches, and is what the
@@ -157,6 +178,10 @@ without clobbering each other:
   their first republish is treated as changed.
 - `lib:<libraryId>:key` — sha256 of the current pull key (the key itself is
   never stored). Rotate writes only this record.
+- `lib:<libraryId>:versions` — the version log, one `VersionRecord` per
+  changed publish, newest first.
+- `lib:<libraryId>:bundle:<version>` — the bundle bytes of each of the newest
+  ten versions.
 - `libowner:<licenseId>:<libraryId>` — one record per owned library, listed
   by prefix to name what an identity already publishes. The library ceiling
   itself is settled in the identity's publish Durable Object, which counts
@@ -180,18 +205,18 @@ through the same extractor calls Copy for AI uses (`buildFoundationArtifactV5`
 and `componentAiContext` for each component), so every published bundle
 carries both the canonical v5 artifact and its `ai` field side by side: a DTCG
 resolver document for the Foundation, ai-profile YAML for each component. The
-proxy stores and returns that bundle unmodified, and the `spec-layer` CLI only
-parses and writes it to disk — neither ever re-derives, re-validates, or
-re-projects v5 output from source data.
+proxy stores and returns that bundle unmodified, and the `spec-layer` CLI
+projects only from the published artifacts in it. Neither re-derives v5
+output from source data.
 
 ### `spec-layer` (`packages/cli/`)
 
 A pull-only delivery CLI published to npm as `spec-layer` (`npx spec-layer
 pull`), not a workspace dependency of the extractor or the plugin. It has zero
-runtime dependencies: the one piece of shared code it uses, the bundle
-envelope parser from `@spec-layer/extractor`, is inlined at build time, and it
-never touches Figma or extraction code. It treats each artifact as opaque JSON
-and refuses a bundle whose major version it does not know. Eight commands:
+runtime dependencies: the extractor code it uses (the bundle envelope parser,
+the Level 1 check, and the DTCG, Markdown, CSS and font projections) is
+inlined at build time, and it never touches Figma or extraction code. It
+refuses a bundle whose major version it does not know. Eight commands:
 
 - `setup` writes `speclayer.json`, stores the pull key in a gitignored
   `speclayer.local.json` at mode 0600 after confirming git ignores it, and
@@ -200,7 +225,8 @@ and refuses a bundle whose major version it does not know. Eight commands:
   and an optional `include` selection) so later commands need no flags.
 - `pull` fetches the bundle from `GET /v1/libraries/:libraryId` and writes it
   to `<outDir>/` (default `.speclayer/`): the raw `bundle.json`, a `tokens/`
-  directory for the Foundation, and a `manifest.json` indexing every artifact
+  directory for the Foundation, a `fonts.json` naming the families and weights
+  its typography styles need, and a `manifest.json` indexing every artifact
   by content hash and file path. The `tokens/` directory is projected from the
   canonical Foundation artifact in `bundle.json` by the extractor's
   `foundationDtcg`, after a Level 1 shape check on that artifact so a malformed
@@ -240,26 +266,32 @@ and refuses a bundle whose major version it does not know. Eight commands:
   else.
 
   A `dtcg` block in `speclayer.json` chooses `standard` or `legacy` value forms
-  and declares unit overrides for numbers whose scopes state no unit.
+  and declares unit overrides for numbers whose scopes state no unit; without
+  an override, the projection takes a unit from how the library uses the
+  token, and reports each one as `unit_derived_from_usage`.
   A selection (`--only foundation|components`, repeatable `--component NAME`,
   or the config's `include` block) narrows which of `tokens/` and
   `component-specs/` are written; `bundle.json` always holds the whole library
   and the manifest lists every artifact, with `path: null` for the ones left
   unwritten. The unit of selection is a whole bundle entry, never a slice of
   one, because slicing below an entry would need the extractor's
-  alias-closure logic. When the last pull used the same selection, `pull`
-  sends the manifest's hash as `If-None-Match` and a 304 writes nothing.
-  Writes stage into `<outDir>.partial` and rename into place, so a failed
-  pull never leaves a
-  half-written directory, and the swap refuses a directory that is the
-  working directory, a parent of it, or an existing non-empty directory the
-  CLI did not write.
+  alias-closure logic. When the last pull was made by the same CLI version
+  with the same selection, options and outputs, and every file it wrote is
+  still on disk, `pull` sends the manifest's hash as `If-None-Match` and a
+  304 writes nothing. Either way it then prints the report counts and any
+  font the repository does not load, and `--strict` exits 1 when a report
+  holds an error. Writes stage into a fresh `<outDir>.partial-XXXXXX` made by
+  that run and rename into place, so a failed pull never leaves a
+  half-written directory, and the swap refuses the working directory itself,
+  any path outside it, a symbolic link, a file, and an existing non-empty
+  directory the CLI did not write.
 - `status` re-requests the bundle with the manifest's stored hash as an
   `If-None-Match` etag: a 304 means up to date (exit 0); a fresh body means
   the local pull is behind (exit 2) without writing anything, leaving `pull`
-  to do the actual update.
+  to do the actual update. It names the version when the proxy reports one.
 - `list` prints every artifact from the local manifest with its path or
-  `not written`. `show foundation` prints the Foundation entry's `ai` field
+  `not written`, under a header naming the library and its version, then
+  each platform output. `show foundation` prints the Foundation entry's `ai` field
   from the local `bundle.json` to stdout, the DTCG resolver document (or its
   canonical JSON with `--canonical`). `show component NAME` prints the
   component's `ai` field as YAML, or, when the resolved format is `md`, a
@@ -274,9 +306,11 @@ and refuses a bundle whose major version it does not know. Eight commands:
   (`packages/cli/src/skill.ts`) from three inputs and nothing else: the tool
   catalogue; the last pull (components and paths from `manifest.json`,
   collections, modes and defaults from `tokens/resolver.json`, report counts,
-  and a count of `$type: number` tokens); and a root-only reading of the
-  repository (`packages/cli/src/detect.ts`: `package.json` dependency names,
-  build files, agent configuration directories), every conclusion carrying
+  a count of unitless number tokens using `spec-layer.meta.json` scopes, and
+  the fonts in `fonts.json`); and a root-only reading of the repository
+  (`packages/cli/src/detect.ts`: `package.json` dependency names, build
+  files, agent configuration directories, and root CSS and HTML entry points
+  for font loading), every conclusion carrying
   the file it came from. The detected platform chooses which Figma
   `code_syntax` key and which token-pipeline advice the guide gives;
   `--platform` overrides it, and a repository with no signal gets the generic
@@ -292,10 +326,12 @@ and refuses a bundle whose major version it does not know. Eight commands:
   and the plugin's Publish screen copies the setup command followed by it as
   a message for an agent (`agentSetupMessage`, beside `setupCommand`).
 
-The pull key resolves `--key`, then `SPEC_LAYER_KEY`, then the stored
+The pull key resolves `--key` (or `--key -`, which reads it from stdin so it
+stays out of shell history), then `SPEC_LAYER_KEY`, then the stored
 `speclayer.local.json` beside `speclayer.json`, which `setup` writes at mode
 0600 only after `git check-ignore` confirms git ignores it. The plugin's Publish
-screen copies `npx spec-layer setup --id <libraryId> --key <pullKey>`; the key
+screen copies `npx spec-layer setup --id <libraryId> --key <pullKey>`, with
+`--component-format md` when Markdown is chosen; the key
 appears in the clear only there. Earlier versions documented the key as never
 written to disk; `CHANGELOG.md` records why that was reversed.
 
@@ -312,8 +348,9 @@ chosen for its lifetime:
   verdict.
 - `figma.root` plugin data holds the document registry, so a file knows which
   documents it contains without scanning every page. It also holds the file's
-  published library id (`speclayer.publish.libraryId`) and the library's
-  current version (`speclayer.publish.version`), because `figma.fileKey` is
+  published library id (`speclayer.publish.libraryId`), the last publish date
+  (`speclayer.publish.publishedAt`), and the library's current version
+  (`speclayer.publish.version`), because `figma.fileKey` is
   undefined for a Community plugin and a per-user store cannot tell two files
   apart. The matching pull key is a secret, so it stays in
   `figma.clientStorage` under `publishKey:<libraryId>`; a second device sees
@@ -324,14 +361,18 @@ chosen for its lifetime:
   and, once published, a publish record (`specLayerPublish`) naming the
   version and the drift hash the doc was published at.
 
-The proxy holds the only server-side state: a KV namespace caching license
-verdicts, and a Durable Object per hashed identity serializing quota updates.
-Neither stores a license key in the clear.
+The proxy holds the only server-side state: one KV namespace holding license
+verdicts and every published library record, and a Durable Object per hashed
+identity and profile that serializes quota updates, keeps each cached response
+under its own key (the newest 500), and, for publishing, holds each library's
+lock and the identity's library count. Neither stores a license key or a pull
+key in the clear.
 
 ## Verification
 
 The root `npm run check` command runs lint, TypeScript checks, a NUL-byte scan,
-unit tests, the plugin build, a scan asserting the main-thread bundle touches
+unit tests, the plugin build, the CLI build and a smoke run of the built CLI
+bundle, a scan asserting the main-thread bundle touches
 no unsupported browser globals, and a Wrangler deployment dry-run that bundles
 the proxy without uploading it. GitHub Actions uses the coverage test pass and
 audits the full dependency tree, including development tooling. Run that audit

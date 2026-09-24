@@ -2,10 +2,11 @@
  * prompt.ts: the frozen v8 contract bytes, plus the text helpers the v9 path
  * shares.
  *
- * Everything named `LEGACY_*` here is the request the shipped 5.1.0 plugin
- * still sends. The proxy validates those bytes so that build keeps working
- * until 6.0.0 is live; nothing in the plugin imports them any more. Delete
- * them together with the proxy's legacy branch after the release.
+ * Everything named `LEGACY_*` here is the request the 5.1.0 plugin still
+ * sends. The proxy validates those bytes so installed 5.1.0 plugins keep
+ * working after the 6.0.0 release; nothing in the plugin imports them any
+ * more. Delete them together with the proxy's legacy branch once 5.1.0
+ * traffic has stopped.
  *
  * What is not legacy is shared: `replaceAround` (dash normalisation, behind
  * `v2.ts`'s `normalizeDashes`), `fencedBlock` (code-fence extraction, behind
@@ -33,11 +34,11 @@ export interface ProseDrafts {
 }
 
 /**
- * The v8 system prompt, frozen. The shipped 5.1.0 plugin sends these exact
+ * The v8 system prompt, frozen. The 5.1.0 plugin sends these exact
  * bytes and the proxy compares them byte for byte, so this is a wire contract
  * rather than a style document: editing one character stops that build
  * generating. Nothing in the plugin imports it. Delete it, the exemplar below,
- * the two caps, and the proxy's legacy branch once 6.0.0 is live.
+ * the two caps, and the proxy's legacy branch once 5.1.0 traffic has stopped.
  */
 export const LEGACY_PROSE_SYSTEM_PROMPT = [
   'You write component guideline prose for a design-system specification tool.',
@@ -198,14 +199,14 @@ export const LEGACY_PROSE_MAX_TOKENS = 3000;
 export const LEGACY_GROUP_MAX_TOKENS = 1200;
 
 /**
- * The v8 foundation group system prompt, frozen. The shipped 5.1.0 plugin
+ * The v8 foundation group system prompt, frozen. The 5.1.0 plugin
  * sends these exact bytes under a `prose:v1:groups:` key and the proxy
  * compares them byte for byte, so this is a wire contract rather than a style
  * document: editing one character stops that build generating its group
  * descriptions. `FOUNDATION_SYSTEM_PROMPT` in `foundationPrompt.ts` has since
  * gained the collection-overview rule and is what the v9 client sends;
  * nothing in the plugin imports the copy below. Delete it together with the
- * proxy's legacy branch once 6.0.0 is live.
+ * proxy's legacy branch once 5.1.0 traffic has stopped.
  */
 export const LEGACY_FOUNDATION_SYSTEM_PROMPT = [
   'You write short descriptions of design-token groups for a design-system reference.',

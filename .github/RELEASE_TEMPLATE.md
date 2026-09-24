@@ -19,7 +19,7 @@ Then in Figma desktop choose **Plugins → Development → Import plugin from ma
 
 ## Security Model
 
-Deterministic sections run entirely inside the plugin and send nothing. AI writing routes through the Spec Layer proxy, which holds the Anthropic credential; no user API key is involved. Component requests include a derived summary and, when it fits the limits, a rendered image. The proxy validates raw license keys with Lemon Squeezy but uses SHA-256 digests for its own cache keys, quota identities, and logs. Keep credentials and private design-system data out of Git.
+Deterministic sections run entirely inside the plugin and send nothing. AI writing routes through the Spec Layer proxy, which holds the Anthropic credential; no user API key is involved. Component requests include a derived summary and, when it fits the limits, a rendered image; Foundation requests send token names and resolved values without an image. Publishing a library stores its bundle on the proxy for the `spec-layer` CLI, behind a pull key the proxy keeps only as a SHA-256 digest. The proxy validates raw license keys with Lemon Squeezy but uses SHA-256 digests for its own cache keys, quota identities, and logs. Keep credentials and private design-system data out of Git.
 
 ## Verification
 
@@ -31,18 +31,22 @@ npm run check:ci
 git diff --check
 ```
 
-Plus the current manual Figma pass in `packages/plugin/TESTING.md`: load the
+Plus the current manual Figma pass in `packages/plugin/TESTING.md`, recorded
+in the release notes rather than assumed: load the
 built manifest and confirm component docs, Foundation docs, Library, and Copy
 for AI behavior on a synthetic or publishable file.
 
-If the release publishes or relies on Foundation v5 artifacts, also verify the
-custom domain, DNS, HTTP 200 response, exact `$id`, and committed-file parity
-for `https://spec-layer.com/schemas/foundation-context/v5.json`. A failure in
-any of those checks blocks the release; a `*.pages.dev` preview is not enough.
+Also run `npm run check:site-live`. It fetches
+`https://spec-layer.com/schemas/foundation-context/v5.json` and
+`component-context/v5.json` from the custom domain and compares them byte for
+byte with the committed schemas. A failure blocks the release; a `*.pages.dev`
+preview is not enough.
 
 ## Known Limitations
 
-- Workspace packages are not published to npm.
+- Only the `spec-layer` CLI is published to npm; the other workspace packages
+  are private. A release that needs a newer CLI names the minimum version, and
+  that version must be `latest` on npm before the listing update goes out.
 - Verify the active Cloudflare rule `Protect license endpoints` still applies
   per IP to `starts_with(http.request.uri.path, "/v1/license/")`, blocks after
   more than 5 requests in 10 seconds, and has a 10-second mitigation timeout.

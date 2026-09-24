@@ -16,8 +16,10 @@ into your repository as structured context for an AI coding agent.
 
 - **Component documentation.** Generate measurements, anatomy, properties,
   states, variants, tokens, and theming in a connected canvas frame.
-- **Foundation documentation.** Turn variable collections and text styles into
-  readable token tables and colour references.
+- **Foundation documentation.** Turn variable collections, text styles, and
+  effect styles into readable references: number tokens drawn to scale, text
+  styles set as specimens, effect styles cast on a card, and any code syntax
+  a token defines in Figma beside it.
 - **Copy for AI.** Copy a component as a compact YAML brief or a readable
   Markdown page, or a Foundation as a DTCG resolver document, with the facts
   an implementation agent needs. Foundation and component copies retain their
@@ -28,8 +30,12 @@ into your repository as structured context for an AI coding agent.
 - **Publish and pull.** Publish a library from the plugin, then pull it into a
   repository with the [`spec-layer`](packages/cli/README.md) CLI, so a coding
   agent reads the same component and token facts your designers see in Figma.
-- **Optional AI writing.** Draft overviews, usage guidance, do's and don'ts, and
-  interaction notes from the selected component.
+  Every changed publish gets a semantic version, and the plugin can also
+  download the library as a self-contained agent skill with no publish at all.
+- **Optional AI writing.** Draft an overview, when to use it, do's and don'ts,
+  and interaction notes for a component, and a line per colour group plus a
+  collection overview for a Foundation. Pro writes with Claude Sonnet 5 and the
+  free plan with Claude Haiku 4.5.
 
 Extraction, rendering, drift detection, and Copy for AI are deterministic. Only
 AI-written prose uses a model.
@@ -67,7 +73,8 @@ context (YAML, Markdown, or DTCG JSON) are produced locally.
 When you request AI writing, the plugin sends a structured component summary
 and, when it fits the export limits, a rendered image through the Spec Layer
 proxy to Anthropic. If the image cannot be exported, the request continues with
-text only. You do not provide an API key.
+text only. For a Foundation it sends token names and resolved values, and no
+image. You do not provide an API key.
 
 Publishing a library is the one feature that stores your content. The bundle
 you publish is held on the proxy so the CLI can fetch it, and pulling it
@@ -102,7 +109,7 @@ plugin source and manifest network allowlist aligned when changing that host.
 
 ### The CLI
 
-Publishing a library from the plugin's **Library** screen shows a setup command
+Publishing a library from the plugin's **Publish** screen shows a setup command
 to run once in your repository:
 
 ```bash
@@ -110,14 +117,14 @@ npx spec-layer setup --id lib_... --key sl_...
 ```
 
 That records the library id, stores the key in a gitignored
-`speclayer.local.json`, and writes `.speclayer/`, so every later command needs
-no flags. `npx` needs no install step of its own, though a repo that pulls on a
+`speclayer.local.json`, and writes `.speclayer/`, `component-specs/`, and, for
+a web project, `tokens/`, so every later command needs no flags. `npx` needs no install step of its own, though a repo that pulls on a
 schedule should pin the CLI as a dev dependency. The CLI is delivery only: it
 never talks to Figma, re-derives nothing, and has no runtime dependencies.
 
 | Command | What it does | Network |
 |---|---|---|
-| `setup --id lib_... --key sl_...` | Records the id, stores the key, then pulls. The command the plugin copies. Needs 0.3.0 or later. | yes |
+| `setup --id lib_... --key sl_...` | Records the id, stores the key, then pulls. The command the plugin copies. Needs 0.3.0 or later, or 0.10.0 when it carries `--component-format md`. | yes |
 | `init --id lib_...` | Writes `speclayer.json` only. No key. | no |
 | `pull` | Fetches the library and writes it into the output directory, default `.speclayer/`. | yes |
 | `status` | Checks freshness without writing. Exits `2` when the local copy is behind. | yes |
@@ -126,11 +133,12 @@ never talks to Figma, re-derives nothing, and has no runtime dependencies.
 | `tools [--json]` | Lists every command with what it reaches, needs, and writes. | no |
 | `skill [--install] [--agent HOST] [--platform P]` | Prints a guide for a coding agent, adapted to the repository's stack and the last pull; `--install` writes it for Claude Code, Cursor, Copilot, Windsurf, Gemini, or `AGENTS.md`. Needs 0.5.0 or later. | no |
 
-Every command takes `--out DIR` to point at a different output directory, and
+Every command but `tools` takes `--out DIR` to point at a different output directory, and
 the three that reach the network also take `--api URL` to override the API
 origin. `setup`, `init` and `pull` additionally take a selection (`--only foundation`, `--only components`, or repeatable
 `--component NAME`) to narrow what lands on disk. The pull key resolves from
-`--key`, then `SPEC_LAYER_KEY`, then `speclayer.local.json`. See the
+`--key`, then `SPEC_LAYER_KEY`, then `speclayer.local.json`, and `--key -` reads
+it from stdin so it never sits in shell history. See the
 [CLI README](packages/cli/README.md) for the full flag reference, partial pulls,
 what `pull` writes, and how the agent guide is built.
 
@@ -168,7 +176,7 @@ Figma node
   → plugin serializer
   → plain IntermediateSpec data
   ├─→ canvas documentation + connected Library entry
-  ├─→ compact YAML or a Markdown page on the clipboard
+  ├─→ YAML, Markdown, or DTCG context on the clipboard
   ├─→ published library bundle → proxy → spec-layer CLI → your repository
   └─→ optional AI-writing proxy → Anthropic
 ```

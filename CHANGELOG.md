@@ -392,8 +392,8 @@ path, where the files already are, and says so in one line.
 
 - **Stale docs are explained once, in a banner.** The Library no longer
   repeats the rebuild explanation under every "Rebuild needed" row. When any
-  row needs a rebuild, a short banner above the filters ("New plugin
-  version") offers "Rebuild docs",
+  row needs a rebuild, a short banner above the filters ("Some docs are
+  from an older plugin version") offers "Rebuild docs",
   which queues only those rows. The button's tooltip notes that Keyboard is
   rewritten when AI writing is on.
 - **A real first screen when no component is selected.** The component
