@@ -1279,7 +1279,7 @@ describe('foundationDtcg resolver and document', () => {
     expect(doc.modifiers.Primitives.contexts.Dark[0]).toHaveProperty('Primitives');
     expect(doc.sets['Typography styles'].sources[0]).toHaveProperty('Typography styles');
     const ext = doc.$extensions['com.spec-layer'];
-    expect(ext.schema_version).toBe('5.1.0');
+    expect(ext.schema_version).toBe('5.1.1');
     expect(ext.content_hash).toBe(artifact.spec_layer.export.content_hash);
     expect(ext.source).toEqual({ provider: 'figma', file_name: 'Synthetic Direct Foundation' });
     expect(ext.completeness).toEqual(artifact.completeness);

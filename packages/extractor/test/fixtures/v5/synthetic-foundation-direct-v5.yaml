@@ -494,7 +494,7 @@ styles:
         modified_at: null
 spec_layer:
   kind: foundation
-  schema_version: 5.1.0
+  schema_version: 5.1.1
   schema_uri: https://spec-layer.com/schemas/foundation-context/v5.json
   extractor: { name: spec-layer-foundation, version: "3", build: null }
   export:
