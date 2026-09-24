@@ -15,7 +15,11 @@ import { REFERENCE_OUT_DIR, renderReferenceExample, writeReferenceExample } from
 
 if (process.env.UPDATE_REFERENCE_EXAMPLE === '1') writeReferenceExample();
 
+// `.speclayer` is a real, dot-prefixed directory in this layout (matching a
+// real pull's swapped output directory), so dotfiles are not filtered
+// wholesale; only a macOS Finder `.DS_Store` is ignored.
 const onDisk = (dir: string): string[] => readdirSync(dir).flatMap((name) => {
+  if (name === '.DS_Store') return [];
   const p = join(dir, name);
   return statSync(p).isDirectory() ? onDisk(p) : [relative(REFERENCE_OUT_DIR, p)];
 });
@@ -29,11 +33,8 @@ describe('reference example goldens', () => {
     }
   });
 
-  // The brief this test was planned from guessed the header would contain
-  // the word "derived". The real header text in `css.ts` (`headerText`)
-  // never uses that word: it reads "...has a unit its own Figma variable
-  // does not state, taken from how the library uses the token." (singular)
-  // or the plural form for more than one. This asserts the real line.
+  // `css.ts`'s `headerText()` never uses the word "derived"; this asserts
+  // the real line it writes instead.
   it('writes the derived-unit header line in the CSS output', () => {
     const css = Object.entries(renderReferenceExample())
       .filter(([p]) => p.startsWith('tokens/') && p.endsWith('.css'));

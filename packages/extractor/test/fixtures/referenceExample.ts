@@ -12,15 +12,26 @@
  * `referenceExample.test.ts` pins which features the example exercises. When
  * one of those assertions fails, the fix belongs in the input JSON.
  *
- * `renderReferenceExample` below mirrors what a real `spec-layer pull` writes
- * for this library (`packages/cli/src/files.ts`, `packages/cli/src/outputs.ts`),
- * restricted to the files the documentation site's Example page shows:
- * the component brief in both projections, the Foundation's DTCG export and
- * CSS output (both of which the CLI writes under `tokens/`), and `fonts.json`.
- * It does not render `bundle.json`, `manifest.json`, `outputs/*.map.json`,
- * `outputs/*.report.json`, or `component-specs/`, which the site does not
- * mirror. `referenceExampleGolden.test.ts` pins the output byte for byte
- * against `reference-example/out/`.
+ * `renderReferenceExample` below mirrors the repo layout a real
+ * `spec-layer pull` leaves behind for this library
+ * (`packages/cli/src/files.ts`, `packages/cli/src/outputs.ts`,
+ * `packages/cli/src/config.ts`), restricted to what the documentation
+ * site's Example page shows:
+ * - `.speclayer/fonts.json`, `.speclayer/tokens/*` (the DTCG export), and
+ *   `.speclayer/outputs/web-css.{map,report}.json` -- everything `files.ts`
+ *   writes into the swapped output directory (`DEFAULT_OUT_DIR`, `.speclayer`).
+ * - `tokens/*` -- the CSS deliverable `writeVisibleDir` writes in place at
+ *   the output's own path (`FORMATS` in `outputs.ts`: the `web`/`css`
+ *   format's default path is `tokens`, a directory distinct from
+ *   `.speclayer/tokens/` above).
+ * - `component-specs/button.yaml` and `component-specs/button.md` -- the
+ *   component brief, written where `componentSpecsDir` defaults to
+ *   (`DEFAULT_COMPONENT_SPECS_DIR` in `config.ts`). A real pull writes only
+ *   one of the two, chosen by `componentSpecsFormat` (default `'yaml'`);
+ *   both are rendered here because the site shows both projections.
+ * It does not render `bundle.json` or `manifest.json`, which the site does
+ * not mirror. `referenceExampleGolden.test.ts` pins the output byte for
+ * byte against `reference-example/out/`.
  *
  * Regenerate deliberately with:
  * `npx tsx packages/extractor/test/fixtures/referenceExample.ts`.
@@ -220,17 +231,19 @@ export function renderReferenceExample(): Record<string, string> {
   const button = buildReferenceButton();
   const exp = foundationDtcg(foundation, {}, usageUnits(bundle));
   const json = (v: unknown) => `${JSON.stringify(v, null, 2)}\n`;
+  const yaml = toYaml(componentAiContext(button) as unknown as YamlValue);
+  const md = componentMarkdown(button);
+  // component-specs/: a real pull writes only ONE of these two files,
+  // whichever `componentSpecsFormat` selects (default `'yaml'`); both are
+  // rendered here because the site shows both projections.
   const out: Record<string, string> = {
-    'button.yaml': toYaml(componentAiContext(button) as unknown as YamlValue),
-    'button.md': componentMarkdown(button),
-    'fonts.json': json(fontRequirements(foundation)),
+    'component-specs/button.yaml': yaml,
+    'component-specs/button.md': md,
   };
-  // The CLI writes both the DTCG export and the CSS output under `tokens/`
-  // (`packages/cli/src/files.ts`: `put(\`tokens/${name}\`, ...)` for the DTCG
-  // files, and the default `web`/`css` output path is also `tokens`, per
-  // `packages/cli/src/outputs.ts` `FORMATS`), so both land in the same
-  // directory here.
-  for (const [name, text] of Object.entries(dtcgExportFiles(exp))) out[`tokens/${name}`] = text;
+  // .speclayer/: the swapped output directory (`DEFAULT_OUT_DIR`), everything
+  // `files.ts` `put()`s into it.
+  out['.speclayer/fonts.json'] = json(fontRequirements(foundation));
+  for (const [name, text] of Object.entries(dtcgExportFiles(exp))) out[`.speclayer/tokens/${name}`] = text;
   const header = {
     libraryId: REFERENCE_LIBRARY_ID,
     contentHash: foundation.spec_layer.export.content_hash,
@@ -238,6 +251,10 @@ export function renderReferenceExample(): Record<string, string> {
     format: 'css',
   };
   const css = cssOutput(exp, header, { case: 'kebab' });
+  out['.speclayer/outputs/web-css.map.json'] = json(css.map);
+  out['.speclayer/outputs/web-css.report.json'] = json(css.report);
+  // tokens/: the CSS deliverable, written in place at the output's own
+  // default path (a directory distinct from `.speclayer/tokens/` above).
   for (const [name, text] of Object.entries(css.files)) out[`tokens/${name}`] = text;
   return out;
 }
