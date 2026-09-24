@@ -1301,7 +1301,7 @@ describe('runPull safety and freshness', () => {
   it('refuses an absolute outDir an earlier CLI recorded in speclayer.json, naming the file and where the files really are', async () => {
     writeFileSync(join(cwd, 'speclayer.json'), JSON.stringify({ libraryId: 'lib_abcabcabcabcabcabcabcabc', outDir: '/custom' }));
     const expected = 'speclayer.json "outDir" is "/custom". Earlier versions wrote that to custom inside this directory. '
-      + 'Change "outDir" to "custom", or run spec-layer init again.';
+      + 'Change "outDir" to "custom", or run the setup command from the plugin\'s Publish screen, which does that for you.';
     const io = makeIo();
     const fetcher = stubThree();
 
@@ -1949,6 +1949,41 @@ describe('stored key errors', () => {
     expect(await runPull(cwd, { id: LIB }, {}, io, stub200())).toBe(1);
     expect(io.errLines.join('\n')).toMatch(/setup command/);
     expect(io.errLines.join('\n')).toMatch(/SPEC_LAYER_KEY/);
+  });
+
+  // A key pasted as --id in a set-up repository used to reach the "issued for
+  // library X, not <id>" message verbatim, and `--id sl_... --key lib_...` put
+  // it in the request URL. The flag is shape-checked before either can happen.
+  it('never prints or sends a pull key given as --id to pull or status', async () => {
+    const KEY = `sl_${'k'.repeat(48)}`;
+    writeFileSync(join(cwd, 'speclayer.json'), JSON.stringify({ libraryId: LIB, outDir: '.speclayer' }));
+    writeFileSync(join(cwd, 'speclayer.local.json'), JSON.stringify({ libraryId: LIB, key: `sl_${'a'.repeat(48)}` }));
+    const expected = '--id must be "lib_" followed by 24 hex characters, as the plugin shows it. That looks like the pull key; pass it with --key.';
+    const cases: Array<[string, (io: Io, fetcher: typeof fetch) => Promise<number>]> = [
+      ['pull, stored key for another id', (io, f) => runPull(cwd, { id: KEY }, {}, io, f)],
+      ['pull, swapped with --key', (io, f) => runPull(cwd, { id: KEY, key: LIB }, {}, io, f)],
+      ['status, stored key for another id', (io, f) => runStatus(cwd, { id: KEY }, {}, io, f)],
+      ['status, swapped with --key', (io, f) => runStatus(cwd, { id: KEY, key: LIB }, {}, io, f)],
+    ];
+    for (const [label, run] of cases) {
+      const io = makeIo();
+      const fetcher = stub200();
+
+      expect(await run(io, fetcher), label).toBe(1);
+
+      expect(io.errLines, label).toEqual([expected]);
+      expect(io.outLines.join('\n'), label).not.toContain(KEY);
+      expect(fetcher, label).not.toHaveBeenCalled();
+    }
+  });
+
+  it('does not shape-check an id that came from speclayer.json, which an earlier version may have written', async () => {
+    writeFileSync(join(cwd, 'speclayer.json'), JSON.stringify({ libraryId: 'lib_old', outDir: '.speclayer' }));
+    const fetcher = stub200();
+
+    expect(await runPull(cwd, {}, { SPEC_LAYER_KEY: `sl_${'a'.repeat(48)}` }, makeIo(), fetcher)).toBe(0);
+
+    expect(fetcher).toHaveBeenCalledTimes(1);
   });
 
   // The credential file names the library, so reporting "no library id"

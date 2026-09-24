@@ -48,7 +48,10 @@ function configOutDirRefusal(cwd: string, value: string): string {
   const head = `${CONFIG_NAME} "outDir" is ${JSON.stringify(value)}.`;
   const legacy = legacyOutDir(cwd, value);
   return legacy !== null
-    ? `${head} Earlier versions wrote that to ${legacy} inside this directory. Change "outDir" to "${legacy}", or run spec-layer init again.`
+    // Not `init`: it resets outDir to the default and orphans the files
+    // already at the legacy path. setup rewrites the value to that path.
+    ? `${head} Earlier versions wrote that to ${legacy} inside this directory. Change "outDir" to "${legacy}", `
+      + 'or run the setup command from the plugin\'s Publish screen, which does that for you.'
     : `${head} ${OUT_DIR_RULE} Change "outDir", or run spec-layer init again.`;
 }
 

@@ -135,7 +135,7 @@ describe('resolveOptions precedence', () => {
       writeConfig(tmpDir, { libraryId: 'lib_aaaaaaaaaaaaaaaaaaaaaaaa', outDir: '/abs/x' });
       expect(() => resolveOptions(tmpDir, {}, {}, stub)).toThrow(
         'speclayer.json "outDir" is "/abs/x". Earlier versions wrote that to abs/x inside this directory. '
-        + 'Change "outDir" to "abs/x", or run spec-layer init again.',
+        + 'Change "outDir" to "abs/x", or run the setup command from the plugin\'s Publish screen, which does that for you.',
       );
       expect(legacyOutDir(tmpDir, '/abs/x')).toBe('abs/x');
       // Not absolute, or joined onto the working directory itself: nothing to offer.

@@ -196,6 +196,16 @@ function resolved(
   cwd: string, flags: Flags, env: Record<string, string | undefined>, io: Io,
   manifestAt: (outDir: string) => Manifest | null,
 ): (ResolvedOptions & { libraryId: string; key: string }) | null {
+  // A flag --id is shape-checked before any message can name it or any
+  // request can carry it: a pull key pasted as --id would otherwise be printed
+  // by the stored-key message below, or sent in the request URL when swapped
+  // with --key. After this, a flag id in opts.libraryId always has the shape.
+  // An id from speclayer.json is not checked: earlier versions wrote it
+  // unchecked, and refusing a shape they accepted would break that repository.
+  if (flags.id !== undefined && !isLibraryId(flags.id)) {
+    io.err(badLibraryId(flags.id));
+    return null;
+  }
   let opts: ResolvedOptions;
   try {
     opts = resolveOptions(cwd, flags, env, (outDir) => manifestAt(outDir)?.libraryId ?? null);
