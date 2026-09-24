@@ -12,6 +12,7 @@ import {
   PULL_KEY_RE,
   MAX_BUNDLE_BYTES,
   LIBRARY_LIMITS,
+  MAX_FILE_NAME_LENGTH,
   type LibraryMeta,
 } from '../src/libraries';
 import { versionsKey, versionBundleKey, type VersionLog } from '../src/versions';
@@ -164,6 +165,21 @@ describe('id and key generation', () => {
 });
 
 describe('handlePublish', () => {
+  it('records at most 256 characters of fileName in the meta and its echo, and stores the bundle bytes untouched', async () => {
+    const d = deps();
+    const longName = 'n'.repeat(1000);
+    const bundle = { ...BUNDLE, fileName: longName };
+    const first = await handlePublish(publishReq({ bundle }, figma()), d);
+    expect(first.status).toBe(201);
+    const { libraryId } = await first.json() as { libraryId: string };
+    const meta = JSON.parse((await d.libraryStore.get(`lib:${libraryId}:meta`))!) as LibraryMeta;
+    expect(meta.fileName).toBe('n'.repeat(MAX_FILE_NAME_LENGTH));
+    expect(await d.libraryStore.get(`lib:${libraryId}:bundle`)).toBe(JSON.stringify(bundle));
+    const second = await handlePublish(publishReq({ bundle: { ...BUNDLE, fileName: 'Second' } }, figma()), d);
+    const body = await second.json() as { existing: { fileName: string } };
+    expect(body.existing.fileName).toHaveLength(MAX_FILE_NAME_LENGTH);
+  });
+
   it('rejects unauthenticated requests', async () => {
     const d = deps();
     const req = new Request('https://proxy.test/v1/libraries', {

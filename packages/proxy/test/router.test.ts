@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { sha256 } from 'js-sha256';
-import { route } from '../src/handlers';
+import { route, MAX_INSTANCE_NAME_LENGTH } from '../src/handlers';
 import { memQuota } from './quotaHarness';
 import { SlidingWindowLimiter } from '../src/ratelimit';
 import { hashFigmaId } from '../src/identity';
@@ -91,6 +91,21 @@ describe('route', () => {
     }), d);
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ valid: true, status: 'active', instanceId: 'i1' });
+  });
+
+  it('forwards at most 64 characters of instanceName to Lemon Squeezy', async () => {
+    const d = baseDeps();
+    const sent: string[] = [];
+    d.fetcher = vi.fn(async (_url: string, init: RequestInit) => {
+      sent.push(String(init.body));
+      return new Response(JSON.stringify({ activated: true, instance: { id: 'i1' }, license_key: { status: 'active' } }), { status: 200 });
+    }) as unknown as typeof fetch;
+    await route(new Request('https://p.test/v1/license/activate', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ key: UUID_KEY, instanceName: `  ${'x'.repeat(500)}  ` }),
+    }), d);
+    const forwarded = JSON.parse(sent[0]) as { instance_name: string };
+    expect(forwarded.instance_name).toBe('x'.repeat(MAX_INSTANCE_NAME_LENGTH));
   });
 
   it('POST /v1/license/activate with an instanceId validates instead of re-activating', async () => {

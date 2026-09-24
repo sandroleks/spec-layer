@@ -61,7 +61,8 @@ identity otherwise.
 
 Body: `{ "key": "...", "instanceName": "Figma plugin" }` →
 `{ valid, status, instanceId? }` (proxies Lemon Squeezy's public activate
-endpoint and caches the status).
+endpoint and caches the status). `instanceName` is trimmed and cut to 64
+characters before it is forwarded.
 
 ### `POST /v1/license/deactivate`
 
@@ -75,7 +76,9 @@ plugin's Remove key action releases). 400 on a missing key or instanceId,
 Body: `{ "libraryId"?: "lib_...", "bundle": <library bundle> }`. The bundle
 must carry `schema: "spec-layer-library-bundle"`, a string `version`, and a
 `components` array; the proxy validates that shape and nothing else. It never
-derives, re-validates, or re-projects v5 output.
+derives, re-validates, or re-projects v5 output. The bundle's `fileName` is
+recorded in the library's meta cut to 256 characters; the bundle itself is
+stored as sent.
 
 The body also accepts `dryRun: true`, `bump: "major" | "minor" | "patch"`,
 `note` (up to 500 characters), and `initialVersion` (a `major.minor.patch`

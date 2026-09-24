@@ -20,6 +20,37 @@ export const MAX_BUNDLE_BYTES = 5_000_000;
 export const LIBRARY_LIMITS: Record<Tier, number> = { free: 1, pro: 10 };
 export const LIBRARY_ID_RE = /^lib_[0-9a-f]{24}$/;
 export const PULL_KEY_RE = /^sl_[0-9a-f]{48}$/;
+/** Code units of `fileName` kept in the meta and echoed in `library_limit`. The stored bundle is never cut. */
+export const MAX_FILE_NAME_LENGTH = 256;
+
+/**
+ * `value` cut to at most `maxUnits` UTF-16 code units, counted by iterating
+ * whole code points rather than by `slice`. A `for...of` string iterator (like
+ * spread or `Array.from`) always yields a full code point, high and low
+ * surrogate together, so this can never stop in the middle of a pair and
+ * leave a lone surrogate behind: the one way a cut could turn well-formed
+ * UTF-16 into ill-formed UTF-16 (a lone surrogate has no valid UTF-8
+ * encoding, so it would corrupt the bytes this ends up stored as). A value at
+ * or below `maxUnits` is returned unchanged, matching `String.prototype.length`
+ * exactly, which is what the interface's "code units" cap means and what a
+ * caller measures.
+ *
+ * This does not keep a combining mark attached to its base character: each is
+ * its own code point, so a cut can still land between them. That drops a
+ * diacritic at the boundary, but never produces an invalid string the way a
+ * split surrogate pair would, so it is left as ordinary truncation behaviour
+ * rather than the heavier grapheme-cluster segmentation (`Intl.Segmenter`)
+ * that would be needed to also guarantee that.
+ */
+export function truncateUtf16(value: string, maxUnits: number): string {
+  if (value.length <= maxUnits) return value;
+  let result = '';
+  for (const codePoint of value) {
+    if (result.length + codePoint.length > maxUnits) break;
+    result += codePoint;
+  }
+  return result;
+}
 
 export interface LibraryMeta {
   /** Legacy only: libraries published before `lib:<id>:key` existed carry the
@@ -307,7 +338,7 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
   const bundle = body.bundle as Record<string, unknown>;
   // Stored as the client sent it, so the pulled bytes are the published bytes.
   const stored = JSON.stringify(bundle);
-  const fileName = typeof bundle.fileName === 'string' ? bundle.fileName : null;
+  const fileName = typeof bundle.fileName === 'string' ? truncateUtf16(bundle.fileName, MAX_FILE_NAME_LENGTH) : null;
   const publishedAt = new Date(deps.now()).toISOString();
   const bundleHash = sha256(stored);
   // Two hashes, two questions. The byte hash is the pull ETag. The content

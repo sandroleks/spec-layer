@@ -6,7 +6,7 @@ import {
   GROUP_MAX_TOKENS,
 } from '@spec-layer/extractor';
 import { identityFromHeaders, licenseIdentityId, callerProofs } from './identity';
-import { handlePublish, handlePull, handleRotate, handleVersions } from './libraries';
+import { handlePublish, handlePull, handleRotate, handleVersions, truncateUtf16 } from './libraries';
 import { activateLicense, checkLicense, deactivateLicense, validateLicense, LICENSE_KEY_RE, LsUnreachable, type KVLike, type LicenseResult, type LibraryStore } from './license';
 import { quotaHeaders } from './quota';
 import type { CommitOptions, QuotaProfile, QuotaSnapshot, ReserveOptions, ReserveResult, Tier } from './quota';
@@ -74,6 +74,9 @@ export const PRO_OUTPUT_CONFIG = { effort: 'low' } as const;
  * outlived its reservation would let a retry be charged twice for one answer.
  */
 export const UPSTREAM_TIMEOUT_MS = 150_000;
+
+/** Code units of a device name forwarded to Lemon Squeezy as `instance_name`. */
+export const MAX_INSTANCE_NAME_LENGTH = 64;
 
 /**
  * A `log` that stamps every line with the request it belongs to: the
@@ -398,7 +401,8 @@ export async function handleActivate(req: Request, deps: HandlerDeps): Promise<R
       const v = await validateLicense(body.key, body.instanceId, licenseDeps);
       return json(200, { valid: v.valid, status: v.status, instanceId: body.instanceId });
     }
-    const out = await activateLicense(body.key, typeof body.instanceName === 'string' ? body.instanceName : 'Figma plugin', licenseDeps);
+    const requested = typeof body.instanceName === 'string' ? truncateUtf16(body.instanceName.trim(), MAX_INSTANCE_NAME_LENGTH) : '';
+    const out = await activateLicense(body.key, requested || 'Figma plugin', licenseDeps);
     return json(200, out);
   } catch (err) {
     if (err instanceof LsUnreachable) return json(502, { error: 'ls_unreachable' });

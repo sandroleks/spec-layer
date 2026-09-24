@@ -467,6 +467,10 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   arrives empty, gets its own message instead of being told to add
   variables. Foundation docs are still not required: publish reads the
   file's variables and styles directly.
+- **File names and device names are capped before they are stored or
+  forwarded.** A library's recorded `fileName` is cut to 256 characters and a
+  license activation's `instanceName` to 64; the published bundle bytes are
+  untouched.
 - **Publish errors show above the Publish button.** They were the last line
   of the scrolling body, so on a library with setup blocks every error sat
   below the fold, out of sight of the button that caused it. They now float
