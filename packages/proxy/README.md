@@ -366,6 +366,19 @@ before this split is migrated to that layout the first time it is read.
 - **Deploy order.** The proxy ships before any plugin build that sends both
   headers. A bearer-only client keeps working: it proves the license identity
   that owns every library published so far.
+- **The deploy switchover can fail requests that are already in flight.**
+  The quota Durable Object is now called over RPC and has no `fetch`
+  handler, and the previous build called it with `fetch`. Until every
+  isolate still running the previous build has finished, that build's calls
+  to an upgraded object throw and answer 500. Most of those are one failed
+  request that a retry fixes, but two are worse. A prose request that
+  reserved before the switch can fail at its commit after Anthropic has
+  already answered, so the call is billed and the answer is neither cached
+  nor counted. A publish can land its KV writes and then fail both its commit
+  and its release, so the write is not counted and the library's lock is held
+  for its full three minutes. Rolling forward is the remedy: a rollback opens
+  the same window in the other direction, because the previous build's object
+  has no RPC methods, and it adds the cached-replay breakage described next.
 - **Rolling back past the quota storage split breaks cached replays for up
   to 24 hours; prefer rolling forward.** Once a quota Durable Object has been
   read by this build, its `engine` record keeps only `{ at }` for each
@@ -415,8 +428,13 @@ for their support.
 ## Smoke test
 
 ```bash
-curl -s -D - -o /dev/null https://api.spec-layer.com/v1/quota -H 'X-Figma-User: smoke-test-1'
-# HTTP/2 200, X-Tier: free, X-Quota-Limit: 20
+curl -s -D - https://api.spec-layer.com/v1/quota -H 'X-Figma-User: smoke-test-1'
+# HTTP/2 200 with access-control-allow-origin: *, then a JSON body with
+# "tier":"free", a numeric "limit" and a "publish" object. This route sends no
+# X-Tier or X-Quota-* headers; the numbers are in the body. Do not expect a
+# particular limit: the smoke identity has almost certainly been seen before,
+# so it may be past its 30-day boost window. A 5xx is the failure to act on,
+# and rolling forward is preferred to rolling back (see the accepted risks).
 
 # The workers.dev origin is off (`workers_dev = false`): this must not answer 200.
 curl -s -o /dev/null -w '%{http_code}\n' https://spec-layer-proxy.<account>.workers.dev/v1/quota -H 'X-Figma-User: smoke-test-1'

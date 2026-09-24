@@ -1,9 +1,3 @@
-/**
- * Per-isolate sliding-window limiter. Best-effort: state resets when the
- * isolate recycles and is not shared across colos — good enough to blunt
- * naive enumeration; a Cloudflare WAF rate rule is the real backstop (README).
- */
-
 /** Distinct keys one surface may hold before the limiter fails closed for new ones. */
 export const MAX_KEYS_PER_SURFACE = 10_000;
 /**
@@ -17,6 +11,11 @@ export const MAX_KEYS_PER_SURFACE = 10_000;
 export const REQUEST_LIMITER_MAX_KEYS = 5 * MAX_KEYS_PER_SURFACE;
 export const LICENSE_LIMITER_MAX_KEYS = 3 * MAX_KEYS_PER_SURFACE;
 
+/**
+ * Per-isolate sliding-window limiter. Best-effort: state resets when the
+ * isolate recycles and is not shared across colos — good enough to blunt
+ * naive enumeration; a Cloudflare WAF rate rule is the real backstop (README).
+ */
 export class SlidingWindowLimiter {
   private hits = new Map<string, number[]>();
   private calls = 0;

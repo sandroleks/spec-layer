@@ -14,6 +14,7 @@ import {
   MAX_BUNDLE_BYTES,
   LIBRARY_LIMITS,
   MAX_FILE_NAME_LENGTH,
+  truncateUtf16,
   type LibraryMeta,
 } from '../src/libraries';
 import { versionsKey, versionBundleKey, type VersionLog } from '../src/versions';
@@ -166,6 +167,35 @@ describe('id and key generation', () => {
     expect(newLibraryId()).toMatch(LIBRARY_ID_RE);
     expect(newPullKey()).toMatch(PULL_KEY_RE);
     expect(newPullKey()).not.toBe(newPullKey());
+  });
+});
+
+describe('truncateUtf16', () => {
+  /** One code point, two UTF-16 code units: a high surrogate then a low one. */
+  const EMOJI = String.fromCodePoint(0x1f600);
+  const isHighSurrogate = (code: number) => code >= 0xd800 && code <= 0xdbff;
+
+  it('drops a whole surrogate pair when the cut falls between its halves, never leaving a lone high surrogate', () => {
+    expect(EMOJI.length).toBe(2);
+    expect(truncateUtf16(`a${EMOJI}`, 2)).toBe('a');
+    const cut = truncateUtf16(`${'a'.repeat(255)}${EMOJI}`, 256);
+    expect(cut).toBe('a'.repeat(255));
+    expect(isHighSurrogate(cut.charCodeAt(cut.length - 1))).toBe(false);
+  });
+
+  it('keeps a pair that fits exactly, and returns a value at or under the cap unchanged', () => {
+    expect(truncateUtf16(`${'a'.repeat(254)}${EMOJI}tail`, 256)).toBe(`${'a'.repeat(254)}${EMOJI}`);
+    expect(truncateUtf16(`a${EMOJI}`, 3)).toBe(`a${EMOJI}`);
+  });
+
+  it('stores a publish fileName cut at a pair boundary without a lone surrogate', async () => {
+    const d = deps();
+    const res = await handlePublish(publishReq({ bundle: { ...BUNDLE, fileName: `${'n'.repeat(MAX_FILE_NAME_LENGTH - 1)}${EMOJI}tail` } }, figma()), d);
+    expect(res.status).toBe(201);
+    const { libraryId } = await res.json() as { libraryId: string };
+    const meta = JSON.parse((await d.libraryStore.get(`lib:${libraryId}:meta`))!) as LibraryMeta;
+    expect(meta.fileName).toBe('n'.repeat(MAX_FILE_NAME_LENGTH - 1));
+    expect(isHighSurrogate((meta.fileName as string).charCodeAt((meta.fileName as string).length - 1))).toBe(false);
   });
 });
 
