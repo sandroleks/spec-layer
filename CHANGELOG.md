@@ -428,6 +428,11 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   sent the reader to a "Library screen" for the setup command and for key
   rotation; both live on the plugin's Publish screen, which `tools` already
   named. Every surface now agrees.
+- **`setup` states the cause git confirmed when the key file stays
+  unignored.** It guessed "most likely already tracked" and named `git rm
+  --cached`. It now asks `git ls-files --error-unmatch`, gives that command
+  only when the file is tracked, and otherwise points at a re-including `!`
+  rule.
 - **`spec-layer skill --install` refuses a shared file with one marker.** An
   `AGENTS.md` or `GEMINI.md` holding `<!-- spec-layer:begin -->` without its
   end marker got a second block appended, and the next run replaced everything

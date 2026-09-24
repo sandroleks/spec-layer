@@ -153,7 +153,7 @@ describe('ensureIgnored', () => {
 
     const result = ensureIgnored(cwd, NAME);
 
-    expect(result).toEqual({ kind: 'still-not-ignored', line: NAME });
+    expect(result).toEqual({ kind: 'still-not-ignored', line: NAME, tracked: true });
     expect(readFileSync(join(cwd, '.gitignore'), 'utf8')).toContain(NAME);
   });
 
@@ -168,6 +168,17 @@ describe('ensureIgnored', () => {
 
     expect(readFileSync(join(cwd, '.gitignore'), 'utf8')).toBe(first);
     expect(first.split('\n').filter((l) => l.trim() === NAME)).toHaveLength(1);
+  });
+
+  it('reports tracked false when a re-including rule, not tracking, defeats the ignore', () => {
+    gitInit(cwd);
+    writeFileSync(join(cwd, '.gitignore'), `${NAME}\n!${NAME}\n`);
+
+    const result = ensureIgnored(cwd, NAME);
+
+    expect(result).toEqual({ kind: 'still-not-ignored', line: NAME, tracked: false });
+    // The entry line is present, so nothing was appended.
+    expect(readFileSync(join(cwd, '.gitignore'), 'utf8')).toBe(`${NAME}\n!${NAME}\n`);
   });
 
   // `rev-parse --is-inside-work-tree` exits 0 while printing `false` here, so

@@ -1584,6 +1584,21 @@ describe('runSetup', () => {
     expect(errors).not.toContain(rotated);
   });
 
+  it('does not blame tracking when git denies it, and points at a re-including rule instead', async () => {
+    gitInit();
+    writeFileSync(join(cwd, '.gitignore'), 'speclayer.local.json\n!speclayer.local.json\n');
+    const io = makeIo();
+
+    const code = await runSetup(cwd, { id: LIB, key: KEY }, {}, io, stub200());
+
+    expect(code).toBe(1);
+    const errors = io.errLines.join('\n');
+    expect(errors).not.toContain('already tracked');
+    expect(errors).toContain('"!"');
+    expect(errors).not.toContain(KEY);
+    expect(existsSync(join(cwd, 'speclayer.local.json'))).toBe(false);
+  });
+
   /**
    * Re-pasting the plugin's command is the documented rotation flow, and that
    * command carries neither --out nor a selection. Overwriting the config

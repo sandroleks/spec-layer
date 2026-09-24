@@ -332,7 +332,9 @@ export async function runSetup(
       return 1;
     case 'still-not-ignored':
       io.err(`${ignored.line} is listed in .gitignore, but git still does not ignore it, so the key was not written.`);
-      io.err(`The most likely reason is that ${ignored.line} is already tracked. Run this, then run the command again:\ngit rm --cached ${ignored.line}`);
+      io.err(ignored.tracked
+        ? `git confirms ${ignored.line} is already tracked, which is why the ignore rule has no effect. Run this, then run the command again:\ngit rm --cached ${ignored.line}`
+        : `git does not report ${ignored.line} as tracked either. Look for a rule that re-includes it (a line starting with "!") in .gitignore or the global excludes file, remove it, then run the command again.`);
       return 1;
     case 'created':
       io.out(`Created .gitignore with ${CREDENTIALS_NAME}.`);
