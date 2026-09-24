@@ -1,4 +1,4 @@
-import { lstatSync, mkdirSync, mkdtempSync, writeFileSync, readFileSync, readdirSync, rmSync, renameSync, existsSync } from 'node:fs';
+import { lstatSync, mkdirSync, mkdtempSync, chmodSync, writeFileSync, readFileSync, readdirSync, rmSync, renameSync, existsSync } from 'node:fs';
 import { join, dirname, relative, resolve, sep } from 'node:path';
 import {
   CSS_HEADER_PREFIX, CSS_INDEX_FILE, COMPONENT_MARKDOWN_MARKER, COMPONENT_YAML_MARKER, componentMarkdown, componentSlugs,
@@ -206,6 +206,12 @@ export function writeBundleFiles(opts: {
   // `--out build/spec` on a fresh checkout has no `build/` yet.
   mkdirSync(dirname(resolve(opts.outDir)), { recursive: true });
   const staging = mkdtempSync(`${resolve(opts.outDir)}.partial-`);
+  // mkdtempSync always creates its directory at mode 0700 (Node applies that
+  // regardless of umask, to keep a temp directory private by default), but
+  // this one is renamed onto opts.outDir, so it must come out with the same
+  // mode a plain mkdirSync would have given: readable by whoever the umask
+  // allows, not owner-only. chmod it to what mkdirSync's default would be.
+  chmodSync(staging, 0o777 & ~process.umask());
   const written: string[] = [];
   const deliverables: Array<{ output: OutputConfig; files: Record<string, string> }> = [];
   const json = (v: unknown) => `${JSON.stringify(v, null, 2)}\n`;

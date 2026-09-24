@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtempSync, mkdirSync, rmSync, existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, existsSync, readFileSync, readdirSync, writeFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -317,6 +317,25 @@ describe('writeBundleFiles', () => {
     expect(readFileSync(`${outDir}.partial/mine.txt`, 'utf8')).toBe('keep');
     expect(existsSync(join(outDir, 'manifest.json'))).toBe(true);
     expect(readdirSync(tmpDir).filter((n) => n.startsWith('.speclayer.partial-'))).toEqual([]);
+  });
+
+  it.skipIf(process.platform === 'win32')('leaves the output directory with the same permissions a plain mkdirSync would give', () => {
+    // mkdtempSync creates its directory at mode 0700 regardless of umask, to
+    // keep a fresh temp directory private by default. That directory is
+    // renamed onto outDir here, so it must come out with the ordinary mode a
+    // ready-to-read output directory has, not owner-only. A sibling made with
+    // a plain mkdirSync in the same parent is the reference for what that
+    // ordinary mode is under whatever umask this machine runs with.
+    const bundle = makeBundle({ foundation: null });
+    writeBundleFiles({
+      outDir, cwd: tmpDir, raw: JSON.stringify(bundle), bundle,
+      libraryId: 'lib-1', publishedAt: '2026-09-01T00:00:00.000Z', bundleHash: 'h'.repeat(64),
+    });
+
+    const reference = join(tmpDir, 'plain-mkdir-reference');
+    mkdirSync(reference);
+
+    expect(statSync(outDir).mode & 0o777).toBe(statSync(reference).mode & 0o777);
   });
 
   it('skips the foundation file when foundation is null', () => {
