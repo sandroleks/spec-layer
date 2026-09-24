@@ -275,8 +275,10 @@ before this split is migrated to that layout the first time it is read.
   another commit (while it was diffing, or from a KV read that had not
   caught up) answers 409 publish_pending instead of assigning the same
   version and dropping the other record from the log. The diff baseline, the
-  current bundle, is a third read that is not checked: a stale one can only
-  make the minimum bump wrong, never fork the version. A publish takes its
+  current bundle, is a third read that is not checked. A stale one never
+  forks the version, but it can make the minimum bump wrong and it writes a
+  wrong change count and change list into that version's log record, which
+  `versions` then serves. A publish takes its
   `publishedAt` after those reads and at least one millisecond past both
   times it read, so a head never moves backwards, even from a Worker whose
   clock is behind the one that wrote the last publish. A create records its
