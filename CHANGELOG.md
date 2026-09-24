@@ -627,6 +627,13 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   component builder already did, and the handlers remove a Section they had
   not yet handed to the registry. Once the old doc is gone the new one is
   kept, whatever fails after that.
+- **A setting that cannot be saved on this device says so.** Saving the
+  license key, the AI writing switch, the export format, the brand theme or
+  a new library's pull key could fail silently when Figma's per-device
+  storage refused the write; the plugin now shows a toast and keeps the
+  value for the session. A library's id is recorded in the file even when
+  its pull key could not be stored, so the next publish updates that
+  library instead of creating another.
 
 ### Added
 

@@ -33,6 +33,7 @@ import { repaintPills } from './pillNode';
 import { pageOf, resolveRegistrySections } from './registryNodes';
 import { scanLibrary, libraryReply, type LibraryScan } from './libraryScan';
 import { CanvasBuildGate, selectionToReplay } from './canvasBuild';
+import { writeSetting, deleteSetting, storePublishIdentity } from './settingsStore';
 import {
   PUBLISH_RECORD_KEY, parsePublishRecord, serializePublishRecord, pillState,
   type DocPublishRecord, type PillState,
@@ -397,6 +398,12 @@ const PUBLISH_DATE_KEY = 'speclayer.publish.publishedAt';
 const PUBLISH_VERSION_KEY = 'speclayer.publish.version';
 const publishKeyStorageKey = (libraryId: string): string => `publishKey:${libraryId}`;
 
+/** One toast for every setting this device could not keep. True as written:
+ *  main.ts (or the UI) holds the new value in memory until the plugin closes. */
+function notifySettingNotSaved(): void {
+  figma.notify('Couldn’t save this setting on this device, so it applies to this session only.', { error: true });
+}
+
 async function readPublishInfo(): Promise<PublishInfo> {
   const libraryId = figma.root.getPluginData(PUBLISH_LIBRARY_KEY) || null;
   if (!libraryId) return { libraryId: null, pullKey: null, publishedAt: null, version: null };
@@ -526,29 +533,35 @@ figma.ui.onmessage = async (raw: unknown) => {
       await postSelection();
       break;
 
-    case 'setLicenseKey':
+    case 'setLicenseKey': {
+      let ok: boolean;
       if (msg.value) {
-        await figma.clientStorage.setAsync('licenseKey', msg.value);
-        if (msg.instanceId) await figma.clientStorage.setAsync('licenseInstanceId', msg.instanceId);
-        else await figma.clientStorage.deleteAsync('licenseInstanceId');
+        ok = await writeSetting(figma.clientStorage, 'licenseKey', msg.value);
+        ok = (msg.instanceId
+          ? await writeSetting(figma.clientStorage, 'licenseInstanceId', msg.instanceId)
+          : await deleteSetting(figma.clientStorage, 'licenseInstanceId')) && ok;
       } else {
-        await figma.clientStorage.deleteAsync('licenseKey');
-        await figma.clientStorage.deleteAsync('licenseInstanceId');
+        ok = await deleteSetting(figma.clientStorage, 'licenseKey');
+        ok = await deleteSetting(figma.clientStorage, 'licenseInstanceId') && ok;
       }
+      if (!ok) notifySettingNotSaved();
       break;
+    }
 
     case 'setAiEnabled':
-      await figma.clientStorage.setAsync('aiEnabled', msg.value);
+      if (!await writeSetting(figma.clientStorage, 'aiEnabled', msg.value)) notifySettingNotSaved();
       break;
 
     case 'setComponentFormat':
       // The UI only sends a known value, but this is the storage boundary.
-      if (isComponentFormat(msg.value)) await figma.clientStorage.setAsync('componentFormat', msg.value);
+      if (isComponentFormat(msg.value)) {
+        if (!await writeSetting(figma.clientStorage, 'componentFormat', msg.value)) notifySettingNotSaved();
+      }
       break;
 
     case 'setBrandTheme':
       brandTheme = msg.value;
-      await figma.clientStorage.setAsync('brandTheme', brandTheme);
+      if (!await writeSetting(figma.clientStorage, 'brandTheme', brandTheme)) notifySettingNotSaved();
       break;
 
     case 'requestFonts': {
@@ -1540,8 +1553,15 @@ figma.ui.onmessage = async (raw: unknown) => {
     }
 
     case 'setPublishInfo': {
-      figma.root.setPluginData(PUBLISH_LIBRARY_KEY, msg.libraryId);
-      await figma.clientStorage.setAsync(publishKeyStorageKey(msg.libraryId), msg.pullKey);
+      const keyStored = await storePublishIdentity(
+        figma.clientStorage, figma.root,
+        { libraryIdKey: PUBLISH_LIBRARY_KEY, pullKeyStorageKey: publishKeyStorageKey(msg.libraryId) },
+        msg.libraryId, msg.pullKey,
+      );
+      // The id is in the file either way (see storePublishIdentity). Without
+      // the key this device cannot update the library; say so now, while the
+      // UI still shows the key it was given.
+      if (!keyStored) figma.notify('Couldn’t save the pull key on this device.', { error: true });
       break;
     }
 
