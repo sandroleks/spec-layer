@@ -62,6 +62,7 @@ describe('fetchBundle', () => {
 
     expect(result.kind).toBe('error');
     expect((result as { kind: 'error'; message: string }).message).toMatch(/rotated or revoked/);
+    expect((result as { kind: 'error'; message: string }).message).toContain('Publish screen');
   });
 
   it('maps 404 to the not-found message', async () => {

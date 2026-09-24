@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { TOOLS, toolsJson, toolsText } from '../src/tools';
 
@@ -74,5 +75,14 @@ describe('the tool catalogue', () => {
     expect(parsed.cli).toBe('spec-layer');
     expect(parsed.version).toBe('9.9.9');
     expect(parsed.tools.map((t) => t.name)).toEqual(TOOLS.map((t) => t.name));
+  });
+
+  it('names the plugin screen that hands out the setup command consistently', () => {
+    // The setup command lives on the Publish screen (packages/plugin/src/ui/screens/publish.ts).
+    const srcDir = fileURLToPath(new URL('../src/', import.meta.url));
+    for (const name of readdirSync(srcDir)) {
+      expect(readFileSync(join(srcDir, name), 'utf8'), name).not.toContain('Library screen');
+    }
+    expect(readFileSync(fileURLToPath(new URL('../README.md', import.meta.url)), 'utf8')).not.toContain('Library screen');
   });
 });

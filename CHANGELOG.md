@@ -424,6 +424,10 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
 
 ### Fixed
 
+- **The CLI names the Publish screen.** Four messages and two README lines
+  sent the reader to a "Library screen" for the setup command and for key
+  rotation; both live on the plugin's Publish screen, which `tools` already
+  named. Every surface now agrees.
 - **`spec-layer skill --install` refuses a shared file with one marker.** An
   `AGENTS.md` or `GEMINI.md` holding `<!-- spec-layer:begin -->` without its
   end marker got a second block appended, and the next run replaced everything

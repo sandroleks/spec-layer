@@ -214,8 +214,8 @@ function resolved(
   if (!opts.key) {
     io.err(opts.storedKeyFor
       ? `The key in ${CREDENTIALS_NAME} was issued for library ${opts.storedKeyFor}, not `
-        + `${opts.libraryId}. Run the setup command from the plugin's Library screen.`
-      : 'No pull key. Run the setup command from the plugin\'s Library screen, '
+        + `${opts.libraryId}. Run the setup command from the plugin's Publish screen.`
+      : 'No pull key. Run the setup command from the plugin\'s Publish screen, '
         + 'or set SPEC_LAYER_KEY.');
     return null;
   }

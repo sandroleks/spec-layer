@@ -41,7 +41,7 @@ export async function fetchBundle(opts: {
     return {
       kind: 'error',
       message: 'Key was rotated or revoked. Run the setup command from the plugin\'s '
-        + 'Library screen to store the current key.',
+        + 'Publish screen to store the current key.',
     };
   }
   if (res.status === 404) return { kind: 'error', message: 'Library not found. It may have been unpublished.' };

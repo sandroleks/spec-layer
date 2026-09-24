@@ -10,7 +10,7 @@ and writes it to disk.
 
 ## Quick start
 
-After publishing a library from the plugin's Library screen, it shows a setup
+After publishing a library from the plugin's Publish screen, it shows a setup
 command. Run it once in your repository:
 
 ```bash
@@ -261,7 +261,7 @@ empty key.
 Treat the key as a secret: it grants read access to the published bundle.
 `speclayer.local.json` is gitignored, never printed by any command, and never
 copied into `speclayer.json`, `bundle.json`, `manifest.json`, or anything under
-the output directory. If it leaks, rotate it from the plugin's Library screen,
+the output directory. If it leaks, rotate it from the plugin's Publish screen,
 then run the new setup command. The old key stops working once the change
 propagates, which can take up to about a minute.
 

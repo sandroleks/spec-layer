@@ -335,7 +335,7 @@ describe('runPull', () => {
 
     expect(code).toBe(1);
     expect(io.errLines.join('\n')).toBe(
-      'No pull key. Run the setup command from the plugin\'s Library screen, or set SPEC_LAYER_KEY.',
+      'No pull key. Run the setup command from the plugin\'s Publish screen, or set SPEC_LAYER_KEY.',
     );
   });
 
