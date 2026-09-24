@@ -581,6 +581,16 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   part-way now marks its reply as partial, so a Library the panel shows
   after such a failure can be told apart from a complete one; the panel
   itself does not yet say so, that is the next build's change.
+- **Library, Foundation docs and the change list read the file without
+  per-variable publish status.** Every foundation read asked Figma for each
+  variable's, collection's and style's publish status, one call each, and
+  the Library scan, Create docs, Update docs and the change-list read all
+  did it although none of them shows or exports it (only Copy for AI and
+  Publish do, and they still read it). At a few thousand variables that was
+  most of each read. The change list for a drifted Foundation row now
+  compares against the read the Library badge came from instead of reading
+  the file again, so the list and the badge can no longer describe two
+  different moments.
 
 ### Added
 

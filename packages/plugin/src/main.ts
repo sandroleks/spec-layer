@@ -128,14 +128,36 @@ const resolver: NodeResolver = {
 let foundationCache: { fileKey: string; dump: SerializedFoundation } | null = null;
 const foundationPosts = new FoundationPostGate();
 
+/**
+ * One fresh read of the file's variables and styles. `publishStatus` is read
+ * only for a dump the v5 projections will see (the selection cache below and
+ * the Foundations tab's own reply). The drift, render and change-list paths
+ * never read `publication`, and foundationContentHash does not hash it, so
+ * they pass false and save one bridge call per variable, collection and style.
+ */
+async function readFoundationDump(fileKey: string, publishStatus: boolean): Promise<SerializedFoundation> {
+  return serializeFoundation(
+    createFoundationReader(figma.variables, figma, { publishStatus }),
+    fileKey, new Date().toISOString(), figma.root.name,
+  );
+}
+
 async function foundationFor(fileKey: string): Promise<SerializedFoundation> {
   if (foundationCache?.fileKey === fileKey) return foundationCache.dump;
-  const dump = await serializeFoundation(
-    createFoundationReader(figma.variables, figma), fileKey, new Date().toISOString(), figma.root.name,
-  );
+  const dump = await readFoundationDump(fileKey, true);
   foundationCache = { fileKey, dump };
   return dump;
 }
+
+/**
+ * The spec the last Library scan hashed every foundation row against.
+ * requestDocBaseline diffs against THIS object and never a fresh read: the
+ * change list must be computed over the same read that produced the badge, or
+ * a list could disagree with the badge beside it. It also saves one whole-file
+ * read per expanded row. Replaced on every Library scan; a fresh read is the
+ * fallback only when no scan has run for this file.
+ */
+let lastLibraryFoundation: { fileKey: string; spec: FoundationSpec } | null = null;
 
 // ---------------------------------------------------------------------------
 // Find the relevant component in the current selection (walk up if needed)
@@ -741,10 +763,9 @@ figma.ui.onmessage = async (raw: unknown) => {
       const liveFoundation = async (): Promise<FoundationSpec | null> => {
         try {
           const { fileKey } = resolveFileKey(figma.fileKey, null);
-          const dump = await serializeFoundation(
-            createFoundationReader(figma.variables, figma), fileKey, new Date().toISOString(), figma.root.name,
-          );
-          return buildFoundation(dump);
+          const spec = buildFoundation(await readFoundationDump(fileKey, false));
+          lastLibraryFoundation = { fileKey, spec };
+          return spec;
         } catch (err) {
           console.error('[Spec Layer] foundation read failed during the library scan', err);
           return null;
@@ -781,9 +802,7 @@ figma.ui.onmessage = async (raw: unknown) => {
     case 'requestFoundation': {
       try {
         const { fileKey } = resolveFileKey(figma.fileKey, null);
-        const dump = await serializeFoundation(
-          createFoundationReader(figma.variables, figma), fileKey, new Date().toISOString(), figma.root.name,
-        );
+        const dump = await readFoundationDump(fileKey, true);
         // This is the Foundations tab's own fetch — both its first load and
         // its "Refresh sources" button — so it is also the one place a user
         // can force a fresh read. Updating the selection-side cache here
@@ -842,9 +861,7 @@ figma.ui.onmessage = async (raw: unknown) => {
         // may have changed by the time the user clicks Create. Re-extracting
         // here keeps the generated frames faithful to the file as it is now.
         const { fileKey } = resolveFileKey(figma.fileKey, null);
-        const dump = await serializeFoundation(
-          createFoundationReader(figma.variables, figma), fileKey, new Date().toISOString(), figma.root.name,
-        );
+        const dump = await readFoundationDump(fileKey, false);
         const spec = buildFoundation(dump);
         const units = planFoundationUnits(spec, msg.selection);
 
@@ -1044,9 +1061,7 @@ figma.ui.onmessage = async (raw: unknown) => {
         }
 
         const { fileKey } = resolveFileKey(figma.fileKey, null);
-        const dump = await serializeFoundation(
-          createFoundationReader(figma.variables, figma), fileKey, new Date().toISOString(), figma.root.name,
-        );
+        const dump = await readFoundationDump(fileKey, false);
         const spec = buildFoundation(dump);
 
         // Retarget a renamed/re-created collection by name before giving up,
@@ -1294,14 +1309,14 @@ figma.ui.onmessage = async (raw: unknown) => {
       }
       if (baseline && link && isFoundationLink(link)) {
         try {
-          // A fresh read, retargeted the way requestLibrary retargets, so
-          // the live side of the diff is the object whose hash produced the
-          // badge. Not the session cache: that can lag the library refresh.
+          // The Library's own read, retargeted the way the Library retargets,
+          // so the live side of the diff is the object whose hash produced the
+          // badge. A fresh read is the fallback only when no Library scan has
+          // run for this file yet, which the UI's flow does not reach.
           const { fileKey } = resolveFileKey(figma.fileKey, null);
-          const dump = await serializeFoundation(
-            createFoundationReader(figma.variables, figma), fileKey, new Date().toISOString(), figma.root.name,
-          );
-          const spec = buildFoundation(dump);
+          const spec = lastLibraryFoundation?.fileKey === fileKey
+            ? lastLibraryFoundation.spec
+            : buildFoundation(await readFoundationDump(fileKey, false));
           live = unitContent(spec, retargetScope(link.scope, spec.collections));
         } catch (err) {
           console.error('[Spec Layer] baseline read failed for', msg.docId, err);

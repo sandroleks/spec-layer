@@ -23,7 +23,8 @@ export type FoundationVariableType = 'COLOR' | 'FLOAT' | 'STRING' | 'BOOLEAN';
 export type FoundationPublishStatus = 'UNPUBLISHED' | 'CURRENT' | 'CHANGED';
 
 /** Source publication facts Figma exposes independently. `publishStatus` is
- * null when the async status read failed; hidden/remote remain usable facts. */
+ * null when the async status read failed or was not made (the plugin skips it
+ * on paths that never export the dump); hidden/remote remain usable facts. */
 export interface RawPublicationMetadata {
   hiddenFromPublishing: boolean;
   publishStatus: FoundationPublishStatus | null;
