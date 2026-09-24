@@ -365,7 +365,11 @@ export async function runSetup(
   // Pass the key through rather than relying on a re-read of what was just
   // written, so the pull cannot disagree with the file.
   const code = await runPull(cwd, { ...flags, key }, env, io, fetcher);
-  if (code !== 0) return code;
+  if (code !== 0) {
+    // Everything before the pull is on disk, so the reader should not redo it.
+    io.err('Setup is stored. Run spec-layer pull to retry.');
+    return code;
+  }
   // The setup command is what a developer hands a coding agent, so the agent's
   // first sight of this tool is this output. Point it at the guide that says
   // what landed and how to read it, rather than leaving it to open bundle.json.

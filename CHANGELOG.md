@@ -424,6 +424,10 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
 
 ### Fixed
 
+- **`setup` says what survived a failed pull.** The config, the ignore entry,
+  and the key are written before the pull, so a network or key failure left a
+  complete setup with an error as the last line. It now ends with `Setup is
+  stored. Run spec-layer pull to retry.`
 - **The CLI names the Publish screen.** Four messages and two README lines
   sent the reader to a "Library screen" for the setup command and for key
   rotation; both live on the plugin's Publish screen, which `tools` already

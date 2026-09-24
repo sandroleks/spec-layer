@@ -1550,6 +1550,7 @@ describe('runSetup', () => {
     expect(await runSetup(cwd, { id: LIB, key: KEY }, {}, io, stub401())).toBe(1);
     expect(stored().key).toBe(KEY);
     expect(readConfig(cwd)).toMatchObject({ libraryId: LIB });
+    expect(io.errLines.at(-1)).toBe('Setup is stored. Run spec-layer pull to retry.');
   });
 
   /**
