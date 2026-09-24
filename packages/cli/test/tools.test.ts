@@ -52,6 +52,14 @@ describe('the tool catalogue', () => {
     expect(byName.init.writes).toEqual(['speclayer.json']);
   });
 
+  it('documents --key - for every command that resolves a key: setup, pull, and status', () => {
+    const byName = Object.fromEntries(TOOLS.map((t) => [t.name, t]));
+    for (const name of ['setup', 'pull', 'status']) {
+      expect(byName[name].usage, name).toContain('sl_...|-');
+    }
+    expect(CLI_SOURCE).toMatch(/status\s+\[--id lib_\.\.\.\] \[--key sl_\.\.\.\|-\]/);
+  });
+
   it('names the component format flag for setup, init, pull, and show, and in the banner', () => {
     const byName = Object.fromEntries(TOOLS.map((t) => [t.name, t]));
     for (const name of ['setup', 'init', 'pull', 'show']) {

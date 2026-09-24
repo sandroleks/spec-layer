@@ -2,7 +2,7 @@ import { parseArgs } from 'node:util';
 import {
   runInit, runSetup, runPull, runStatus, runList, runShow, runTools, runSkill, type Flags, type Io,
 } from './commands';
-import { readFirstLine } from './stdin';
+import { resolveKeyFromStdin } from './stdin';
 
 const USAGE = `spec-layer <command>
 
@@ -14,7 +14,7 @@ Commands:
   pull    [--id lib_...] [--key sl_...|-] [selection] [--platform P]... [--component-format F] [--strict]
                                                  fetch the library into DIR (default .speclayer); the foundation lands as DTCG under DIR/tokens/;
                                                  --strict exits 1 when tokens/report.json or an outputs/*.report.json holds an error-severity entry, even on a cached pull (default exit stays 0)
-  status  [--id lib_...] [--key sl_...]          check freshness; exits 2 when behind
+  status  [--id lib_...] [--key sl_...|-]        check freshness; exits 2 when behind
   list                                           list every artifact in the last pull
   show    foundation | component NAME [--component-format F] [--canonical]
                                                  print one artifact (foundation: the DTCG document; component: its AI YAML or Markdown; --canonical for JSON)
@@ -69,16 +69,15 @@ async function main(): Promise<number> {
     return 1;
   }
 
-  if (values.key === '-') {
-    const key = await readFirstLine(process.stdin);
-    if (key === null) {
-      io.err('--key - reads the key from stdin, and nothing arrived. Pipe the key in, or paste it and press Enter.');
-      return 1;
-    }
-    values = { ...values, key };
-  }
-
   const command = positionals[0];
+
+  const stdinKey = await resolveKeyFromStdin(command, values.key, process.stdin);
+  if (stdinKey.error !== null) {
+    io.err(stdinKey.error);
+    return 1;
+  }
+  if (stdinKey.key !== null) values = { ...values, key: stdinKey.key };
+
   const cwd = process.cwd();
   try {
     if (command === 'setup') return await runSetup(cwd, values, process.env, io);

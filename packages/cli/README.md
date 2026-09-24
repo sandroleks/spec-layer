@@ -78,7 +78,7 @@ Markdown pages, so every CLI that pulls a repository using Markdown needs
 | `setup --id lib_... --key sl_...\|- [--out DIR] [--platform P]... [selection] [--component-format yaml\|md]` | Writes `speclayer.json`, stores the key in `speclayer.local.json`, then pulls. The command the plugin copies. |
 | `init --id lib_... [--out DIR] [--platform P]... [selection] [--component-format yaml\|md]` | Writes `speclayer.json` so later commands need no flags. No key, no network. |
 | `pull [--id lib_...] [--key sl_...\|-] [--platform P]... [selection] [--component-format yaml\|md]` | Fetches the library and writes it into `DIR` (default `.speclayer`). |
-| `status [--id lib_...] [--key sl_...]` | Checks freshness without writing. Prints the library version when the service reports one. Exits `2` when the local copy is behind. |
+| `status [--id lib_...] [--key sl_...\|-]` | Checks freshness without writing. Prints the library version when the service reports one. Exits `2` when the local copy is behind. |
 | `list` | Lists every artifact in the last pull, with its file path or `not written`. |
 | `show foundation [--canonical]` | Prints the Foundation's DTCG document to stdout. |
 | `show component NAME [--component-format yaml\|md] [--canonical]` | Prints one component's AI YAML or Markdown page to stdout. |

@@ -28,10 +28,14 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
 ### Added
 
 - **`--key -` reads the pull key from stdin.** A key on the command line is
-  visible to shell history and to `ps` while the command runs. `setup` and
-  `pull` now take `--key -` and read the first non-empty line from stdin, from
-  a pipe or a paste followed by Enter, so the pasted command never holds the
-  secret. `SPEC_LAYER_KEY` remains the way for CI. Nothing arriving is an error
+  visible to shell history and to `ps` while the command runs. `setup`,
+  `pull`, and `status` (the commands that resolve a key at all) now take
+  `--key -` and read the first non-empty line from stdin, from a pipe or a
+  paste followed by Enter, so the pasted command never holds the secret; a
+  real terminal gets a short prompt on stderr first, so the wait does not
+  look like a hang. Every other command ignores `--key` entirely, so
+  `--key -` there is inert rather than a stray block on stdin.
+  `SPEC_LAYER_KEY` remains the way for CI. Nothing arriving is an error
   rather than an empty key.
 - **`spec-layer pull` can write components as Markdown.** Set
   `componentSpecsFormat: "md"` in `speclayer.json`, or pass

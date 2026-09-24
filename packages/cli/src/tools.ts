@@ -68,7 +68,7 @@ export const TOOLS: readonly Tool[] = [
   },
   {
     name: 'status',
-    usage: 'spec-layer status [--id lib_...] [--key sl_...] [--out DIR]',
+    usage: 'spec-layer status [--id lib_...] [--key sl_...|-] [--out DIR]',
     summary: 'Checks whether the local pull is current without writing anything.',
     when: 'Before reading the pulled files, or in CI; exit 2 means run pull.',
     network: true, needsKey: true,
