@@ -411,6 +411,10 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
 
 ### Fixed
 
+- **The proxy answers from one origin.** `workers_dev` is off, so the
+  `workers.dev` hostname that the zone's license rate rule never covered no
+  longer serves the Worker; `api.spec-layer.com` is the only origin. Workers
+  observability is on with every invocation sampled.
 - **Publish and the snapshot download refuse a file with nothing in it.** The
   proxy accepts an empty bundle, so a file with no local variables or styles
   and no component docs used to publish anyway: a first publish created a

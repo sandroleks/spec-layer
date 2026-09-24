@@ -328,13 +328,18 @@ npx wrangler deploy
 ```
 
 Ops: set a spend alert on the Anthropic workspace; `fair_use_flag` and
-`upstream_error` log events are the abuse/outage review queue.
+`upstream_error` log events are the abuse/outage review queue. Workers
+observability is on with every invocation sampled, so each event is readable
+in the dashboard beside its request.
 
 ## Smoke test
 
 ```bash
-curl -s https://spec-layer-proxy.<account>.workers.dev/v1/quota -H 'X-Figma-User: smoke-test-1'
-# {"tier":"free","used":0,"limit":20,"remaining":20,"resetsAt":"..."}
+curl -s -D - -o /dev/null https://api.spec-layer.com/v1/quota -H 'X-Figma-User: smoke-test-1'
+# HTTP/2 200, X-Tier: free, X-Quota-Limit: 20
+
+# The workers.dev origin is off (`workers_dev = false`): this must not answer 200.
+curl -s -o /dev/null -w '%{http_code}\n' https://spec-layer-proxy.<account>.workers.dev/v1/quota -H 'X-Figma-User: smoke-test-1'
 
 # Exercise POST /v1/prose through the plugin or the contract tests. Hand-written
 # generic Anthropic requests are intentionally rejected.
