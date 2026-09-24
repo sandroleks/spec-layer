@@ -567,6 +567,13 @@ export async function runPull(
     return 1;
   }
   if (result.kind === 'not_modified') {
+    if (!etag) {
+      // The request carried no If-None-Match, so this 304 answers a question
+      // that was never asked. Calling it success would report files that do
+      // not exist, or were judged stale above, as current.
+      io.err(`${opts.api} answered 304 Not Modified to a request that sent no If-None-Match, so there is nothing to keep and nothing was written. Run spec-layer pull again.`);
+      return 1;
+    }
     io.out(`Already up to date ${publishedPhrase(result.version ?? manifest?.version, manifest?.publishedAt ?? 'unknown')}.`);
     // A 304 for a Foundation pull is granted only once both report files are
     // confirmed present on disk (foundationFilesOnDisk and outputFilesOnDisk

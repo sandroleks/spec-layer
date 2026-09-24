@@ -411,6 +411,11 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
 
 ### Fixed
 
+- **A 304 the CLI did not ask for is an error.** `spec-layer pull` sends the
+  last pull's hash only when every file that pull wrote is still on disk and
+  would be written the same way again. A server that answered 304 to a request
+  carrying no hash was reported as `Already up to date` with nothing on disk to
+  be up to date. It now exits 1 and says what happened.
 - **A stalled server no longer hangs `spec-layer pull` or `status`.** Every
   request now carries a 30 second timeout that covers the headers and the
   body, and a timeout is reported as `No response from <api> within 30

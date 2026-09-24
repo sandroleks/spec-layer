@@ -1288,6 +1288,30 @@ describe('runPull safety and freshness', () => {
     expect(io.errLines.join('\n')).toMatch(/notes exists and is not a directory\. Choose another path or remove the file\./);
     expect(readFileSync(join(cwd, 'notes'), 'utf8')).toBe('mine');
   });
+
+  it('treats an unsolicited 304 as an error with exit 1 when there is no local pull', async () => {
+    const io = makeIo();
+    const fetcher = stub304();
+
+    const code = await runPull(cwd, {}, ENV, io, fetcher);
+
+    expect(code).toBe(1);
+    expect(headerOf(fetcher, 'If-None-Match')).toBeUndefined();
+    expect(io.errLines.join('\n')).toContain('304 Not Modified');
+    expect(io.outLines.join('\n')).not.toContain('Already up to date');
+    expect(existsSync(join(cwd, '.speclayer'))).toBe(false);
+  });
+
+  it('treats a 304 as an error when no hash was sent because the selection changed, and touches nothing', async () => {
+    await runPull(cwd, {}, ENV, makeIo(), stubThree());
+    const io = makeIo();
+
+    const code = await runPull(cwd, { component: ['Card'] }, ENV, io, stub304());
+
+    expect(code).toBe(1);
+    expect(io.errLines.join('\n')).toContain('304 Not Modified');
+    expect(existsSync(join(cwd, 'component-specs/button.yaml'))).toBe(true);
+  });
 });
 
 describe('runPull component format', () => {
