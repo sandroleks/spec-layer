@@ -442,9 +442,10 @@ interface UnitOverride { key: string; collectionId: string; unit: 'px' | 'rem'; 
  * `Collection/glob` overrides, compiled once per projection rather than once
  * per token per mode. A key names a collection by its FULL name followed by
  * `/`, so a collection whose own name contains a slash is matched whole
- * instead of being cut at its first slash; a key that is a prefix of two
- * collection names compiles for both, which is the only reading such a key
- * has.
+ * instead of being cut at its first slash. A key that begins with two
+ * collection names followed by `/`, as `Brand/Core/spacing/*` does for
+ * collections `Brand` and `Brand/Core`, compiles once for each, since the key
+ * alone does not say which one was meant.
  */
 function compileUnitOverrides(
   units: Record<string, 'px' | 'rem'> | undefined, collections: CollectionV5[],
@@ -1103,13 +1104,12 @@ function buildResolver(p: Projection, plans: FilePlan[], styleFileNames: string[
 }
 
 /**
- * Generated group descriptions are AI prose (`guidelines.origin` is always
- * `'generated'`; Figma has no group descriptions), so they go under the
+ * Figma has no group descriptions, so every one is AI-written
+ * (`guidelines.origin` is always `'generated'`). They go under the
  * spec-layer extension with a key that names their origin, never under
- * `$description`, which a consumer reads as the author's own text. The
- * Markdown projection labels the same prose as AI-written for the same
- * reason. A group node never carries an extension of its own before this,
- * so the block is written whole.
+ * `$description`, which a consumer reads as the author's own text. A group
+ * node never carries an extension of its own before this, so the block is
+ * written whole.
  */
 function annotateGroups(p: Projection, tree: DtcgTree, collection: CollectionV5): void {
   const groups = p.artifact.guidelines?.group_descriptions[collection.name];

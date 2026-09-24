@@ -200,6 +200,8 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   diagnostic codes and severities, types every statistic as a count, and
   lists both reason vocabularies; `validateLevel1` learns the two reason
   lists so the plugin's own check and the published schema keep agreeing.
+  The same check gates `spec-layer pull`, which refuses a published
+  Foundation that fails it and asks for a republish.
   `completeness.styles` documents why it is `partial` or `unavailable` for
   any file with a style, a partial read, or a scoped export. Every committed
   golden validates, including a real synthetic artifact carrying diagnostics
@@ -435,19 +437,29 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   the group and `dark` vanished, with nothing in the report either way. The
   token at the group path is now omitted whichever order the file lists them
   in, and `report.json` names it under `path_collision` with
-  `details.reason: "group"`; its values stay in `spec-layer.meta.json`. A
-  style whose name is a prefix of another style's name gets the same
-  treatment. Nothing here touches a content hash. A reference is now written
-  only into a file where it resolves. An alias writes nothing in a mode, and
-  is reported `target_omitted`, when its target has no leaf in that mode's
-  file or, for a target in another collection, lacks one in any mode of that
-  collection, since a resolver can select any of them. That covers an alias
-  two or more hops from an omitted token, and one whose target has no value
-  in a single mode. A style bound to such a token writes its resolved value
-  and reports `binding_dropped`, as it already did for an omitted one.
-  `report.json` no longer depends on the order the file lists its tokens:
-  tokens that share a path or a code syntax identifier are listed by id, and
-  entries that tie on path, code and mode are ordered by their details.
+  `details.reason: "group"`; its values stay in `spec-layer.meta.json`. The
+  entry is an error, so `spec-layer pull --strict` fails on a library that
+  has one. A style whose path is also a group of other styles, such as
+  `Body` beside `Body/Regular`, gets the same treatment. Nothing here touches
+  a content hash.
+
+- **A DTCG reference is written only into a file where it resolves.** An
+  alias writes nothing in a mode, and is reported `target_omitted`, when its
+  target has no value in that mode's file or, for a target in another
+  collection, lacks one in any mode of that collection, since a resolver can
+  select any of them. That covers an alias two or more hops from an omitted
+  token, and one whose target has no value in a single mode; both used to
+  write a reference that did not resolve. A style bound to such a token
+  writes its resolved value and reports `binding_dropped`, as it already did
+  for an omitted one. A token that ends up with no value in any mode, for
+  any reason, is now marked `omitted` in `spec-layer.meta.json` with its
+  values and counted as omitted in the census, like every other omitted
+  token. Nothing here touches a content hash.
+
+- **`report.json` is the same whatever order the file lists its tokens.**
+  Tokens that share a DTCG path or a code syntax identifier are listed by
+  id, and entries that tie on path, code and mode are ordered by their
+  details.
 
 - **Copy for AI on a component no longer fails on a Foundation whose default
   mode is undeclared.** The component copy read the token's value under the
@@ -616,11 +628,11 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   the upgrade can pass them. Closes CodeQL alerts 65 and 66
   (`js/polynomial-redos`).
 
-- **AI-written group descriptions in DTCG are marked as such.** A Foundation
-  doc's generated folder descriptions used to land in every DTCG token file
-  as the group's `$description`, the field a consumer reads as the author's
-  own text; the Markdown page marks the same prose as written by AI. They
-  now sit under `$extensions["com.spec-layer"].generated_description`, and no
+- **AI-written group descriptions in DTCG are marked as such.** Figma has no
+  group descriptions, so every folder description a Foundation doc carries
+  is written by AI, yet each one used to land in every DTCG token file as the
+  group's `$description`, the field a consumer reads as the author's own
+  text. They now sit under `$extensions["com.spec-layer"].generated_description`, and no
   token group carries a `$description` at all. The CLI skill guide and the
   plugin's downloadable skill say so instead of describing the old field.
   Token `$description` values, which come from Figma, are unchanged. A
@@ -975,14 +987,9 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
 
 ### Removed
 
-- **The v4 brief to v5 normalizer.** `normalizeV4` (931 lines) had no caller
-  outside its own tests since the direct `buildFoundationArtifactV5` path
-  shipped, and the synthetic v4 fixture it consumed stated
-  `library_enabled: false` for a source that never said so, which the direct
-  path never does (unknown is `null`). The Foundation Context v5 artifact is
-  built from the serialized Figma read only. The `V4*` types, `syntheticId`
-  and `parseV4Path` leave the extractor's barrel with it; nothing in the
-  plugin or the CLI imported them.
+- **The unused v4 brief to v5 normalizer.** Nothing in the plugin or the CLI
+  called it, and the Foundation Context v5 artifact is built from the Figma
+  read alone.
 
 ## [5.1.0] - 2026-09-10
 
