@@ -117,6 +117,8 @@ describe('reference example inputs', () => {
   });
 
   it('renders the Markdown projection with the description and guidelines', () => {
+    // A non-empty description first, so the toContain below cannot pass vacuously.
+    expect(REFERENCE_DESCRIPTION).not.toBe('');
     const page = componentMarkdown(buildReferenceButton());
     expect(page).toContain(REFERENCE_DESCRIPTION);
     expect(page).toContain('Use the Filled style for the single most important action');

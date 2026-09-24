@@ -86,6 +86,21 @@ export const REFERENCE_PROSE: ProseDrafts = {
     'The component itself is the container: it carries the fill or border, the corner radius,',
     'the padding and the gap. Inside it sit an icon slot and a text label.',
   ].join('\n'),
+  /* `name` matches `spec.anatomy` exactly (case-insensitive), the way the
+   * prose prompt asks for it: `icon-slot` and `label` are the container's
+   * direct children, and `icon` is the instance nested inside the slot.
+   * Note for a future reader: as of this writing neither `guidelinesOf`
+   * (`brief.ts`) nor `componentMarkdown` (`markdown.ts`) reads
+   * `anatomyParts` at all, so these lines do not yet surface in either
+   * rendered golden. They are added here because the field is part of the
+   * real `ProseDrafts` contract and every real anatomy part deserves a true
+   * line; if a future change starts rendering `anatomyParts`, this is the
+   * text it will pick up. */
+  anatomyParts: [
+    { name: 'icon-slot', description: 'Frame that positions the leading icon; its 2px padding is a literal, not a token.' },
+    { name: 'icon', description: 'The leading icon instance, shown only when Show icon is on.' },
+    { name: 'label', description: "The button's text, set in the Label/Large text style." },
+  ],
   interactions: [
     '- **Hover:** a Filled button moves to `color/action/primary-hover` and lifts with the',
     '  `Elevation/1` shadow. An Outlined button records no hover change.',
