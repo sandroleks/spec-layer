@@ -44,8 +44,7 @@ The only network destination the manifest permits is the Spec Layer proxy:
 which enforces free-tier quotas and Pro licenses. There is **no Anthropic API
 key** in the plugin: no API key is requested, entered, or stored.
 
-Free users start with 20 generations for 30 days and then receive 10 per UTC
-month. Pro has no fixed monthly cap for normal individual use, subject to fair
+Free users receive 20 generations per UTC calendar month. Pro has no fixed monthly cap for normal individual use, subject to fair
 use and rate limits. Component requests carry a structured summary and, when it
 fits the export limits, a rendered image of the selected node. Foundation group
 requests carry token names and resolved values without an image.

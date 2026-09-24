@@ -94,7 +94,7 @@ describe('handleProse', () => {
     expect(res.status).toBe(200);
     expect(res.headers.get('X-Tier')).toBe('free');
     expect(res.headers.get('X-Quota-Used')).toBe('1');
-    expect(res.headers.get('X-Quota-Limit')).toBe('20'); // boost window
+    expect(res.headers.get('X-Quota-Limit')).toBe('20'); // free monthly limit
     const [url, init] = d._anthropic.mock.calls[0];
     expect(url).toBe('https://api.anthropic.com/v1/messages');
     expect((init.headers as Record<string, string>)['x-api-key']).toBe('sk-ant-test');

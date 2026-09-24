@@ -209,12 +209,11 @@ predates versioning answers an empty log. Errors: `401`, `404`, `429`.
 
 ## Quota rules
 
-- Free: 20 generations within 30 days of first sight, then 10 per UTC
-  calendar month. Only uncached, successful generations count.
+- Free: 20 generations per UTC calendar month. Only uncached, successful
+  generations count.
 - Pro: no fixed monthly quota for normal individual use; flagged for fair-use
   review at ≥1,000/month (`fair_use_flag` log).
-- Publishing: free 10 changed publishes per UTC calendar month, no boost
-  window, one library; Pro 10 libraries, no fixed cap, flagged at the same
+- Publishing: free 10 changed publishes per UTC calendar month, one library; Pro 10 libraries, no fixed cap, flagged at the same
   soft threshold. Every create counts; an update whose content identity equals
   the stored one is a no-op that does not count, where "content identity"
   ignores each artifact's export id and timestamp; a changed update counts
@@ -260,12 +259,12 @@ before this split is migrated to that layout the first time it is read.
 - **Prose and quota endpoints are rate-limited in-isolate.** This is a
   best-effort cost-abuse backstop, not a substitute for a Cloudflare WAF rule.
 - **Free identities are client-asserted.** `X-Figma-User` isn't
-  authenticated; rotating it re-mints a free identity with a fresh boost
-  window, bounded per request by the fixed prompt and `max_tokens` checks, with
+  authenticated; rotating it re-mints a free identity with a fresh monthly
+  allowance, bounded per request by the fixed prompt and `max_tokens` checks, with
 the model assigned by the proxy for the tier (Haiku on free).
 - **Salt rotation resets free identities.** Changing `FIGMA_ID_SALT` renames
-  every free identity's Durable Object: quotas reset and every user
-  re-enters the boost window. Rotate only with that intent.
+  every free identity's Durable Object: every user's quotas reset to a
+  full month. Rotate only with that intent.
 - **Published libraries live in the license-cache namespace, permanently.**
   `lib:<id>:bundle`, `lib:<id>:meta`, `lib:<id>:key`, `lib:<id>:versions`,
   `lib:<id>:bundle:<version>`, and `libowner:<licenseId>:<id>` are written
@@ -399,8 +398,11 @@ the model assigned by the proxy for the tier (Haiku on free).
   build reads the body from `engine`, finds none, and answers a retry of any
   key committed in the last 24 hours with a cached result that has no body:
   prose returns an empty 200 the plugin cannot parse, and a publish replay
-  fails with a 500. Counters, reservations and the boost window are read the
-  same by both builds and survive a rollback. The `resp:*` keys an older
+  fails with a 500. Monthly counters and reservations are read the same by
+  both builds and survive a rollback. A build older than the flat monthly
+  quota also reads a first-sight boost window, whose fields this build drops,
+  so a rollback that far gives every identity this build has written a new
+  30-day window of 20. The `resp:*` keys an older
   build leaves behind are never read by it and are harmless, though a key
   whose index entry that build drops is never deleted afterwards. The breakage
   ends on its own as those entries age past 24 hours, so a fix should roll
@@ -443,11 +445,11 @@ for their support.
 ```bash
 curl -s -D - https://api.spec-layer.com/v1/quota -H 'X-Figma-User: smoke-test-1'
 # HTTP/2 200 with access-control-allow-origin: *, then a JSON body with
-# "tier":"free", a numeric "limit" and a "publish" object. This route sends no
-# X-Tier or X-Quota-* headers; the numbers are in the body. Do not expect a
-# particular limit: the smoke identity has almost certainly been seen before,
-# so it may be past its 30-day boost window. A 5xx is the failure to act on,
-# and rolling forward is preferred to rolling back (see the accepted risks).
+# "tier":"free", "limit":20 and a "publish" object. This route sends no
+# X-Tier or X-Quota-* headers; the numbers are in the body. "remaining" depends
+# on how often the smoke identity was used this month. A 5xx is the failure to
+# act on, and rolling forward is preferred to rolling back (see the accepted
+# risks).
 
 # The workers.dev origin is off (`workers_dev = false`): this must not answer 200.
 curl -s -o /dev/null -w '%{http_code}\n' https://spec-layer-proxy.<account>.workers.dev/v1/quota -H 'X-Figma-User: smoke-test-1'
