@@ -625,6 +625,12 @@ export function ifNoneMatchMatches(header: string | null, etag: string): boolean
 /** Pull answers are per-key private data; nothing between the CLI and the Worker may keep a copy. */
 const NO_STORE = 'private, no-store';
 
+/** `res` with `Cache-Control: private, no-store`, so an error from a keyed route is not kept either. */
+function noStore(res: Response): Response {
+  res.headers.set('Cache-Control', NO_STORE);
+  return res;
+}
+
 /** The meta when the bearer is this library's current pull key, else the error Response. Shared by pull and versions. */
 async function pullAuthorized(req: Request, deps: HandlerDeps, libraryId: string): Promise<LibraryMeta | Response> {
   const auth = req.headers.get('Authorization') ?? '';
@@ -640,19 +646,29 @@ async function pullAuthorized(req: Request, deps: HandlerDeps, libraryId: string
   return meta;
 }
 
+/** Every versions answer, the 401, 404 and 429 included, says `no-store`. */
 export async function handleVersions(req: Request, deps: HandlerDeps, libraryId: string): Promise<Response> {
+  return noStore(await versionsAnswer(req, deps, libraryId));
+}
+
+async function versionsAnswer(req: Request, deps: HandlerDeps, libraryId: string): Promise<Response> {
   const ip = req.headers.get('CF-Connecting-IP') ?? 'unknown';
   if (!deps.requestLimiter.allow(`libpull:${ip}`, deps.now())) return json(429, { error: 'rate_limited' });
   const meta = await pullAuthorized(req, deps, libraryId);
   if (meta instanceof Response) return meta;
   const raw = (await deps.libraryStore.get(versionsKey(libraryId))) ?? JSON.stringify({ v: 1, records: [] });
   const etag = `"${sha256(raw)}"`;
-  const headers: Record<string, string> = { ETag: etag, 'content-type': 'application/json', 'Cache-Control': NO_STORE };
+  const headers: Record<string, string> = { ETag: etag, 'content-type': 'application/json' };
   if (ifNoneMatchMatches(req.headers.get('If-None-Match'), etag)) return new Response(null, { status: 304, headers });
   return new Response(raw, { status: 200, headers });
 }
 
+/** Every pull answer, the 401, 404 and 429 included, says `no-store`. */
 export async function handlePull(req: Request, deps: HandlerDeps, libraryId: string): Promise<Response> {
+  return noStore(await pullAnswer(req, deps, libraryId));
+}
+
+async function pullAnswer(req: Request, deps: HandlerDeps, libraryId: string): Promise<Response> {
   const ip = req.headers.get('CF-Connecting-IP') ?? 'unknown';
   if (!deps.requestLimiter.allow(`libpull:${ip}`, deps.now())) return json(429, { error: 'rate_limited' });
   const meta = await pullAuthorized(req, deps, libraryId);
@@ -662,7 +678,6 @@ export async function handlePull(req: Request, deps: HandlerDeps, libraryId: str
     ETag: etag,
     'X-Published-At': meta.publishedAt,
     'content-type': 'application/json',
-    'Cache-Control': NO_STORE,
   };
   if (meta.version) headers['X-Library-Version'] = meta.version;
   if (ifNoneMatchMatches(req.headers.get('If-None-Match'), etag)) {

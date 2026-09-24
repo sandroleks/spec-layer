@@ -416,8 +416,8 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
 - **Pull streams the bundle, understands `If-None-Match` lists, and says
   `no-store`.** The Worker passes the stored bytes through as a stream instead
   of reading them into a string first, a conditional request may send several
-  or weak entity tags, and pull and versions answers carry
-  `Cache-Control: private, no-store`.
+  or weak entity tags, and every pull and versions answer, the 401, 404 and
+  429 errors included, carries `Cache-Control: private, no-store`.
 
 - **The proxy's in-isolate rate limiters hold ten thousand keys for each
   surface that shares them** instead of ten thousand in total across the

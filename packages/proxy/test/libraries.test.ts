@@ -1160,6 +1160,32 @@ describe('handlePull', () => {
     const second = await handlePull(req(), d, libraryId);
     expect(second.status).toBe(429);
   });
+
+  it('tells caches not to store its error answers either', async () => {
+    const d = deps({ requestLimiter: new SlidingWindowLimiter(3, 60_000) });
+    const { libraryId } = await publishedLibrary(d);
+    const unknown = 'lib_' + '0'.repeat(24);
+    const notFound = await handlePull(pullReq(unknown, newPullKey()), d, unknown);
+    expect(notFound.status).toBe(404);
+    expect(notFound.headers.get('Cache-Control')).toBe('private, no-store');
+    const badKey = await handlePull(pullReq(libraryId, 'nope'), d, libraryId);
+    expect(badKey.status).toBe(401);
+    expect(badKey.headers.get('Cache-Control')).toBe('private, no-store');
+    expect((await handlePull(pullReq(libraryId, newPullKey()), d, libraryId)).status).toBe(401);
+    const limited = await handlePull(pullReq(libraryId, newPullKey()), d, libraryId);
+    expect(limited.status).toBe(429);
+    expect(limited.headers.get('Cache-Control')).toBe('private, no-store');
+    expect(await limited.json()).toEqual({ error: 'rate_limited' });
+  });
+
+  it('answers 404, not an empty 200, when the meta exists but the bundle is gone', async () => {
+    const { deps: d, libraryId, pullKey } = await publishedLibrary();
+    (d.libraryStore as MemKV).map.delete(`lib:${libraryId}:bundle`);
+    const res = await handlePull(pullReq(libraryId, pullKey), d, libraryId);
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: 'not_found' });
+    expect(res.headers.get('Cache-Control')).toBe('private, no-store');
+  });
 });
 
 describe('handleRotate', () => {
@@ -1595,5 +1621,20 @@ describe('GET /v1/libraries/:id/versions', () => {
     expect((await handleVersions(versionsReq(libraryId, newPullKey()), d, libraryId)).status).toBe(401);
     expect((await handleVersions(versionsReq(libraryId, 'nope'), d, libraryId)).status).toBe(401);
     expect((await handleVersions(versionsReq('lib_000000000000000000000000', newPullKey()), d, 'lib_000000000000000000000000')).status).toBe(404);
+  });
+
+  it('tells caches not to store its error answers either', async () => {
+    const d = deps({ requestLimiter: new SlidingWindowLimiter(2, 60_000) });
+    const { libraryId } = await publishedLibrary(d);
+    const unknown = 'lib_' + '0'.repeat(24);
+    const notFound = await handleVersions(versionsReq(unknown, newPullKey()), d, unknown);
+    expect(notFound.status).toBe(404);
+    expect(notFound.headers.get('Cache-Control')).toBe('private, no-store');
+    const badKey = await handleVersions(versionsReq(libraryId, 'nope'), d, libraryId);
+    expect(badKey.status).toBe(401);
+    expect(badKey.headers.get('Cache-Control')).toBe('private, no-store');
+    const limited = await handleVersions(versionsReq(libraryId, newPullKey()), d, libraryId);
+    expect(limited.status).toBe(429);
+    expect(limited.headers.get('Cache-Control')).toBe('private, no-store');
   });
 });
