@@ -97,6 +97,17 @@ export function headingFont(style: FontStyle): FontName {
  * with this one's nodes). A node proxy is valid for the life of the plugin
  * run, and no build edits the variables it reads, so nothing here can go
  * stale within a build.
+ *
+ * A read that throws is cached as null too, so a failing id is not retried
+ * within the build: a width probe that fails on a deleted node, or a
+ * detached collection, fails for the same reason every later call in this
+ * build would hit, so a retry would only spend another round trip to reach
+ * the same null. The cost is that call sites which used to fail
+ * independently now share one outcome per id: if fitFrameWidth's width
+ * probe misses a node, createInstanceFor's later instancing read of that
+ * same id gets the cached null too, and one failed collection read is
+ * unavailable to every remaining instance in the build, not just the one
+ * that first hit it.
  */
 let cacheHost: unknown = null;
 let collectionCache = new Map<string, Promise<VariableCollection | null>>();
