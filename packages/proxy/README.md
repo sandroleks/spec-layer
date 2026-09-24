@@ -47,7 +47,8 @@ unauthenticated or license not active,
 `402 {"error":"quota_exhausted","resetsAt":…}`,
 `409 {"error":"generation_pending"}` (another window is generating the same
 component), `429 {"error":"rate_limited","retryAfterMs":…}`, `502` upstream
-failure (quota not decremented).
+failure (quota not decremented), `502 {"error":"upstream_timeout"}` when
+Anthropic does not answer within 150 s (quota not decremented).
 
 ### `GET /v1/quota`
 
@@ -60,7 +61,8 @@ identity otherwise.
 
 Body: `{ "key": "...", "instanceName": "Figma plugin" }` →
 `{ valid, status, instanceId? }` (proxies Lemon Squeezy's public activate
-endpoint and caches the status).
+endpoint and caches the status). `instanceName` is trimmed and cut to 64
+characters before it is forwarded.
 
 ### `POST /v1/license/deactivate`
 
@@ -74,7 +76,9 @@ plugin's Remove key action releases). 400 on a missing key or instanceId,
 Body: `{ "libraryId"?: "lib_...", "bundle": <library bundle> }`. The bundle
 must carry `schema: "spec-layer-library-bundle"`, a string `version`, and a
 `components` array; the proxy validates that shape and nothing else. It never
-derives, re-validates, or re-projects v5 output.
+derives, re-validates, or re-projects v5 output. The bundle's `fileName` is
+recorded in the library's meta cut to 256 characters; the bundle itself is
+stored as sent.
 
 The body also accepts `dryRun: true`, `bump: "major" | "minor" | "patch"`,
 `note` (up to 500 characters), and `initialVersion` (a `major.minor.patch`
@@ -149,19 +153,28 @@ Errors: `400` invalid JSON or bundle shape, `400
 {"error":"unsupported bundle version","version":"2.0.0"}`, `401` no identity,
 or a lapsed key with no Figma identity, `402
 {"error":"quota_exhausted","resetsAt":…}`, `403 {"error":"not_owner"}`,
-`403 {"error":"library_limit","limit":1,"existing":{"libraryId":…,"fileName":…}}`
-on free (`fileName` may be null; Pro gets `limit: 10` and no `existing`),
-`404` unknown `libraryId`, `409 {"error":"publish_pending"}`, `413
-{"error":"bundle_too_large","size":…,"limit":5000000}`, `429` rate limited.
+`403 {"error":"library_limit","limit":1,"owned":…,"existing":{"libraryId":…,"fileName":…}}`
+on free (`fileName` may be null, and `existing` is null when the library the
+count refers to has not reached the KV listing yet; Pro gets `limit: 10` and
+no `existing`), `404` unknown `libraryId`, `409 {"error":"publish_pending"}`
+(this same publish is still writing, another changed publish to the library
+holds its lock, or the identity's other creates still in flight fill the
+library limit, which is not reported as `library_limit` because they may yet
+fail), `413
+{"error":"bundle_too_large","size":…,"limit":5000000}` (`size` is the declared
+`Content-Length` when there is one, else the byte count at which the streamed read
+was cut, which is over the limit and at most the body's length), `429` rate limited.
 
 ### `GET /v1/libraries/:libraryId`
 
 Pull key required: `Authorization: Bearer sl_...`. Returns the stored bundle
 verbatim with `ETag: "<bundleHash>"` and `X-Published-At`. An `If-None-Match`
-matching the current hash gets a bare `304`, which is how `spec-layer status`
-decides whether a local pull is behind. The response also carries
-`X-Library-Version` when the library has one; a library published before
-versioning omits it.
+naming the current hash, alone, in a list, or as a weak tag, gets a bare
+`304`, which is how `spec-layer status` decides whether a local pull is
+behind, and every answer carries `Cache-Control: private, no-store`, so
+nothing between the CLI and the Worker keeps a copy of a keyed pull. The
+response also carries `X-Library-Version` when the library has one; a
+library published before versioning omits it.
 
 Errors: `401 {"error":"invalid_key"}` (malformed key or digest mismatch),
 `404 {"error":"not_found"}`, `429`.
@@ -183,7 +196,8 @@ Pull key required, as for pull. Returns the version log
 `pluginVersion`, `counts`, `changes`, and `changesTruncated`. `changes` is
 capped at 64 KB of JSON per record, cut after the last change that fits in
 sorted order; `counts` always reflects the full diff. `ETag` is the sha256 of
-the log bytes and a matching `If-None-Match` gets a bare `304`. A library that
+the log bytes and a matching `If-None-Match` gets a bare `304`, with the same
+list and weak-tag handling and the same `Cache-Control`. A library that
 predates versioning answers an empty log. Errors: `401`, `404`, `429`.
 
 ## Quota rules
@@ -209,7 +223,10 @@ predates versioning answers an empty log. Errors: `401`, `404`, `429`.
 
 Atomicity: one Durable Object per identity (`QuotaDO`) serializes all quota
 ops. The only server-side content storage is the 24h idempotency response
-cache inside the DO; prompts and prose are never logged.
+cache inside the DO, one storage key per committed response (`resp:<cacheKey>`)
+beside a small `engine` counter record, with the newest 500 responses retained
+per identity; prompts and prose are never logged. An `engine` value written
+before this split is migrated to that layout the first time it is read.
 
 ## Accepted risks and operational notes
 
@@ -247,12 +264,59 @@ cache inside the DO; prompts and prose are never logged.
   published library, and the pull keys cannot be recovered: only their
   SHA-256 digests were ever stored. Every affected user has to republish and
   redistribute a new setup command.
-- **Version writes are not atomic.** A publish writes the current bundle, the
-  per-version bundle, the version log, then the meta, in that order. A stop
+- **Version writes are not atomic; writers from one identity are
+  serialized.** A changed publish holds a per-library lock in the
+  publisher's identity object until its KV writes commit, and its
+  reservation carries the library head it read: the older of the meta's
+  `publishedAt` and the time of the version log's newest record, because KV
+  caches each key separately and a fresh meta can sit beside a stale log.
+  That object records the head each commit writes and compares it inside
+  the reservation, so a second changed publish that read the library before
+  another commit (while it was diffing, or from a KV read that had not
+  caught up) answers 409 publish_pending instead of assigning the same
+  version and dropping the other record from the log. The diff baseline, the
+  current bundle, is a third read that is not checked. A stale one never
+  forks the version, but it can make the minimum bump wrong and it writes a
+  wrong change count and change list into that version's log record, which
+  `versions` then serves. A publish takes its
+  `publishedAt` after those reads and at least one millisecond past both
+  times it read, so a head never moves backwards, even from a Worker whose
+  clock is behind the one that wrote the last publish. A create records its
+  head too. A recorded head is held for `HEAD_TTL_MS` (ten minutes) and then
+  forgotten, and a library this object has neither created nor committed
+  since then has no head to check against. A publish
+  still writes the current bundle, the per-version bundle, the version log,
+  then the meta, in that order. A stop
   between the log and the meta leaves a log record the meta does not carry;
   publish reads the current version from the log, so the next publish
   continues from the right number and rewrites the meta. Until then `pull`
   and `X-Library-Version` report the meta's older version.
+- **The publish lock and the library count are per identity, and they
+  expire.** The lock and the create slot live in the publisher's own quota
+  object, so two different identities racing on one library at the same
+  second (a Pro key on one device and the Figma-id-plus-pull-key proof on
+  another) are not serialized against each other; the same person on two
+  devices with the same key is. Both last as long as the reservation
+  (`RESERVATION_TTL_MS`, three minutes). A create that dies between
+  reservation and commit keeps its slot that long, so the identity's next
+  create answers `409 publish_pending` until it lapses. A publish whose
+  writes outlast it loses the lock and the slot while still writing, so a
+  second writer can proceed in that window; its create is still counted
+  once it commits; if its head reaches the object out of order, later
+  publishes of that library from this identity can answer 409 until the head
+  expires. A publish that throws after its meta write (a failed prune, or a
+  Durable Object commit that fails) releases its reservation uncounted, and
+  that release records the head it wrote, so a publish that still reads the
+  older meta is refused as if the commit had landed. When the release fails
+  too, nothing records the head: the lock stays held until it expires, which
+  outlasts the KV cache of about a minute, and the write is not counted. For a
+  create, the library exists but the object never counted it, so a quick
+  retry before the listing catches up can create a second library past the
+  ceiling. The count only goes up: there is no delete route, and a library
+  removed from KV by hand still counts in its creator's object.
+  What stays eventually consistent is the KV owner index: it names
+  `existing`, and it is the only count for libraries created under another
+  of the caller's identities, or before this counter existed.
 - **The diff runs inside the Worker.** Measured at 195 ms on a synthetic
   4.2 MB bundle of 300 components with 120 bindings each and 2000 tokens,
   above the 50 ms the design hoped for and far below the paid plan's 30 s
@@ -291,7 +355,9 @@ cache inside the DO; prompts and prose are never logged.
   id is hashed with a server salt, but it is not a secret and nothing
   authenticates it. Each self-asserted identity therefore gets its own budget
   of 1 library and 10 publishes a month (the first publish counts), over up to 5 MB of KV that never
-  expires. A client that lies about `X-Figma-User` can shop for fresh buckets,
+  expires. The ceiling is settled in the identity's publish Durable Object,
+  so two concurrent creates from one identity cannot both pass; the KV owner
+  index only names what exists. A client that lies about `X-Figma-User` can shop for fresh buckets,
   and a lapsed Pro owner can do the same for its own library, because
   ownership passes on the key while the counter follows the Figma identity.
   What a lied-about header cannot do is write to someone else's library: a
@@ -302,11 +368,38 @@ cache inside the DO; prompts and prose are never logged.
 - **Deploy order.** The proxy ships before any plugin build that sends both
   headers. A bearer-only client keeps working: it proves the license identity
   that owns every library published so far.
+- **The deploy switchover can fail requests that are already in flight.**
+  The quota Durable Object is now called over RPC and has no `fetch`
+  handler, and the previous build called it with `fetch`. Until every
+  isolate still running the previous build has finished, that build's calls
+  to an upgraded object throw and answer 500. Most of those are one failed
+  request that a retry fixes, but two are worse. A prose request that
+  reserved before the switch can fail at its commit after Anthropic has
+  already answered, so the call is billed and the answer is neither cached
+  nor counted. A publish can land its KV writes and then fail both its commit
+  and its release, so the write is not counted and the library's lock is held
+  for its full three minutes. Rolling forward is the remedy: a rollback opens
+  the same window in the other direction, because the previous build's object
+  has no RPC methods, and it adds the cached-replay breakage described next.
+- **Rolling back past the quota storage split breaks cached replays for up
+  to 24 hours; prefer rolling forward.** Once a quota Durable Object has been
+  read by this build, its `engine` record keeps only `{ at }` for each
+  committed response and the body sits under `resp:<cacheKey>`. An older
+  build reads the body from `engine`, finds none, and answers a retry of any
+  key committed in the last 24 hours with a cached result that has no body:
+  prose returns an empty 200 the plugin cannot parse, and a publish replay
+  fails with a 500. Counters, reservations and the boost window are read the
+  same by both builds and survive a rollback. The `resp:*` keys an older
+  build leaves behind are never read by it and are harmless, though a key
+  whose index entry that build drops is never deleted afterwards. The breakage
+  ends on its own as those entries age past 24 hours, so a fix should roll
+  forward rather than back.
 - **Every publish request first spends one token of the 60/min per-IP request
   budget before its body is read, so malformed or oversized bodies are
   throttled.** A real publish then spends the 20/min publish budget and a dry
-  run a second request token. The content-length cap bounds what one request
-  can make the Worker read.
+  run a second request token. The body is read in chunks and dropped at the
+  first byte over the cap, header or no header, so the cap bounds what one
+  request can make the Worker hold in memory.
 
 ## Bindings & secrets
 
@@ -328,13 +421,25 @@ npx wrangler deploy
 ```
 
 Ops: set a spend alert on the Anthropic workspace; `fair_use_flag` and
-`upstream_error` log events are the abuse/outage review queue.
+`upstream_error` log events are the abuse/outage review queue. Workers
+observability is on with every invocation sampled, so each event is readable
+in the dashboard beside its request. Every log line carries the request's
+`ray` and `route`, and an `upstream_error` carries Anthropic's `requestId`
+for their support.
 
 ## Smoke test
 
 ```bash
-curl -s https://spec-layer-proxy.<account>.workers.dev/v1/quota -H 'X-Figma-User: smoke-test-1'
-# {"tier":"free","used":0,"limit":20,"remaining":20,"resetsAt":"..."}
+curl -s -D - https://api.spec-layer.com/v1/quota -H 'X-Figma-User: smoke-test-1'
+# HTTP/2 200 with access-control-allow-origin: *, then a JSON body with
+# "tier":"free", a numeric "limit" and a "publish" object. This route sends no
+# X-Tier or X-Quota-* headers; the numbers are in the body. Do not expect a
+# particular limit: the smoke identity has almost certainly been seen before,
+# so it may be past its 30-day boost window. A 5xx is the failure to act on,
+# and rolling forward is preferred to rolling back (see the accepted risks).
+
+# The workers.dev origin is off (`workers_dev = false`): this must not answer 200.
+curl -s -o /dev/null -w '%{http_code}\n' https://spec-layer-proxy.<account>.workers.dev/v1/quota -H 'X-Figma-User: smoke-test-1'
 
 # Exercise POST /v1/prose through the plugin or the contract tests. Hand-written
 # generic Anthropic requests are intentionally rejected.
@@ -349,5 +454,7 @@ npm run check:proxy-dry-run        # bundle and validate without uploading
 ```
 
 All business logic is in pure, dependency-injected modules
-(`src/quota.ts`, `src/license.ts`, `src/handlers.ts`) tested without
-miniflare; `src/index.ts` is the thin Cloudflare adapter.
+(`src/quota.ts`, `src/quotaStore.ts`, `src/license.ts`, `src/handlers.ts`,
+`src/libraries.ts`) tested without miniflare; `src/index.ts` is the thin
+Cloudflare adapter, and its `QuotaDO` is four RPC methods over `QuotaStore`
+that nothing but the wrangler dry run and `tsc` exercise.

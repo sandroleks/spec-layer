@@ -6,19 +6,22 @@ import {
   GROUP_MAX_TOKENS,
 } from '@spec-layer/extractor';
 import { identityFromHeaders, licenseIdentityId, callerProofs } from './identity';
-import { handlePublish, handlePull, handleRotate, handleVersions } from './libraries';
+import { handlePublish, handlePull, handleRotate, handleVersions, truncateUtf16 } from './libraries';
 import { activateLicense, checkLicense, deactivateLicense, validateLicense, LICENSE_KEY_RE, LsUnreachable, type KVLike, type LicenseResult, type LibraryStore } from './license';
 import { quotaHeaders } from './quota';
-import type { QuotaProfile, QuotaSnapshot, ReserveResult, Tier } from './quota';
+import type { CommitOptions, QuotaProfile, QuotaSnapshot, ReleaseOptions, ReserveOptions, ReserveResult, Tier } from './quota';
 import type { SlidingWindowLimiter } from './ratelimit';
+import { readBodyCapped } from './body';
 
 export { licenseIdentityId };
 export type { QuotaProfile };
 
 export interface QuotaClient {
-  reserve(tier: Tier, cacheKey: string): Promise<ReserveResult>;
-  commit(cacheKey: string, body: string): Promise<void>;
-  release(cacheKey: string): Promise<void>;
+  reserve(tier: Tier, cacheKey: string, opts?: ReserveOptions): Promise<ReserveResult>;
+  /** Commits and returns the snapshot after it, so the success path costs one Durable Object hop. */
+  commit(tier: Tier, cacheKey: string, body: string, opts?: CommitOptions): Promise<QuotaSnapshot>;
+  /** Frees the reservation uncounted; `opts.head` records a head as `commit` would. */
+  release(cacheKey: string, opts?: ReleaseOptions): Promise<void>;
   snapshot(tier: Tier): Promise<QuotaSnapshot>;
 }
 
@@ -53,7 +56,8 @@ interface ProseBody {
   request?: ProseRequest;
 }
 
-const MAX_PROXY_BODY_CHARS = 7_000_000;
+/** UTF-8 bytes of the request body; the base64 image is the bulk of it. */
+const MAX_PROXY_BODY_BYTES = 7_000_000;
 const MAX_IMAGE_BASE64_CHARS = 6_500_000;
 const MAX_PROMPT_CHARS = 100_000;
 const BODY_FIELDS = new Set(['cacheKey', 'request']);
@@ -65,6 +69,27 @@ export const MODEL_BY_TIER: Record<Tier, string> = { pro: 'claude-sonnet-5', fre
  *  output; low effort keeps that small for a formatting-heavy JSON task. Haiku
  *  4.5 rejects `output_config.effort`, so free gets nothing extra. */
 export const PRO_OUTPUT_CONFIG = { effort: 'low' } as const;
+
+/**
+ * How long one Anthropic call may run. Below `RESERVATION_TTL_MS`: a call that
+ * outlived its reservation would let a retry be charged twice for one answer.
+ */
+export const UPSTREAM_TIMEOUT_MS = 150_000;
+
+/** Code units of a device name forwarded to Lemon Squeezy as `instance_name`. */
+export const MAX_INSTANCE_NAME_LENGTH = 64;
+
+/**
+ * A `log` that stamps every line with the request it belongs to: the
+ * Cloudflare ray id and the route, so a `fair_use_flag` or `upstream_error`
+ * can be found beside its invocation in the dashboard. Nothing from a header
+ * that could carry a key is ever included.
+ */
+export function requestLog(req: Request, sink: (line: string) => void): HandlerDeps['log'] {
+  const ray = req.headers.get('CF-Ray');
+  const route = `${req.method} ${new URL(req.url).pathname}`;
+  return (event, fields) => sink(JSON.stringify({ event, ray, route, ...fields }));
+}
 
 export interface ProseKeyInfo { version: number; kind: 'component' | 'groups'; tier: Tier | null }
 
@@ -228,13 +253,11 @@ export async function handleProse(req: Request, deps: HandlerDeps): Promise<Resp
   const identity = identityFromHeaders(req.headers, deps.salt);
   if (!identity) return json(401, { error: 'unauthenticated' });
 
-  const declaredLength = Number(req.headers.get('content-length') ?? 0);
-  if (declaredLength > MAX_PROXY_BODY_CHARS) return json(413, { error: 'request_too_large' });
-  let rawBody: string;
-  try { rawBody = await req.text(); } catch { return json(400, { error: 'invalid body' }); }
-  if (rawBody.length > MAX_PROXY_BODY_CHARS) return json(413, { error: 'request_too_large' });
+  const read = await readBodyCapped(req, MAX_PROXY_BODY_BYTES);
+  if (read.kind === 'too_large') return json(413, { error: 'request_too_large' });
+  if (read.kind === 'unreadable') return json(400, { error: 'invalid body' });
   let body: ProseBody;
-  try { body = JSON.parse(rawBody) as ProseBody; } catch { return json(400, { error: 'invalid json' }); }
+  try { body = JSON.parse(new TextDecoder().decode(read.bytes)) as ProseBody; } catch { return json(400, { error: 'invalid json' }); }
   const invalid = validateProseBody(body);
   if (invalid) return json(400, { error: invalid });
   const cacheKey = body.cacheKey as string;
@@ -292,21 +315,40 @@ export async function handleProse(req: Request, deps: HandlerDeps): Promise<Resp
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify(upstreamRequest(body.request as Record<string, unknown>, tier, keyInfo.tier === null)),
+      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
     });
-  } catch {
+  } catch (err) {
     await quota.release(cacheKey);
+    if (err instanceof Error && err.name === 'TimeoutError') {
+      deps.log('upstream_timeout', { timeoutMs: UPSTREAM_TIMEOUT_MS });
+      return json(502, { error: 'upstream_timeout' });
+    }
     return json(502, { error: 'upstream_unreachable' });
   }
 
   if (!upstream.ok) {
     await quota.release(cacheKey);
-    deps.log('upstream_error', { status: upstream.status });
+    deps.log('upstream_error', { status: upstream.status, requestId: upstream.headers.get('request-id') });
     return json(502, { error: 'upstream_error', status: upstream.status });
   }
 
-  const text = await upstream.text();
-  await quota.commit(cacheKey, text);
-  const s = await quota.snapshot(tier);
+  // AbortSignal.timeout aborts the whole fetch, including a body still
+  // streaming past the deadline: a second guard here catches that case the
+  // same way as the initial call. Any other body-read error still reaches
+  // route()'s catch-all as a 500, uncounted, but frees the reservation first,
+  // so a retry runs instead of answering 409 until the reservation expires.
+  let text: string;
+  try {
+    text = await upstream.text();
+  } catch (err) {
+    await quota.release(cacheKey);
+    if (err instanceof Error && err.name === 'TimeoutError') {
+      deps.log('upstream_timeout', { timeoutMs: UPSTREAM_TIMEOUT_MS });
+      return json(502, { error: 'upstream_timeout' });
+    }
+    throw err;
+  }
+  const s = await quota.commit(tier, cacheKey, text);
   return new Response(text, { status: 200, headers: { 'content-type': 'application/json', ...quotaHeaders(s) } });
 }
 
@@ -361,7 +403,8 @@ export async function handleActivate(req: Request, deps: HandlerDeps): Promise<R
       const v = await validateLicense(body.key, body.instanceId, licenseDeps);
       return json(200, { valid: v.valid, status: v.status, instanceId: body.instanceId });
     }
-    const out = await activateLicense(body.key, typeof body.instanceName === 'string' ? body.instanceName : 'Figma plugin', licenseDeps);
+    const requested = typeof body.instanceName === 'string' ? truncateUtf16(body.instanceName.trim(), MAX_INSTANCE_NAME_LENGTH) : '';
+    const out = await activateLicense(body.key, requested || 'Figma plugin', licenseDeps);
     return json(200, out);
   } catch (err) {
     if (err instanceof LsUnreachable) return json(502, { error: 'ls_unreachable' });

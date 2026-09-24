@@ -472,8 +472,76 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   foundation option.** Neither had a shipping caller, and no shipped output
   changes.
 
+- **Successful generations and publishes cost one Durable Object hop fewer.**
+  The commit returns the quota snapshot the response headers need, so the
+  proxy no longer calls back for it. Refusals are unchanged, and every
+  response carries the same headers and body as before.
+
+- **Pull streams the bundle, understands `If-None-Match` lists, and says
+  `no-store`.** The Worker passes the stored bytes through as a stream instead
+  of reading them into a string first, a conditional request may send several
+  or weak entity tags, and every pull and versions answer, the 401, 404 and
+  429 errors included, carries `Cache-Control: private, no-store`.
+
+- **The proxy's in-isolate rate limiters hold ten thousand keys for each
+  surface that shares them** instead of ten thousand in total across the
+  routes that share one map, so ordinary traffic on one route no longer uses
+  up the room the others need. The map is still shared, so a flood from
+  enough distinct addresses can still fill it.
+
 ### Fixed
 
+- **An Anthropic call that hangs is cut off before its reservation expires.**
+  The proxy aborts the upstream call at 150 seconds and answers
+  `502 upstream_timeout` with nothing charged; the reservation window is now
+  180 seconds, so a generation can no longer outlive its reservation and let a
+  retry pay twice for one answer. An answer whose body fails to arrive for
+  any other reason still answers 500, and now frees its reservation too, so
+  a retry runs at once instead of answering `409 generation_pending` for three
+  minutes. Every proxy log line now carries the
+  request's ray id and route, and an upstream error carries Anthropic's
+  request id.
+- **Publishes from one identity no longer race a library or the library
+  ceiling.** A changed publish holds a per-library lock in the publisher's
+  quota object until its writes commit, and that object checks the library
+  state the publish read, the older of its meta and its version log, against
+  the last one it saw written. A concurrent
+  changed publish, or one that read the library before another publish
+  finished, answers `409 publish_pending` instead of assigning the same
+  version, dropping the other publish from the version history, or leaving
+  the meta and bundle from different writers. A publish's `publishedAt` is
+  taken after those reads and always lands after the state it read, so a
+  Worker whose clock runs behind cannot move the library back in time, and a
+  publish that fails after writing its meta still records it, so a stale read
+  is refused as if that publish had finished. A create records the same state,
+  so a new library's first update is checked too. The library ceiling is counted
+  in that same object, so two concurrent creates no longer both pass an
+  eventually consistent KV listing, and a create is counted even when its
+  writes take longer than its reservation lives. Publishes under two
+  different identities, and a publish that runs past its three-minute
+  reservation, are not covered; the proxy README lists these limits. When the refused create's
+  library has not reached the listing yet, `library_limit.existing` is
+  `null`. A create refused only because another create by the same identity
+  is still in flight answers `409 publish_pending`, since that one may yet
+  fail.
+- **The proxy answers from one origin.** `workers_dev` is off, so the
+  `workers.dev` hostname that the zone's license rate rule never covered no
+  longer serves the Worker; `api.spec-layer.com` is the only origin. Workers
+  observability is on with every invocation sampled.
+- **Oversized bodies are refused as they stream in.** Publish and prose read
+  the request in chunks and stop at the first byte over the cap instead of
+  buffering the whole body first when no `Content-Length` was sent. The 413's
+  `size` is the declared length when there is one, else the byte count at the
+  cut.
+- **A busy identity's quota state no longer grows into one oversized Durable
+  Object value.** Each cached response now sits under its own storage key
+  beside a small counter record, the newest 500 are retained, and a record
+  written before the split is migrated the first time it is read. Before, a
+  Pro identity with a day of generations could push the single value past
+  the storage limit and get a 500 on every quota operation until entries
+  aged out. Rolling the proxy back past this change breaks cached replays
+  for up to 24 hours while counters are unaffected, so a fix should roll
+  forward.
 - **The Library says so when it could not read this file's docs, and
   recovers, and so does search.** A failed read used to leave the Library
   spinning with Refresh and Update disabled for the rest of the session,
@@ -597,6 +665,10 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   arrives empty, gets its own message instead of being told to add
   variables. Foundation docs are still not required: publish reads the
   file's variables and styles directly.
+- **File names and device names are capped before they are stored or
+  forwarded.** A library's recorded `fileName` is cut to 256 characters and a
+  license activation's `instanceName` to 64; the published bundle bytes are
+  untouched.
 - **Publish errors show above the Publish button.** They were the last line
   of the scrolling body, so on a library with setup blocks every error sat
   below the fold, out of sight of the button that caused it. They now float

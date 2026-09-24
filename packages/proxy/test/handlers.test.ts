@@ -1,8 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
 import { sha256 } from 'js-sha256';
-import { handleProse, type QuotaClient } from '../src/handlers';
-import { QuotaEngine, QUOTA_PROFILES, type QuotaProfile, type Tier, type ReserveResult, type QuotaSnapshot } from '../src/quota';
-import { quotaObjectName } from '../src/index';
+import { handleProse, requestLog, UPSTREAM_TIMEOUT_MS, type QuotaClient } from '../src/handlers';
+import { RESERVATION_TTL_MS } from '../src/quota';
+import { memQuota } from './quotaHarness';
 import { SlidingWindowLimiter } from '../src/ratelimit';
 import {
   proseRequest, proseCacheKey,
@@ -20,22 +20,10 @@ class MemKV {
   async list(opts: { prefix: string }) {
     return { keys: [...this.map.keys()].filter((k) => k.startsWith(opts.prefix)).map((name) => ({ name })) };
   }
-}
-
-/** In-memory QuotaClient over a real engine — same contract the DO fulfils in prod. */
-function memQuota(now: () => number) {
-  const engines = new Map<string, QuotaEngine>();
-  return (id: string, profile: QuotaProfile = 'ai') => {
-    const key = quotaObjectName(id, profile);
-    const e = engines.get(key) ?? new QuotaEngine(undefined, QUOTA_PROFILES[profile]);
-    engines.set(key, e);
-    return {
-      reserve: async (tier: Tier, k: string): Promise<ReserveResult> => e.reserve(tier, k, now()),
-      commit: async (k: string, b: string) => e.commit(k, b, now()),
-      release: async (k: string) => e.release(k),
-      snapshot: async (tier: Tier): Promise<QuotaSnapshot> => e.snapshot(tier, now()),
-    };
-  };
+  async getStream(k: string): Promise<ReadableStream | null> {
+    const v = this.map.get(k);
+    return v === undefined ? null : new Response(v).body;
+  }
 }
 
 /** The same stub `proseContract.test.ts` uses: the v9 prompt walks every field
@@ -175,6 +163,20 @@ describe('handleProse', () => {
     expect(res2.headers.get('X-Quota-Used')).toBe('1');
   });
 
+  it('answers a generation from the snapshot commit returns: no separate snapshot hop', async () => {
+    const d = deps();
+    const inner = d.quotaFor;
+    let snapshots = 0;
+    d.quotaFor = (id, profile) => {
+      const client = inner(id, profile);
+      return { ...client, snapshot: (tier) => { snapshots += 1; return client.snapshot(tier); } };
+    };
+    const res = await handleProse(proseReq(GOOD_BODY, { 'X-Figma-User': 'u1' }), d);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('X-Quota-Used')).toBe('1');
+    expect(snapshots).toBe(0);
+  });
+
   it('402 when the free quota is exhausted', async () => {
     const d = deps();
     for (let i = 0; i < 20; i++) {
@@ -186,12 +188,68 @@ describe('handleProse', () => {
   });
 
   it('does not decrement quota when Anthropic fails, and returns 502', async () => {
-    const failing = vi.fn(async () => new Response('overloaded', { status: 529 }));
+    const failing = vi.fn(async () => new Response('overloaded', { status: 529, headers: { 'request-id': 'req_abc' } }));
     const d = deps({ fetcher: failing as unknown as typeof fetch });
     const res = await handleProse(proseReq(GOOD_BODY, { 'X-Figma-User': 'u1' }), d);
     expect(res.status).toBe(502);
+    expect(d.log).toHaveBeenCalledWith('upstream_error', { status: 529, requestId: 'req_abc' });
     const res2 = await handleProse(proseReq(GOOD_BODY, { 'X-Figma-User': 'u1' }), { ...d, fetcher: deps().fetcher });
     expect(res2.headers.get('X-Quota-Used')).toBe('1'); // first attempt did not count
+  });
+
+  it('gives the Anthropic call a timeout shorter than the reservation TTL', async () => {
+    expect(UPSTREAM_TIMEOUT_MS).toBeLessThan(RESERVATION_TTL_MS);
+    const d = deps();
+    await handleProse(proseReq(GOOD_BODY, { 'X-Figma-User': 'u1' }), d);
+    const init = (d._anthropic.mock.calls[0] as [string, RequestInit])[1];
+    expect(init.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it('releases the reservation and answers 502 upstream_timeout when the call times out', async () => {
+    const timingOut = vi.fn(async () => { throw new DOMException('The operation was aborted due to timeout', 'TimeoutError'); });
+    const d = deps({ fetcher: timingOut as unknown as typeof fetch });
+    const res = await handleProse(proseReq(GOOD_BODY, { 'X-Figma-User': 'u1' }), d);
+    expect(res.status).toBe(502);
+    expect(await res.json()).toEqual({ error: 'upstream_timeout' });
+    expect(d.log).toHaveBeenCalledWith('upstream_timeout', { timeoutMs: UPSTREAM_TIMEOUT_MS });
+    // Nothing was charged and nothing is pending: the retry runs.
+    const retry = await handleProse(proseReq(GOOD_BODY, { 'X-Figma-User': 'u1' }), { ...d, fetcher: deps().fetcher });
+    expect(retry.status).toBe(200);
+    expect(retry.headers.get('X-Quota-Used')).toBe('1');
+  });
+
+  it('releases the reservation and answers 502 upstream_timeout when the body is still streaming at the deadline', async () => {
+    // Headers arrived (the Response resolved), but AbortSignal.timeout aborts
+    // the whole fetch, including a body still being read, so .text() is where
+    // the timeout actually surfaces here.
+    const timingOutBody = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      text: () => { throw new DOMException('The operation was aborted due to timeout', 'TimeoutError'); },
+    }));
+    const d = deps({ fetcher: timingOutBody as unknown as typeof fetch });
+    const res = await handleProse(proseReq(GOOD_BODY, { 'X-Figma-User': 'u1' }), d);
+    expect(res.status).toBe(502);
+    expect(await res.json()).toEqual({ error: 'upstream_timeout' });
+    expect(d.log).toHaveBeenCalledWith('upstream_timeout', { timeoutMs: UPSTREAM_TIMEOUT_MS });
+    // Nothing was charged and nothing is pending: the retry runs.
+    const retry = await handleProse(proseReq(GOOD_BODY, { 'X-Figma-User': 'u1' }), { ...d, fetcher: deps().fetcher });
+    expect(retry.status).toBe(200);
+    expect(retry.headers.get('X-Quota-Used')).toBe('1');
+  });
+
+  it('releases the reservation when reading the answer fails for any other reason, so a retry is not left pending', async () => {
+    const brokenBody = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      text: () => { throw new TypeError('Network connection lost.'); },
+    }));
+    const d = deps({ fetcher: brokenBody as unknown as typeof fetch });
+    await expect(handleProse(proseReq(GOOD_BODY, { 'X-Figma-User': 'u1' }), d)).rejects.toThrow('Network connection lost.');
+    // Nothing was charged and nothing is pending: the retry runs.
+    const retry = await handleProse(proseReq(GOOD_BODY, { 'X-Figma-User': 'u1' }), { ...d, fetcher: deps().fetcher });
+    expect(retry.status).toBe(200);
+    expect(retry.headers.get('X-Quota-Used')).toBe('1');
   });
 
   it('rejects a non-allowlisted upstream request', async () => {
@@ -247,7 +305,10 @@ describe('handleProse', () => {
     // key were logged.
     const flaggedQuota: QuotaClient = {
       reserve: async () => ({ kind: 'proceed', flagged: true }),
-      commit: async () => {},
+      commit: async () => ({
+        tier: 'pro', used: 1001, limit: null, remaining: null,
+        resetsAt: new Date('2026-08-01T00:00:00Z').toISOString(),
+      }),
       release: async () => {},
       snapshot: async () => ({
         tier: 'pro', used: 1000, limit: null, remaining: null,
@@ -264,5 +325,23 @@ describe('handleProse', () => {
     for (const call of (d.log as ReturnType<typeof vi.fn>).mock.calls) {
       expect(JSON.stringify(call)).not.toContain(UUID_KEY);
     }
+  });
+});
+
+describe('requestLog', () => {
+  it('stamps every line with the ray id and the route', () => {
+    const lines: string[] = [];
+    const log = requestLog(new Request('https://p.test/v1/libraries/lib_000000000000000000000000', { headers: { 'CF-Ray': '8a1b2c3d4e5f-SJC' } }), (line) => lines.push(line));
+    log('library_publish', { libraryId: 'lib_000000000000000000000000', size: 12 });
+    expect(JSON.parse(lines[0])).toEqual({
+      event: 'library_publish', ray: '8a1b2c3d4e5f-SJC', route: 'GET /v1/libraries/lib_000000000000000000000000',
+      libraryId: 'lib_000000000000000000000000', size: 12,
+    });
+  });
+
+  it('writes null, not a made-up id, when there is no ray header', () => {
+    const lines: string[] = [];
+    requestLog(new Request('https://p.test/v1/quota'), (line) => lines.push(line))('x', {});
+    expect(JSON.parse(lines[0])).toEqual({ event: 'x', ray: null, route: 'GET /v1/quota' });
   });
 });
