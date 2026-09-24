@@ -223,8 +223,21 @@ describe('runInit', () => {
       const io = makeIo();
       expect(runInit(cwd, { id }, io), id).toBe(1);
       expect(io.errLines.join('\n')).toContain('24 hex characters');
+      expect(io.errLines.join('\n'), id).not.toContain(id);
     }
     expect(existsSync(join(cwd, 'speclayer.json'))).toBe(false);
+  });
+
+  it('never echoes a pull key passed as --id, and points it at --key', () => {
+    const key = `sl_${'a'.repeat(48)}`;
+    const io = makeIo();
+
+    expect(runInit(cwd, { id: key }, io)).toBe(1);
+
+    expect(io.errLines.join('\n')).not.toContain(key);
+    expect(io.errLines).toEqual([
+      '--id must be "lib_" followed by 24 hex characters, as the plugin shows it. That looks like the pull key; pass it with --key.',
+    ]);
   });
 
   it('--platform web writes platforms and the default output, and prints where it lands', () => {
@@ -1478,6 +1491,21 @@ describe('runSetup', () => {
     expect(await runSetup(cwd, { id: 'lib_abc', key: KEY }, {}, io, stub200())).toBe(1);
 
     expect(io.errLines.join('\n')).toContain('24 hex characters');
+    expect(existsSync(join(cwd, 'speclayer.json'))).toBe(false);
+    expect(existsSync(join(cwd, 'speclayer.local.json'))).toBe(false);
+  });
+
+  // Coding agents and CI run this line, so a swapped --id and --key must not
+  // put the secret in a scrollback or a persisted log.
+  it('never echoes a pull key swapped into --id', async () => {
+    gitInit();
+    const io = makeIo();
+
+    expect(await runSetup(cwd, { id: KEY, key: LIB }, {}, io, stub200())).toBe(1);
+
+    expect(io.errLines.join('\n')).not.toContain(KEY);
+    expect(io.outLines.join('\n')).not.toContain(KEY);
+    expect(io.errLines.join('\n')).toContain('pass it with --key');
     expect(existsSync(join(cwd, 'speclayer.json'))).toBe(false);
     expect(existsSync(join(cwd, 'speclayer.local.json'))).toBe(false);
   });

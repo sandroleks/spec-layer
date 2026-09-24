@@ -134,8 +134,13 @@ function missingFormatNote(platforms: Platform[]): string {
 
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
+/**
+ * The value is never echoed: a swapped `--id sl_... --key lib_...` would put
+ * the pull key in a terminal scrollback or a CI log, and no command prints it.
+ */
 const badLibraryId = (id: string): string =>
-  `--id must be "lib_" followed by 24 hex characters, as the plugin shows it, not "${id}".`;
+  '--id must be "lib_" followed by 24 hex characters, as the plugin shows it.'
+  + (id.startsWith('sl_') ? ' That looks like the pull key; pass it with --key.' : '');
 
 export function runInit(cwd: string, flags: Flags, io: Io): number {
   if (!flags.id) {

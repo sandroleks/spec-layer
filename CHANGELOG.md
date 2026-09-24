@@ -462,8 +462,11 @@ path, where the files already are, and says so in one line.
   pull.`, and the next pull rewrites the file.
 - **`--id` is checked against the shape the plugin issues.** `init` and
   `setup` refuse an id that is not `lib_` followed by 24 hex characters, with
-  one sentence, before writing `speclayer.json` or the key. On the wire the id
-  is URL-encoded, so a stray slash cannot change the request path.
+  one sentence, before writing `speclayer.json` or the key. The sentence never
+  repeats the value, so a pull key swapped into `--id` stays out of the
+  terminal and CI logs, and a value starting with `sl_` is pointed at `--key`.
+  On the wire the id is URL-encoded, so a stray slash cannot change the
+  request path.
 - **`spec-layer pull` no longer deletes a directory it did not create.** The
   record was staged in a fixed `.speclayer.partial`, which the pull removed
   recursively first, whatever was there. Staging now happens in a fresh
