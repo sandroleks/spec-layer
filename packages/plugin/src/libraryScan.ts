@@ -9,14 +9,19 @@
  * reach main.ts, which registers Figma listeners on import.
  *
  * The scan never throws. It returns what it collected and, when it stopped
- * early, the error's text, and the caller decides between `library` and
- * `libraryError`. It never prunes: `alive` is complete only when `error` is
- * null, and pruning on a partial set would drop live docs from the registry.
+ * early, the error's text. It never prunes; `libraryReply` below is the one
+ * place that turns a `LibraryScan` into a reply and a prune decision, so the
+ * three shapes (complete, partial with rows, failed with no rows) are covered
+ * by a plain unit test rather than only by reading main.ts's control flow.
+ * `alive` is a safe prune set only when `error` is null: a rejected read (see
+ * `resolveRegistrySections`) is folded in regardless, since it is not
+ * evidence the doc is gone, but a scan that stopped before reaching every doc
+ * never saw the rest, and pruning on that partial set would drop live docs.
  */
 import {
   unitContent, foundationContentHash, type FoundationSpec,
 } from '@spec-layer/extractor';
-import type { LibraryEntry } from './messages';
+import type { LibraryEntry, MainToUi } from './messages';
 import {
   DOC_LINK_KEY, parseDocLink, isFoundationLink, retargetScope, textContentHash,
 } from './docLink';
@@ -68,7 +73,11 @@ export async function scanLibrary(
     return live;
   };
   try {
-    const sections = await resolveRegistrySections(docIds, host);
+    const { sections, rejected } = await resolveRegistrySections(docIds, host);
+    // A rejected read is not evidence the doc is gone (usually an unloaded
+    // page under dynamic-page access), so it must never be pruned. It builds
+    // no row either, since there is nothing here to build one from.
+    for (const docId of rejected) alive.add(docId);
     const linked = sections.map(({ docId, section }) => ({
       docId, section, data: parseDocLink(section.getPluginData(DOC_LINK_KEY)),
     }));
@@ -158,4 +167,23 @@ export async function scanLibrary(
   } catch (err) {
     return { entries, alive, error: err instanceof Error ? err.message : String(err) };
   }
+}
+
+/**
+ * What `requestLibrary` posts for a scan, and whether its self-heal prune
+ * should run. Three shapes: a complete scan posts `library` and prunes; a
+ * scan that failed after collecting rows posts `library` with `incomplete:
+ * true` (rows are real, but the list may be missing docs the scan never
+ * reached) and does not prune, since `alive` is not trustworthy past the
+ * failure; a scan that failed before any row posts `libraryError` and does
+ * not prune either, for the same reason.
+ */
+export function libraryReply(scan: LibraryScan): { message: MainToUi; prune: boolean } {
+  if (scan.error === null) {
+    return { message: { type: 'library', entries: scan.entries }, prune: true };
+  }
+  if (scan.entries.length > 0) {
+    return { message: { type: 'library', entries: scan.entries, incomplete: true }, prune: false };
+  }
+  return { message: { type: 'libraryError', message: scan.error }, prune: false };
 }

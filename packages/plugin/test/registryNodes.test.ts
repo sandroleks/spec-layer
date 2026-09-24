@@ -32,10 +32,10 @@ describe('resolveRegistrySections', () => {
     const result = resolveRegistrySections(['c', 'a', 'b'], lookup);
     expect(asked).toEqual(['c', 'a', 'b']);
     settle();
-    expect((await result).map((r) => r.docId)).toEqual(['c', 'a', 'b']);
+    expect((await result).sections.map((r) => r.docId)).toEqual(['c', 'a', 'b']);
   });
 
-  it('drops a null, a non-Section and a rejected read without failing the rest', async () => {
+  it('drops a null and a non-Section from `sections` without failing the rest, and reports a rejected read separately', async () => {
     const { lookup, settle } = deferredLookup({
       a: section('a'),
       gone: null,
@@ -45,12 +45,17 @@ describe('resolveRegistrySections', () => {
     });
     const result = resolveRegistrySections(['a', 'gone', 'frame', 'bad', 'z'], lookup);
     settle();
-    expect((await result).map((r) => r.docId)).toEqual(['a', 'z']);
+    const { sections, rejected } = await result;
+    expect(sections.map((r) => r.docId)).toEqual(['a', 'z']);
+    // 'bad' rejected: it is evidence-free, unlike 'gone' and 'frame', which
+    // resolved and are simply not Sections. It appears in `rejected`, not in
+    // `sections`, and nowhere near 'gone' or 'frame'.
+    expect(rejected).toEqual(['bad']);
   });
 
   it('resolves to an empty list for an empty registry without touching the lookup', async () => {
     const { lookup, asked } = deferredLookup({});
-    expect(await resolveRegistrySections([], lookup)).toEqual([]);
+    expect(await resolveRegistrySections([], lookup)).toEqual({ sections: [], rejected: [] });
     expect(asked).toEqual([]);
   });
 });

@@ -2,7 +2,7 @@
 import { serializeNode, mainComponentRef } from './serialize';
 import type { NodeResolver, ResolvedStyle } from './serialize';
 import { memoizedResolver } from './resolverMemo';
-import type { MainToUi, UiToMain, LibraryEntry, PublishComponentSource, PublishInfo } from './messages';
+import type { MainToUi, UiToMain, PublishComponentSource, PublishInfo } from './messages';
 import { resolveFileKey } from './fileKey';
 import { ProgrammaticSelection } from './programmaticSelection';
 import { serializeFoundation } from './serializeFoundation';
@@ -31,7 +31,7 @@ import {
 import { readCanvasProse, mergeProse, collectGeneratedText, type ProseNodeLike } from './canvasProse';
 import { repaintPills } from './pillNode';
 import { pageOf, resolveRegistrySections } from './registryNodes';
-import { scanLibrary } from './libraryScan';
+import { scanLibrary, libraryReply, type LibraryScan } from './libraryScan';
 import {
   PUBLISH_RECORD_KEY, parsePublishRecord, serializePublishRecord, pillState,
   type DocPublishRecord, type PillState,
@@ -372,9 +372,11 @@ function writeRegistry(r: { v: 1; docIds: string[] }): void {
   figma.root.setPluginData(DOC_REGISTRY_KEY, serializeRegistry(r));
 }
 
-/** Every registry id that still names a Section, read in one concurrent batch. */
-function registrySections() {
-  return resolveRegistrySections(readRegistry().docIds, figma);
+/** Every registry id that still names a Section, read in one concurrent batch.
+ *  A rejected read is skipped here, same as before: this helper's callers
+ *  never prune, so they have no need for `rejected`, only `sections`. */
+async function registrySections() {
+  return (await resolveRegistrySections(readRegistry().docIds, figma)).sections;
 }
 
 // Every foundation doc link currently on canvas, read via the registry. A
@@ -748,34 +750,31 @@ figma.ui.onmessage = async (raw: unknown) => {
           return null;
         }
       };
-      let entries: LibraryEntry[] = [];
-      let error: string | null = null;
+      let scan: LibraryScan;
       try {
         const reg = readRegistry();
-        const scan = await scanLibrary(reg.docIds, { getNodeByIdAsync: (id) => figma.getNodeByIdAsync(id), liveFoundation });
-        entries = scan.entries;
-        error = scan.error;
-        if (scan.error === null) {
-          // Self-heal: keep only ids that resolved to a real, still-linked doc.
-          // Only after a complete scan: a scan that stopped early never saw
-          // the docs after the failure, and pruning on its `alive` set would
-          // drop live docs from the registry.
+        scan = await scanLibrary(reg.docIds, { getNodeByIdAsync: (id) => figma.getNodeByIdAsync(id), liveFoundation });
+      } catch (err) {
+        scan = { entries: [], alive: new Set<string>(), error: err instanceof Error ? err.message : String(err) };
+      }
+      if (scan.error !== null) console.error('[Spec Layer] library scan failed', scan.error);
+      // libraryReply is the one place that turns a scan into a reply and a
+      // prune decision, so its three shapes (complete, partial with rows,
+      // failed with no rows) are covered by a plain unit test.
+      const { message, prune } = libraryReply(scan);
+      if (prune) {
+        // Guarded on its own: a self-heal write that throws must not turn a
+        // healthy scan's reply into a libraryError the UI was never told to
+        // expect. The next Library scan gets another chance to prune.
+        try {
+          const reg = readRegistry();
           const pruned = pruneRegistry(reg, scan.alive);
           if (pruned.docIds.length !== reg.docIds.length) writeRegistry(pruned);
+        } catch (err) {
+          console.error('[Spec Layer] could not update the doc registry after a library scan', err);
         }
-      } catch (err) {
-        error = err instanceof Error ? err.message : String(err);
       }
-      if (error !== null) console.error('[Spec Layer] library scan failed', error);
-      // Rows collected before a failure are still true rows, so they are
-      // posted as the library. Only a failure with nothing collected has
-      // nothing to show but its message. The UI ends its refreshing state on
-      // either reply, which is what this handler used to have no way to do.
-      if (entries.length > 0 || error === null) {
-        figma.ui.postMessage({ type: 'library', entries } as MainToUi);
-      } else {
-        figma.ui.postMessage({ type: 'libraryError', message: error } as MainToUi);
-      }
+      figma.ui.postMessage(message);
       break;
     }
 

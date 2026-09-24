@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { scanLibrary, type LibraryScanHost } from '../src/libraryScan';
+import { scanLibrary, libraryReply, type LibraryScanHost, type LibraryScan } from '../src/libraryScan';
 import {
   DOC_LINK_KEY, serializeDocLink, textContentHash,
   type ComponentDocLink, type FoundationDocLink,
@@ -148,7 +148,21 @@ describe('scanLibrary', () => {
     expect(scan.entries.map((e) => e.docId)).toEqual(['doc:1']);
   });
 
-  it('returns the rows it had plus the error when a doc throws midway, and never throws itself', async () => {
+  it('keeps a rejected registry read alive to prune, unlike a resolved-null one', async () => {
+    const live = docSection('doc:1', 'Button: Documentation', componentLink('src:1'));
+    const scan = await scanLibrary(['doc:rejected', 'doc:missing', 'doc:1'], host({
+      'doc:rejected': new Error('page not loaded'), 'doc:missing': null,
+      'doc:1': live, 'src:1': node('COMPONENT', 'src:1'),
+    }));
+    expect(scan.error).toBeNull();
+    // doc:rejected built no row (nothing to build one from) but must not be
+    // pruned either, since the reject is not evidence it is gone. doc:missing
+    // resolved null, real evidence, so it is left out of alive to be pruned.
+    expect([...scan.alive]).toEqual(['doc:rejected', 'doc:1']);
+    expect(scan.entries.map((e) => e.docId)).toEqual(['doc:1']);
+  });
+
+  it('returns no rows plus the error when a doc-link read throws before any row is built, and never throws itself', async () => {
     const ok = docSection('doc:1', 'Button: Documentation', componentLink('src:1'));
     const broken = docSection('doc:2', 'Card: Documentation', componentLink('src:2'));
     broken.getPluginData = () => { throw new Error('plugin data unavailable'); };
@@ -163,7 +177,7 @@ describe('scanLibrary', () => {
     expect(scan.alive.size).toBe(0);
   });
 
-  it('reports the error with no rows when the foundation branch throws after a component row was built', async () => {
+  it('reports the error alongside the rows already built when the foundation branch throws after a component row was built', async () => {
     const spec = buildFoundation(dump());
     const comp = docSection('doc:1', 'Button: Documentation', componentLink('src:1'));
     const fdn = docSection('doc:2', 'Foundations: Semantic', foundationLink());
@@ -173,5 +187,30 @@ describe('scanLibrary', () => {
     expect(scan.error).toBe('variables unavailable');
     expect(scan.entries.map((e) => e.docId)).toEqual(['doc:1']);
     expect([...scan.alive]).toEqual(['doc:1', 'doc:2']);
+  });
+});
+
+describe('libraryReply', () => {
+  const entry = (docId: string) => ({ docId } as unknown as LibraryScan['entries'][number]);
+
+  it('replies library with no incomplete flag and prunes, for a complete scan', () => {
+    const scan: LibraryScan = { entries: [entry('doc:1')], alive: new Set(['doc:1']), error: null };
+    const { message, prune } = libraryReply(scan);
+    expect(message).toEqual({ type: 'library', entries: scan.entries });
+    expect(prune).toBe(true);
+  });
+
+  it('replies library with incomplete: true and does not prune, for a failed scan that still has rows', () => {
+    const scan: LibraryScan = { entries: [entry('doc:1')], alive: new Set(['doc:1']), error: 'boom' };
+    const { message, prune } = libraryReply(scan);
+    expect(message).toEqual({ type: 'library', entries: scan.entries, incomplete: true });
+    expect(prune).toBe(false);
+  });
+
+  it('replies libraryError and does not prune, for a failed scan with no rows', () => {
+    const scan: LibraryScan = { entries: [], alive: new Set(), error: 'boom' };
+    const { message, prune } = libraryReply(scan);
+    expect(message).toEqual({ type: 'libraryError', message: 'boom' });
+    expect(prune).toBe(false);
   });
 });

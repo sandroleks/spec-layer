@@ -99,11 +99,16 @@ export type MainToUi =
   | { type: 'componentImageError'; message: string }
   | { type: 'docFrameDone'; frameName: string; replaced: boolean }
   | { type: 'docFrameError'; message: string }
-  | { type: 'library'; entries: LibraryEntry[] }
+  /** `incomplete` is present (always `true`) only when the scan behind these
+   *  rows failed partway through: the rows collected before the failure are
+   *  real, but the list may be missing docs the scan never reached, and the
+   *  registry's self-heal prune did not run. Absent on a complete scan. */
+  | { type: 'library'; entries: LibraryEntry[]; incomplete?: true }
   /** Reply for `requestLibrary` when the scan produced no rows before it
    *  failed. A scan that fails after collecting rows replies `library` with
-   *  what it has. Either reply ends the UI's refreshing state, so no throw on
-   *  the main thread can leave Library spinning with Refresh disabled. */
+   *  `incomplete: true` instead. Either reply ends the UI's refreshing state,
+   *  so no throw on the main thread can leave Library spinning with Refresh
+   *  disabled. */
   | { type: 'libraryError'; message: string }
   /** Follows a `selection`: whether Create would replace an existing doc for
    *  that component, so the footer can say "Replace docs". Sent separately so

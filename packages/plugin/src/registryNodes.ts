@@ -23,23 +23,40 @@ export interface RegistrySection {
   section: SectionNode;
 }
 
+export interface RegistryScan {
+  /** Every registry id that still names a Section, in registry order. */
+  sections: RegistrySection[];
+  /** Registry ids whose read REJECTED rather than resolving, in registry
+   *  order. Distinct from an id that resolved null or to a non-Section node:
+   *  those are simply absent from `sections`, because a resolved value is
+   *  real evidence about the doc. A reject (under dynamic-page access,
+   *  usually an unloaded page) is not, so a caller that prunes on absence
+   *  from `sections` must first add these ids back in, or it deletes a
+   *  registry entry for a doc it never actually got to read. */
+  rejected: string[];
+}
+
 /**
- * Every registry id that still names a Section, in registry order. An id whose
- * read resolves null, resolves to another node type, or rejects is left out;
- * the caller decides whether that means "prune" (requestLibrary) or "skip"
- * (everything else).
+ * Every registry id resolved in one concurrent batch, split into the ones
+ * that still name a Section and the ones whose read rejected. An id whose
+ * read resolves null or to another node type is left out of both lists; the
+ * caller decides whether that absence means "prune" (requestLibrary) or
+ * "skip" (everything else).
  */
 export async function resolveRegistrySections(
   docIds: readonly string[], lookup: NodeLookup,
-): Promise<RegistrySection[]> {
-  const nodes = await Promise.all(docIds.map(async (docId): Promise<BaseNode | null> => {
-    try { return await lookup.getNodeByIdAsync(docId); } catch { return null; }
+): Promise<RegistryScan> {
+  interface Read { docId: string; node: BaseNode | null; rejected: boolean }
+  const reads = await Promise.all(docIds.map(async (docId): Promise<Read> => {
+    try { return { docId, node: await lookup.getNodeByIdAsync(docId), rejected: false }; } catch { return { docId, node: null, rejected: true }; }
   }));
-  const out: RegistrySection[] = [];
-  nodes.forEach((node, i) => {
-    if (node && node.type === 'SECTION') out.push({ docId: docIds[i], section: node as SectionNode });
-  });
-  return out;
+  const sections: RegistrySection[] = [];
+  const rejected: string[] = [];
+  for (const read of reads) {
+    if (read.rejected) { rejected.push(read.docId); continue; }
+    if (read.node && read.node.type === 'SECTION') sections.push({ docId: read.docId, section: read.node as SectionNode });
+  }
+  return { sections, rejected };
 }
 
 /** The PageNode a node lives on, or null. Walks parents until a PAGE. */

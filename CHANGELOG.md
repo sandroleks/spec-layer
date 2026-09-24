@@ -573,10 +573,14 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   failure are posted as the Library, and a failure with no rows posts a
   `libraryError` the panel shows. The registry self-heal runs only after a
   complete scan, so a failed one can no longer prune docs it never reached.
-  A source read that is rejected rather than empty (usually an unloaded
-  page) no longer marks the row **Source missing**, matching what a failed
-  Foundation read already did. Detach and Delete reply even when the
-  registry write fails.
+  A registry read that is rejected rather than empty is no longer pruned
+  either, for the same reason. A source read that is rejected rather than
+  empty (usually an unloaded page) no longer marks the row **Source
+  missing**, matching what a failed Foundation read already did. Detach and
+  Delete reply even when the registry write fails. A scan that fails
+  part-way now marks its reply as partial, so a Library the panel shows
+  after such a failure can be told apart from a complete one; the panel
+  itself does not yet say so, that is the next build's change.
 
 ### Added
 
