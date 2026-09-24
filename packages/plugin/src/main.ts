@@ -32,6 +32,7 @@ import { readCanvasProse, mergeProse, collectGeneratedText, type ProseNodeLike }
 import { repaintPills } from './pillNode';
 import { pageOf, resolveRegistrySections } from './registryNodes';
 import { scanLibrary, libraryReply, type LibraryScan } from './libraryScan';
+import { CanvasBuildGate } from './canvasBuild';
 import {
   PUBLISH_RECORD_KEY, parsePublishRecord, serializePublishRecord, pillState,
   type DocPublishRecord, type PillState,
@@ -333,11 +334,25 @@ figma.clientStorage.getAsync('brandLogo').then((value: string | undefined) => {
 // this exact generated Section id, so it still posts normally.
 const programmaticDocSelection = new ProgrammaticSelection();
 
+// One build at a time across both frame families: see CanvasBuildGate. The
+// message handler is async and re-entrant, and a build mutates shared module
+// state (theme palette, layout widths, font families) assumed single-threaded.
+const canvasBuild = new CanvasBuildGate();
+
 // React to selection changes.
 // Note: selectionchange does not fire on plugin open; the UI sends requestSelection on mount to get the initial selection.
 figma.on('selectionchange', () => {
   const selected = figma.currentPage.selection;
+  // Consume first, so a programmatic selection that lands while the gate is
+  // still held cannot leave its expectation armed for the user's next click.
   if (programmaticDocSelection.consume(selected.map((node) => node.id))) return;
+  // A build switches pages to place a doc beside its predecessor and back;
+  // each switch reports the new page's selection, which is nobody's choice.
+  // Posting it would empty the component pane the moment "Updated" shows.
+  // The selection the user made before the build is still what the panel
+  // shows, and it is still true. A selection the user changes mid-build is
+  // picked up by their next click; nothing is posted for it here.
+  if (canvasBuild.busy) return;
   void postSelection().catch(() => {/* handled inside */});
 });
 
@@ -472,15 +487,6 @@ async function findExistingDoc(
 }
 
 // React to UI messages
-// True while a doc-frame build is in progress. The message handler is async and
-// re-entrant, and a build mutates shared module state (theme palette, layout
-// widths, font families) assumed single-threaded; a second overlapping build
-// would corrupt widths/theme or duplicate the doc. One build at a time.
-let docFrameRendering = false;
-// Same guard as docFrameRendering, for the Foundations tab's multi-unit build:
-// a second overlapping renderFoundation would corrupt the shared theme/font
-// state in frameKit and could duplicate frames on canvas.
-let foundationRendering = false;
 
 /**
  * Pull one unit's group descriptions out of the build-wide map.
@@ -630,18 +636,16 @@ figma.ui.onmessage = async (raw: unknown) => {
       break;
 
     case 'renderDocFrame': {
-      if (docFrameRendering) {
-        // Same rule as the two foundation paths below: reply, never drop. The
-        // shared UI lock should stop this from being reached at all, but a
-        // guard that notifies and returns nothing leaves the UI holding a
-        // button it disabled for a build that will never report back.
-        // docFrameError is the failure reply this send site already handles,
-        // and the UI shows its message as a toast, so this does not notify too.
+      if (!canvasBuild.begin()) {
+        // Reply, never drop. The shared UI lock should stop this from being
+        // reached at all, but a guard that notifies and returns nothing leaves
+        // the UI holding a button it disabled for a build that will never
+        // report back. docFrameError is the failure reply this send site
+        // already handles, and the UI shows its message as a toast.
         const message = 'Another build is still running. Try again when it finishes.';
         figma.ui.postMessage({ type: 'docFrameError', message } as MainToUi);
         break;
       }
-      docFrameRendering = true;
       let section: SectionNode | null = null;
       let committed = false; // true once the old doc has been replaced by the new one
       try {
@@ -748,7 +752,7 @@ figma.ui.onmessage = async (raw: unknown) => {
         const message = err instanceof Error ? err.message : String(err);
         figma.ui.postMessage({ type: 'docFrameError', message } as MainToUi);
       } finally {
-        docFrameRendering = false;
+        canvasBuild.end();
       }
       break;
     }
@@ -830,17 +834,14 @@ figma.ui.onmessage = async (raw: unknown) => {
     }
 
     case 'renderFoundation': {
-      if (foundationRendering) {
+      if (!canvasBuild.begin()) {
         // Post the rejection back, don't just notify. The UI holds a lock from
         // the moment it sends, and a request that gets no reply is a lock
-        // nobody ever releases: the Foundations tab's Create button stayed
-        // disabled for the rest of the session. The UI shows the reply's
-        // message as a toast, so this does not notify too.
+        // nobody ever releases.
         const message = 'Another build is still running. Try again when it finishes.';
         figma.ui.postMessage({ type: 'foundationFrameError', message, created: 0 } as MainToUi);
         break;
       }
-      foundationRendering = true;
       // Declared outside the try so the catch block can report how many frames
       // actually landed on the canvas before the failure (frames are appended
       // one at a time and are never rolled back).
@@ -1026,25 +1027,19 @@ figma.ui.onmessage = async (raw: unknown) => {
         }
         figma.ui.postMessage({ type: 'foundationFrameError', message, created } as MainToUi);
       } finally {
-        foundationRendering = false;
+        canvasBuild.end();
       }
       break;
     }
 
     case 'updateFoundationDoc': {
-      // Shares renderFoundation's guard: both call buildFoundationFrame, which
-      // mutates frameKit's shared theme/font module state, so the two must
-      // never run concurrently any more than two renderFoundation calls could.
-      if (foundationRendering) {
-        // Same rule as renderFoundation above: reply, never drop. docSourceError
-        // is the failure reply this send site already handles, so the row's
-        // Update releases its lock instead of wedging the button it disabled.
-        // The UI shows the reply's message as a toast, so this does not notify.
+      // Shares the gate with renderDocFrame and renderFoundation: all three
+      // call into frameKit's shared theme/font module state.
+      if (!canvasBuild.begin()) {
         const message = 'Another build is still running. Try again when it finishes.';
         figma.ui.postMessage({ type: 'docSourceError', docId: msg.docId, message } as MainToUi);
         break;
       }
-      foundationRendering = true;
       try {
         const node = await figma.getNodeByIdAsync(msg.docId);
         if (!node || node.type !== 'SECTION') {
@@ -1174,7 +1169,7 @@ figma.ui.onmessage = async (raw: unknown) => {
         const message = err instanceof Error ? err.message : String(err);
         figma.ui.postMessage({ type: 'docSourceError', docId: msg.docId, message } as MainToUi);
       } finally {
-        foundationRendering = false;
+        canvasBuild.end();
       }
       break;
     }

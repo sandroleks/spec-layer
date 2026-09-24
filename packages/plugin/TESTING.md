@@ -68,6 +68,14 @@ requests carry token names and resolved values without an image.
    must not change the canvas. Then open **Library**, use a row menu's **Copy
    for AI**, and confirm that brief still includes saved guidelines when the
    document has them.
+6. Move a generated Section to another page, reselect its component on the
+   first page, and run **Create docs** again. The doc is rebuilt on the page
+   it was moved to, the toast says it was updated, and the component screen
+   still shows the component: the page switch that places the rebuilt
+   Section must not empty the panel. Then start a Foundation build and, while
+   it runs, click **Create docs** on a component. The toast says another
+   build is still running, and the finished Foundation docs carry the brand
+   theme, not the component doc's leftovers.
 
 Also verify a nested selection resolves to its enclosing component and a
 non-component selection shows an actionable empty state with no toast. Click

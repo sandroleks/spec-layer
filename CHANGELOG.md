@@ -591,6 +591,13 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   compares against the read the Library badge came from instead of reading
   the file again, so the list and the badge can no longer describe two
   different moments.
+- **Rebuilding a doc on another page no longer empties the component
+  screen.** Placing a rebuilt Section switches pages, and Figma reports the
+  destination page's empty selection as a selection change; the plugin
+  posted it and the panel showed "select a component" right after
+  "Updated". Selection changes during a build are no longer posted. The
+  same gate now covers both frame families, so a component build and a
+  Foundation build can no longer interleave over the shared theme state.
 
 ### Added
 
