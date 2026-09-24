@@ -6,6 +6,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [6.0.0] - 2026-09-24
+
+Plugin 6.0.0 is a major release because every existing document asks to be
+updated once. `EXTRACTOR_VERSION` moves from `'2'` to `'3'`, so a component
+doc built by 5.1.0 or earlier reads "Rebuild needed", and a foundation doc
+built by 5.1.0 reads "Update available" with one "New layout" item. The
+Docs 2.0 frames, the rewritten AI prompts, library semantic versions,
+Markdown output, and Foundation Context 5.1.1 all ship here. The proxy
+still accepts the prose requests 5.1.0 sends, so an unupdated plugin keeps
+generating. The plugin's Markdown setup command needs CLI 0.10.0 or later,
+and `spec-layer@0.11.0` is `latest` on npm.
+
 This section now spans two surfaces. The CLI portion ships as 0.9.0, and the
 version bump is load-bearing rather than ceremonial: `pull` now compares
 `manifest.cliVersion` when deciding whether a cached pull is current, and no
@@ -258,8 +270,8 @@ path, where the files already are, and says so in one line.
   plugin carrying this records one patch version with no listed changes. An
   artifact from a released plugin still says 5.1.0 and validates against
   the 5.1.0 download, not `v5.json`. `spec-layer pull` accepts both, since
-  its check does not read the version. `npm run check:site-live` fails until
-  the private site deploys 5.1.1; it is not part of `npm run check`.
+  its check does not read the version. The site serves 5.1.1, and
+  `npm run check:site-live`, which is not part of `npm run check`, proves it.
 - **The repository gates cover what they claimed to.** `npm run typecheck`
   now compiles `packages/proxy/test` and `packages/cli/test`; both had type
   errors that vitest's type stripping hid, all in test code.
@@ -2325,6 +2337,7 @@ path, where the files already are, and says so in one line.
 - Workspace packages are private implementation modules and are not published to npm.
 - GitHub synchronization, drift detection, and an MCP server remain roadmap items.
 
+[6.0.0]: https://github.com/sandroleks/spec-layer/releases/tag/v6.0.0
 [5.1.0]: https://github.com/sandroleks/spec-layer/releases/tag/v5.1.0
 [5.0.0]: https://github.com/sandroleks/spec-layer/releases/tag/v5.0.0
 [1.0.0]: https://github.com/sandroleks/spec-layer/releases/tag/v1.0.0
