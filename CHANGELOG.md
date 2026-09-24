@@ -27,6 +27,18 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
 
 ### Added
 
+- **A self-describing DTCG output** (CLI 0.8.2, on npm since 2026-09-10; the
+  plugin's clipboard side of it landed after the `v5.1.0` tag in #59 and #60
+  and has not been in a tagged plugin release). The document extension now
+  carries a `census` of what each emitted file holds and a `config_hash` of the
+  projection options that produced it, and `resolver.json` carries that
+  extension instead of only the clipboard document doing so. The sidecar
+  records the `transform` behind each token's value in each mode, and the value
+  each alias resolves to. Every field is descriptive: no canvas hash and no
+  artifact identity moved, and `EXTRACTOR_VERSION` is unchanged, so no document
+  needs regenerating. A repository pulling with an earlier CLI gets the same
+  files without these fields. The census reports what the projection produced;
+  `report.json` keeps its own job of naming what it could not express.
 - **`spec-layer pull` can write components as Markdown.** Set
   `componentSpecsFormat: "md"` in `speclayer.json`, or pass
   `--component-format md` to `setup`, `init`, `pull`, or `show`, and
@@ -211,6 +223,20 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   `spec-layer.com/schemas/foundation-context/v5.json` serves the old bytes
   until the private site redeploys, so `npm run check:site-live` fails from
   this change until that deploy; it is not part of `npm run check`.
+- **The repository gates cover what they claimed to.** `npm run typecheck`
+  now compiles `packages/proxy/test` and `packages/cli/test`; both had type
+  errors that vitest's type stripping hid, all in test code.
+  The main-thread sandbox scan now knows the URL, fetch and abort classes,
+  `crypto`, `performance`, `self` and the scheduler calls, catches a global
+  used as a value or reached through `globalThis`, `self` or `window`
+  (`globalThis` itself exists in the sandbox and passes), and runs from a
+  checkout path with a space in it or through a symlink, which it had not.
+  The sandbox and NUL scans each print one line when they pass, so a scan
+  that never ran can no longer look like a clean one.
+  The pre-commit hook recognises Spec Layer pull keys, npm tokens and
+  Cloudflare token assignments, and `npm ci` now wires it into the clone.
+  The NUL scan reads every tracked text file, including `.github/`, the root
+  configs and the hook, not only `packages/` and `scripts/`.
 - **The Foundations and Library empty states teach the next move.** Each gets
   an animated drawing in the same family as the component screen's (a file
   whose color, text, and effect slots fill after a refresh; a doc dropping
@@ -428,6 +454,12 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   your AI allowance runs out part-way it says that too rather than reporting a
   clean rebuild.
 
+### Removed
+
+- **The legacy foundation YAML brief and the component brief's unused
+  foundation option.** Neither had a shipping caller, and no shipped output
+  changes.
+
 ### Fixed
 
 - **A DTCG token that is also a group is omitted and reported, in either
@@ -476,6 +508,40 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   applied, and still reports two different numbers or two different units.
   `content_hash` is unchanged: diagnostics are outside it.
 
+- **A multi-line description whose first line begins with a space no longer
+  breaks the YAML.** The emitter wrote a literal block scalar without an
+  indentation indicator, so a parser took that line's leading spaces as the
+  block's indentation and the next line ended the block early: one such
+  description made the whole copied brief, the published artifact and the
+  pulled file unparseable, and a description whose every line was indented
+  parsed with its indentation silently stripped. The emitter now writes the
+  indicator (`|2-`) exactly when the first non-empty line begins with a
+  space, which is the rule js-yaml's own writer follows; every other string
+  is emitted byte for byte as before.
+- **Renaming a token no longer floods the version log.** The per-variant
+  binding comparison behind Publish compared token display names, so
+  renaming one token reported `binding changed` on every component and
+  variant bound to it, on top of the one `token renamed` change the
+  foundation diff already reports. Bindings are now compared by the token's
+  source id and rendered by name, so a rename is one major change and a real
+  rebinding reads exactly as before.
+- **An oversized first version is refused before it can wedge a library.**
+  `isSemver` accepted any run of digits, and a 22-digit number came back from
+  the next bump as `1e+21.0.0`, which no later check accepted, so that
+  library could never publish again. Each of the three numbers must now fit a
+  safe integer, and a bump that would leave that range is refused rather than
+  written. A new version with a leading zero, such as `01.0.0`, is refused
+  too, as semver requires. A library already stored at such a version still
+  publishes: its next bump drops the zero, so `01.0.0` plus a patch becomes
+  `1.0.1`. The proxy and the plugin's first-version field already call the
+  same check, so both refuse the same strings.
+- **The Tokens table keeps a hardcoded value on each of two same-named
+  layers.** Unbound values were deduplicated by layer name and property, so
+  when two layers in different branches shared a name (two `Label` texts,
+  say) the second one's hardcoded fill, padding, gap or radius was dropped
+  from the table. Values are now keyed by the layer's path, as token bindings
+  and gaps already are. The canvas drift hash never covered these rows, so no
+  document reports an update.
 - **Publish and the snapshot download refuse a file with nothing in it.** The
   proxy accepts an empty bundle, so a file with no local variables or styles
   and no component docs used to publish anyway: a first publish created a
@@ -1071,16 +1137,6 @@ plugin build carrying it must not reach the listing before 0.10.0 is on npm.
   is on, the Measurements diagram measures its size rails, padding bands, and
   spacing from the revealed instance rather than the source component, so the
   overlay matches what is drawn.
-- **A self-describing DTCG output** (CLI 0.8.2). The document extension now
-  carries a `census` of what each emitted file holds and a `config_hash` of the
-  projection options that produced it, and `resolver.json` carries that
-  extension instead of only the clipboard document doing so. The sidecar
-  records the `transform` behind each token's value in each mode, and the value
-  each alias resolves to. Every field is descriptive: no canvas hash and no
-  artifact identity moved, and `EXTRACTOR_VERSION` is unchanged, so no document
-  needs regenerating. A repository pulling with an earlier CLI gets the same
-  files without these fields. The census reports what the projection produced;
-  `report.json` keeps its own job of naming what it could not express.
 
 ### Removed
 

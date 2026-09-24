@@ -18,9 +18,9 @@ describe('extractRawValues', () => {
       layout: { mode: 'VERTICAL', paddingTop: 16, paddingRight: 16, paddingBottom: 16, paddingLeft: 16, itemSpacing: 8, cornerRadius: 12 },
     };
     expect(extractRawValues(root)).toEqual([
-      { part: 'Card', property: 'padding', value: '16' },
-      { part: 'Card', property: 'gap', value: '8' },
-      { part: 'Card', property: 'border-radius', value: '12' },
+      { part: 'Card', path: 'Card', property: 'padding', value: '16' },
+      { part: 'Card', path: 'Card', property: 'gap', value: '8' },
+      { part: 'Card', path: 'Card', property: 'border-radius', value: '12' },
     ]);
   });
 
@@ -30,8 +30,8 @@ describe('extractRawValues', () => {
       layout: { mode: 'HORIZONTAL', paddingTop: 4, paddingBottom: 4, paddingLeft: 12, paddingRight: 12 },
     };
     expect(extractRawValues(root)).toEqual([
-      { part: 'Chip', property: 'padding-x', value: '12' },
-      { part: 'Chip', property: 'padding-y', value: '4' },
+      { part: 'Chip', path: 'Chip', property: 'padding-x', value: '12' },
+      { part: 'Chip', path: 'Chip', property: 'padding-y', value: '4' },
     ]);
   });
 
@@ -45,7 +45,7 @@ describe('extractRawValues', () => {
       ],
     };
     expect(extractRawValues(root)).toEqual([
-      { part: 'label', property: 'fill', value: '#6750a4' },
+      { part: 'label', path: 'Button/label', property: 'fill', value: '#6750a4' },
     ]);
   });
 
@@ -79,7 +79,7 @@ describe('extractRawValues', () => {
       ],
     };
     expect(extractRawValues(root)).toEqual([
-      { part: 'Container', property: 'gap', value: '8' },
+      { part: 'Container', path: 'Container', property: 'gap', value: '8' },
     ]);
   });
 
@@ -96,6 +96,26 @@ describe('extractRawValues', () => {
       id: 'v0', name: 'Box', type: 'COMPONENT', visible: true,
       layout: { mode: 'HORIZONTAL', itemSpacing: 8 },
     };
-    expect(extractRawValues(node)).toContainEqual({ part: 'Box', property: 'gap', value: '8' });
+    expect(extractRawValues(node)).toContainEqual({ part: 'Box', path: 'Box', property: 'gap', value: '8' });
+  });
+
+  it('keeps a hardcoded value on each of two same-named parts in different subtrees (review 2026-09-23)', () => {
+    // `part` is unique only among siblings; the dedupe key was (part, property),
+    // so the second Label's fill was dropped from the Tokens table.
+    const root: SerializedNode = {
+      ...base, id: '1', name: 'Card', type: 'COMPONENT',
+      children: [
+        { ...base, id: '2', name: 'Header', type: 'FRAME', children: [
+          { ...base, id: '3', name: 'Label', type: 'TEXT', unboundFill: '#111111' },
+        ] },
+        { ...base, id: '4', name: 'Body', type: 'FRAME', children: [
+          { ...base, id: '5', name: 'Label', type: 'TEXT', unboundFill: '#222222' },
+        ] },
+      ],
+    };
+    expect(extractRawValues(root)).toEqual([
+      { part: 'Label', path: 'Card/Header/Label', property: 'fill', value: '#111111' },
+      { part: 'Label', path: 'Card/Body/Label', property: 'fill', value: '#222222' },
+    ]);
   });
 });

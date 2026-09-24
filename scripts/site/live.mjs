@@ -9,8 +9,8 @@
  */
 
 /**
- * @param {{ url: string, status: number, contentType: string, body: string, expected: string }} r
- * @returns {string[]} problems, empty when the live response is the committed file
+ * @param {{ url: string, status: number, contentType: string, body: Buffer, expected: Buffer }} r
+ * @returns {string[]} problems, empty when the live response is the committed file, byte for byte
  */
 export function evaluateSchema({ url, status, contentType, body, expected }) {
   const problems = [];
@@ -19,7 +19,9 @@ export function evaluateSchema({ url, status, contentType, body, expected }) {
   if (type !== 'application/json') {
     problems.push(`${url}: content-type is ${contentType}, expected application/json`);
   }
-  if (body !== expected) problems.push(`${url}: body differs from the committed schema`);
+  // Bytes, not decoded text: `res.text()` would hide a byte order mark or a
+  // transcoding, and the contract is that the URL serves the committed bytes.
+  if (!body.equals(expected)) problems.push(`${url}: body bytes differ from the committed schema`);
   return problems;
 }
 

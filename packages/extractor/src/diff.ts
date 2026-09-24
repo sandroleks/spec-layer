@@ -377,6 +377,16 @@ export function comboKey(values: Combo): string {
  * `bindingCells` expands a projection's minimized rules back over its variant
  * instances, which is the shape the canvas Tokens table renders and the shape
  * a designer edits one variant at a time.
+ *
+ * Keyed on `part`, not `path`, because SpecHashProjection carries only `part`:
+ * `path` stays out of the hash (see specHashProjection in hash.ts), and the
+ * diff input is the hash input. So two same-named parts in different
+ * subtrees share one cell here, and a change to either reads as a change to
+ * the pair. Fixing that means adding `path` to the projection, which moves
+ * specContentHash for every committed document, so it waits for the next
+ * EXTRACTOR_VERSION bump (review 2026-09-23). The same applies to ruleItems
+ * below. libraryDiff.ts, which reads the v5 artifact rather than the
+ * projection, already keys on `path`.
  */
 type CellsByProperty = Map<string, { part: string; property: string; cells: Map<string, string[]> }>;
 
@@ -455,16 +465,32 @@ export function coverConditions(
   universe: readonly Combo[],
   axes: Map<string, string[]>,
 ): { conditions: Record<string, string[]>; count: number }[] {
-  const inSubset = new Set(subset.map(comboKey));
-  const selection = (conditions: Map<string, Set<string> | null>): Combo[] =>
-    universe.filter((combo) => [...conditions].every(([axis, allowed]) => allowed === null || allowed.has(combo[axis])));
+  // Every combo's key once. The greedy below probes admissibility once per
+  // axis and once per axis value per rule, and each probe used to
+  // re-stringify the whole universe; the proxy runs this on every publish.
+  const universeKeys = universe.map(comboKey);
+  const subsetKeys = subset.map(comboKey);
+  const inSubset = new Set(subsetKeys);
+  const selection = (conditions: Map<string, Set<string> | null>): number[] => {
+    const selected: number[] = [];
+    for (let i = 0; i < universe.length; i++) {
+      const combo = universe[i];
+      let admitted = true;
+      for (const [axis, allowed] of conditions) {
+        if (allowed !== null && !allowed.has(combo[axis])) { admitted = false; break; }
+      }
+      if (admitted) selected.push(i);
+    }
+    return selected;
+  };
   const admissible = (conditions: Map<string, Set<string> | null>): boolean =>
-    selection(conditions).every((combo) => inSubset.has(comboKey(combo)));
+    selection(conditions).every((i) => inSubset.has(universeKeys[i]));
 
   const uncovered = new Set(inSubset);
   const rules: { conditions: Record<string, string[]>; count: number }[] = [];
-  for (const start of subset) {
-    if (!uncovered.has(comboKey(start))) continue;
+  for (let s = 0; s < subset.length; s++) {
+    if (!uncovered.has(subsetKeys[s])) continue;
+    const start = subset[s];
     const conditions = new Map<string, Set<string> | null>([...axes.keys()].map((axis) => [axis, new Set([start[axis]])]));
     for (const [axis, values] of axes) {
       const freed = new Map(conditions).set(axis, null);
@@ -480,7 +506,7 @@ export function coverConditions(
       }
     }
     const selected = selection(conditions);
-    for (const combo of selected) uncovered.delete(comboKey(combo));
+    for (const i of selected) uncovered.delete(universeKeys[i]);
     const rule: Record<string, string[]> = {};
     for (const [axis, values] of axes) {
       const allowed = conditions.get(axis);
@@ -604,7 +630,8 @@ function tokenItems(before: SpecHashProjection, after: SpecHashProjection): Chan
   return items;
 }
 
-/** Rule-identity fallback for a projection missing its variant instances. */
+/** Rule-identity fallback for a projection missing its variant instances.
+ *  Keyed on `part` for the reason bindingCells gives: the projection has no `path`. */
 function ruleItems(before: SpecHashProjection, after: SpecHashProjection): Draft[] {
   const tokens: Draft[] = [];
   const rules = diffKeyed(list(before.tokens), list(after.tokens),

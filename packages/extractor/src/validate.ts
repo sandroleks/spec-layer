@@ -49,8 +49,16 @@ const STATE_SYNONYMS: Record<string, string[]> = {
 
 /** Whole-word match (not a bare substring): a plain `.includes` would flag a
  *  token like `color/surface/compressed/default` for "naming" the press
- *  state, when `press` there is only a fragment of an unrelated word. */
-const hasWord = (haystack: string, word: string): boolean => new RegExp(`\\b${word}\\b`).test(haystack);
+ *  state, when `press` there is only a fragment of an unrelated word. One
+ *  RegExp per word, built on first use and kept: the words come from the
+ *  closed STATE_WORDS and STATE_SYNONYMS sets, and this ran per token per
+ *  word. No `g` flag, so `.test` carries no lastIndex between calls. */
+const WORD_PATTERNS = new Map<string, RegExp>();
+const hasWord = (haystack: string, word: string): boolean => {
+  let pattern = WORD_PATTERNS.get(word);
+  if (!pattern) WORD_PATTERNS.set(word, (pattern = new RegExp(`\\b${word}\\b`)));
+  return pattern.test(haystack);
+};
 
 /**
  * Values that read as a boolean flag's own two settings.

@@ -1,12 +1,20 @@
 import { describe, it, expect } from 'vitest';
 import { sha256 } from 'js-sha256';
-import { contentHash, specHashProjection, extract } from '../src/index';
+import { contentHash, canonicalEqual, specHashProjection, extract } from '../src/index';
 import type { SerializedNode } from '../src/index';
 
 describe('contentHash', () => {
   it('orders keys by code unit, not by locale', () => {
     // 'B' (66) sorts before 'a' (97) by code unit; a locale sort puts 'a' first.
     expect(contentHash({ a: 1, B: 2 })).toBe(sha256('{"B":2,"a":1}'));
+  });
+
+  it('writes an undefined array member as null, as JSON.stringify does', () => {
+    // canonical() emitted `[,1]` for [undefined, 1]: an empty slot no parser
+    // reads back, and a different hash from the [null, 1] JSON.stringify writes.
+    expect(contentHash([undefined, 1])).toBe(sha256('[null,1]'));
+    expect(contentHash([undefined, 1])).toBe(contentHash([null, 1]));
+    expect(canonicalEqual([undefined], [null])).toBe(true);
   });
 });
 

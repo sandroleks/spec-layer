@@ -233,6 +233,21 @@ describe('validate', () => {
     const f = validate(spec as never, new Map());
     expect(f.map((x) => x.id)).toEqual(['default-state-uses-state-token']);
   });
+
+  it('returns the same findings on a second call over the same spec (regex cache carries no state)', () => {
+    const spec = { ...base(), tokens: [
+      { part: 'Container', path: 'Container', property: 'fill',
+        conditions: { type: ['Primary'] }, ...ident('color/surface/primary/disabled') },
+      { part: 'Container', path: 'Container', property: 'fill',
+        conditions: { State: ['Hovered'] }, ...ident('color/surface/primary/hover') },
+      { part: 'Container', path: 'Container', property: 'fill',
+        conditions: {}, ...ident('color/surface/compressed/default') },
+    ] };
+    const first = validate(spec as never, new Map());
+    const second = validate(spec as never, new Map());
+    expect(first.map((x) => x.id)).toEqual(['default-state-uses-state-token']);
+    expect(second).toEqual(first);
+  });
 });
 
 // --- The geometry join must respect the condition, not just the path -------
