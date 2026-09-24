@@ -130,8 +130,8 @@ shared core, and the piece a future `spec-layer diff` reuses.
 **`EXTRACTOR_VERSION` is a rebuild request.** Bump it only when extraction
 output can change for unchanged source. A spurious bump asks every user to
 regenerate every document. It is `'3'` on `main` since #66 (97bfed1,
-2026-09-18); `v5.1.0` shipped `'2'`, so the next plugin cut is the one that
-asks existing documents to rebuild. Any further extraction change needs `'4'`.
+2026-09-18) and first ships in 6.0.0; `v5.1.0` shipped `'2'`, so 6.0.0 asks
+existing documents to rebuild. Any further extraction change needs `'4'`.
 
 **Do not use `localeCompare` under `src/v5`.** Use `compareCodeUnits` from
 `v5/diagnostics.ts`. Locale ordering makes hashes machine-dependent.
@@ -185,20 +185,20 @@ private Figma URLs, no proprietary component exports, no credentials. A real
 design-system artifact needs explicit approval covering ids, names,
 descriptions, and diagnostics before it can be committed.
 
-## Where things stand (2026-09-23)
+## Where things stand (2026-09-24)
 
-`npm run check` passes at `5985255` and `npm audit` reports no
-vulnerabilities. Suite size lives in the test output, not here.
+`npm run check` passes on the 6.0.0 cut over `ada80ee`, `npm audit` reports
+no vulnerabilities, and `npm run check:site-live` passes. Suite size lives in
+the test output, not here.
 
-Both surfaces are tagged. `v5.1.0` is an annotated tag (0b84a9c, 2026-09-16)
-on 28a55c9 (`chore(release): cut 5.1.0 (#57)`, 2026-09-10), and the GitHub
-Release "Spec Layer v5.1.0" was published 2026-09-16. `spec-layer@0.10.0` is
-`latest` on npm (published 2026-09-23). The plugin version source is
-`packages/plugin/package.json` (5.1.0); `manifest.json` carries no version
-field. Whether the Figma Community listing serves 5.1.0 cannot be verified
-from this repository. Everything merged after the tag, #59 through #80,
-sits under `[Unreleased]` in `CHANGELOG.md`, including `EXTRACTOR_VERSION`
-`'3'`.
+Plugin 6.0.0 is cut: `packages/plugin/package.json` and the root
+`package.json` read 6.0.0 (`manifest.json` carries no version field), and
+`CHANGELOG.md` dates `[6.0.0]` 2026-09-24, covering #59 through #88 and
+`EXTRACTOR_VERSION` `'3'`. The `v6.0.0` tag and GitHub Release are created
+from the cut's squash commit; `v5.1.0` (annotated, 0b84a9c, on 28a55c9) is
+the one before it. Whether the Figma Community listing serves 6.0.0 cannot
+be verified from this repository. `spec-layer@0.11.0` is `latest` on npm
+(published 2026-09-24).
 
 **`CHANGELOG.md` is the record of what shipped and why.** This section restated
 it once and went stale for its trouble. Keep it to what is not yet in the
