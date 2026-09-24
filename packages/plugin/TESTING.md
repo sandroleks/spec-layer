@@ -135,9 +135,14 @@ open: nothing should pop up on the canvas.
    Name column (about forty characters), and a text-styles or effect-styles
    source with more than four modes' worth of omitted names, generate the
    docs. The code-syntax chip wraps inside its cell instead of running under
-   the next column, the "Modes not shown" footer line wraps at the prose
-   measure, and a long mode name used as a block label wraps rather than
-   widening the card.
+   the next column, and the "Modes not shown" footer line wraps at the prose
+   measure.
+8. In a color collection with two or more modes, name the colors so contrast
+   pairs are found (for example, include "background" and "foreground" in
+   the token names), rename one mode to something about forty characters or
+   longer, and generate the docs with contrast shown. The long mode name,
+   used as the label over its own contrast grid, wraps rather than widening
+   the card.
 
 ### Foundation Context v5 Copy matrix
 
