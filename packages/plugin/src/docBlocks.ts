@@ -12,7 +12,7 @@ import { parseRuns } from './ui/docModel';
 import { PLACEHOLDER_TAG, type PlaceholderShape, type PlaceholderCard } from './ui/placeholders';
 import { palette, solidFill, vstack, hstack, makeText, radius, headingFont } from './frameKit';
 import { tagSlot, tagLine, makeBulletRow, makeCell, applyColWidth, applyRuns } from './docText';
-import { SLOT_PART_KEY, PLACEHOLDER_KEY, GUIDELINE_LABEL } from './canvasProse';
+import { SLOT_PART_KEY, PLACEHOLDER_KEY, PLACEHOLDER_TAG_KEY, GUIDELINE_LABEL } from './canvasProse';
 
 const KEY_JOINER = ' + ';
 
@@ -229,10 +229,12 @@ export function buildPropertiesTable(rows: PropertyRow[], hasDescriptions: boole
 
 // ---------------------------------------------------------------------------
 // Placeholders — a writing section nobody has written yet (see
-// ui/placeholders.ts). The box and its tag are untagged generated-lane chrome;
-// the structure inside carries the same slot tags the filled section uses, and
-// every guidance node is stamped with PLACEHOLDER_KEY so the read-back can tell
-// guidance from something typed over it.
+// ui/placeholders.ts). The box is untagged chrome with no text of its own.
+// The tag is stamped with PLACEHOLDER_TAG_KEY, which keeps it out of the
+// generated lane, so deleting it is not a hand edit. The structure inside
+// carries the same slot tags the filled section uses, and every guidance node
+// is stamped with PLACEHOLDER_KEY so the read-back can tell guidance from
+// something typed over it.
 // ---------------------------------------------------------------------------
 
 /** One muted Regular guidance line, stamped with its own text. */
@@ -286,6 +288,9 @@ function placeholderTag(): FrameNode {
   const label = makeText(PLACEHOLDER_TAG, 'Medium', 12, palette.muted, 140);
   label.textAutoResize = 'WIDTH_AND_HEIGHT';
   tag.appendChild(label);
+  // Out of the generated lane, like the publish pill: see collectGeneratedText.
+  tag.setPluginData(PLACEHOLDER_TAG_KEY, '1');
+  label.setPluginData(PLACEHOLDER_TAG_KEY, '1');
   return tag;
 }
 

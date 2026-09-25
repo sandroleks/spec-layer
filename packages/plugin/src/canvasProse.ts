@@ -34,6 +34,11 @@ export const LINE_KEY = 'specLayerLine';
  *  it reads back as empty; once someone types over it, it is their prose. */
 export const PLACEHOLDER_KEY = 'specLayerPlaceholder';
 
+/** pluginData key on the Placeholder tag frame and its label. The tag is a
+ *  status stamp, like the publish pill: it goes away once the box is filled
+ *  and Updated, so deleting it by hand must not read as a hand edit. */
+export const PLACEHOLDER_TAG_KEY = 'specLayerPlaceholderTag';
+
 /** True while a stamped guidance node still shows its guidance. */
 export function isUnfilledPlaceholder(node: ProseNodeLike): boolean {
   const guidance = node.getPluginData(PLACEHOLDER_KEY);
@@ -394,6 +399,10 @@ export function mergeProse(stored: ProseV2 | null, canvas: CanvasProse): ProseV2
  *
  * The publish pill is skipped by `PILL_KEY` for the same reason slots are:
  * Update repaints it, so an edit there is not something Update would destroy.
+ * The Placeholder tag is skipped by `PLACEHOLDER_TAG_KEY` for the same
+ * reason: deleting it after filling the box is the natural thing to do, and
+ * Update redraws or drops it anyway. No shipped doc carries the tag, so no
+ * stored hash moves.
  */
 export function collectGeneratedText(root: ProseNodeLike): string[] {
   const out: string[] = [];
@@ -403,6 +412,7 @@ export function collectGeneratedText(root: ProseNodeLike): string[] {
     // The publish pill is a status stamp, not generated prose: a version that
     // moves must never read as a hand edit. See publishPill.ts.
     if (n.getPluginData(PILL_KEY) !== '') return;
+    if (n.getPluginData(PLACEHOLDER_TAG_KEY) !== '') return;
     if (n.type === 'TEXT') {
       out.push(n.characters ?? '');
       return;

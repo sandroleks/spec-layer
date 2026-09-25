@@ -7,7 +7,8 @@ import {
 import { applyThemeToKit, palette, solidFill } from '../src/frameKit';
 import { emptyBrandTheme, resolveTheme } from '../src/brandColors';
 import {
-  readCanvasProse, collectGeneratedText, PLACEHOLDER_KEY, SLOT_KEY, LINE_KEY, GUIDELINE_LABEL, type ProseNodeLike,
+  readCanvasProse, collectGeneratedText, PLACEHOLDER_KEY, PLACEHOLDER_TAG_KEY, SLOT_KEY, LINE_KEY, GUIDELINE_LABEL,
+  type ProseNodeLike,
 } from '../src/canvasProse';
 import { parseRuns } from '../src/ui/docModel';
 import { placeholderShapeFor, type PlaceholderShape } from '../src/ui/placeholders';
@@ -190,8 +191,20 @@ describe('buildPlaceholderBlock', () => {
     expect(readCanvasProse(asNode(bullets))).toEqual({ semantics: ['Render a native input.'], authored: ['semantics'] });
   });
 
-  it('keeps guidance out of the generated lane, and the tag in it', () => {
+  it('keeps guidance and the tag out of the generated lane', () => {
     const generated = collectGeneratedText(asNode(buildPlaceholderBlock(shapeOf('whenToUse'), 800) as unknown as FakeFrame));
-    expect(generated).toEqual(['Placeholder', 'When to use', 'When not to use']);
+    expect(generated).toEqual(['When to use', 'When not to use']);
+  });
+
+  it('stamps the tag frame and its label, so deleting the tag is not a hand edit', () => {
+    for (const id of IDS) {
+      const box = buildPlaceholderBlock(shapeOf(id), 800) as unknown as FakeFrame;
+      const tag = box.children[0] as FakeFrame;
+      expect(tag.getPluginData(PLACEHOLDER_TAG_KEY)).not.toBe('');
+      expect((tag.children[0] as FakeText).getPluginData(PLACEHOLDER_TAG_KEY)).not.toBe('');
+      const before = collectGeneratedText(asNode(box));
+      box.children.splice(0, 1);
+      expect(collectGeneratedText(asNode(box))).toEqual(before);
+    }
   });
 });

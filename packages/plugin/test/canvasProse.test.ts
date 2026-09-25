@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { ProseV2 } from '@spec-layer/extractor';
 import {
-  SLOT_KEY, SLOT_PART_KEY, LINE_KEY, PLACEHOLDER_KEY, GUIDELINE_LABEL, isUnfilledPlaceholder,
+  SLOT_KEY, SLOT_PART_KEY, LINE_KEY, PLACEHOLDER_KEY, PLACEHOLDER_TAG_KEY, GUIDELINE_LABEL, isUnfilledPlaceholder,
   readCanvasProse, mergeProse, collectGeneratedText, textToMarkdown,
   type ProseNodeLike,
 } from '../src/canvasProse';
@@ -412,5 +412,14 @@ describe('collectGeneratedText', () => {
       text('Cell'),
     ]);
     expect(collectGeneratedText(doc)).toEqual(['Heading', 'Cell']);
+  });
+
+  it('skips the Placeholder tag, so removing it after filling the box changes nothing', () => {
+    const tag = () => frame([text('Placeholder', { data: { [PLACEHOLDER_TAG_KEY]: '1' } })], { [PLACEHOLDER_TAG_KEY]: '1' });
+    const withTag = frame([text('Heading'), frame([tag(), frame([guidance('Say why.')], slot('pointer'))]), text('Cell')]);
+    const without = frame([text('Heading'), frame([frame([guidance('Say why.')], slot('pointer'))]), text('Cell')]);
+    expect(collectGeneratedText(withTag)).toEqual(['Heading', 'Cell']);
+    expect(collectGeneratedText(without)).toEqual(collectGeneratedText(withTag));
+    expect(PLACEHOLDER_TAG_KEY).toBe('specLayerPlaceholderTag');
   });
 });

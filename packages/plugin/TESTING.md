@@ -387,7 +387,7 @@ were added the same day, after the review that found the callouts reading
     placeholders. The Keyboard row shows one key, `Shift+Tab`: a typed key
     cell is read as one combination, and only `or`, a comma or a slash
     separates alternatives. The Library does not report a hand edit for the
-    typing.
+    typing, nor for deleting a **Placeholder** tag by hand before the Update.
 39. **Untouched placeholders never leak.** On the same doc, Copy for AI and
     check the brief carries no guidance text.
 40. **Duplicating a row.** Duplicate the filled Pointer bullet in Figma, edit
