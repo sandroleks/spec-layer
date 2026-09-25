@@ -47,13 +47,13 @@ const ALL = new Set<SectionId>(ALL_SECTIONS.map((s) => s.id));
  *  the AI lede renders inside the Overview. */
 const undescribed = { ...spec, description: '' } as unknown as IntermediateSpec;
 
-async function buildFrom(s: IntermediateSpec, p: ProseV2 | null, aiEnabled = true): Promise<FakeSection> {
-  const model = buildDocModel(s, p, ALL, new Set(), { measureViews: [], aiEnabled });
+async function buildFrom(s: IntermediateSpec, p: ProseV2 | null): Promise<FakeSection> {
+  const model = buildDocModel(s, p, ALL, new Set(), { measureViews: [] });
   return await buildDocFrames(model, resolveTheme(emptyBrandTheme()), null) as unknown as FakeSection;
 }
 
-async function build(p: ProseV2 | null, aiEnabled = true): Promise<FakeSection> {
-  return buildFrom(spec, p, aiEnabled);
+async function build(p: ProseV2 | null): Promise<FakeSection> {
+  return buildFrom(spec, p);
 }
 const asNode = (s: FakeSection): ProseNodeLike => s as unknown as ProseNodeLike;
 
@@ -104,7 +104,7 @@ describe('docFrame', () => {
   });
 
   it('renders the description verbatim and untagged when AI is off, and builds no Accessibility frame', async () => {
-    const section = await build(null, false);
+    const section = await build(null);
     const frames = section.children as FakeFrame[];
     expect(frames.map((f) => f.name)).toEqual(['1 Usage', '2 Specifications']);
     expect(frames[0].textChars()).toContain('Selects one or more options.');
@@ -137,7 +137,7 @@ describe('docFrame', () => {
   });
 
   it('puts no placeholder text anywhere', async () => {
-    const lines = (await build(null, false)).children.flatMap((f) => (f as FakeFrame).textChars());
+    const lines = (await build(null)).children.flatMap((f) => (f as FakeFrame).textChars());
     expect(lines.join('\n')).not.toContain('To be written');
     expect(lines).not.toContain('None');
   });
@@ -213,7 +213,7 @@ describe('docFrame', () => {
     } as unknown as IntermediateSpec;
     const model = buildDocModel(
       twoVariants, null, new Set<SectionId>(['tokens']), new Set(['1:10', '1:11']),
-      { measureViews: [], aiEnabled: false },
+      { measureViews: [] },
     );
     const section = await buildDocFrames(model, resolveTheme(emptyBrandTheme()), null) as unknown as FakeSection;
     const chars = section.children.flatMap((f) => (f as FakeFrame).textChars());
@@ -228,7 +228,7 @@ describe('docFrame', () => {
     // header that is never drawn, and the only human-written line in the file
     // would vanish.
     const lonely = { ...spec, related: [] } as unknown as IntermediateSpec;
-    const model = buildDocModel(lonely, null, ALL, new Set(), { measureViews: [], aiEnabled: false });
+    const model = buildDocModel(lonely, null, ALL, new Set(), { measureViews: [] });
     const section = await buildDocFrames(model, resolveTheme(emptyBrandTheme()), null) as unknown as FakeSection;
     const frames = section.children as FakeFrame[];
     expect(frames.map((f) => f.name)).toEqual(['1 Usage', '2 Specifications']);
@@ -323,7 +323,7 @@ async function buildMeasureDoc(componentWidth: number): Promise<FakeSection> {
       (id === measureSpec.anatomyComponentId ? fakeMeasureComponent(componentWidth) : null),
   });
   const model = buildDocModel(
-    measureSpec, null, new Set<SectionId>(['measurements']), new Set(), { measureViews: [], aiEnabled: false },
+    measureSpec, null, new Set<SectionId>(['measurements']), new Set(), { measureViews: [] },
   );
   return await buildDocFrames(model, resolveTheme(emptyBrandTheme()), null) as unknown as FakeSection;
 }
@@ -412,7 +412,7 @@ const variantProse: ProseV2 = {
 async function buildVariantDoc(p: ProseV2 | null): Promise<FakeSection> {
   const model = buildDocModel(
     variantSpec, p, new Set<SectionId>(['variants', 'states']), new Set(),
-    { measureViews: [], aiEnabled: true },
+    { measureViews: [] },
   );
   return await buildDocFrames(model, resolveTheme(emptyBrandTheme()), null) as unknown as FakeSection;
 }

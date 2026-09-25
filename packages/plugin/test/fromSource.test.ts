@@ -182,8 +182,8 @@ describe('updateFromSource', () => {
   it('records what it left out, so the Library can report it the way Create does', async () => {
     const ui = fakePresenter();
     const state = createState();
-    // AI is off for this doc, so its AI-only sections are left out with that
-    // reason rather than silently missing.
+    // AI is off for this doc, so its writing sections are drawn as
+    // placeholders and reported.
     const source: DocSource = {
       ...goodSource,
       config: { ...goodSource.config, sections: ['definition', 'whenToUse', 'dosDonts'], aiEnabled: false },
@@ -191,9 +191,7 @@ describe('updateFromSource', () => {
     };
     await expect(updateFromSource(state, source, ui)).resolves.toBe(true);
     expect(state.lastOmitted.map((o) => [o.id, o.reason])).toEqual([
-      ['definition', 'nothingToShow'],
-      ['whenToUse', 'aiOff'],
-      ['dosDonts', 'aiOff'],
+      ['definition', 'placeholder'], ['whenToUse', 'placeholder'], ['dosDonts', 'placeholder'],
     ]);
   });
 
@@ -414,11 +412,10 @@ describe('createDocFrame', () => {
     expect(contentHash(msg.baseline)).toBe(msg.contentHash);
   });
 
-  it('records what the build left out, and blames AI only when AI was off', async () => {
-    // The reason is what the result message prints, so it has to come from the
-    // build that actually ran: a section AI writing would have filled reads
-    // 'aiOff' only while AI is off, and a deterministic section with nothing
-    // in the spec always reads 'nothingToShow'.
+  it('records what the build left out, and which sections it drew as placeholders', async () => {
+    // The reason is what the result message prints: a writing section with no
+    // prose is a placeholder, a deterministic section with nothing in the
+    // spec is 'nothingToShow'.
     const state = createState();
     state.currentNode = buttonNode();
     state.currentFileKey = 'f1';
@@ -430,7 +427,7 @@ describe('createDocFrame', () => {
     }, fakePresenter());
     expect(state.lastOmitted).toEqual([
       { id: 'related', label: 'Related components', reason: 'nothingToShow' },
-      { id: 'keyboard', label: 'Keyboard', reason: 'aiOff' },
+      { id: 'keyboard', label: 'Keyboard', reason: 'placeholder' },
     ]);
   });
 
@@ -499,12 +496,12 @@ describe('quota exhausted note', () => {
     expect(state.pendingAiNote).toContain('You’ve used all');
   });
 
-  it('drops only the AI sections left empty, not deterministic or AI-off omissions', () => {
+  it('drops only the AI sections left empty, never a placeholder', () => {
     const kept = withoutAiOmissions([
       { id: 'definition', label: 'Overview', reason: 'nothingToShow' },
       { id: 'keyboard', label: 'Keyboard', reason: 'nothingToShow' },
       { id: 'related', label: 'Related components', reason: 'nothingToShow' },
-      { id: 'whenToUse', label: 'When to use', reason: 'aiOff' },
+      { id: 'whenToUse', label: 'When to use', reason: 'placeholder' },
     ]);
     expect(kept.map((o) => o.id)).toEqual(['related', 'whenToUse']);
   });

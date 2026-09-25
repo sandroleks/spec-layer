@@ -240,11 +240,19 @@ describe('omissionsMessage', () => {
   it('states the outcome alone when nothing was left out', () => {
     expect(omissionsMessage('Docs created.', [])).toBe('Docs created.');
   });
-  it('names every omitted section with its reason, in order', () => {
+  it('lists what was left out, then names the placeholders in one sentence', () => {
     expect(omissionsMessage('Docs created.', [
-      { id: 'keyboard', label: 'Keyboard', reason: 'nothingToShow' },
-      { id: 'whenToUse', label: 'When to use', reason: 'aiOff' },
-    ])).toBe('Docs created. Left out Keyboard: nothing to show. Left out When to use: AI writing is off.');
+      { id: 'whenToUse', label: 'When to use', reason: 'placeholder' },
+      { id: 'related', label: 'Related components', reason: 'nothingToShow' },
+      { id: 'keyboard', label: 'Keyboard', reason: 'placeholder' },
+    ])).toBe(
+      'Docs created. Left out Related components: nothing to show. '
+      + 'Added placeholders for When to use, Keyboard. Fill them in on the canvas.',
+    );
+  });
+  it('names a lone placeholder the same way', () => {
+    expect(omissionsMessage('Docs updated.', [{ id: 'pointer', label: 'Pointer and touch', reason: 'placeholder' }]))
+      .toBe('Docs updated. Added placeholders for Pointer and touch. Fill them in on the canvas.');
   });
 });
 
