@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   buildDocModel, calloutLabels, measureKey, groupSections, GROUPS, ALL_SECTIONS,
   KNOWN_SECTION_IDS,
-  LEGACY_SECTION_IDS, AI_ONLY_SECTIONS, firstSentence, proseKeysForSections, headingLine,
+  LEGACY_SECTION_IDS, firstSentence, proseKeysForSections, headingLine,
   type SectionId, type SectionBlock,
 } from '../src/ui/docModel';
 import { placeholderShapeFor } from '../src/ui/placeholders';
@@ -250,17 +250,6 @@ describe('buildDocModel without prose', () => {
     const model = buildDocModel(spec, { v: 2, pointer: ['Hover darkens the box.'] }, new Set<SectionId>(['pointer']), new Set());
     expect(find(model, 'pointer')).toMatchObject({ kind: 'bullets', slot: 'pointer' });
     expect(model.omitted).toEqual([]);
-  });
-
-  it('names exactly the prose-fed sections as AI-only', () => {
-    expect([...AI_ONLY_SECTIONS].sort()).toEqual(
-      ['accessibility', 'contentConsiderations', 'dosDonts', 'keyboard', 'pointer', 'whenToUse'],
-    );
-    // Overview falls back to the Figma description, and these four are built
-    // from the spec, so none of them is AI-only.
-    for (const id of ['definition', 'variants', 'anatomy', 'properties', 'states'] as SectionId[]) {
-      expect(AI_ONLY_SECTIONS.has(id)).toBe(false);
-    }
   });
 
   it('drops a properties description column when no row has one', () => {

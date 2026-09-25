@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { placeholderShapeFor, PLACEHOLDER_TAG, type PlaceholderShape } from '../src/ui/placeholders';
-import { ALL_SECTIONS, AI_ONLY_SECTIONS, type SectionId } from '../src/ui/docModel';
+import { ALL_SECTIONS, type SectionId } from '../src/ui/docModel';
 
 /** Every user-visible string a shape carries. */
 function strings(shape: PlaceholderShape): string[] {
@@ -15,7 +15,15 @@ function strings(shape: PlaceholderShape): string[] {
 describe('placeholderShapeFor', () => {
   it('has a shape for Overview and every AI-only section, and none for the rest', () => {
     const withShape = ALL_SECTIONS.map((s) => s.id).filter((id) => placeholderShapeFor(id) !== null);
-    expect(withShape.sort()).toEqual(['definition', ...AI_ONLY_SECTIONS].sort());
+    expect(withShape.sort()).toEqual(
+      ['accessibility', 'contentConsiderations', 'definition', 'dosDonts', 'keyboard', 'pointer', 'whenToUse'],
+    );
+  });
+
+  it('returns null for every section built from the spec, never a placeholder', () => {
+    for (const id of ['variants', 'anatomy', 'properties', 'states', 'measurements', 'tokens', 'related'] as SectionId[]) {
+      expect(placeholderShapeFor(id)).toBeNull();
+    }
   });
 
   it('writes each shape into the slots its filled section uses', () => {

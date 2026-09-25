@@ -60,21 +60,6 @@ export const GROUPS: { id: GroupId; label: string }[] = [
 ];
 
 /**
- * The sections whose whole body is written prose, and which therefore produce
- * nothing at all when AI writing is off. This is what decides an omission's
- * reason, not `ALL_SECTIONS`'s `ai` flag: that flag says a section can carry AI
- * text, and Variants, Anatomy, Properties and States all can, but each of them
- * is built from the spec and is omitted only when the component has no non-state
- * axis, no parts, no props or no state matrix. Drawing a placeholder for those
- * would ask someone to write a section the spec cannot back. Overview is
- * excluded too: it falls back to the Figma description, so an empty Overview
- * means there was no description either.
- */
-export const AI_ONLY_SECTIONS: ReadonlySet<SectionId> = new Set<SectionId>([
-  'whenToUse', 'dosDonts', 'keyboard', 'pointer', 'accessibility', 'contentConsiderations',
-]);
-
-/**
  * Which v2 prose keys each section needs. A section whose key is absent from
  * the draft is drawn as a placeholder when the section has one (see
  * placeholders.ts), and omitted otherwise. Overview and Variants also render
@@ -163,8 +148,8 @@ export interface AnatomyPartBlock {
 export type MeasureView = 'size' | 'padding' | 'spacing';
 
 /** Options threaded through `buildDocModel` that affect how sections render
- *  without changing the underlying spec — the anatomy view mode, which
- *  measurement lenses to render, and whether AI writing was on. */
+ *  without changing the underlying spec — the anatomy view mode and which
+ *  measurement lenses to render. */
 export interface DocModelOptions {
   anatomyView?: 'diagram';
   measureViews?: MeasureView[];
