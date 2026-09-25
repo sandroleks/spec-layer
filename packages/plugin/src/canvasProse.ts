@@ -26,6 +26,17 @@ export const SLOT_PART_KEY = 'specLayerSlotKey';
 /** pluginData key on a node inside a prose slot saying what kind of line it is. */
 export const LINE_KEY = 'specLayerLine';
 
+/** pluginData key on a guidance text node, holding the exact guidance it was
+ *  drawn with. A node whose characters still equal it was never written, so
+ *  it reads back as empty; once someone types over it, it is their prose. */
+export const PLACEHOLDER_KEY = 'specLayerPlaceholder';
+
+/** True while a stamped guidance node still shows its guidance. */
+export function isUnfilledPlaceholder(node: ProseNodeLike): boolean {
+  const guidance = node.getPluginData(PLACEHOLDER_KEY);
+  return guidance !== '' && (node.characters ?? '').trim() === guidance.trim();
+}
+
 export type ProseSlot =
   | 'definitionLead' | 'definition' | 'whenToUse' | 'whenNotToUse' | 'variantsIntro' | 'variantsGuide'
   | 'anatomySummary' | 'anatomyPart' | 'propertyDescription' | 'keyboardRow'
@@ -33,11 +44,10 @@ export type ProseSlot =
 
 export type LineKind = 'paragraph' | 'heading' | 'bullet' | 'placeholder';
 
-/** The placeholder as it reads on canvas: the `_To be written._` earlier
- *  builds wrote, with the emphasis markers stripped by the renderer. The doc
- *  model no longer emits it (an empty section is omitted instead), but a
- *  document already on canvas still carries it, so the read-back must keep
- *  recognising it as "nobody wrote this". */
+/** The placeholder earlier builds wrote (`_To be written._`, emphasis markers
+ *  stripped by the renderer). Current builds stamp guidance with
+ *  PLACEHOLDER_KEY instead, but documents already on canvas still carry this
+ *  line, so the read-back keeps recognising it as "nobody wrote this". */
 export const PLACEHOLDER_TEXT = 'To be written.';
 
 /** The slice of a Figma node this module reads. Structural so tests can pass
@@ -96,6 +106,7 @@ function readLines(container: ProseNodeLike): string[] {
     if (kind === 'heading') { lines.push(`### ${texts[0].characters ?? ''}`); continue; }
     if (kind === 'bullet') { lines.push(textToMarkdown(texts[texts.length - 1])); continue; }
     const md = textToMarkdown(texts[0]);
+    if (isUnfilledPlaceholder(texts[0])) continue;
     if (kind === 'placeholder' && md.trim() === PLACEHOLDER_TEXT) continue;
     if (md.trim() === '') continue;
     lines.push(md);
@@ -109,7 +120,9 @@ function readBullets(container: ProseNodeLike): string[] {
   for (const row of container.children ?? []) {
     const texts = allTexts(row);
     if (texts.length === 0) continue;
-    const md = textToMarkdown(texts[texts.length - 1]);
+    const last = texts[texts.length - 1];
+    if (isUnfilledPlaceholder(last)) continue;
+    const md = textToMarkdown(last);
     if (md.trim() === '' || md.trim() === PLACEHOLDER_TEXT) continue;
     items.push(md);
   }
@@ -155,7 +168,8 @@ export function readCanvasProse(root: ProseNodeLike): CanvasProse {
   const push = <T>(list: T[] | undefined, item: T): T[] => { const l = list ?? []; l.push(item); return l; };
   const lastText = (node: ProseNodeLike): string => {
     const texts = allTexts(node);
-    return texts.length ? textToMarkdown(texts[texts.length - 1]).trim() : '';
+    const last = texts[texts.length - 1];
+    return last && !isUnfilledPlaceholder(last) ? textToMarkdown(last).trim() : '';
   };
   const card = (node: ProseNodeLike): GuidelineCard | null => {
     // The last two text nodes are the rule then the reason. A card built with
@@ -164,12 +178,13 @@ export function readCanvasProse(root: ProseNodeLike): CanvasProse {
     // read as plain characters, not through textToMarkdown: Task 11 renders
     // the whole rule in the Bold face as card styling, not as a bold markdown
     // run, so converting it would stamp every stored rule with `**...**`.
+    // Unfilled guidance on either line reads as empty.
     const texts = allTexts(node).slice(-2);
     const ruleNode = texts[0];
-    const rule = ruleNode ? (ruleNode.characters ?? '').trim() : '';
+    const rule = ruleNode && !isUnfilledPlaceholder(ruleNode) ? (ruleNode.characters ?? '').trim() : '';
     if (!rule) return null;
     const reasonNode = texts[1];
-    const reason = reasonNode ? textToMarkdown(reasonNode).trim() : '';
+    const reason = reasonNode && !isUnfilledPlaceholder(reasonNode) ? textToMarkdown(reasonNode).trim() : '';
     return { rule, reason };
   };
 
@@ -220,10 +235,16 @@ export function readCanvasProse(root: ProseNodeLike): CanvasProse {
       case 'propertyDescription': { if (!key) return; const d = lastText(node); if (d) properties = push(properties, { name: key, description: d }); return; }
       case 'keyboardRow': {
         // Keys are joined with " + " (spaces included) by docBlocks, so that
-        // "Shift+Tab" survives as one key.
-        if (!key) return;
+        // "Shift+Tab" survives as one key. A placeholder row has no key tag:
+        // its keys are whatever was typed into its first cell.
         const action = lastText(node);
-        if (action) keyboard = push(keyboard, { keys: key.split(' + ').map((k) => k.trim()).filter(Boolean), action });
+        let keyText = key;
+        if (!keyText) {
+          const first = allTexts(node)[0];
+          keyText = first && !isUnfilledPlaceholder(first) ? (first.characters ?? '').trim() : '';
+        }
+        const keys = keyText.split(' + ').map((k) => k.trim()).filter(Boolean);
+        if (keys.length && action) keyboard = push(keyboard, { keys, action });
         return;
       }
       case 'guidelinePair': {
