@@ -178,9 +178,10 @@ describe('buildPlaceholderBlock', () => {
   it('reads back what someone typed over it', () => {
     const box = buildPlaceholderBlock(shapeOf('keyboard'), 800) as unknown as FakeFrame;
     const [keyCell, actionCell] = texts(box).filter((t) => t.getPluginData(PLACEHOLDER_KEY) !== '');
-    keyCell.characters = 'Space';
-    actionCell.characters = 'Toggles the box.';
-    expect(readCanvasProse(asNode(box))).toEqual({ keyboard: [{ keys: ['Space'], action: 'Toggles the box.' }] });
+    keyCell.characters = 'Shift + Tab';
+    actionCell.characters = 'Moves focus back.';
+    // Typed with spaces, read as one combination.
+    expect(readCanvasProse(asNode(box))).toEqual({ keyboard: [{ keys: ['Shift+Tab'], action: 'Moves focus back.' }] });
 
     const bullets = buildPlaceholderBlock(shapeOf('accessibility'), 800) as unknown as FakeFrame;
     texts(bullets).find((t) => t.getPluginData(PLACEHOLDER_KEY) !== '')!.characters = 'Render a native input.';

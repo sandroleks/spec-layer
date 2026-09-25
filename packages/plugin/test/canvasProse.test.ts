@@ -256,8 +256,27 @@ describe('readCanvasProse placeholders', () => {
       overview: { body: ['A checkbox selects options.'] },
       pointer: ['Hover darkens the box.', 'Clicking the label toggles it.'],
       guidelines: [{ do: { rule: 'Pair it with a label.', reason: '' }, dont: null }],
-      keyboard: [{ keys: ['Shift', 'Tab'], action: 'Moves focus back.' }],
+      keyboard: [{ keys: ['Shift+Tab'], action: 'Moves focus back.' }],
     });
+  });
+
+  it('reads a typed key cell as alternatives on or, comma and slash, each one key however its + is spaced', () => {
+    const row = (typed: string) => frame([frame([guidance('Key', typed), guidance('Describe it.', 'Does it.')], slot('keyboardRow'))]);
+    expect(readCanvasProse(row('Shift + Tab')).keyboard).toEqual([{ keys: ['Shift+Tab'], action: 'Does it.' }]);
+    expect(readCanvasProse(row('Enter or Space')).keyboard).toEqual([{ keys: ['Enter', 'Space'], action: 'Does it.' }]);
+    expect(readCanvasProse(row('Tab, Shift + Tab / Esc')).keyboard).toEqual([{ keys: ['Tab', 'Shift+Tab', 'Escape'], action: 'Does it.' }]);
+    // A key outside the vocabulary is kept as typed, with its + closed up.
+    expect(readCanvasProse(row('Cmd  +  K')).keyboard).toEqual([{ keys: ['Cmd+K'], action: 'Does it.' }]);
+  });
+
+  it('drops a key-less row whose key cell text node was deleted, rather than reading the action as its key', () => {
+    const root = frame([frame([guidance('Describe it.', 'Moves focus.')], slot('keyboardRow'))]);
+    expect(readCanvasProse(root)).toEqual({});
+  });
+
+  it('reads a keyed row by its tag exactly as before', () => {
+    const root = frame([keyed('keyboardRow', 'Shift+Tab + Enter', [text('Shift+Tab'), text('Enter'), text('Goes back.')])]);
+    expect(readCanvasProse(root).keyboard).toEqual([{ keys: ['Shift+Tab', 'Enter'], action: 'Goes back.' }]);
   });
 
   it('drops a key-less keyboard row until both its key and its action are filled', () => {

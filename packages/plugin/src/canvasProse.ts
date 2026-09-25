@@ -14,7 +14,7 @@
  * objects. This module is imported by main.ts, which runs in Figma's bare
  * sandbox realm, so it may use only ECMAScript built-ins.
  */
-import { hasProseContent, type ProseV2, type GuidelinePair, type GuidelineCard } from '@spec-layer/extractor';
+import { hasProseContent, normalizeKey, type ProseV2, type GuidelinePair, type GuidelineCard } from '@spec-layer/extractor';
 import { PILL_KEY } from './publishPill';
 import { displayPartName } from './ui/displayNames';
 
@@ -144,6 +144,24 @@ function readBullets(container: ProseNodeLike): string[] {
   return items;
 }
 
+/**
+ * The keys typed into a placeholder keyboard row. Alternatives are split on
+ * " or ", a comma, or a slash; inside one alternative the spaces around a `+`
+ * close up, so "Shift + Tab" is one combination, not two keys. A spelling in
+ * the keyboard vocabulary takes its canonical name; anything else is kept as
+ * typed. Whitespace runs are collapsed first so the split pattern is a fixed
+ * string and cannot backtrack on user-edited text.
+ */
+function typedKeys(text: string): string[] {
+  const keys: string[] = [];
+  for (const raw of text.replace(/\s+/g, ' ').split(/ or |,|\//i)) {
+    const alt = raw.trim().replace(/ ?\+ ?/g, '+');
+    if (!alt) continue;
+    for (const k of normalizeKey(alt) ?? [alt]) if (!keys.includes(k)) keys.push(k);
+  }
+  return keys;
+}
+
 const LIST_SLOTS = new Set<ProseSlot>(['whenToUse', 'whenNotToUse', 'pointer', 'semantics', 'content']);
 
 /** Exactly what `anatomySection.ts` writes before the note. */
@@ -250,16 +268,16 @@ export function readCanvasProse(root: ProseNodeLike): CanvasProse {
       }
       case 'propertyDescription': { if (!key) return; const d = lastText(node); if (d) properties = push(properties, { name: key, description: d }); return; }
       case 'keyboardRow': {
-        // Keys are joined with " + " (spaces included) by docBlocks, so that
-        // "Shift+Tab" survives as one key. A placeholder row has no key tag:
-        // its keys are whatever was typed into its first cell.
+        // A keyed row's tag holds its keys joined with " + " (spaces
+        // included) by docBlocks, so that "Shift+Tab" survives as one key. A
+        // placeholder row has no key tag: its keys are whatever was typed
+        // into its first cell, and only while that cell is still there. With
+        // one text node left it is the action, and the row has no keys.
         const action = lastText(node);
-        let keyText = key;
-        if (!keyText) {
-          const first = allTexts(node)[0];
-          keyText = first && !isUnfilledPlaceholder(first) ? (first.characters ?? '').trim() : '';
-        }
-        const keys = keyText.split(' + ').map((k) => k.trim()).filter(Boolean);
+        const texts = allTexts(node);
+        const keys = key
+          ? key.split(' + ').map((k) => k.trim()).filter(Boolean)
+          : texts.length >= 2 ? typedKeys(unlessGuidance(texts[0], plainText)) : [];
         if (keys.length && action) keyboard = push(keyboard, { keys, action });
         return;
       }

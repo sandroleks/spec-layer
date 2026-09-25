@@ -384,7 +384,10 @@ were added the same day, after the review that found the callouts reading
 38. **Filling a placeholder.** Type over the Pointer and touch guidance and
     the Keyboard row (for example `Shift + Tab`, `Moves focus back.`), then
     Update. Both render as normal sections with no dashed box; the others stay
-    placeholders. The Library does not report a hand edit for the typing.
+    placeholders. The Keyboard row shows one key, `Shift+Tab`: a typed key
+    cell is read as one combination, and only `or`, a comma or a slash
+    separates alternatives. The Library does not report a hand edit for the
+    typing.
 39. **Untouched placeholders never leak.** On the same doc, Copy for AI and
     check the brief carries no guidance text.
 40. **Duplicating a row.** Duplicate the filled Pointer bullet in Figma, edit
