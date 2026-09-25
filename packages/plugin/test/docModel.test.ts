@@ -2,9 +2,10 @@ import { describe, it, expect } from 'vitest';
 import {
   buildDocModel, calloutLabels, measureKey, groupSections, GROUPS, ALL_SECTIONS,
   KNOWN_SECTION_IDS,
-  LEGACY_SECTION_IDS, AI_ONLY_SECTIONS, firstSentence, proseKeysForSections, headingLine,
+  LEGACY_SECTION_IDS, firstSentence, proseKeysForSections, headingLine,
   type SectionId, type SectionBlock,
 } from '../src/ui/docModel';
+import { placeholderShapeFor } from '../src/ui/placeholders';
 import { PROSE_V2_KEYS } from '@spec-layer/extractor';
 import type { IntermediateSpec, RefIdentity, ProseV2 } from '@spec-layer/extractor';
 
@@ -110,7 +111,7 @@ describe('proseKeysForSections asks the v9 prompt for v2 keys', () => {
 });
 
 describe('buildDocModel with prose', () => {
-  const model = buildDocModel(spec, prose, ALL, new Set(['1:10']), { aiEnabled: true });
+  const model = buildDocModel(spec, prose, ALL, new Set(['1:10']), {});
 
   it('names the component for people and keeps the raw name', () => {
     expect(model.componentName).toBe('checkbox');
@@ -193,69 +194,66 @@ describe('buildDocModel with prose', () => {
 });
 
 describe('buildDocModel without prose', () => {
-  it('renders the description verbatim as the overview and omits the AI-only sections with reasons', () => {
-    const model = buildDocModel(spec, null, ALL, new Set(), { aiEnabled: false });
+  it('renders the description verbatim as the overview and draws placeholders for the writing sections', () => {
+    const model = buildDocModel(spec, null, ALL, new Set());
     expect(find(model, 'definition')).toEqual({
       id: 'definition', heading: 'Overview', kind: 'prose', source: 'description',
       subtitle: { text: 'Selects one or more options.', source: 'description' },
       lede: null,
       text: 'Pairs a box with a label.',
     });
-    // No variant is ticked, so Tokens falls back to the conditioned table.
     expect(model.sections.map((s) => s.id)).toEqual([
-      'definition', 'variants', 'related', 'anatomy', 'properties', 'states', 'measurements', 'tokens',
+      'definition', 'whenToUse', 'variants', 'dosDonts', 'related', 'anatomy', 'properties', 'states',
+      'measurements', 'tokens', 'keyboard', 'pointer', 'accessibility', 'contentConsiderations',
     ]);
     expect(find(model, 'tokens')).toMatchObject({ kind: 'table', columns: ['Part', 'Property', 'Token', 'Condition'] });
+    expect(find(model, 'keyboard')).toEqual({
+      id: 'keyboard', heading: 'Keyboard', kind: 'placeholder', shape: placeholderShapeFor('keyboard'),
+    });
     expect(model.omitted).toEqual([
-      { id: 'whenToUse', label: 'When to use', reason: 'aiOff' },
-      { id: 'dosDonts', label: 'Do and don’t', reason: 'aiOff' },
-      { id: 'keyboard', label: 'Keyboard', reason: 'aiOff' },
-      { id: 'pointer', label: 'Pointer and touch', reason: 'aiOff' },
-      { id: 'accessibility', label: 'Semantics and focus', reason: 'aiOff' },
-      { id: 'contentConsiderations', label: 'Content', reason: 'aiOff' },
+      { id: 'whenToUse', label: 'When to use', reason: 'placeholder' },
+      { id: 'dosDonts', label: 'Do and don’t', reason: 'placeholder' },
+      { id: 'keyboard', label: 'Keyboard', reason: 'placeholder' },
+      { id: 'pointer', label: 'Pointer and touch', reason: 'placeholder' },
+      { id: 'accessibility', label: 'Semantics and focus', reason: 'placeholder' },
+      { id: 'contentConsiderations', label: 'Content', reason: 'placeholder' },
     ]);
   });
 
-  it('omits the overview when there is no description either, and reports nothingToShow when AI was on but silent', () => {
+  it('draws an Overview placeholder only when there is no description and no overview prose', () => {
     const bare = { ...spec, description: '', related: [] } as IntermediateSpec;
-    const model = buildDocModel(bare, { v: 2 }, new Set<SectionId>(['definition', 'related', 'keyboard']), new Set(), { aiEnabled: true });
-    expect(model.sections).toEqual([]);
+    const model = buildDocModel(bare, { v: 2 }, new Set<SectionId>(['definition', 'related', 'keyboard']), new Set());
+    expect(model.sections.map((s) => [s.id, s.kind])).toEqual([
+      ['definition', 'placeholder'], ['keyboard', 'placeholder'],
+    ]);
     expect(model.omitted).toEqual([
-      { id: 'definition', label: 'Overview', reason: 'nothingToShow' },
+      { id: 'definition', label: 'Overview', reason: 'placeholder' },
       { id: 'related', label: 'Related components', reason: 'nothingToShow' },
-      { id: 'keyboard', label: 'Keyboard', reason: 'nothingToShow' },
+      { id: 'keyboard', label: 'Keyboard', reason: 'placeholder' },
     ]);
   });
 
-  it('reports aiOff only for the sections AI writing would have filled', () => {
-    // A plain component: no variant axes, so Variants is empty whatever AI
-    // does. Saying 'aiOff' there would promise a section that turning AI on
-    // could not produce.
+  it('still leaves out a structural section with nothing in the spec', () => {
+    // A plain component: no variant axes, so nobody could write Variants.
     const plain = {
       ...spec, variants: [], variantInstances: [], states: [],
     } as unknown as IntermediateSpec;
-    const model = buildDocModel(
-      plain, null, new Set<SectionId>(['variants', 'whenToUse']), new Set(), { aiEnabled: false },
-    );
+    const model = buildDocModel(plain, null, new Set<SectionId>(['variants', 'whenToUse']), new Set());
+    expect(model.sections.map((s) => s.id)).toEqual(['whenToUse']);
     expect(model.omitted).toEqual([
-      { id: 'whenToUse', label: 'When to use', reason: 'aiOff' },
+      { id: 'whenToUse', label: 'When to use', reason: 'placeholder' },
       { id: 'variants', label: 'Variants', reason: 'nothingToShow' },
     ]);
   });
 
-  it('names exactly the prose-fed sections as AI-only', () => {
-    expect([...AI_ONLY_SECTIONS].sort()).toEqual(
-      ['accessibility', 'contentConsiderations', 'dosDonts', 'keyboard', 'pointer', 'whenToUse'],
-    );
-    // Overview falls back to the Figma description, and these four are built
-    // from the spec, so none of them is AI-only.
-    for (const id of ['definition', 'variants', 'anatomy', 'properties', 'states'] as SectionId[]) {
-      expect(AI_ONLY_SECTIONS.has(id)).toBe(false);
-    }
+  it('draws no placeholder when the prose fills the section', () => {
+    const model = buildDocModel(spec, { v: 2, pointer: ['Hover darkens the box.'] }, new Set<SectionId>(['pointer']), new Set());
+    expect(find(model, 'pointer')).toMatchObject({ kind: 'bullets', slot: 'pointer' });
+    expect(model.omitted).toEqual([]);
   });
 
   it('drops a properties description column when no row has one', () => {
-    const model = buildDocModel(spec, { v: 2 }, new Set<SectionId>(['properties']), new Set(), { aiEnabled: true });
+    const model = buildDocModel(spec, { v: 2 }, new Set<SectionId>(['properties']), new Set(), {});
     expect(find(model, 'properties')).toMatchObject({ kind: 'propertiesTable', hasDescriptions: false });
   });
 
@@ -1049,7 +1047,7 @@ describe('the Overview header subtitle', () => {
   const only = new Set<SectionId>(['definition']);
   const undescribed = { ...spec, description: '' } as unknown as IntermediateSpec;
   const overview = (s: IntermediateSpec, p: ProseV2 | null): SectionBlock | undefined =>
-    find(buildDocModel(s, p, only, new Set(), { aiEnabled: p !== null }), 'definition');
+    find(buildDocModel(s, p, only, new Set(), {}), 'definition');
 
   it('leads with the designer description whenever there is one, even beside AI prose', () => {
     expect(overview(spec, prose)).toEqual({
@@ -1069,8 +1067,10 @@ describe('the Overview header subtitle', () => {
     });
   });
 
-  it('has no subtitle, and no Overview at all, when there is neither', () => {
-    expect(overview(undescribed, null)).toBeUndefined();
+  it('draws a placeholder instead of an Overview when there is neither', () => {
+    expect(overview(undescribed, null)).toEqual({
+      id: 'definition', heading: 'Overview', kind: 'placeholder', shape: placeholderShapeFor('definition'),
+    });
   });
 
   it('keeps the rest of the description as the body when the AI wrote nothing', () => {

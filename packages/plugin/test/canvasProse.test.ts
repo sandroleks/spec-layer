@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { ProseV2 } from '@spec-layer/extractor';
 import {
-  SLOT_KEY, SLOT_PART_KEY, LINE_KEY,
+  SLOT_KEY, SLOT_PART_KEY, LINE_KEY, PLACEHOLDER_KEY, PLACEHOLDER_TAG_KEY, GUIDELINE_LABEL, isUnfilledPlaceholder,
   readCanvasProse, mergeProse, collectGeneratedText, textToMarkdown,
   type ProseNodeLike,
 } from '../src/canvasProse';
@@ -186,6 +186,16 @@ describe('readCanvasProse', () => {
     expect(readCanvasProse(doc).guidelines?.map((g) => g.do?.rule)).toEqual(['A', 'B']);
   });
 
+  it('keeps both pairs of a duplicated row, in canvas order, still sorted by index', () => {
+    const doc = frame([
+      keyed('guidelinePair', '1', [frame([text('C'), text('')], slot('guidelineDo'))]),
+      keyed('guidelinePair', '0', [frame([text('A'), text('')], slot('guidelineDo'))]),
+      // A duplicate of pair 0, edited: it carries the same index key.
+      keyed('guidelinePair', '0', [frame([text('B'), text('')], slot('guidelineDo'))]),
+    ]);
+    expect(readCanvasProse(doc).guidelines?.map((g) => g.do?.rule)).toEqual(['A', 'B', 'C']);
+  });
+
   it('reads a three-node guideline card as plain text, ignoring the leading DO/DONT label', () => {
     const doc = frame([
       keyed('guidelinePair', '0', [
@@ -199,6 +209,161 @@ describe('readCanvasProse', () => {
     expect(readCanvasProse(doc).guidelines).toEqual([
       { do: { rule: 'Pair it with a label.', reason: 'It widens the target.' }, dont: null },
     ]);
+  });
+});
+
+// --- placeholders -------------------------------------------------------------
+
+const stamp = (guidance: string) => ({ [PLACEHOLDER_KEY]: guidance });
+/** A guidance text node as docBlocks draws it, optionally typed over. */
+const guidance = (g: string, typed?: string) => text(typed ?? g, { data: stamp(g) });
+
+describe('isUnfilledPlaceholder', () => {
+  it('is true while the node still shows its guidance, ignoring outer whitespace', () => {
+    expect(isUnfilledPlaceholder(guidance('Say why.'))).toBe(true);
+    expect(isUnfilledPlaceholder(text('  Say why. ', { data: stamp('Say why.') }))).toBe(true);
+  });
+  it('is false once someone typed over it, and for a node that was never a placeholder', () => {
+    expect(isUnfilledPlaceholder(guidance('Say why.', 'Because it is clear.'))).toBe(false);
+    expect(isUnfilledPlaceholder(text('Say why.'))).toBe(false);
+  });
+});
+
+describe('readCanvasProse placeholders', () => {
+  const box = (...children: ProseNodeLike[]) => frame([text('Placeholder'), ...children]);
+
+  it('reads an untouched placeholder of every shape as nothing', () => {
+    const root = frame([
+      box(frame([guidance('Describe what this component is and what it is for.')], slot('definition'))),
+      box(frame([frame([guidance('Describe what hover, press, and drag do.')])], slot('pointer'))),
+      box(frame([
+        frame([text('When to use'), frame([frame([guidance('A.')])], slot('whenToUse'))]),
+        frame([text('When not to use'), frame([frame([guidance('B.')])], slot('whenNotToUse'))]),
+      ])),
+      box(frame([
+        frame([text('DO'), guidance('Describe a correct use.'), guidance('Say why it works.')], slot('guidelineDo')),
+        frame([text('DON’T'), guidance('Describe a misuse to avoid.'), guidance('Say what goes wrong.')], slot('guidelineDont')),
+      ], slot('guidelinePair', { [SLOT_PART_KEY]: '0' }))),
+      box(frame([text('KEY'), text('ACTION')]), frame([guidance('Key'), guidance('Describe what this key does.')], slot('keyboardRow'))),
+    ]);
+    expect(readCanvasProse(root)).toEqual({});
+  });
+
+  it('reads what someone typed over the guidance as prose', () => {
+    const root = frame([
+      box(frame([guidance('Describe it.', 'A checkbox selects options.')], slot('definition'))),
+      box(frame([
+        frame([guidance('Describe hover.', 'Hover darkens the box.')]),
+        frame([guidance('Describe hover.', 'Clicking the label toggles it.')]), // a duplicated row
+      ], slot('pointer'))),
+      box(frame([
+        frame([text('DO'), guidance('Describe a correct use.', 'Pair it with a label.'), guidance('Say why it works.')], slot('guidelineDo')),
+        frame([text('DON’T'), guidance('Describe a misuse to avoid.'), guidance('Say what goes wrong.')], slot('guidelineDont')),
+      ], slot('guidelinePair', { [SLOT_PART_KEY]: '0' }))),
+      box(frame([guidance('Key', 'Shift + Tab'), guidance('Describe it.', 'Moves focus back.')], slot('keyboardRow'))),
+    ]);
+    expect(readCanvasProse(root)).toEqual({
+      overview: { body: ['A checkbox selects options.'] },
+      pointer: ['Hover darkens the box.', 'Clicking the label toggles it.'],
+      guidelines: [{ do: { rule: 'Pair it with a label.', reason: '' }, dont: null }],
+      keyboard: [{ keys: ['Shift+Tab'], action: 'Moves focus back.' }],
+      authored: ['overview', 'keyboard', 'pointer', 'guidelines'],
+    });
+  });
+
+  it('marks as authored only the keys whose content came from a placeholder someone typed over', () => {
+    const root = frame([
+      box(frame([
+        frame([text('When to use'), frame([frame([guidance('A.', 'In forms.')])], slot('whenToUse'))]),
+        frame([text('When not to use'), frame([frame([guidance('B.')])], slot('whenNotToUse'))]),
+      ])),
+      // Written by the AI, never a placeholder: content, but not authored.
+      block('semantics', [bulletRow('Name: the label.')]),
+      // Only the action typed: the row is dropped, so keyboard is not authored.
+      box(frame([guidance('Key'), guidance('Describe it.', 'Moves focus.')], slot('keyboardRow'))),
+    ]);
+    const read = readCanvasProse(root);
+    expect(read.whenToUse).toEqual(['In forms.']);
+    expect(read.semantics).toEqual(['Name: the label.']);
+    expect(read.authored).toEqual(['whenToUse']);
+  });
+
+  it('reports no authored list when nothing was typed over a placeholder', () => {
+    const root = frame([block('pointer', [bulletRow('Clicking toggles.')])]);
+    expect('authored' in readCanvasProse(root)).toBe(false);
+  });
+
+  it('reads a typed key cell as alternatives on or, comma and slash, each one key however its + is spaced', () => {
+    const row = (typed: string) => frame([frame([guidance('Key', typed), guidance('Describe it.', 'Does it.')], slot('keyboardRow'))]);
+    expect(readCanvasProse(row('Shift + Tab')).keyboard).toEqual([{ keys: ['Shift+Tab'], action: 'Does it.' }]);
+    expect(readCanvasProse(row('Enter or Space')).keyboard).toEqual([{ keys: ['Enter', 'Space'], action: 'Does it.' }]);
+    expect(readCanvasProse(row('Tab, Shift + Tab / Esc')).keyboard).toEqual([{ keys: ['Tab', 'Shift+Tab', 'Escape'], action: 'Does it.' }]);
+    // A key outside the vocabulary is kept as typed, with its + closed up.
+    expect(readCanvasProse(row('Cmd  +  K')).keyboard).toEqual([{ keys: ['Cmd+K'], action: 'Does it.' }]);
+  });
+
+  it('drops a key-less row whose key cell text node was deleted, rather than reading the action as its key', () => {
+    const root = frame([frame([guidance('Describe it.', 'Moves focus.')], slot('keyboardRow'))]);
+    expect(readCanvasProse(root)).toEqual({});
+  });
+
+  it('reads a keyed row by its tag exactly as before', () => {
+    const root = frame([keyed('keyboardRow', 'Shift+Tab + Enter', [text('Shift+Tab'), text('Enter'), text('Goes back.')])]);
+    expect(readCanvasProse(root).keyboard).toEqual([{ keys: ['Shift+Tab', 'Enter'], action: 'Goes back.' }]);
+  });
+
+  it('drops a key-less keyboard row until both its key and its action are filled', () => {
+    const keyOnly = frame([frame([guidance('Key', 'Tab'), guidance('Describe it.')], slot('keyboardRow'))]);
+    const actionOnly = frame([frame([guidance('Key'), guidance('Describe it.', 'Moves focus.')], slot('keyboardRow'))]);
+    expect(readCanvasProse(keyOnly)).toEqual({});
+    expect(readCanvasProse(actionOnly)).toEqual({});
+  });
+
+  it('still skips the legacy To be written. line', () => {
+    const root = frame([frame([text('To be written.', { data: line('placeholder') })], slot('definition'))]);
+    expect(readCanvasProse(root)).toEqual({});
+  });
+});
+
+describe('readCanvasProse guideline cards', () => {
+  const label = (chars: string) => text(chars, { data: line('label') });
+  const pair = (...cards: ProseNodeLike[]) => frame([keyed('guidelinePair', '0', cards)]);
+  const doCard = (...children: ProseNodeLike[]) => frame(children, slot('guidelineDo'));
+
+  it('reads no card when the rule node is deleted and the reason is still guidance', () => {
+    const root = pair(doCard(label('DO'), guidance('Say why it works.')));
+    expect(readCanvasProse(root)).toEqual({});
+  });
+
+  it('reads the rule with an empty reason when the reason node is deleted', () => {
+    const root = pair(doCard(label('DO'), guidance('Describe a correct use.', 'Pair it with a label.')));
+    expect(readCanvasProse(root).guidelines).toEqual([{ do: { rule: 'Pair it with a label.', reason: '' }, dont: null }]);
+  });
+
+  it('never reads the label as a rule or the rule as a reason on a card missing a node', () => {
+    const ai = pair(
+      doCard(label(GUIDELINE_LABEL.do), text('Pair it with a label.')),
+      frame([label(GUIDELINE_LABEL.dont), text('Do not use it for one choice.')], slot('guidelineDont')),
+    );
+    expect(readCanvasProse(ai).guidelines).toEqual([{
+      do: { rule: 'Pair it with a label.', reason: '' },
+      dont: { rule: 'Do not use it for one choice.', reason: '' },
+    }]);
+  });
+
+  it('still skips a legacy untagged label, DO or DON’T', () => {
+    const root = pair(
+      doCard(text('DO'), text('Pair it with a label.'), text('It widens the target.')),
+      frame([text('DON’T'), text('Do not use it for one choice.')], slot('guidelineDont')),
+    );
+    expect(readCanvasProse(root).guidelines).toEqual([{
+      do: { rule: 'Pair it with a label.', reason: 'It widens the target.' },
+      dont: { rule: 'Do not use it for one choice.', reason: '' },
+    }]);
+  });
+
+  it('labels cards with the exact characters the renderer draws', () => {
+    expect(GUIDELINE_LABEL).toEqual({ do: 'DO', dont: 'DON\u2019T' });
   });
 });
 
@@ -220,6 +385,26 @@ describe('mergeProse', () => {
       v: 2, overview: { lede: 'Canvas lede.', body: ['Stored body.'] },
     });
   });
+  it('unions stored and canvas authorship, keeping only keys that still have content, in key order', () => {
+    const storedAuthored: ProseV2 = {
+      v: 2, pointer: ['Stored pointer.'], semantics: ['AI semantics.'], authored: ['pointer', 'content'],
+    };
+    const merged = mergeProse(storedAuthored, {
+      keyboard: [{ keys: ['Tab'], action: 'Moves focus.' }], authored: ['keyboard'],
+    });
+    expect(merged?.authored).toEqual(['keyboard', 'pointer']);
+    expect(merged?.pointer).toEqual(['Stored pointer.']);
+  });
+
+  it('leaves no authored list when neither side has one', () => {
+    const merged = mergeProse(stored, { pointer: ['canvas pointer'] });
+    expect(merged && 'authored' in merged).toBe(false);
+  });
+
+  it('never counts an authored list alone as content', () => {
+    expect(mergeProse({ v: 2, authored: ['pointer'] }, { authored: ['content'] })).toBeNull();
+  });
+
   it('keeps the stored lede when only the Overview body is tagged on canvas', () => {
     expect(mergeProse(storedOverview, { overview: { body: ['Canvas body.'] } })).toEqual({
       v: 2, overview: { lede: 'Stored lede.', body: ['Canvas body.'] },
@@ -237,5 +422,14 @@ describe('collectGeneratedText', () => {
       text('Cell'),
     ]);
     expect(collectGeneratedText(doc)).toEqual(['Heading', 'Cell']);
+  });
+
+  it('skips the Placeholder tag, so removing it after filling the box changes nothing', () => {
+    const tag = () => frame([text('Placeholder', { data: { [PLACEHOLDER_TAG_KEY]: '1' } })], { [PLACEHOLDER_TAG_KEY]: '1' });
+    const withTag = frame([text('Heading'), frame([tag(), frame([guidance('Say why.')], slot('pointer'))]), text('Cell')]);
+    const without = frame([text('Heading'), frame([frame([guidance('Say why.')], slot('pointer'))]), text('Cell')]);
+    expect(collectGeneratedText(withTag)).toEqual(['Heading', 'Cell']);
+    expect(collectGeneratedText(without)).toEqual(collectGeneratedText(withTag));
+    expect(PLACEHOLDER_TAG_KEY).toBe('specLayerPlaceholderTag');
   });
 });

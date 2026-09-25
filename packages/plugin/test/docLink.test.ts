@@ -424,6 +424,19 @@ describe('prose storage', () => {
     expect(parseProse(serializeProse(PROSE))).toEqual(PROSE);
   });
 
+  it('round-trips the authored list, normalized, and omits it when empty', () => {
+    const authored: ProseV2 = { ...PROSE, authored: ['keyboard', 'pointer'] };
+    expect(parseProse(serializeProse(authored))).toEqual(authored);
+    const junk = JSON.stringify({ ...PROSE, authored: ['pointer', 'bogus', 'pointer', 7, 'overview'] });
+    expect(parseProse(junk)?.authored).toEqual(['overview', 'pointer']);
+    for (const empty of [[], 'pointer', null]) {
+      const parsed = parseProse(JSON.stringify({ ...PROSE, authored: empty }));
+      expect(parsed && 'authored' in parsed).toBe(false);
+    }
+    // Authorship alone is not prose.
+    expect(parseProse(JSON.stringify({ v: 2, authored: ['pointer'] }))).toBeNull();
+  });
+
   it('upgrades a stored v1 blob on read', () => {
     const v1 = JSON.stringify({
       definition: 'A button triggers an action. Use it for the main action.',

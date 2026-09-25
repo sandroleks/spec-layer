@@ -99,10 +99,13 @@ export function effectiveAuth(
  * allowance to an unreachable Spec Layer, names one of these.
  */
 export const AI_CONSEQUENCE = {
-  component: 'the AI sections were left out',
+  // Only the writing sections become placeholders; AI text inside sections
+  // built from the spec (anatomy roles, property descriptions) is simply
+  // absent, so the note names the sections that needed AI, not "the AI sections".
+  component: 'sections that needed AI were added as placeholders',
   // A rebuild keeps the prose the document already had, so only what was
-  // still empty stays empty; "left out" would say the stored prose went too.
-  rebuild: 'sections that needed AI were left empty',
+  // still empty is a placeholder; "added" would say the stored prose went.
+  rebuild: 'sections that needed AI were left as placeholders',
   // A foundation frame has no AI sections, only group descriptions and
   // collection overviews on top of a frame that renders either way.
   foundation: 'the AI descriptions were left out',

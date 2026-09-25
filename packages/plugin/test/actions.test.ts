@@ -142,7 +142,7 @@ describe('licenseFailureNote', () => {
     const out = licenseFailureNote('unreachable');
     expect(out.markInactive).toBe(false);
     expect(out.note).toBe(
-      'Spec Layer couldn’t check your license key, so the AI sections were left out. '
+      'Spec Layer couldn’t check your license key, so sections that needed AI were added as placeholders. '
       + 'Your key is still saved. Try again in a minute.',
     );
   });
@@ -150,7 +150,7 @@ describe('licenseFailureNote', () => {
     expect(licenseFailureNote('expired').markInactive).toBe(true);
     expect(licenseFailureNote(undefined).markInactive).toBe(true);
     expect(licenseFailureNote('expired').note).toBe(
-      'Your Pro subscription isn’t active, so the AI sections were left out. '
+      'Your Pro subscription isn’t active, so sections that needed AI were added as placeholders. '
       + 'You’re on the free plan now. Renew Pro on the License screen.',
     );
   });
@@ -163,7 +163,7 @@ describe('licenseFailureNote', () => {
   it('never tells a rebuild to try again', () => {
     // A rebuilt doc is no longer stale, so updating it again never asks AI.
     expect(licenseFailureNote('unreachable', 'rebuild').note).toBe(
-      'Spec Layer couldn’t check your license key, so sections that needed AI were left empty. '
+      'Spec Layer couldn’t check your license key, so sections that needed AI were left as placeholders. '
       + 'Your key is still saved.',
     );
   });
@@ -175,7 +175,7 @@ describe('aiFailureNote', () => {
   it('keeps the raw error out of the note and logs it instead', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const note = aiFailureNote(createState(), new SyntaxError('Unexpected token < in JSON'), 'component');
-    expect(note).toBe('AI writing failed, so the AI sections were left out. Try again.');
+    expect(note).toBe('AI writing failed, so sections that needed AI were added as placeholders. Try again.');
     expect(note).not.toContain('Unexpected token');
     expect(warn).toHaveBeenCalled();
   });
@@ -183,17 +183,17 @@ describe('aiFailureNote', () => {
   it('names Spec Layer as unreachable only for a fetch that never arrived', () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     expect(aiFailureNote(createState(), new TypeError('Failed to fetch'), 'component')).toBe(
-      'Couldn’t reach Spec Layer, so the AI sections were left out. Check your connection and try again.',
+      'Couldn’t reach Spec Layer, so sections that needed AI were added as placeholders. Check your connection and try again.',
     );
     // A TypeError from a bug is not a connection problem.
     expect(aiFailureNote(createState(), new TypeError('Cannot read properties of undefined'), 'component'))
-      .toBe('AI writing failed, so the AI sections were left out. Try again.');
+      .toBe('AI writing failed, so sections that needed AI were added as placeholders. Try again.');
   });
 
   it('words each typed failure for the build it interrupted', () => {
     const rate = new ProseProxyError('rate_limited');
     expect(aiFailureNote(createState(), rate, 'component')).toBe(
-      'Too many AI writing requests in the last minute, so the AI sections were left out. Try again in a minute.',
+      'Too many AI writing requests in the last minute, so sections that needed AI were added as placeholders. Try again in a minute.',
     );
     expect(aiFailureNote(createState(), rate, 'foundation')).toBe(
       'Too many AI writing requests in the last minute, so the AI descriptions were left out. Try again in a minute.',
@@ -209,7 +209,7 @@ describe('aiFailureNote', () => {
   it('never says a rebuild left the AI sections out, or to try again', () => {
     for (const code of ['rate_limited', 'generation_pending', 'upstream'] as const) {
       const note = aiFailureNote(createState(), new ProseProxyError(code), 'rebuild');
-      expect(note).toContain('sections that needed AI were left empty.');
+      expect(note).toContain('sections that needed AI were left as placeholders.');
       expect(note).not.toContain('left out');
       expect(note).not.toMatch(/try again/i);
     }
@@ -240,11 +240,19 @@ describe('omissionsMessage', () => {
   it('states the outcome alone when nothing was left out', () => {
     expect(omissionsMessage('Docs created.', [])).toBe('Docs created.');
   });
-  it('names every omitted section with its reason, in order', () => {
+  it('lists what was left out, then names the placeholders in one sentence', () => {
     expect(omissionsMessage('Docs created.', [
-      { id: 'keyboard', label: 'Keyboard', reason: 'nothingToShow' },
-      { id: 'whenToUse', label: 'When to use', reason: 'aiOff' },
-    ])).toBe('Docs created. Left out Keyboard: nothing to show. Left out When to use: AI writing is off.');
+      { id: 'whenToUse', label: 'When to use', reason: 'placeholder' },
+      { id: 'related', label: 'Related components', reason: 'nothingToShow' },
+      { id: 'keyboard', label: 'Keyboard', reason: 'placeholder' },
+    ])).toBe(
+      'Docs created. Left out Related components: nothing to show. '
+      + 'Added placeholders for When to use, Keyboard. Fill them in on the canvas.',
+    );
+  });
+  it('names a lone placeholder the same way', () => {
+    expect(omissionsMessage('Docs updated.', [{ id: 'pointer', label: 'Pointer and touch', reason: 'placeholder' }]))
+      .toBe('Docs updated. Added placeholders for Pointer and touch. Fill them in on the canvas.');
   });
 });
 

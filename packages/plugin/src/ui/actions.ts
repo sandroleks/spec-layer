@@ -29,7 +29,7 @@ import { formatResetDate } from './viewModel/allowance';
 import { emptyBrandTheme, type BrandTheme } from '../brandColors';
 import { DEFAULT_COMPONENT_FORMAT, COMPONENT_FORMAT_NAME, type ComponentFormat } from '../componentFormat';
 import {
-  ALL_SECTIONS, buildDocModel, proseKeysForSections,
+  buildDocModel, proseKeysForSections,
   type SectionId, type MeasureView, type DocFrameModel, type OmittedSection,
 } from './docModel';
 import {
@@ -79,11 +79,13 @@ export interface UiState {
   // that requests a key not in this set triggers exactly one regeneration;
   // unchecking never does. Null whenever generatedProse is null.
   generatedProseKeys: Set<ProseV2Key> | null;
-  // What the last build left out, and why, so the result message can say so.
-  // Set by every assembled build and cleared once it has been reported.
+  // What the last build left out or drew as a placeholder, and why, so the
+  // result message can say so. Set by every assembled build and cleared once
+  // it has been reported.
   lastOmitted: OmittedSection[];
   // Set when an AI generation attempt fails so the next frame-build can note it
-  // ("the AI sections were left out") instead of aborting the whole frame.
+  // ("sections that needed AI were added as placeholders") instead of aborting
+  // the whole frame.
   pendingAiNote: string;
   // User-customized brand theme for the generated frame (null fields = default).
   brandTheme: BrandTheme;
@@ -440,17 +442,15 @@ async function assembleDocFor(
   if (selected.size === 0) return null;
 
   const model = buildDocModel(state.currentSpec!, state.generatedProse, selected, variantIds, {
-    measureViews: state.measureViews, includeHidden: state.includeHidden, aiEnabled: canGenerate(state),
+    measureViews: state.measureViews, includeHidden: state.includeHidden,
   });
   state.lastOmitted = model.omitted;
   const config: DocConfig = {
     sections: [...selected],
     variantIds: [...variantIds],
-    // The SAME flag the model was built with, not the raw checkbox. Update
-    // feeds this back into buildDocModel, and that is what decides whether an
-    // empty AI section reads "AI writing is off" or "nothing to show"; storing
-    // `state.aiEnabled` here let a user with the box ticked but no licence or
-    // Figma identity get one classification on Create and the other on Update.
+    // The flag the build actually ran with, not the raw checkbox: the rebuild
+    // top-up reads it, and a user with the box ticked but no licence or Figma
+    // identity did not get AI.
     aiEnabled: canGenerate(state),
     anatomyView: 'diagram',
     measureViews: state.measureViews,
@@ -458,11 +458,6 @@ async function assembleDocFor(
   };
   return { model, config };
 }
-
-const OMISSION_REASON: Record<OmittedSection['reason'], string> = {
-  nothingToShow: 'nothing to show',
-  aiOff: 'AI writing is off',
-};
 
 /**
  * The first sentence of the result message: `Docs created.` No frame count.
@@ -472,9 +467,15 @@ export function resultOutcome(replaced: boolean): string {
   return `Docs ${replaced ? 'updated' : 'created'}.`;
 }
 
-/** The result line: the outcome, then one sentence per omitted section. */
+/**
+ * The result line: the outcome, then one sentence per section left out, then
+ * one sentence naming every section drawn as a placeholder.
+ */
 export function omissionsMessage(outcome: string, omitted: OmittedSection[]): string {
-  const parts = [outcome, ...omitted.map((o) => `Left out ${o.label}: ${OMISSION_REASON[o.reason]}.`)];
+  const parts = [outcome];
+  for (const o of omitted) if (o.reason === 'nothingToShow') parts.push(`Left out ${o.label}: nothing to show.`);
+  const placeholders = omitted.filter((o) => o.reason === 'placeholder').map((o) => o.label);
+  if (placeholders.length) parts.push(`Added placeholders for ${placeholders.join(', ')}. Fill them in on the canvas.`);
   return parts.join(' ');
 }
 
@@ -577,10 +578,10 @@ export async function updateFromSource(
     const model = buildDocModel(spec, src.prose, selected, variantIds, {
       measureViews: src.config.measureViews,
       includeHidden: src.config.includeHidden,
-      aiEnabled: src.config.aiEnabled,
     });
     // Same record the Create path keeps, so the Library's completion message
-    // can name the sections it left out instead of staying silent about them.
+    // can name the sections it left out or drew as placeholders instead of
+    // staying silent about them.
     state.lastOmitted = model.omitted;
     send({
       type: 'renderDocFrame',
@@ -621,28 +622,37 @@ function hasKeyContent(prose: ProseV2 | null, key: ProseV2Key): boolean {
   return Boolean(overview.lede?.trim()) || (overview.body?.length ?? 0) > 0;
 }
 
+/** True when a person typed `key` on the canvas. Their text is never asked
+ *  of the model again and never replaced by it. */
+function isAuthored(prose: ProseV2 | null, key: ProseV2Key): boolean {
+  return Array.isArray(prose?.authored) && prose.authored.includes(key);
+}
+
 /**
  * The keys a stale-version rebuild asks the model for: every requested key the
  * upgraded prose left empty, plus `keyboard` whenever it is requested, because
  * the v1 keyboard bullets upgrade lossily (a bullet that did not open with a
- * key was dropped). This is what the rebuild note promises.
+ * key was dropped). This is what the rebuild note promises. A key a person
+ * wrote is never asked for.
  */
 export function missingProseKeys(prose: ProseV2 | null, requested: ReadonlySet<ProseV2Key>): Set<ProseV2Key> {
   const out = new Set<ProseV2Key>();
   for (const key of requested) {
+    if (isAuthored(prose, key)) continue;
     if (key === 'keyboard' || !hasKeyContent(prose, key)) out.add(key);
   }
   return out;
 }
 
 /** Stored prose wins wherever it has content; the fresh draft fills the rest
- *  and always replaces keyboard. Null when the result has nothing to show. */
+ *  and replaces keyboard, unless a person wrote it. The stored `authored`
+ *  list is kept as it was. Null when the result has nothing to show. */
 export function mergeTopUp(stored: ProseV2 | null, generated: ProseV2 | null): ProseV2 | null {
   if (!generated) return stored;
   const out: ProseV2 = { ...(stored ?? {}), v: 2 };
   for (const key of PROSE_V2_KEYS) {
     const fresh = generated[key];
-    if (fresh === undefined) continue;
+    if (fresh === undefined || isAuthored(stored, key)) continue;
     if (key === 'keyboard' || !hasKeyContent(stored, key)) {
       (out as unknown as Record<string, unknown>)[key] = fresh;
     }
@@ -652,10 +662,9 @@ export function mergeTopUp(stored: ProseV2 | null, generated: ProseV2 | null): P
 
 /**
  * What a build says when the AI allowance ran out: that the uses are gone,
- * what that cost this document, and when they come back. It replaces the
- * per-section "Left out Overview: nothing to show." lines for the sections AI
- * would have written (see withoutAiOmissions), which blamed the component for
- * what was really the allowance.
+ * what that cost this document, and when they come back. It follows the
+ * result line, which names the sections drawn as placeholders because no
+ * model wrote them.
  *
  * Only facts the proxy reported: the limit and the reset date come from the
  * last quota snapshot, and each is left out when that snapshot lacks it
@@ -679,20 +688,6 @@ export function quotaExhaustedNote(
   );
 }
 
-const AI_SECTION_IDS: ReadonlySet<SectionId> = new Set(
-  ALL_SECTIONS.filter((section) => section.ai).map((section) => section.id),
-);
-
-/**
- * The omissions still worth listing once an AI note (the quota, or any other
- * failed request) has explained the AI ones. An AI section left empty because
- * no model answered is not "nothing to show", and listing it that way under
- * the note says the same thing twice, the second time wrongly.
- */
-export function withoutAiOmissions(omitted: readonly OmittedSection[]): OmittedSection[] {
-  return omitted.filter((o) => !(o.reason === 'nothingToShow' && AI_SECTION_IDS.has(o.id)));
-}
-
 /**
  * The AI half of a stale-version rebuild (spec 8.3): when AI writing is on,
  * ask for the selected keys the stored prose leaves empty (and keyboard), and
@@ -702,9 +697,8 @@ export function withoutAiOmissions(omitted: readonly OmittedSection[]): OmittedS
  * Gated on the document's own `aiEnabled` as well as the panel toggle. A doc
  * built without AI writing is rebuilt without it: topping it up because the
  * toggle happens to be on now would put AI text into a document whose stored
- * config still reads `aiEnabled: false`, and a later empty AI section on it
- * would then be reported as "AI writing is off" when AI had just written into
- * it.
+ * config still reads `aiEnabled: false`, and that someone may be filling in
+ * by hand through its placeholders.
  */
 export async function topUpProseForRebuild(state: UiState, src: DocSource): Promise<ProseV2 | null> {
   if (!src.config.aiEnabled || !canGenerate(state)) return src.prose;

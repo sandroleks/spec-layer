@@ -3,7 +3,7 @@ import type { IntermediateSpec, ProseDrafts } from '../src/index';
 import {
   upgradeProseV1, proseToLegacy, validateProseV2, normalizeKey, parseKeyboardBullet,
   splitRuleReason, firstSentence, isProseV2, hasProseContent, KEYBOARD_KEYS, type ProseV2,
-  normalizeDashes, hasHeading,
+  normalizeDashes, hasHeading, normalizeAuthored, PROSE_V2_KEYS,
 } from '../src/prose/v2';
 
 const spec = {
@@ -158,6 +158,67 @@ describe('proseToLegacy', () => {
   });
   it('returns the empty v1 shape for an empty v2', () => {
     expect(proseToLegacy({ v: 2 })).toEqual({ definition: '', accessibility: '', dos: [], donts: [] });
+  });
+});
+
+describe('authored', () => {
+  it('is not a prose key, and alone is no content', () => {
+    expect(PROSE_V2_KEYS).not.toContain('authored');
+    expect(hasProseContent({ v: 2, authored: ['pointer'] })).toBe(false);
+  });
+
+  it('normalizes to known prose keys, once each, in PROSE_V2_KEYS order, and never throws', () => {
+    expect(normalizeAuthored(['pointer', 'bogus', 'pointer', 'keyboard', 3, null, 'v', 'authored'])).toEqual(['keyboard', 'pointer']);
+    expect(normalizeAuthored('pointer')).toEqual([]);
+    expect(normalizeAuthored(undefined)).toEqual([]);
+    expect(normalizeAuthored({ 0: 'pointer' })).toEqual([]);
+  });
+});
+
+describe('proseToLegacy authored', () => {
+  const full: ProseV2 = {
+    v: 2,
+    overview: { lede: 'A box.', body: [] },
+    semantics: ['Name it.'],
+    keyboard: [{ keys: ['Space'], action: 'Toggles it.' }],
+    pointer: ['Clicking toggles it.'],
+    variantsIntro: 'Style sets weight.',
+    variantsGuide: [{ name: 'Filled', guidance: 'the default.' }],
+    anatomySummary: 'A box and a label.',
+    content: ['Write statements.'],
+    guidelines: [{ do: { rule: 'Pair it.', reason: '' }, dont: { rule: 'Do not.', reason: '' } }],
+  };
+
+  it('sets no authored list when nothing is authored', () => {
+    expect('authored' in proseToLegacy(full)).toBe(false);
+    expect('authored' in proseToLegacy({ ...full, authored: [] })).toBe(false);
+  });
+
+  it('names each legacy field every one of whose contributing keys with content is authored, in brief order', () => {
+    const legacy = proseToLegacy({
+      ...full, authored: ['guidelines', 'content', 'anatomySummary', 'semantics', 'overview', 'variantsIntro', 'variantsGuide'],
+    });
+    expect(legacy.authored).toEqual([
+      'definition', 'accessibility', 'variants_summary', 'anatomy_summary', 'content_considerations', 'dos', 'donts',
+    ]);
+  });
+
+  it('leaves a mixed interactions field out, and lists it once both halves are authored or empty', () => {
+    expect(proseToLegacy({ ...full, authored: ['keyboard'] }).authored).toBeUndefined();
+    expect(proseToLegacy({ ...full, authored: ['keyboard', 'pointer'] }).authored).toEqual(['interactions']);
+    const { pointer: _pointer, ...keyboardOnly } = full;
+    expect(proseToLegacy({ ...keyboardOnly, authored: ['keyboard'] }).authored).toEqual(['interactions']);
+  });
+
+  it('never lists a field with no content, and splits dos from donts by what the cards hold', () => {
+    expect(proseToLegacy({ v: 2, authored: ['overview', 'pointer'] }).authored).toBeUndefined();
+    const dontsOnly: ProseV2 = { v: 2, guidelines: [{ do: null, dont: { rule: 'Do not.', reason: '' } }], authored: ['guidelines'] };
+    expect(proseToLegacy(dontsOnly).authored).toEqual(['donts']);
+  });
+
+  it('ignores an authored list carrying junk', () => {
+    const junk = { ...full, authored: ['pointer', 'nonsense', 7] } as unknown as ProseV2;
+    expect(proseToLegacy(junk).authored).toBeUndefined();
   });
 });
 

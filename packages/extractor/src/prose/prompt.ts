@@ -31,6 +31,10 @@ export interface ProseDrafts {
   interactions?: string;
   designConsiderations?: string;
   contentConsiderations?: string;
+  /** The brief's `guidelines` field names (snake_case, as the brief spells
+   *  them) whose whole content a person typed on the Figma canvas. Absent
+   *  when there are none. Set by `proseToLegacy`; never model output. */
+  authored?: string[];
 }
 
 /**

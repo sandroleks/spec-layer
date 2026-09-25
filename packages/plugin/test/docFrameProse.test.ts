@@ -3,6 +3,8 @@ import type { IntermediateSpec, ProseV2, RefIdentity } from '@spec-layer/extract
 import { installFakeFigma, uninstallFakeFigma, FakeSection, FakeFrame, FakeText } from './fakeFigma';
 import { buildDocFrames } from '../src/docFrame';
 import { buildDocModel, ALL_SECTIONS, type SectionId } from '../src/ui/docModel';
+import { placeholderShapeFor } from '../src/ui/placeholders';
+import { parseProse, serializeProse } from '../src/docLink';
 import { emptyBrandTheme, resolveTheme } from '../src/brandColors';
 import { palette, solidFill } from '../src/frameKit';
 import {
@@ -47,13 +49,13 @@ const ALL = new Set<SectionId>(ALL_SECTIONS.map((s) => s.id));
  *  the AI lede renders inside the Overview. */
 const undescribed = { ...spec, description: '' } as unknown as IntermediateSpec;
 
-async function buildFrom(s: IntermediateSpec, p: ProseV2 | null, aiEnabled = true): Promise<FakeSection> {
-  const model = buildDocModel(s, p, ALL, new Set(), { measureViews: [], aiEnabled });
+async function buildFrom(s: IntermediateSpec, p: ProseV2 | null): Promise<FakeSection> {
+  const model = buildDocModel(s, p, ALL, new Set(), { measureViews: [] });
   return await buildDocFrames(model, resolveTheme(emptyBrandTheme()), null) as unknown as FakeSection;
 }
 
-async function build(p: ProseV2 | null, aiEnabled = true): Promise<FakeSection> {
-  return buildFrom(spec, p, aiEnabled);
+async function build(p: ProseV2 | null): Promise<FakeSection> {
+  return buildFrom(spec, p);
 }
 const asNode = (s: FakeSection): ProseNodeLike => s as unknown as ProseNodeLike;
 
@@ -103,13 +105,17 @@ describe('docFrame', () => {
     expect(frames[0].textChars()).not.toContain('checkbox');
   });
 
-  it('renders the description verbatim and untagged when AI is off, and builds no Accessibility frame', async () => {
-    const section = await build(null, false);
+  it('renders the description verbatim and draws placeholders for the writing sections when there is no prose', async () => {
+    const section = await build(null);
     const frames = section.children as FakeFrame[];
-    expect(frames.map((f) => f.name)).toEqual(['1 Usage', '2 Specifications']);
+    expect(frames.map((f) => f.name)).toEqual(['1 Usage', '2 Specifications', '3 Accessibility']);
     expect(frames[0].textChars()).toContain('Selects one or more options.');
+    expect(frames[0].textChars()).toContain('Placeholder');
+    expect(frames[2].textChars()).toContain('Describe what hover, press, and drag do.');
+    // Guidance is never prose: the read-back is what it was before placeholders.
     expect(readCanvasProse(asNode(section))).toEqual({ anatomyParts: [] });
     expect(collectGeneratedText(asNode(section))).toContain('Selects one or more options.');
+    expect(collectGeneratedText(asNode(section)).join('\n')).not.toContain('Describe what hover');
   });
 
   it('lets the Overview, bullet lists and two-column bullets fill the content column', async () => {
@@ -136,10 +142,49 @@ describe('docFrame', () => {
     }
   });
 
-  it('puts no placeholder text anywhere', async () => {
-    const lines = (await build(null, false)).children.flatMap((f) => (f as FakeFrame).textChars());
-    expect(lines.join('\n')).not.toContain('To be written');
-    expect(lines).not.toContain('None');
+  it('never draws the legacy To be written. line, and draws no placeholder when prose fills every section', async () => {
+    const empty = (await build(null)).children.flatMap((f) => (f as FakeFrame).textChars());
+    expect(empty.join('\n')).not.toContain('To be written');
+    expect(empty).not.toContain('None');
+    const full = (await build(prose)).children.flatMap((f) => (f as FakeFrame).textChars());
+    expect(full).not.toContain('Placeholder');
+  });
+
+  it('is a fixed point with placeholders: filling one in and rebuilding keeps it and drops its box', async () => {
+    const first = await build(null);
+    const pointerGuidance = (first.children[2] as FakeFrame).findText('Describe what hover, press, and drag do.')!;
+    pointerGuidance.characters = 'Hover darkens the box.';
+    const read = readCanvasProse(asNode(first));
+    expect(read.pointer).toEqual(['Hover darkens the box.']);
+    const merged = mergeProse(null, read);
+    const second = await build(merged);
+    const a11y = (second.children[2] as FakeFrame).textChars();
+    expect(a11y).toContain('Hover darkens the box.');
+    expect(a11y).not.toContain('Describe what hover, press, and drag do.');
+    // The other three a11y sections are still placeholders.
+    expect(a11y.filter((t) => t === 'Placeholder')).toHaveLength(3);
+  });
+
+  it('keeps pointer marked as written by a person after its placeholder box is gone', async () => {
+    const first = await build(null);
+    (first.children[2] as FakeFrame).findText('Describe what hover, press, and drag do.')!.characters = 'Hover darkens the box.';
+    // The first Update: nothing stored yet, the canvas says a person typed it.
+    const read = readCanvasProse(asNode(first));
+    expect(read.authored).toEqual(['pointer']);
+    const merged = mergeProse(null, read)!;
+    expect(merged.authored).toEqual(['pointer']);
+    // main.ts stores the merged prose beside the rebuilt doc.
+    const storedBlob = serializeProse(merged);
+    const second = await build(merged);
+    expect((second.children[2] as FakeFrame).textChars()).not.toContain('Describe what hover, press, and drag do.');
+    // The rebuilt Pointer section is ordinary prose, so the canvas no longer
+    // says who wrote it; the stored blob still does.
+    const reread = readCanvasProse(asNode(second));
+    expect(reread.pointer).toEqual(['Hover darkens the box.']);
+    expect('authored' in reread).toBe(false);
+    const again = mergeProse(parseProse(storedBlob), reread)!;
+    expect(again.pointer).toEqual(['Hover darkens the box.']);
+    expect(again.authored).toEqual(['pointer']);
   });
 
   it('keeps editorial text out of the generated lane', async () => {
@@ -213,7 +258,7 @@ describe('docFrame', () => {
     } as unknown as IntermediateSpec;
     const model = buildDocModel(
       twoVariants, null, new Set<SectionId>(['tokens']), new Set(['1:10', '1:11']),
-      { measureViews: [], aiEnabled: false },
+      { measureViews: [] },
     );
     const section = await buildDocFrames(model, resolveTheme(emptyBrandTheme()), null) as unknown as FakeSection;
     const chars = section.children.flatMap((f) => (f as FakeFrame).textChars());
@@ -228,7 +273,10 @@ describe('docFrame', () => {
     // header that is never drawn, and the only human-written line in the file
     // would vanish.
     const lonely = { ...spec, related: [] } as unknown as IntermediateSpec;
-    const model = buildDocModel(lonely, null, ALL, new Set(), { measureViews: [], aiEnabled: false });
+    const noWriting = new Set<SectionId>(
+      ALL_SECTIONS.map((s) => s.id).filter((id) => id === 'definition' || placeholderShapeFor(id) === null),
+    );
+    const model = buildDocModel(lonely, null, noWriting, new Set(), { measureViews: [] });
     const section = await buildDocFrames(model, resolveTheme(emptyBrandTheme()), null) as unknown as FakeSection;
     const frames = section.children as FakeFrame[];
     expect(frames.map((f) => f.name)).toEqual(['1 Usage', '2 Specifications']);
@@ -323,7 +371,7 @@ async function buildMeasureDoc(componentWidth: number): Promise<FakeSection> {
       (id === measureSpec.anatomyComponentId ? fakeMeasureComponent(componentWidth) : null),
   });
   const model = buildDocModel(
-    measureSpec, null, new Set<SectionId>(['measurements']), new Set(), { measureViews: [], aiEnabled: false },
+    measureSpec, null, new Set<SectionId>(['measurements']), new Set(), { measureViews: [] },
   );
   return await buildDocFrames(model, resolveTheme(emptyBrandTheme()), null) as unknown as FakeSection;
 }
@@ -412,7 +460,7 @@ const variantProse: ProseV2 = {
 async function buildVariantDoc(p: ProseV2 | null): Promise<FakeSection> {
   const model = buildDocModel(
     variantSpec, p, new Set<SectionId>(['variants', 'states']), new Set(),
-    { measureViews: [], aiEnabled: true },
+    { measureViews: [] },
   );
   return await buildDocFrames(model, resolveTheme(emptyBrandTheme()), null) as unknown as FakeSection;
 }

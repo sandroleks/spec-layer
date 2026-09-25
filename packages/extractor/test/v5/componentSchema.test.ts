@@ -26,6 +26,14 @@ describe('Component Context v5 schema', () => {
     ).toBe(true);
   });
 
+  it('accepts guidelines marked origin: authored, and an authored list under origin: generated', () => {
+    const artifact = structuredClone(buildComponentV5GoldenArtifact()) as unknown as Record<string, unknown>;
+    artifact.guidelines = { origin: 'authored', definition: 'A button.' };
+    expect(validate(artifact), ajv.errorsText(validate.errors)).toBe(true);
+    artifact.guidelines = { origin: 'generated', authored: ['definition'], definition: 'A button.', accessibility: 'Name it.' };
+    expect(validate(artifact), ajv.errorsText(validate.errors)).toBe(true);
+  });
+
   it('rejects a resolved binding whose source identity is absent', () => {
     const artifact = structuredClone(buildComponentV5GoldenArtifact());
     artifact.references.used[0].source_id = '';

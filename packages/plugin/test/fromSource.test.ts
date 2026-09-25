@@ -22,7 +22,6 @@ import {
   topUpProseForRebuild,
   takeTopUpNote,
   quotaExhaustedNote,
-  withoutAiOmissions,
   noteGenerationError,
   type BuildPresenter,
   type DocSource,
@@ -182,8 +181,8 @@ describe('updateFromSource', () => {
   it('records what it left out, so the Library can report it the way Create does', async () => {
     const ui = fakePresenter();
     const state = createState();
-    // AI is off for this doc, so its AI-only sections are left out with that
-    // reason rather than silently missing.
+    // AI is off for this doc, so its writing sections are drawn as
+    // placeholders and reported.
     const source: DocSource = {
       ...goodSource,
       config: { ...goodSource.config, sections: ['definition', 'whenToUse', 'dosDonts'], aiEnabled: false },
@@ -191,9 +190,7 @@ describe('updateFromSource', () => {
     };
     await expect(updateFromSource(state, source, ui)).resolves.toBe(true);
     expect(state.lastOmitted.map((o) => [o.id, o.reason])).toEqual([
-      ['definition', 'nothingToShow'],
-      ['whenToUse', 'aiOff'],
-      ['dosDonts', 'aiOff'],
+      ['definition', 'placeholder'], ['whenToUse', 'placeholder'], ['dosDonts', 'placeholder'],
     ]);
   });
 
@@ -248,6 +245,10 @@ describe('missingProseKeys', () => {
   it('asks for everything requested when there is no stored prose', () => {
     expect([...missingProseKeys(null, new Set(['overview', 'content']))].sort()).toEqual(['content', 'overview']);
   });
+  it('never asks again for a keyboard a person typed', () => {
+    const typed: ProseV2 = { ...stored, authored: ['keyboard'] };
+    expect([...missingProseKeys(typed, new Set(['keyboard', 'whenToUse']))]).toEqual(['whenToUse']);
+  });
 });
 
 describe('mergeTopUp', () => {
@@ -261,6 +262,14 @@ describe('mergeTopUp', () => {
   it('returns the stored prose when nothing was generated, and null when both are empty', () => {
     expect(mergeTopUp(stored, null)).toEqual(stored);
     expect(mergeTopUp(null, { v: 2 })).toBeNull();
+  });
+  it('never replaces a key a person wrote, and keeps the stored authored list', () => {
+    const typed: ProseV2 = { ...stored, authored: ['keyboard'] };
+    const fresh: ProseV2 = { v: 2, whenToUse: ['W.'], keyboard: [{ keys: ['Enter'], action: 'New.' }] };
+    expect(mergeTopUp(typed, fresh)).toEqual({
+      v: 2, overview: { lede: 'Kept.', body: [] }, whenToUse: ['W.'],
+      keyboard: [{ keys: ['Tab'], action: 'Old.' }], authored: ['keyboard'],
+    });
   });
 });
 
@@ -301,7 +310,7 @@ describe('topUpProseForRebuild', () => {
     // again", because the rebuilt doc is no longer stale and an Update never
     // asks AI.
     expect(state.pendingAiNote).toBe(
-      'Too many AI writing requests in the last minute, so sections that needed AI were left empty.',
+      'Too many AI writing requests in the last minute, so sections that needed AI were left as placeholders.',
     );
   });
 
@@ -310,7 +319,7 @@ describe('topUpProseForRebuild', () => {
     vi.mocked(generateProse).mockRejectedValueOnce(new TypeError('Failed to fetch'));
     const state = aiState();
     expect(await topUpProseForRebuild(state, src)).toEqual(src.prose);
-    expect(state.pendingAiNote).toBe('Couldn’t reach Spec Layer, so sections that needed AI were left empty.');
+    expect(state.pendingAiNote).toBe('Couldn’t reach Spec Layer, so sections that needed AI were left as placeholders.');
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();
   });
@@ -323,7 +332,7 @@ describe('topUpProseForRebuild', () => {
     expect(await topUpProseForRebuild(state, src)).toEqual(src.prose);
     expect(state.quotaExhausted).toBe(true);
     expect(state.pendingAiNote).toBe(
-      'You’ve used all 10 free AI writing uses this month, so sections that needed AI were left empty. Your uses reset on Oct 1.',
+      'You’ve used all 10 free AI writing uses this month, so sections that needed AI were left as placeholders. Your uses reset on Oct 1.',
     );
     expect(state.pendingAiNote).not.toContain('\u2014');
   });
@@ -342,7 +351,7 @@ describe('topUpProseForRebuild', () => {
 describe('takeTopUpNote', () => {
   it('returns the note and clears the slot', () => {
     const state = createState();
-    const note = 'Too many AI writing requests in the last minute, so sections that needed AI were left empty.';
+    const note = 'Too many AI writing requests in the last minute, so sections that needed AI were left as placeholders.';
     state.pendingAiNote = note;
     expect(takeTopUpNote(state)).toBe(note);
     expect(state.pendingAiNote).toBe('');
@@ -369,7 +378,7 @@ describe('takeTopUpNote', () => {
     // (this is the fix: ui-vnext.ts no longer waits for a later, unrelated
     // completion to read the shared slot).
     expect(takeTopUpNote(state)).toBe(
-      'Too many AI writing requests in the last minute, so sections that needed AI were left empty.',
+      'Too many AI writing requests in the last minute, so sections that needed AI were left as placeholders.',
     );
     expect(state.pendingAiNote).toBe('');
     vi.mocked(generateProse).mockClear();
@@ -414,11 +423,10 @@ describe('createDocFrame', () => {
     expect(contentHash(msg.baseline)).toBe(msg.contentHash);
   });
 
-  it('records what the build left out, and blames AI only when AI was off', async () => {
-    // The reason is what the result message prints, so it has to come from the
-    // build that actually ran: a section AI writing would have filled reads
-    // 'aiOff' only while AI is off, and a deterministic section with nothing
-    // in the spec always reads 'nothingToShow'.
+  it('records what the build left out, and which sections it drew as placeholders', async () => {
+    // The reason is what the result message prints: a writing section with no
+    // prose is a placeholder, a deterministic section with nothing in the
+    // spec is 'nothingToShow'.
     const state = createState();
     state.currentNode = buttonNode();
     state.currentFileKey = 'f1';
@@ -430,15 +438,14 @@ describe('createDocFrame', () => {
     }, fakePresenter());
     expect(state.lastOmitted).toEqual([
       { id: 'related', label: 'Related components', reason: 'nothingToShow' },
-      { id: 'keyboard', label: 'Keyboard', reason: 'aiOff' },
+      { id: 'keyboard', label: 'Keyboard', reason: 'placeholder' },
     ]);
   });
 
-  it('persists the flag the model was built with, so Update classifies omissions the same way', async () => {
+  it('persists the flag the build actually ran with, not the raw checkbox', async () => {
     // The checkbox is on but there is no licence and no Figma identity, so
-    // canGenerate is false and the build ran without AI. Update reads this
-    // stored flag back; persisting the raw checkbox instead made the same doc
-    // read 'nothing to show' on Create and 'AI writing is off' on Update.
+    // canGenerate is false and the build ran without AI. The rebuild top-up
+    // reads this stored flag back, so it must say AI did not write this doc.
     const state = createState();
     state.currentNode = buttonNode();
     state.currentFileKey = 'f1';
@@ -474,12 +481,12 @@ describe('createDocFrame', () => {
 describe('quota exhausted note', () => {
   it('names the limit and the reset date the proxy reported', () => {
     expect(quotaExhaustedNote({ tier: 'free', used: 10, limit: 10, remaining: 0, resetsAt: '2026-10-01T00:00:00.000Z' }))
-      .toBe('You’ve used all 10 free AI writing uses this month, so the AI sections were left out. Your uses reset on Oct 1.');
+      .toBe('You’ve used all 10 free AI writing uses this month, so sections that needed AI were added as placeholders. Your uses reset on Oct 1.');
   });
 
   it('invents neither a limit nor a date the snapshot lacks', () => {
     expect(quotaExhaustedNote(null))
-      .toBe('You’ve used all your free AI writing uses this month, so the AI sections were left out.');
+      .toBe('You’ve used all your free AI writing uses this month, so sections that needed AI were added as placeholders.');
   });
 
   it('words a foundation build for descriptions, not sections', () => {
@@ -497,15 +504,5 @@ describe('quota exhausted note', () => {
     noteGenerationError(state, new ProseProxyError('quota_exhausted'));
     expect(state.quotaExhausted).toBe(true);
     expect(state.pendingAiNote).toContain('You’ve used all');
-  });
-
-  it('drops only the AI sections left empty, not deterministic or AI-off omissions', () => {
-    const kept = withoutAiOmissions([
-      { id: 'definition', label: 'Overview', reason: 'nothingToShow' },
-      { id: 'keyboard', label: 'Keyboard', reason: 'nothingToShow' },
-      { id: 'related', label: 'Related components', reason: 'nothingToShow' },
-      { id: 'whenToUse', label: 'When to use', reason: 'aiOff' },
-    ]);
-    expect(kept.map((o) => o.id)).toEqual(['related', 'whenToUse']);
   });
 });

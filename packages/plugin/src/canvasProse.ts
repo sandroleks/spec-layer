@@ -14,7 +14,10 @@
  * objects. This module is imported by main.ts, which runs in Figma's bare
  * sandbox realm, so it may use only ECMAScript built-ins.
  */
-import { hasProseContent, type ProseV2, type GuidelinePair, type GuidelineCard } from '@spec-layer/extractor';
+import {
+  hasProseContent, normalizeKey, normalizeAuthored, PROSE_V2_KEYS,
+  type ProseV2, type ProseV2Key, type GuidelinePair, type GuidelineCard,
+} from '@spec-layer/extractor';
 import { PILL_KEY } from './publishPill';
 import { displayPartName } from './ui/displayNames';
 
@@ -26,18 +29,45 @@ export const SLOT_PART_KEY = 'specLayerSlotKey';
 /** pluginData key on a node inside a prose slot saying what kind of line it is. */
 export const LINE_KEY = 'specLayerLine';
 
+/** pluginData key on a guidance text node, holding the exact guidance it was
+ *  drawn with. A node whose characters still equal it was never written, so
+ *  it reads back as empty; once someone types over it, it is their prose. */
+export const PLACEHOLDER_KEY = 'specLayerPlaceholder';
+
+/** pluginData key on the Placeholder tag frame and its label. The tag is a
+ *  status stamp, like the publish pill: it goes away once the box is filled
+ *  and Updated, so deleting it by hand must not read as a hand edit. */
+export const PLACEHOLDER_TAG_KEY = 'specLayerPlaceholderTag';
+
+/** True while a stamped guidance node still shows its guidance. */
+export function isUnfilledPlaceholder(node: ProseNodeLike): boolean {
+  const guidance = node.getPluginData(PLACEHOLDER_KEY);
+  return guidance !== '' && (node.characters ?? '').trim() === guidance.trim();
+}
+
+/** True for a guidance node, filled or not. Content read from a filled one
+ *  was typed by a person, which is what `CanvasProse.authored` records. */
+const isStamped = (node: ProseNodeLike | undefined): boolean =>
+  node !== undefined && node.getPluginData(PLACEHOLDER_KEY) !== '';
+
 export type ProseSlot =
   | 'definitionLead' | 'definition' | 'whenToUse' | 'whenNotToUse' | 'variantsIntro' | 'variantsGuide'
   | 'anatomySummary' | 'anatomyPart' | 'propertyDescription' | 'keyboardRow'
   | 'pointer' | 'semantics' | 'content' | 'guidelinePair' | 'guidelineDo' | 'guidelineDont';
 
-export type LineKind = 'paragraph' | 'heading' | 'bullet' | 'placeholder';
+export type LineKind = 'paragraph' | 'heading' | 'bullet' | 'placeholder' | 'label';
 
-/** The placeholder as it reads on canvas: the `_To be written._` earlier
- *  builds wrote, with the emphasis markers stripped by the renderer. The doc
- *  model no longer emits it (an empty section is omitted instead), but a
- *  document already on canvas still carries it, so the read-back must keep
- *  recognising it as "nobody wrote this". */
+/** The label at the top of a Do or Don't card, exactly as docBlocks draws it.
+ *  Current builds tag the label node with LINE_KEY `'label'`; docs already on
+ *  canvas carry it untagged, so the read-back also recognises these exact
+ *  characters as a leading label. */
+export const GUIDELINE_LABEL = { do: 'DO', dont: 'DON’T' } as const;
+const LABEL_TEXTS: ReadonlySet<string> = new Set([GUIDELINE_LABEL.do, GUIDELINE_LABEL.dont]);
+
+/** The placeholder earlier builds wrote (`_To be written._`, emphasis markers
+ *  stripped by the renderer). Current builds stamp guidance with
+ *  PLACEHOLDER_KEY instead, but documents already on canvas still carry this
+ *  line, so the read-back keeps recognising it as "nobody wrote this". */
 export const PLACEHOLDER_TEXT = 'To be written.';
 
 /** The slice of a Figma node this module reads. Structural so tests can pass
@@ -57,8 +87,11 @@ export interface ProseNodeLike {
  *  lead and the definition body are two separate tagged slots, so a doc with
  *  only one of them tagged must report only that half, never a fabricated
  *  empty string or empty array for the other. */
-export type CanvasProse = Partial<Omit<ProseV2, 'v' | 'overview'>> & {
+export type CanvasProse = Partial<Omit<ProseV2, 'v' | 'overview' | 'authored'>> & {
   overview?: { lede?: string; body?: string[] };
+  /** The prose keys that took content from a placeholder someone typed
+   *  over, in PROSE_V2_KEYS order. Absent when there are none. */
+  authored?: ProseV2Key[];
 };
 
 /**
@@ -80,14 +113,23 @@ export function textToMarkdown(node: ProseNodeLike): string {
   }).join('');
 }
 
+/** `read(node)` for a node someone wrote, or '' for a missing node or one
+ *  still showing its placeholder guidance. */
+function unlessGuidance(node: ProseNodeLike | undefined, read: (n: ProseNodeLike) => string): string {
+  return node && !isUnfilledPlaceholder(node) ? read(node) : '';
+}
+
+const plainText = (node: ProseNodeLike): string => (node.characters ?? '').trim();
+
 function allTexts(node: ProseNodeLike, out: ProseNodeLike[] = []): ProseNodeLike[] {
   if (node.type === 'TEXT') out.push(node);
   for (const c of node.children ?? []) allTexts(c, out);
   return out;
 }
 
-/** One markdown line per child of a prose block container. */
-function readLines(container: ProseNodeLike): string[] {
+/** One markdown line per child of a prose block container. `typed` is called
+ *  when a line came from a placeholder someone typed over. */
+function readLines(container: ProseNodeLike, typed: () => void = () => {}): string[] {
   const lines: string[] = [];
   for (const child of container.children ?? []) {
     const kind = child.getPluginData(LINE_KEY);
@@ -96,24 +138,49 @@ function readLines(container: ProseNodeLike): string[] {
     if (kind === 'heading') { lines.push(`### ${texts[0].characters ?? ''}`); continue; }
     if (kind === 'bullet') { lines.push(textToMarkdown(texts[texts.length - 1])); continue; }
     const md = textToMarkdown(texts[0]);
+    if (isUnfilledPlaceholder(texts[0])) continue;
     if (kind === 'placeholder' && md.trim() === PLACEHOLDER_TEXT) continue;
     if (md.trim() === '') continue;
     lines.push(md);
+    if (isStamped(texts[0])) typed();
   }
   return lines;
 }
 
-/** One item per bullet row of a list block: the last text node is the content. */
-function readBullets(container: ProseNodeLike): string[] {
+/** One item per bullet row of a list block: the last text node is the
+ *  content. `typed` is called when an item came from a placeholder someone
+ *  typed over. */
+function readBullets(container: ProseNodeLike, typed: () => void = () => {}): string[] {
   const items: string[] = [];
   for (const row of container.children ?? []) {
     const texts = allTexts(row);
     if (texts.length === 0) continue;
-    const md = textToMarkdown(texts[texts.length - 1]);
+    const last = texts[texts.length - 1];
+    if (isUnfilledPlaceholder(last)) continue;
+    const md = textToMarkdown(last);
     if (md.trim() === '' || md.trim() === PLACEHOLDER_TEXT) continue;
     items.push(md);
+    if (isStamped(last)) typed();
   }
   return items;
+}
+
+/**
+ * The keys typed into a placeholder keyboard row. Alternatives are split on
+ * " or ", a comma, or a slash; inside one alternative the spaces around a `+`
+ * close up, so "Shift + Tab" is one combination, not two keys. A spelling in
+ * the keyboard vocabulary takes its canonical name; anything else is kept as
+ * typed. Whitespace runs are collapsed first so the split pattern is a fixed
+ * string and cannot backtrack on user-edited text.
+ */
+function typedKeys(text: string): string[] {
+  const keys: string[] = [];
+  for (const raw of text.replace(/\s+/g, ' ').split(/ or |,|\//i)) {
+    const alt = raw.trim().replace(/ ?\+ ?/g, '+');
+    if (!alt) continue;
+    for (const k of normalizeKey(alt) ?? [alt]) if (!keys.includes(k)) keys.push(k);
+  }
+  return keys;
 }
 
 const LIST_SLOTS = new Set<ProseSlot>(['whenToUse', 'whenNotToUse', 'pointer', 'semantics', 'content']);
@@ -150,26 +217,34 @@ export function readCanvasProse(root: ProseNodeLike): CanvasProse {
   let parts: { name: string; role: string }[] | undefined;
   let properties: { name: string; description: string }[] | undefined;
   let keyboard: { keys: string[]; action: string }[] | undefined;
-  const pairs = new Map<number, GuidelinePair>();
+  // Every pair with its index. A duplicated row carries its original's index,
+  // so a map keyed by index would keep only the last; a stable sort keeps
+  // both, in canvas order.
+  const pairs: { index: number; pair: GuidelinePair }[] = [];
+  const authored = new Set<ProseV2Key>();
 
   const push = <T>(list: T[] | undefined, item: T): T[] => { const l = list ?? []; l.push(item); return l; };
   const lastText = (node: ProseNodeLike): string => {
     const texts = allTexts(node);
-    return texts.length ? textToMarkdown(texts[texts.length - 1]).trim() : '';
+    return unlessGuidance(texts[texts.length - 1], (n) => textToMarkdown(n).trim());
   };
   const card = (node: ProseNodeLike): GuidelineCard | null => {
-    // The last two text nodes are the rule then the reason. A card built with
-    // a leading DO/DON'T label (three nodes) drops that label by taking only
-    // the tail; a two-node card (no label) is unaffected. The rule node is
-    // read as plain characters, not through textToMarkdown: Task 11 renders
-    // the whole rule in the Bold face as card styling, not as a bold markdown
-    // run, so converting it would stamp every stored rule with `**...**`.
-    const texts = allTexts(node).slice(-2);
-    const ruleNode = texts[0];
-    const rule = ruleNode ? (ruleNode.characters ?? '').trim() : '';
+    // The DO/DON'T label is never content: a tagged label is dropped, and on a
+    // card drawn before labels were tagged, so is a leading node that reads
+    // exactly like one. What remains is the rule, then the reason, so a card
+    // missing a node reads as less than it said, never as a label promoted to
+    // a rule or a rule demoted to a reason. The rule node is read as plain
+    // characters, not through textToMarkdown: the renderer draws the whole
+    // rule in the Bold face as card styling, not as a bold markdown run, so
+    // converting it would stamp every stored rule with `**...**`. Unfilled
+    // guidance on either line reads as empty.
+    const all = allTexts(node);
+    const texts = all.filter((t) => t.getPluginData(LINE_KEY) !== 'label');
+    if (texts.length === all.length && texts.length && LABEL_TEXTS.has(texts[0].characters ?? '')) texts.shift();
+    const rule = unlessGuidance(texts[0], plainText);
     if (!rule) return null;
-    const reasonNode = texts[1];
-    const reason = reasonNode ? textToMarkdown(reasonNode).trim() : '';
+    const reason = unlessGuidance(texts[1], (n) => textToMarkdown(n).trim());
+    if (isStamped(texts[0]) || (reason && isStamped(texts[1]))) authored.add('guidelines');
     return { rule, reason };
   };
 
@@ -180,12 +255,12 @@ export function readCanvasProse(root: ProseNodeLike): CanvasProse {
     const slot = slotName as ProseSlot;
     const key = node.getPluginData(SLOT_PART_KEY);
     if (LIST_SLOTS.has(slot)) {
-      lists.set(slot, [...(lists.get(slot) ?? []), ...readBullets(node)]);
+      lists.set(slot, [...(lists.get(slot) ?? []), ...readBullets(node, () => authored.add(slot as ProseV2Key))]);
       return;
     }
     switch (slot) {
       case 'definitionLead': { const v = textToMarkdown(node).trim(); if (v) lead = lead ? `${lead} ${v}` : v; return; }
-      case 'definition': definitionLines.push(...readLines(node)); return;
+      case 'definition': definitionLines.push(...readLines(node, () => authored.add('overview'))); return;
       case 'variantsIntro': variantsIntro = [...(variantsIntro ?? []), ...readLines(node)]; return;
       case 'anatomySummary': { const v = textToMarkdown(node).trim(); if (v) anatomySummary = anatomySummary ? `${anatomySummary} ${v}` : v; return; }
       case 'variantsGuide': {
@@ -219,11 +294,20 @@ export function readCanvasProse(root: ProseNodeLike): CanvasProse {
       }
       case 'propertyDescription': { if (!key) return; const d = lastText(node); if (d) properties = push(properties, { name: key, description: d }); return; }
       case 'keyboardRow': {
-        // Keys are joined with " + " (spaces included) by docBlocks, so that
-        // "Shift+Tab" survives as one key.
-        if (!key) return;
+        // A keyed row's tag holds its keys joined with " + " (spaces
+        // included) by docBlocks, so that "Shift+Tab" survives as one key. A
+        // placeholder row has no key tag: its keys are whatever was typed
+        // into its first cell, and only while that cell is still there. With
+        // one text node left it is the action, and the row has no keys.
         const action = lastText(node);
-        if (action) keyboard = push(keyboard, { keys: key.split(' + ').map((k) => k.trim()).filter(Boolean), action });
+        const texts = allTexts(node);
+        const keys = key
+          ? key.split(' + ').map((k) => k.trim()).filter(Boolean)
+          : texts.length >= 2 ? typedKeys(unlessGuidance(texts[0], plainText)) : [];
+        if (keys.length && action) {
+          keyboard = push(keyboard, { keys, action });
+          if (isStamped(texts[0]) || isStamped(texts[texts.length - 1])) authored.add('keyboard');
+        }
         return;
       }
       case 'guidelinePair': {
@@ -236,7 +320,7 @@ export function readCanvasProse(root: ProseNodeLike): CanvasProse {
           if (inner === 'guidelineDo') doCard = card(c);
           else if (inner === 'guidelineDont') dontCard = card(c);
         }
-        if (doCard || dontCard) pairs.set(index, { do: doCard, dont: dontCard });
+        if (doCard || dontCard) pairs.push({ index, pair: { do: doCard, dont: dontCard } });
         return;
       }
       default:
@@ -260,7 +344,9 @@ export function readCanvasProse(root: ProseNodeLike): CanvasProse {
   if (parts) out.anatomyParts = parts;
   if (properties) out.properties = properties;
   if (keyboard) out.keyboard = keyboard;
-  if (pairs.size) out.guidelines = [...pairs.keys()].sort((a, b) => a - b).map((i) => pairs.get(i)!);
+  if (pairs.length) out.guidelines = [...pairs].sort((a, b) => a.index - b.index).map((p) => p.pair);
+  const typed = PROSE_V2_KEYS.filter((k) => authored.has(k) && out[k as keyof CanvasProse] !== undefined);
+  if (typed.length) out.authored = typed;
   return out;
 }
 
@@ -275,7 +361,9 @@ const _HANDLED_PROSE_KEYS = [
 // Compile-time guard: a future field added to ProseV2 must be added to
 // _HANDLED_PROSE_KEYS above, or readCanvasProse would silently never fill it.
 // This fails to compile when ProseV2 gains a field this list does not name.
-type UncoveredProseKey = Exclude<Exclude<keyof ProseV2, 'v'>, (typeof _HANDLED_PROSE_KEYS)[number]>;
+// `authored` is metadata about the keys below, not a slot, so it is excluded
+// alongside `v`.
+type UncoveredProseKey = Exclude<Exclude<keyof ProseV2, 'v' | 'authored'>, (typeof _HANDLED_PROSE_KEYS)[number]>;
 const _everyProseKeyHasASlot: UncoveredProseKey extends never ? true : never = true;
 
 /**
@@ -284,14 +372,24 @@ const _everyProseKeyHasASlot: UncoveredProseKey extends never ? true : never = t
  * can show only the lede or only the body: each half falls back to the
  * stored half independently, and the merged overview is included only when
  * at least one half exists, never fabricated as `{ lede: '', body: [] }`.
+ *
+ * `authored` is the union of both sides, kept only for keys the merged prose
+ * still has content for, in PROSE_V2_KEYS order. The union is what carries
+ * authorship past the first Update: a filled placeholder is rebuilt as an
+ * ordinary section, so the canvas stops saying who wrote it and the stored
+ * blob keeps saying it.
  */
 export function mergeProse(stored: ProseV2 | null, canvas: CanvasProse): ProseV2 | null {
-  const { overview: canvasOverview, ...restCanvas } = canvas;
+  const { overview: canvasOverview, authored: canvasAuthored, ...restCanvas } = canvas;
   const out: ProseV2 = { ...(stored ?? {}), ...restCanvas, v: 2 };
+  delete out.authored;
   const lede = canvasOverview?.lede ?? stored?.overview?.lede;
   const body = canvasOverview?.body ?? stored?.overview?.body;
   if (lede !== undefined || body !== undefined) out.overview = { lede: lede ?? '', body: body ?? [] };
   else delete out.overview;
+  const either = new Set([...normalizeAuthored(stored?.authored), ...normalizeAuthored(canvasAuthored)]);
+  const authored = PROSE_V2_KEYS.filter((k) => either.has(k) && hasProseContent({ v: 2, [k]: out[k] }));
+  if (authored.length) out.authored = authored;
   return hasProseContent(out) ? out : null;
 }
 
@@ -304,6 +402,10 @@ export function mergeProse(stored: ProseV2 | null, canvas: CanvasProse): ProseV2
  *
  * The publish pill is skipped by `PILL_KEY` for the same reason slots are:
  * Update repaints it, so an edit there is not something Update would destroy.
+ * The Placeholder tag is skipped by `PLACEHOLDER_TAG_KEY` for the same
+ * reason: deleting it after filling the box is the natural thing to do, and
+ * Update redraws or drops it anyway. No shipped doc carries the tag, so no
+ * stored hash moves.
  */
 export function collectGeneratedText(root: ProseNodeLike): string[] {
   const out: string[] = [];
@@ -313,6 +415,7 @@ export function collectGeneratedText(root: ProseNodeLike): string[] {
     // The publish pill is a status stamp, not generated prose: a version that
     // moves must never read as a hand edit. See publishPill.ts.
     if (n.getPluginData(PILL_KEY) !== '') return;
+    if (n.getPluginData(PLACEHOLDER_TAG_KEY) !== '') return;
     if (n.type === 'TEXT') {
       out.push(n.characters ?? '');
       return;

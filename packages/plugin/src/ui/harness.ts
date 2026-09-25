@@ -127,7 +127,8 @@ const COMPONENT_STATES: Record<string, ComponentScreenState> = {
     kind: 'success',
     componentName: 'buttonPrimary',
     replaced: false,
-    message: "Created 1 frame. AI didn't run this time, so the AI sections were left out.",
+    message: 'Docs created. Added placeholders for When to use, Keyboard. Fill them in on the canvas. '
+      + 'AI writing failed, so sections that needed AI were added as placeholders. Try again.',
     warning: true,
   },
   error: {

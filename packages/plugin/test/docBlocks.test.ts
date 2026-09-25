@@ -2,12 +2,17 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { installFakeFigma, uninstallFakeFigma, FakeFrame, FakeText } from './fakeFigma';
 import {
   buildTwoColumns, buildGuidelinePairs, buildKeyboardTable,
-  buildPropertiesTable, columnParagraph,
+  buildPropertiesTable, columnParagraph, buildPlaceholderBlock,
 } from '../src/docBlocks';
 import { applyThemeToKit, palette, solidFill } from '../src/frameKit';
 import { emptyBrandTheme, resolveTheme } from '../src/brandColors';
-import { readCanvasProse, type ProseNodeLike } from '../src/canvasProse';
+import {
+  readCanvasProse, collectGeneratedText, PLACEHOLDER_KEY, PLACEHOLDER_TAG_KEY, SLOT_KEY, LINE_KEY, GUIDELINE_LABEL,
+  type ProseNodeLike,
+} from '../src/canvasProse';
 import { parseRuns } from '../src/ui/docModel';
+import { placeholderShapeFor, type PlaceholderShape } from '../src/ui/placeholders';
+import type { SectionId } from '../src/ui/docModel';
 
 const asNode = (f: FakeFrame): ProseNodeLike => f as unknown as ProseNodeLike;
 
@@ -87,6 +92,24 @@ describe('docBlocks', () => {
     expect(palette.dontInk).not.toEqual(palette.heading);
   });
 
+  it('tags every card label, AI or placeholder, so the read-back can skip it', () => {
+    const grid = buildGuidelinePairs([
+      { do: { rule: 'Pair it with a label.', reason: 'It widens the target.' }, dont: { rule: 'Do not hide the label.', reason: '' } },
+    ], 768) as unknown as FakeFrame;
+    const box = buildPlaceholderBlock(placeholderShapeFor('dosDonts')!, 768) as unknown as FakeFrame;
+    const placeholderCards = ((box.children[1] as FakeFrame).children as FakeFrame[]);
+    for (const [doCard, dontCard] of [(grid.children[0] as FakeFrame).children as FakeFrame[], placeholderCards]) {
+      const doLabel = doCard.children[0] as FakeText;
+      const dontLabel = dontCard.children[0] as FakeText;
+      expect([doLabel.characters, dontLabel.characters]).toEqual([GUIDELINE_LABEL.do, GUIDELINE_LABEL.dont]);
+      expect([doLabel.getPluginData(LINE_KEY), dontLabel.getPluginData(LINE_KEY)]).toEqual(['label', 'label']);
+    }
+    // Deleting the reason node never turns the rule into the reason.
+    const [doCard] = (grid.children[0] as FakeFrame).children as FakeFrame[];
+    doCard.children.splice(2, 1);
+    expect(readCanvasProse(asNode(grid)).guidelines?.[0].do).toEqual({ rule: 'Pair it with a label.', reason: '' });
+  });
+
   it('stretches both cards of a pair to one height, however long each reason runs', () => {
     const grid = buildGuidelinePairs([
       { do: { rule: 'Pair it with a label.', reason: 'Short.' }, dont: { rule: 'Do not hide the label.', reason: 'A much longer reason that wraps onto several lines on canvas and makes this card taller.' } },
@@ -110,5 +133,78 @@ describe('docBlocks', () => {
     const rows = grid.children as FakeFrame[];
     const expectedHeight = rows.reduce((sum, row) => sum + row.height, 0) + Math.max(rows.length - 1, 0) * 16;
     expect(grid.height).toBe(expectedHeight);
+  });
+});
+
+describe('buildPlaceholderBlock', () => {
+  beforeEach(async () => { installFakeFigma(); await applyThemeToKit(resolveTheme(emptyBrandTheme())); });
+  afterEach(() => uninstallFakeFigma());
+
+  const shapeOf = (id: SectionId): PlaceholderShape => placeholderShapeFor(id)!;
+  const IDS: SectionId[] = ['definition', 'whenToUse', 'dosDonts', 'keyboard', 'pointer', 'accessibility', 'contentConsiderations'];
+
+  /** Every text node below `root`, depth first. */
+  const texts = (root: FakeFrame): FakeText[] => root.children.flatMap((c) =>
+    c instanceof FakeText ? [c] : c instanceof FakeFrame ? texts(c) : []);
+
+  it('draws a dashed, untagged box whose first child is the Placeholder tag', () => {
+    for (const id of IDS) {
+      const box = buildPlaceholderBlock(shapeOf(id), 800) as unknown as FakeFrame;
+      expect(box.dashPattern).toEqual([4, 3]);
+      expect(box.strokes).toEqual(solidFill(palette.border));
+      expect(box.getPluginData(SLOT_KEY)).toBe('');
+      expect((box.children[0] as FakeFrame).textChars()).toEqual(['Placeholder']);
+    }
+  });
+
+  it('stamps every guidance node with its guidance, in muted Regular', () => {
+    const box = buildPlaceholderBlock(shapeOf('dosDonts'), 800) as unknown as FakeFrame;
+    const stamped = texts(box).filter((t) => t.getPluginData(PLACEHOLDER_KEY) !== '');
+    expect(stamped.map((t) => t.characters)).toEqual([
+      'Describe a correct use.', 'Say why it works.', 'Describe a misuse to avoid.', 'Say what goes wrong.',
+    ]);
+    for (const t of stamped) {
+      expect(t.getPluginData(PLACEHOLDER_KEY)).toBe(t.characters);
+      expect(t.fills).toEqual(solidFill(palette.muted));
+      expect((t.fontName as { style: string }).style).toBe('Regular');
+    }
+  });
+
+  it('reads back as nothing untouched, for every shape', () => {
+    for (const id of IDS) {
+      expect(readCanvasProse(asNode(buildPlaceholderBlock(shapeOf(id), 800) as unknown as FakeFrame))).toEqual({});
+    }
+  });
+
+  it('reads back what someone typed over it', () => {
+    const box = buildPlaceholderBlock(shapeOf('keyboard'), 800) as unknown as FakeFrame;
+    const [keyCell, actionCell] = texts(box).filter((t) => t.getPluginData(PLACEHOLDER_KEY) !== '');
+    keyCell.characters = 'Shift + Tab';
+    actionCell.characters = 'Moves focus back.';
+    // Typed with spaces, read as one combination.
+    expect(readCanvasProse(asNode(box))).toEqual({
+      keyboard: [{ keys: ['Shift+Tab'], action: 'Moves focus back.' }], authored: ['keyboard'],
+    });
+
+    const bullets = buildPlaceholderBlock(shapeOf('accessibility'), 800) as unknown as FakeFrame;
+    texts(bullets).find((t) => t.getPluginData(PLACEHOLDER_KEY) !== '')!.characters = 'Render a native input.';
+    expect(readCanvasProse(asNode(bullets))).toEqual({ semantics: ['Render a native input.'], authored: ['semantics'] });
+  });
+
+  it('keeps guidance and the tag out of the generated lane', () => {
+    const generated = collectGeneratedText(asNode(buildPlaceholderBlock(shapeOf('whenToUse'), 800) as unknown as FakeFrame));
+    expect(generated).toEqual(['When to use', 'When not to use']);
+  });
+
+  it('stamps the tag frame and its label, so deleting the tag is not a hand edit', () => {
+    for (const id of IDS) {
+      const box = buildPlaceholderBlock(shapeOf(id), 800) as unknown as FakeFrame;
+      const tag = box.children[0] as FakeFrame;
+      expect(tag.getPluginData(PLACEHOLDER_TAG_KEY)).not.toBe('');
+      expect((tag.children[0] as FakeText).getPluginData(PLACEHOLDER_TAG_KEY)).not.toBe('');
+      const before = collectGeneratedText(asNode(box));
+      box.children.splice(0, 1);
+      expect(collectGeneratedText(asNode(box))).toEqual(before);
+    }
   });
 });

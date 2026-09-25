@@ -5,6 +5,7 @@ import {
   detectStateMatrix, stateAxisProps, anatomyFor, tokensFor, firstSentence, foldName,
 } from '@spec-layer/extractor';
 import { displayComponentName } from './displayNames';
+import { placeholderShapeFor, type PlaceholderShape } from './placeholders';
 
 export { firstSentence };
 
@@ -59,24 +60,9 @@ export const GROUPS: { id: GroupId; label: string }[] = [
 ];
 
 /**
- * The sections whose whole body is written prose, and which therefore produce
- * nothing at all when AI writing is off. This is what decides an omission's
- * reason, not `ALL_SECTIONS`'s `ai` flag: that flag says a section can carry AI
- * text, and Variants, Anatomy, Properties and States all can, but each of them
- * is built from the spec and is omitted only when the component has no non-state
- * axis, no parts, no props or no state matrix. Reporting those as `aiOff` would
- * tell someone that turning AI on brings a section back when nothing would
- * change. Overview is excluded too: it falls back to the Figma description, so
- * an empty Overview means there was no description either.
- */
-export const AI_ONLY_SECTIONS: ReadonlySet<SectionId> = new Set<SectionId>([
-  'whenToUse', 'dosDonts', 'keyboard', 'pointer', 'accessibility', 'contentConsiderations',
-]);
-
-/**
  * Which v2 prose keys each section needs. A section whose key is absent from
- * the draft is omitted (with reason `aiOff` or `nothingToShow`, see
- * `AI_ONLY_SECTIONS`), never padded. Overview and Variants also render
+ * the draft is drawn as a placeholder when the section has one (see
+ * placeholders.ts), and omitted otherwise. Overview and Variants also render
  * without prose, so requesting their keys only adds the AI text.
  */
 const PROSE_KEYS_BY_SECTION: Partial<Record<SectionId, ProseV2Key[]>> = {
@@ -162,22 +148,19 @@ export interface AnatomyPartBlock {
 export type MeasureView = 'size' | 'padding' | 'spacing';
 
 /** Options threaded through `buildDocModel` that affect how sections render
- *  without changing the underlying spec — the anatomy view mode, which
- *  measurement lenses to render, and whether AI writing was on. */
+ *  without changing the underlying spec — the anatomy view mode and which
+ *  measurement lenses to render. */
 export interface DocModelOptions {
   anatomyView?: 'diagram';
   measureViews?: MeasureView[];
   /** Draw the parts a boolean property hides by default (DocConfig.includeHidden). */
   includeHidden?: boolean;
-  /** Whether AI writing was on for this build. Decides how an empty AI
-   *  section is reported: 'aiOff' when off, 'nothingToShow' when on. */
-  aiEnabled?: boolean;
 }
 
-/** A selected section that produced nothing, with why. `aiOff` means the
- *  writing lane was off; `nothingToShow` means the spec (or the AI) had
- *  nothing for it. Never a placeholder on canvas. */
-export interface OmittedSection { id: SectionId; label: string; reason: 'nothingToShow' | 'aiOff' }
+/** A selected section the result line reports. `nothingToShow`: the spec
+ *  had nothing for it, so it was left out. `placeholder`: it is a writing
+ *  section with no prose, so it was drawn as a marked placeholder. */
+export interface OmittedSection { id: SectionId; label: string; reason: 'nothingToShow' | 'placeholder' }
 export interface PropertyRow { name: string; type: string; values: string; defaultValue: string; description: string | null }
 export interface KeyboardRow { keys: string[]; action: string }
 export interface ColumnBlock { heading: string; items: Bullet[]; slot: 'whenToUse' | 'whenNotToUse' }
@@ -202,6 +185,7 @@ export type SectionBlock =
   | { id: SectionId; heading: string; kind: 'bullets'; items: Bullet[]; slot: 'pointer' | 'semantics' | 'content' | null }
   | { id: SectionId; heading: string; kind: 'twoColumns'; left: ColumnBlock; right: ColumnBlock }
   | { id: SectionId; heading: string; kind: 'guidelinePairs'; pairs: GuidelinePair[] }
+  | { id: SectionId; heading: string; kind: 'placeholder'; shape: PlaceholderShape }
   | { id: SectionId; heading: string; kind: 'propertiesTable'; rows: PropertyRow[]; hasDescriptions: boolean }
   | { id: SectionId; heading: string; kind: 'keyboardTable'; rows: KeyboardRow[] }
   | { id: SectionId; heading: string; kind: 'table'; columns: string[]; rows: string[][] }
@@ -739,12 +723,16 @@ export function buildDocModel(
     if (!selected.has(id)) continue;
     const block = buildSection(id, label, spec, prose, selectedVariantIds, options);
     if (block) { sections.push(block); continue; }
-    // Only a section AI writing would have filled reports 'aiOff'; everything
-    // else had nothing in the spec to draw, and turning AI on would not change
-    // that. See AI_ONLY_SECTIONS.
-    const reason: OmittedSection['reason'] =
-      options?.aiEnabled === false && AI_ONLY_SECTIONS.has(id) ? 'aiOff' : 'nothingToShow';
-    omitted.push({ id, label, reason });
+    // A writing section with no prose is drawn as a placeholder someone can
+    // fill in; a section built from the spec with nothing in it is left out,
+    // because nobody could write it. See placeholders.ts.
+    const shape = placeholderShapeFor(id);
+    if (shape) {
+      sections.push({ id, heading: label, kind: 'placeholder', shape });
+      omitted.push({ id, label, reason: 'placeholder' });
+    } else {
+      omitted.push({ id, label, reason: 'nothingToShow' });
+    }
   }
   return {
     componentName: spec.name,
