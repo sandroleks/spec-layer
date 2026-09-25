@@ -259,6 +259,21 @@ set that has at least two variant axes and a hardcoded paint. Check that:
     Anatomy and check it again. The switch stays visible and stays on, and the
     other sections still show the revealed icons.
 
+16. **Placeholders, AI off.** Turn AI writing off and create docs with every
+    section selected on a component with no Figma description. Overview, When
+    to use, Do and don't, Keyboard, Pointer and touch, Semantics and focus, and
+    Content each show a dashed box with a **Placeholder** tag and muted
+    guidance. The result line names them and says to fill them in.
+17. **Filling a placeholder.** Type over the Pointer and touch guidance and
+    the Keyboard row (for example `Shift + Tab`, `Moves focus back.`), then
+    Update. Both render as normal sections with no dashed box; the others stay
+    placeholders. The Library does not report a hand edit for the typing.
+18. **Untouched placeholders never leak.** On the same doc, Copy for AI and
+    check the brief carries no guidance text.
+19. **Duplicating a row.** Duplicate the filled Pointer bullet in Figma, edit
+    the copy, Update. Both bullets survive. Duplicating a Do and don't pair is
+    a known limit: the copy merges into the first pair.
+
 Rows 7 to 11 were added on 2026-09-10 and have not been run. Rows 12 to 15
 were added the same day, after the review that found the callouts reading
 2, 1, 4 and the Tokens section empty for a revealed icon.
@@ -484,8 +499,9 @@ captured for the review record.
    uses left** and offers **Upgrade** while the ordinary **Create docs** action
    remains available.
 4. Click **Create docs** with AI writing selected. The build must complete with
-   deterministic documentation, omit AI prose, and report the exhausted
-   allowance without trapping the user in a dead-end footer state.
+   deterministic documentation, draw the writing sections as placeholders,
+   and report the exhausted allowance ("sections that needed AI were added as
+   placeholders") without trapping the user in a dead-end footer state.
 
 ## License
 

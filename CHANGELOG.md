@@ -18,6 +18,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   the proxy's quota headers, so no plugin release is needed. Publishing
   limits are unchanged.
 
+- **Empty writing sections are drawn as placeholders instead of left out.**
+  When a selected writing section has no prose (AI writing off, the monthly
+  allowance spent, or a failed request), the doc now draws it inside a dashed
+  box marked **Placeholder**, with guidance on what to write, in the section's
+  own shape: When to use, Do and don't, Keyboard, Pointer and touch, Semantics
+  and focus, Content, and Overview when the component has no Figma
+  description. Type over the guidance on the canvas and the next Update keeps
+  it and drops the box. Guidance is never stored as prose, so Copy for AI,
+  the YAML and Markdown outputs and publishing never see it. Sections built
+  from the spec that have nothing in it are still left out. The result line
+  now reads "Added placeholders for When to use, Keyboard. Fill them in on
+  the canvas.", and the allowance note says sections that needed AI were
+  added as placeholders. No hash or `EXTRACTOR_VERSION` change.
+
 ## [6.0.0] - 2026-09-24
 
 Plugin 6.0.0 is a major release because every existing document asks to be
