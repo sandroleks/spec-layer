@@ -35,7 +35,7 @@ import {
 import { buildAnatomyDiagram, buildAnatomyLegend, scaleNote } from './anatomySection';
 import {
   buildTwoColumns, buildGuidelinePairs, buildKeyboardTable,
-  buildPropertiesTable, columnParagraph,
+  buildPropertiesTable, columnParagraph, buildPlaceholderBlock,
 } from './docBlocks';
 import { SLOT_PART_KEY, type ProseSlot } from './canvasProse';
 
@@ -367,6 +367,7 @@ async function buildSection(section: SectionBlock, includeHidden: boolean): Prom
     case 'twoColumns': fill(buildTwoColumns(section.left, section.right, CONTENT_WIDTH)); break;
     case 'guidelinePairs': fill(buildGuidelinePairs(section.pairs, CONTENT_WIDTH)); break;
     case 'keyboardTable': fill(buildKeyboardTable(section.rows, CONTENT_WIDTH)); break;
+    case 'placeholder': fill(buildPlaceholderBlock(section.shape, CONTENT_WIDTH)); break;
     case 'propertiesTable': fill(buildPropertiesTable(section.rows, section.hasDescriptions, CONTENT_WIDTH)); break;
     case 'table': fill(buildTable(section.columns, section.rows, CONTENT_WIDTH)); break;
     case 'anatomy': {

@@ -9,9 +9,10 @@
 import type { ColumnBlock, KeyboardRow, PropertyRow } from './ui/docModel';
 import type { GuidelinePair, GuidelineCard } from '@spec-layer/extractor';
 import { parseRuns } from './ui/docModel';
+import { PLACEHOLDER_TAG, type PlaceholderShape, type PlaceholderCard } from './ui/placeholders';
 import { palette, solidFill, vstack, hstack, makeText, radius, headingFont } from './frameKit';
 import { tagSlot, makeBulletRow, makeCell, applyColWidth, applyRuns } from './docText';
-import { SLOT_PART_KEY } from './canvasProse';
+import { SLOT_PART_KEY, PLACEHOLDER_KEY } from './canvasProse';
 
 const KEY_JOINER = ' + ';
 
@@ -223,4 +224,150 @@ export function buildPropertiesTable(rows: PropertyRow[], hasDescriptions: boole
     cells.forEach((cell, i) => { row.appendChild(cell); applyColWidth(cell, widths[i]); });
   }
   return table;
+}
+
+// ---------------------------------------------------------------------------
+// Placeholders — a writing section nobody has written yet (see
+// ui/placeholders.ts). The box and its tag are untagged generated-lane chrome;
+// the structure inside carries the same slot tags the filled section uses, and
+// every guidance node is stamped with PLACEHOLDER_KEY so the read-back can tell
+// guidance from something typed over it.
+// ---------------------------------------------------------------------------
+
+/** One muted Regular guidance line, stamped with its own text. */
+function guidanceText(text: string, size = 15): TextNode {
+  const node = makeText(text, 'Regular', size, palette.muted, 155);
+  node.setPluginData(PLACEHOLDER_KEY, text);
+  node.textAutoResize = 'HEIGHT';
+  return node;
+}
+
+/** A tagged list holding one guidance bullet row. */
+function guidanceList(slot: 'whenToUse' | 'whenNotToUse' | 'pointer' | 'semantics' | 'content', text: string): FrameNode {
+  const list = vstack(10);
+  tagSlot(list, slot);
+  const row = hstack(10);
+  row.counterAxisAlignItems = 'MIN';
+  list.appendChild(row);
+  row.layoutSizingHorizontal = 'FILL';
+  const node = guidanceText(text);
+  row.appendChild(node);
+  node.layoutSizingHorizontal = 'FILL';
+  return list;
+}
+
+/** A Do or Don't card in the placeholder's neutral dress: the label, then a
+ *  guidance rule and a guidance reason, which is the order card() reads. */
+function guidanceCard(card: PlaceholderCard, kind: 'do' | 'dont'): FrameNode {
+  const box = vstack(8);
+  box.paddingTop = box.paddingBottom = box.paddingLeft = box.paddingRight = 16;
+  box.cornerRadius = radius(8);
+  box.strokes = solidFill(palette.border);
+  box.strokeWeight = 1;
+  tagSlot(box, kind === 'do' ? 'guidelineDo' : 'guidelineDont');
+  box.appendChild(makeText(kind === 'do' ? 'DO' : 'DON’T', 'Medium', 11, palette.muted, 130, 6));
+  for (const text of [card.rule, card.reason]) {
+    const node = guidanceText(text, 14);
+    box.appendChild(node);
+    node.layoutSizingHorizontal = 'FILL';
+  }
+  return box;
+}
+
+function placeholderTag(): FrameNode {
+  const tag = hstack(0);
+  tag.paddingTop = tag.paddingBottom = 3;
+  tag.paddingLeft = tag.paddingRight = 8;
+  tag.cornerRadius = radius(6);
+  tag.fills = solidFill(palette.chipBg);
+  const label = makeText(PLACEHOLDER_TAG, 'Medium', 12, palette.muted, 140);
+  label.textAutoResize = 'WIDTH_AND_HEIGHT';
+  tag.appendChild(label);
+  return tag;
+}
+
+function placeholderBody(shape: PlaceholderShape, width: number): FrameNode {
+  switch (shape.kind) {
+    case 'paragraph': {
+      const holder = vstack(10);
+      tagSlot(holder, shape.slot);
+      const node = guidanceText(shape.text);
+      holder.appendChild(node);
+      node.layoutSizingHorizontal = 'FILL';
+      return holder;
+    }
+    case 'bullets':
+      return guidanceList(shape.slot, shape.text);
+    case 'twoColumns': {
+      const row = hstack(32);
+      row.counterAxisAlignItems = 'MIN';
+      for (const col of [shape.left, shape.right]) {
+        const column = vstack(12);
+        row.appendChild(column);
+        column.layoutSizingHorizontal = 'FILL';
+        column.appendChild(columnHeading(col.heading));
+        const list = guidanceList(col.slot, col.text);
+        column.appendChild(list);
+        list.layoutSizingHorizontal = 'FILL';
+      }
+      return row;
+    }
+    case 'guidelinePair': {
+      const row = hstack(16);
+      tagSlot(row, 'guidelinePair');
+      row.setPluginData(SLOT_PART_KEY, '0');
+      row.counterAxisAlignItems = 'MIN';
+      for (const [card, kind] of [[shape.do, 'do'], [shape.dont, 'dont']] as const) {
+        const c = guidanceCard(card, kind);
+        row.appendChild(c);
+        c.layoutSizingHorizontal = 'FILL';
+        c.layoutSizingVertical = 'FILL';
+      }
+      return row;
+    }
+    case 'keyboardRow': {
+      // Same columns as buildKeyboardTable. The row has no key tag: its keys
+      // are whatever gets typed into the first cell (see canvasProse.ts).
+      const widths: (number | 'grow')[] = [Math.floor(width * 0.3), 'grow'];
+      const table = tableShell();
+      const head = headerRow(['Key', 'Action'], widths);
+      table.appendChild(head);
+      head.layoutSizingHorizontal = 'FILL';
+      const row = dataRow();
+      tagSlot(row, 'keyboardRow');
+      table.appendChild(row);
+      row.layoutSizingHorizontal = 'FILL';
+      for (const [text, w] of [[shape.key, widths[0]], [shape.action, widths[1]]] as const) {
+        const cell = vstack(0);
+        cell.paddingTop = cell.paddingBottom = 10;
+        cell.paddingLeft = cell.paddingRight = 16;
+        const node = guidanceText(text, 14);
+        cell.appendChild(node);
+        node.layoutSizingHorizontal = 'FILL';
+        row.appendChild(cell);
+        applyColWidth(cell, w);
+      }
+      return table;
+    }
+  }
+}
+
+/** A writing section drawn as a marked placeholder: a dashed box in the doc's
+ *  own border colour, the Placeholder tag, then guidance in the section's own
+ *  shape. */
+export function buildPlaceholderBlock(shape: PlaceholderShape, contentWidth: number): FrameNode {
+  const box = vstack(14);
+  box.resize(contentWidth, 1);
+  box.primaryAxisSizingMode = 'AUTO';
+  box.paddingTop = box.paddingBottom = box.paddingLeft = box.paddingRight = 20;
+  box.cornerRadius = radius(8);
+  box.fills = [];
+  box.strokes = solidFill(palette.border);
+  box.strokeWeight = 1;
+  box.dashPattern = [4, 3];
+  box.appendChild(placeholderTag());
+  const body = placeholderBody(shape, contentWidth - 40);
+  box.appendChild(body);
+  body.layoutSizingHorizontal = 'FILL';
+  return box;
 }

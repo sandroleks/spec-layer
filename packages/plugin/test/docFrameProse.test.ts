@@ -3,6 +3,7 @@ import type { IntermediateSpec, ProseV2, RefIdentity } from '@spec-layer/extract
 import { installFakeFigma, uninstallFakeFigma, FakeSection, FakeFrame, FakeText } from './fakeFigma';
 import { buildDocFrames } from '../src/docFrame';
 import { buildDocModel, ALL_SECTIONS, type SectionId } from '../src/ui/docModel';
+import { placeholderShapeFor } from '../src/ui/placeholders';
 import { emptyBrandTheme, resolveTheme } from '../src/brandColors';
 import { palette, solidFill } from '../src/frameKit';
 import {
@@ -103,13 +104,17 @@ describe('docFrame', () => {
     expect(frames[0].textChars()).not.toContain('checkbox');
   });
 
-  it('renders the description verbatim and untagged when AI is off, and builds no Accessibility frame', async () => {
+  it('renders the description verbatim and draws placeholders for the writing sections when there is no prose', async () => {
     const section = await build(null);
     const frames = section.children as FakeFrame[];
-    expect(frames.map((f) => f.name)).toEqual(['1 Usage', '2 Specifications']);
+    expect(frames.map((f) => f.name)).toEqual(['1 Usage', '2 Specifications', '3 Accessibility']);
     expect(frames[0].textChars()).toContain('Selects one or more options.');
+    expect(frames[0].textChars()).toContain('Placeholder');
+    expect(frames[2].textChars()).toContain('Describe what hover, press, and drag do.');
+    // Guidance is never prose: the read-back is what it was before placeholders.
     expect(readCanvasProse(asNode(section))).toEqual({ anatomyParts: [] });
     expect(collectGeneratedText(asNode(section))).toContain('Selects one or more options.');
+    expect(collectGeneratedText(asNode(section)).join('\n')).not.toContain('Describe what hover');
   });
 
   it('lets the Overview, bullet lists and two-column bullets fill the content column', async () => {
@@ -136,10 +141,27 @@ describe('docFrame', () => {
     }
   });
 
-  it('puts no placeholder text anywhere', async () => {
-    const lines = (await build(null)).children.flatMap((f) => (f as FakeFrame).textChars());
-    expect(lines.join('\n')).not.toContain('To be written');
-    expect(lines).not.toContain('None');
+  it('never draws the legacy To be written. line, and draws no placeholder when prose fills every section', async () => {
+    const empty = (await build(null)).children.flatMap((f) => (f as FakeFrame).textChars());
+    expect(empty.join('\n')).not.toContain('To be written');
+    expect(empty).not.toContain('None');
+    const full = (await build(prose)).children.flatMap((f) => (f as FakeFrame).textChars());
+    expect(full).not.toContain('Placeholder');
+  });
+
+  it('is a fixed point with placeholders: filling one in and rebuilding keeps it and drops its box', async () => {
+    const first = await build(null);
+    const pointerGuidance = (first.children[2] as FakeFrame).findText('Describe what hover, press, and drag do.')!;
+    pointerGuidance.characters = 'Hover darkens the box.';
+    const read = readCanvasProse(asNode(first));
+    expect(read.pointer).toEqual(['Hover darkens the box.']);
+    const merged = mergeProse(null, read);
+    const second = await build(merged);
+    const a11y = (second.children[2] as FakeFrame).textChars();
+    expect(a11y).toContain('Hover darkens the box.');
+    expect(a11y).not.toContain('Describe what hover, press, and drag do.');
+    // The other three a11y sections are still placeholders.
+    expect(a11y.filter((t) => t === 'Placeholder')).toHaveLength(3);
   });
 
   it('keeps editorial text out of the generated lane', async () => {
@@ -228,7 +250,10 @@ describe('docFrame', () => {
     // header that is never drawn, and the only human-written line in the file
     // would vanish.
     const lonely = { ...spec, related: [] } as unknown as IntermediateSpec;
-    const model = buildDocModel(lonely, null, ALL, new Set(), { measureViews: [] });
+    const noWriting = new Set<SectionId>(
+      ALL_SECTIONS.map((s) => s.id).filter((id) => id === 'definition' || placeholderShapeFor(id) === null),
+    );
+    const model = buildDocModel(lonely, null, noWriting, new Set(), { measureViews: [] });
     const section = await buildDocFrames(model, resolveTheme(emptyBrandTheme()), null) as unknown as FakeSection;
     const frames = section.children as FakeFrame[];
     expect(frames.map((f) => f.name)).toEqual(['1 Usage', '2 Specifications']);
