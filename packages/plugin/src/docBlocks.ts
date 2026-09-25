@@ -11,8 +11,8 @@ import type { GuidelinePair, GuidelineCard } from '@spec-layer/extractor';
 import { parseRuns } from './ui/docModel';
 import { PLACEHOLDER_TAG, type PlaceholderShape, type PlaceholderCard } from './ui/placeholders';
 import { palette, solidFill, vstack, hstack, makeText, radius, headingFont } from './frameKit';
-import { tagSlot, makeBulletRow, makeCell, applyColWidth, applyRuns } from './docText';
-import { SLOT_PART_KEY, PLACEHOLDER_KEY } from './canvasProse';
+import { tagSlot, tagLine, makeBulletRow, makeCell, applyColWidth, applyRuns } from './docText';
+import { SLOT_PART_KEY, PLACEHOLDER_KEY, GUIDELINE_LABEL } from './canvasProse';
 
 const KEY_JOINER = ' + ';
 
@@ -86,7 +86,8 @@ function guidelineCard(card: GuidelineCard | null, kind: 'do' | 'dont'): FrameNo
   box.fills = solidFill(kind === 'do' ? palette.doTint : palette.dontTint);
   box.strokes = solidFill(kind === 'do' ? palette.doBorder : palette.dontBorder);
   tagSlot(box, kind === 'do' ? 'guidelineDo' : 'guidelineDont');
-  const label = makeText(kind === 'do' ? 'DO' : 'DON’T', 'Medium', 11, kind === 'do' ? palette.doInk : palette.dontInk, 130, 6);
+  const label = makeText(GUIDELINE_LABEL[kind], 'Medium', 11, kind === 'do' ? palette.doInk : palette.dontInk, 130, 6);
+  tagLine(label, 'label');
   box.appendChild(label);
   const ruleRuns = parseRuns(card.rule);
   const rule = makeText(ruleRuns.map((r) => r.text).join(''), 'Bold', 15, palette.heading, 145);
@@ -265,7 +266,9 @@ function guidanceCard(card: PlaceholderCard, kind: 'do' | 'dont'): FrameNode {
   box.strokes = solidFill(palette.border);
   box.strokeWeight = 1;
   tagSlot(box, kind === 'do' ? 'guidelineDo' : 'guidelineDont');
-  box.appendChild(makeText(kind === 'do' ? 'DO' : 'DON’T', 'Medium', 11, palette.muted, 130, 6));
+  const label = makeText(GUIDELINE_LABEL[kind], 'Medium', 11, palette.muted, 130, 6);
+  tagLine(label, 'label');
+  box.appendChild(label);
   for (const text of [card.rule, card.reason]) {
     const node = guidanceText(text, 14);
     box.appendChild(node);

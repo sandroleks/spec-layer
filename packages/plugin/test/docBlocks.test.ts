@@ -6,7 +6,9 @@ import {
 } from '../src/docBlocks';
 import { applyThemeToKit, palette, solidFill } from '../src/frameKit';
 import { emptyBrandTheme, resolveTheme } from '../src/brandColors';
-import { readCanvasProse, collectGeneratedText, PLACEHOLDER_KEY, SLOT_KEY, type ProseNodeLike } from '../src/canvasProse';
+import {
+  readCanvasProse, collectGeneratedText, PLACEHOLDER_KEY, SLOT_KEY, LINE_KEY, GUIDELINE_LABEL, type ProseNodeLike,
+} from '../src/canvasProse';
 import { parseRuns } from '../src/ui/docModel';
 import { placeholderShapeFor, type PlaceholderShape } from '../src/ui/placeholders';
 import type { SectionId } from '../src/ui/docModel';
@@ -87,6 +89,24 @@ describe('docBlocks', () => {
     // accent nor the heading ink the labels used before.
     expect(palette.doInk).not.toEqual(palette.accent);
     expect(palette.dontInk).not.toEqual(palette.heading);
+  });
+
+  it('tags every card label, AI or placeholder, so the read-back can skip it', () => {
+    const grid = buildGuidelinePairs([
+      { do: { rule: 'Pair it with a label.', reason: 'It widens the target.' }, dont: { rule: 'Do not hide the label.', reason: '' } },
+    ], 768) as unknown as FakeFrame;
+    const box = buildPlaceholderBlock(placeholderShapeFor('dosDonts')!, 768) as unknown as FakeFrame;
+    const placeholderCards = ((box.children[1] as FakeFrame).children as FakeFrame[]);
+    for (const [doCard, dontCard] of [(grid.children[0] as FakeFrame).children as FakeFrame[], placeholderCards]) {
+      const doLabel = doCard.children[0] as FakeText;
+      const dontLabel = dontCard.children[0] as FakeText;
+      expect([doLabel.characters, dontLabel.characters]).toEqual([GUIDELINE_LABEL.do, GUIDELINE_LABEL.dont]);
+      expect([doLabel.getPluginData(LINE_KEY), dontLabel.getPluginData(LINE_KEY)]).toEqual(['label', 'label']);
+    }
+    // Deleting the reason node never turns the rule into the reason.
+    const [doCard] = (grid.children[0] as FakeFrame).children as FakeFrame[];
+    doCard.children.splice(2, 1);
+    expect(readCanvasProse(asNode(grid)).guidelines?.[0].do).toEqual({ rule: 'Pair it with a label.', reason: '' });
   });
 
   it('stretches both cards of a pair to one height, however long each reason runs', () => {

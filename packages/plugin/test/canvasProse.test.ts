@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { ProseV2 } from '@spec-layer/extractor';
 import {
-  SLOT_KEY, SLOT_PART_KEY, LINE_KEY, PLACEHOLDER_KEY, isUnfilledPlaceholder,
+  SLOT_KEY, SLOT_PART_KEY, LINE_KEY, PLACEHOLDER_KEY, GUIDELINE_LABEL, isUnfilledPlaceholder,
   readCanvasProse, mergeProse, collectGeneratedText, textToMarkdown,
   type ProseNodeLike,
 } from '../src/canvasProse';
@@ -232,7 +232,7 @@ describe('readCanvasProse placeholders', () => {
       ])),
       box(frame([
         frame([text('DO'), guidance('Describe a correct use.'), guidance('Say why it works.')], slot('guidelineDo')),
-        frame([text("DON'T"), guidance('Describe a misuse to avoid.'), guidance('Say what goes wrong.')], slot('guidelineDont')),
+        frame([text('DON’T'), guidance('Describe a misuse to avoid.'), guidance('Say what goes wrong.')], slot('guidelineDont')),
       ], slot('guidelinePair', { [SLOT_PART_KEY]: '0' }))),
       box(frame([text('KEY'), text('ACTION')]), frame([guidance('Key'), guidance('Describe what this key does.')], slot('keyboardRow'))),
     ]);
@@ -248,7 +248,7 @@ describe('readCanvasProse placeholders', () => {
       ], slot('pointer'))),
       box(frame([
         frame([text('DO'), guidance('Describe a correct use.', 'Pair it with a label.'), guidance('Say why it works.')], slot('guidelineDo')),
-        frame([text("DON'T"), guidance('Describe a misuse to avoid.'), guidance('Say what goes wrong.')], slot('guidelineDont')),
+        frame([text('DON’T'), guidance('Describe a misuse to avoid.'), guidance('Say what goes wrong.')], slot('guidelineDont')),
       ], slot('guidelinePair', { [SLOT_PART_KEY]: '0' }))),
       box(frame([guidance('Key', 'Shift + Tab'), guidance('Describe it.', 'Moves focus back.')], slot('keyboardRow'))),
     ]);
@@ -270,6 +270,48 @@ describe('readCanvasProse placeholders', () => {
   it('still skips the legacy To be written. line', () => {
     const root = frame([frame([text('To be written.', { data: line('placeholder') })], slot('definition'))]);
     expect(readCanvasProse(root)).toEqual({});
+  });
+});
+
+describe('readCanvasProse guideline cards', () => {
+  const label = (chars: string) => text(chars, { data: line('label') });
+  const pair = (...cards: ProseNodeLike[]) => frame([keyed('guidelinePair', '0', cards)]);
+  const doCard = (...children: ProseNodeLike[]) => frame(children, slot('guidelineDo'));
+
+  it('reads no card when the rule node is deleted and the reason is still guidance', () => {
+    const root = pair(doCard(label('DO'), guidance('Say why it works.')));
+    expect(readCanvasProse(root)).toEqual({});
+  });
+
+  it('reads the rule with an empty reason when the reason node is deleted', () => {
+    const root = pair(doCard(label('DO'), guidance('Describe a correct use.', 'Pair it with a label.')));
+    expect(readCanvasProse(root).guidelines).toEqual([{ do: { rule: 'Pair it with a label.', reason: '' }, dont: null }]);
+  });
+
+  it('never reads the label as a rule or the rule as a reason on a card missing a node', () => {
+    const ai = pair(
+      doCard(label(GUIDELINE_LABEL.do), text('Pair it with a label.')),
+      frame([label(GUIDELINE_LABEL.dont), text('Do not use it for one choice.')], slot('guidelineDont')),
+    );
+    expect(readCanvasProse(ai).guidelines).toEqual([{
+      do: { rule: 'Pair it with a label.', reason: '' },
+      dont: { rule: 'Do not use it for one choice.', reason: '' },
+    }]);
+  });
+
+  it('still skips a legacy untagged label, DO or DON’T', () => {
+    const root = pair(
+      doCard(text('DO'), text('Pair it with a label.'), text('It widens the target.')),
+      frame([text('DON’T'), text('Do not use it for one choice.')], slot('guidelineDont')),
+    );
+    expect(readCanvasProse(root).guidelines).toEqual([{
+      do: { rule: 'Pair it with a label.', reason: 'It widens the target.' },
+      dont: { rule: 'Do not use it for one choice.', reason: '' },
+    }]);
+  });
+
+  it('labels cards with the exact characters the renderer draws', () => {
+    expect(GUIDELINE_LABEL).toEqual({ do: 'DO', dont: 'DON\u2019T' });
   });
 });
 

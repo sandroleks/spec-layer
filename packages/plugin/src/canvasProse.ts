@@ -42,7 +42,14 @@ export type ProseSlot =
   | 'anatomySummary' | 'anatomyPart' | 'propertyDescription' | 'keyboardRow'
   | 'pointer' | 'semantics' | 'content' | 'guidelinePair' | 'guidelineDo' | 'guidelineDont';
 
-export type LineKind = 'paragraph' | 'heading' | 'bullet' | 'placeholder';
+export type LineKind = 'paragraph' | 'heading' | 'bullet' | 'placeholder' | 'label';
+
+/** The label at the top of a Do or Don't card, exactly as docBlocks draws it.
+ *  Current builds tag the label node with LINE_KEY `'label'`; docs already on
+ *  canvas carry it untagged, so the read-back also recognises these exact
+ *  characters as a leading label. */
+export const GUIDELINE_LABEL = { do: 'DO', dont: 'DON’T' } as const;
+const LABEL_TEXTS: ReadonlySet<string> = new Set([GUIDELINE_LABEL.do, GUIDELINE_LABEL.dont]);
 
 /** The placeholder earlier builds wrote (`_To be written._`, emphasis markers
  *  stripped by the renderer). Current builds stamp guidance with
@@ -89,6 +96,14 @@ export function textToMarkdown(node: ProseNodeLike): string {
     return s.characters;
   }).join('');
 }
+
+/** `read(node)` for a node someone wrote, or '' for a missing node or one
+ *  still showing its placeholder guidance. */
+function unlessGuidance(node: ProseNodeLike | undefined, read: (n: ProseNodeLike) => string): string {
+  return node && !isUnfilledPlaceholder(node) ? read(node) : '';
+}
+
+const plainText = (node: ProseNodeLike): string => (node.characters ?? '').trim();
 
 function allTexts(node: ProseNodeLike, out: ProseNodeLike[] = []): ProseNodeLike[] {
   if (node.type === 'TEXT') out.push(node);
@@ -168,23 +183,24 @@ export function readCanvasProse(root: ProseNodeLike): CanvasProse {
   const push = <T>(list: T[] | undefined, item: T): T[] => { const l = list ?? []; l.push(item); return l; };
   const lastText = (node: ProseNodeLike): string => {
     const texts = allTexts(node);
-    const last = texts[texts.length - 1];
-    return last && !isUnfilledPlaceholder(last) ? textToMarkdown(last).trim() : '';
+    return unlessGuidance(texts[texts.length - 1], (n) => textToMarkdown(n).trim());
   };
   const card = (node: ProseNodeLike): GuidelineCard | null => {
-    // The last two text nodes are the rule then the reason. A card built with
-    // a leading DO/DON'T label (three nodes) drops that label by taking only
-    // the tail; a two-node card (no label) is unaffected. The rule node is
-    // read as plain characters, not through textToMarkdown: Task 11 renders
-    // the whole rule in the Bold face as card styling, not as a bold markdown
-    // run, so converting it would stamp every stored rule with `**...**`.
-    // Unfilled guidance on either line reads as empty.
-    const texts = allTexts(node).slice(-2);
-    const ruleNode = texts[0];
-    const rule = ruleNode && !isUnfilledPlaceholder(ruleNode) ? (ruleNode.characters ?? '').trim() : '';
+    // The DO/DON'T label is never content: a tagged label is dropped, and on a
+    // card drawn before labels were tagged, so is a leading node that reads
+    // exactly like one. What remains is the rule, then the reason, so a card
+    // missing a node reads as less than it said, never as a label promoted to
+    // a rule or a rule demoted to a reason. The rule node is read as plain
+    // characters, not through textToMarkdown: the renderer draws the whole
+    // rule in the Bold face as card styling, not as a bold markdown run, so
+    // converting it would stamp every stored rule with `**...**`. Unfilled
+    // guidance on either line reads as empty.
+    const all = allTexts(node);
+    const texts = all.filter((t) => t.getPluginData(LINE_KEY) !== 'label');
+    if (texts.length === all.length && texts.length && LABEL_TEXTS.has(texts[0].characters ?? '')) texts.shift();
+    const rule = unlessGuidance(texts[0], plainText);
     if (!rule) return null;
-    const reasonNode = texts[1];
-    const reason = reasonNode && !isUnfilledPlaceholder(reasonNode) ? textToMarkdown(reasonNode).trim() : '';
+    const reason = unlessGuidance(texts[1], (n) => textToMarkdown(n).trim());
     return { rule, reason };
   };
 
