@@ -217,7 +217,10 @@ export function readCanvasProse(root: ProseNodeLike): CanvasProse {
   let parts: { name: string; role: string }[] | undefined;
   let properties: { name: string; description: string }[] | undefined;
   let keyboard: { keys: string[]; action: string }[] | undefined;
-  const pairs = new Map<number, GuidelinePair>();
+  // Every pair with its index. A duplicated row carries its original's index,
+  // so a map keyed by index would keep only the last; a stable sort keeps
+  // both, in canvas order.
+  const pairs: { index: number; pair: GuidelinePair }[] = [];
   const authored = new Set<ProseV2Key>();
 
   const push = <T>(list: T[] | undefined, item: T): T[] => { const l = list ?? []; l.push(item); return l; };
@@ -317,7 +320,7 @@ export function readCanvasProse(root: ProseNodeLike): CanvasProse {
           if (inner === 'guidelineDo') doCard = card(c);
           else if (inner === 'guidelineDont') dontCard = card(c);
         }
-        if (doCard || dontCard) pairs.set(index, { do: doCard, dont: dontCard });
+        if (doCard || dontCard) pairs.push({ index, pair: { do: doCard, dont: dontCard } });
         return;
       }
       default:
@@ -341,7 +344,7 @@ export function readCanvasProse(root: ProseNodeLike): CanvasProse {
   if (parts) out.anatomyParts = parts;
   if (properties) out.properties = properties;
   if (keyboard) out.keyboard = keyboard;
-  if (pairs.size) out.guidelines = [...pairs.keys()].sort((a, b) => a - b).map((i) => pairs.get(i)!);
+  if (pairs.length) out.guidelines = [...pairs].sort((a, b) => a.index - b.index).map((p) => p.pair);
   const typed = PROSE_V2_KEYS.filter((k) => authored.has(k) && out[k as keyof CanvasProse] !== undefined);
   if (typed.length) out.authored = typed;
   return out;

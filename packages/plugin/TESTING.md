@@ -391,8 +391,9 @@ were added the same day, after the review that found the callouts reading
 39. **Untouched placeholders never leak.** On the same doc, Copy for AI and
     check the brief carries no guidance text.
 40. **Duplicating a row.** Duplicate the filled Pointer bullet in Figma, edit
-    the copy, Update. Both bullets survive. Duplicating a Do and don't pair is
-    a known limit: the copy merges into the first pair.
+    the copy, Update. Both bullets survive. Duplicate a filled Do and don't
+    pair, edit the copy, Update: both pairs survive, the copy right after its
+    original.
 
 
 Rows 16 to 24 were added on 2026-09-17 for Docs 2.0 Plan 1, rows 25 to 28

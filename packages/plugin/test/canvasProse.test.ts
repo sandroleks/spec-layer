@@ -186,6 +186,16 @@ describe('readCanvasProse', () => {
     expect(readCanvasProse(doc).guidelines?.map((g) => g.do?.rule)).toEqual(['A', 'B']);
   });
 
+  it('keeps both pairs of a duplicated row, in canvas order, still sorted by index', () => {
+    const doc = frame([
+      keyed('guidelinePair', '1', [frame([text('C'), text('')], slot('guidelineDo'))]),
+      keyed('guidelinePair', '0', [frame([text('A'), text('')], slot('guidelineDo'))]),
+      // A duplicate of pair 0, edited: it carries the same index key.
+      keyed('guidelinePair', '0', [frame([text('B'), text('')], slot('guidelineDo'))]),
+    ]);
+    expect(readCanvasProse(doc).guidelines?.map((g) => g.do?.rule)).toEqual(['A', 'B', 'C']);
+  });
+
   it('reads a three-node guideline card as plain text, ignoring the leading DO/DONT label', () => {
     const doc = frame([
       keyed('guidelinePair', '0', [
