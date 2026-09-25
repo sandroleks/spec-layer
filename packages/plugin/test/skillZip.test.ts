@@ -193,7 +193,9 @@ describe('renderSnapshotSkill', () => {
   it('keeps the YAML guide word for word', () => {
     const md = renderSnapshotSkill(FULL);
     expect(md).toContain(
-      "prose: a component's `guidelines` block, marked `origin: generated`, and a token group's "
+      "prose: a component's `guidelines` block, marked `origin: generated` (`origin: authored` when a person "
+      + 'wrote all of it on the Figma canvas, and `authored` lists the fields a person wrote when they wrote '
+      + "only some), and a token group's "
       + '`$extensions["com.spec-layer"].generated_description` in `tokens/`',
     );
     expect(md).toContain(

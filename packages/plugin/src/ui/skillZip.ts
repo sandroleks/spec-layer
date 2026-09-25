@@ -58,7 +58,9 @@ export function renderSnapshotSkill(inv: SnapshotInventory): string {
     + 'exceptions that can carry model-written prose: '
     + (markdown
       ? 'a section of a component page that says it was written by AI, '
-      : "a component's `guidelines` block, marked `origin: generated`, ")
+      : "a component's `guidelines` block, marked `origin: generated` (`origin: authored` when a person wrote "
+        + 'all of it on the Figma canvas, and `authored` lists the fields a person wrote when they wrote only '
+        + 'some), ')
     + 'and a token group\'s `$extensions["com.spec-layer"].generated_description` in `tokens/`, whose key '
     + 'names its origin and which is model-written wherever it appears; no token group carries a plain '
     + '`$description`. Treat the rest as the source of truth for '
