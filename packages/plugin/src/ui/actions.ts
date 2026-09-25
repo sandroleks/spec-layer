@@ -79,11 +79,13 @@ export interface UiState {
   // that requests a key not in this set triggers exactly one regeneration;
   // unchecking never does. Null whenever generatedProse is null.
   generatedProseKeys: Set<ProseV2Key> | null;
-  // What the last build left out, and why, so the result message can say so.
-  // Set by every assembled build and cleared once it has been reported.
+  // What the last build left out or drew as a placeholder, and why, so the
+  // result message can say so. Set by every assembled build and cleared once
+  // it has been reported.
   lastOmitted: OmittedSection[];
   // Set when an AI generation attempt fails so the next frame-build can note it
-  // ("the AI sections were left out") instead of aborting the whole frame.
+  // ("sections that needed AI were added as placeholders") instead of aborting
+  // the whole frame.
   pendingAiNote: string;
   // User-customized brand theme for the generated frame (null fields = default).
   brandTheme: BrandTheme;
@@ -578,7 +580,8 @@ export async function updateFromSource(
       includeHidden: src.config.includeHidden,
     });
     // Same record the Create path keeps, so the Library's completion message
-    // can name the sections it left out instead of staying silent about them.
+    // can name the sections it left out or drew as placeholders instead of
+    // staying silent about them.
     state.lastOmitted = model.omitted;
     send({
       type: 'renderDocFrame',
@@ -694,9 +697,8 @@ export function quotaExhaustedNote(
  * Gated on the document's own `aiEnabled` as well as the panel toggle. A doc
  * built without AI writing is rebuilt without it: topping it up because the
  * toggle happens to be on now would put AI text into a document whose stored
- * config still reads `aiEnabled: false`, and a later empty AI section on it
- * would then be reported as "AI writing is off" when AI had just written into
- * it.
+ * config still reads `aiEnabled: false`, and that someone may be filling in
+ * by hand through its placeholders.
  */
 export async function topUpProseForRebuild(state: UiState, src: DocSource): Promise<ProseV2 | null> {
   if (!src.config.aiEnabled || !canGenerate(state)) return src.prose;

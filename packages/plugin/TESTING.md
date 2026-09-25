@@ -401,7 +401,6 @@ were added the same day, after the review that found the callouts reading
     pair, edit the copy, Update: both pairs survive, the copy right after its
     original.
 
-
 Rows 16 to 24 were added on 2026-09-17 for Docs 2.0 Plan 1, rows 25 to 28
 on 2026-09-18 for Plan 2, rows 29 to 36 on 2026-09-19 for Plan 3, and rows
 37 to 40 on 2026-09-25 for writing placeholders. None of rows 16 to 40 have

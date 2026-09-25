@@ -442,11 +442,10 @@ describe('createDocFrame', () => {
     ]);
   });
 
-  it('persists the flag the model was built with, so Update classifies omissions the same way', async () => {
+  it('persists the flag the build actually ran with, not the raw checkbox', async () => {
     // The checkbox is on but there is no licence and no Figma identity, so
-    // canGenerate is false and the build ran without AI. Update reads this
-    // stored flag back; persisting the raw checkbox instead made the same doc
-    // read 'nothing to show' on Create and 'AI writing is off' on Update.
+    // canGenerate is false and the build ran without AI. The rebuild top-up
+    // reads this stored flag back, so it must say AI did not write this doc.
     const state = createState();
     state.currentNode = buttonNode();
     state.currentFileKey = 'f1';

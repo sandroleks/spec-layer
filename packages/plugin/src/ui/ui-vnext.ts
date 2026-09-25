@@ -279,10 +279,10 @@ type LibraryUpdateOperation = {
   total: number;
   batch: boolean;
   confirmedOverwrite: Set<string>;
-  /** Sections left out across this run, deduplicated by id and reason, so the
-   *  completion message says which and why the way Create's does. Collected
-   *  per document as each one finishes, because `state.lastOmitted` only ever
-   *  holds the newest. */
+  /** Sections left out or drawn as placeholders across this run, deduplicated
+   *  by id and reason, so the completion message says which and why the way
+   *  Create's does. Collected per document as each one finishes, because
+   *  `state.lastOmitted` only ever holds the newest. */
   omitted: OmittedSection[];
   /** Failed-generation notes from any stale-version rebuild in this run,
    *  deduplicated by text, the way `omitted` is. Collected per document for
@@ -1248,10 +1248,10 @@ function completeCurrentLibraryUpdate(): void {
   if (!active || active.kind !== 'update' || !active.currentDocId) return;
   active.completed += 1;
   active.currentDocId = null;
-  // Fold in what this document left out and clear the slot, so the next
-  // document in the queue (a foundation, which never sets it) cannot inherit
-  // it. Deduplicated: a batch that leaves Keyboard out of every document says
-  // so once.
+  // Fold in what this document left out or drew as a placeholder and clear
+  // the slot, so the next document in the queue (a foundation, which never
+  // sets it) cannot inherit it. Deduplicated: a batch that draws Keyboard as
+  // a placeholder in every document says so once.
   for (const o of state.lastOmitted) {
     if (!active.omitted.some((prev) => prev.id === o.id && prev.reason === o.reason)) active.omitted.push(o);
   }
