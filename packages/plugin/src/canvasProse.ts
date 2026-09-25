@@ -14,7 +14,10 @@
  * objects. This module is imported by main.ts, which runs in Figma's bare
  * sandbox realm, so it may use only ECMAScript built-ins.
  */
-import { hasProseContent, normalizeKey, type ProseV2, type GuidelinePair, type GuidelineCard } from '@spec-layer/extractor';
+import {
+  hasProseContent, normalizeKey, normalizeAuthored, PROSE_V2_KEYS,
+  type ProseV2, type ProseV2Key, type GuidelinePair, type GuidelineCard,
+} from '@spec-layer/extractor';
 import { PILL_KEY } from './publishPill';
 import { displayPartName } from './ui/displayNames';
 
@@ -36,6 +39,11 @@ export function isUnfilledPlaceholder(node: ProseNodeLike): boolean {
   const guidance = node.getPluginData(PLACEHOLDER_KEY);
   return guidance !== '' && (node.characters ?? '').trim() === guidance.trim();
 }
+
+/** True for a guidance node, filled or not. Content read from a filled one
+ *  was typed by a person, which is what `CanvasProse.authored` records. */
+const isStamped = (node: ProseNodeLike | undefined): boolean =>
+  node !== undefined && node.getPluginData(PLACEHOLDER_KEY) !== '';
 
 export type ProseSlot =
   | 'definitionLead' | 'definition' | 'whenToUse' | 'whenNotToUse' | 'variantsIntro' | 'variantsGuide'
@@ -74,8 +82,11 @@ export interface ProseNodeLike {
  *  lead and the definition body are two separate tagged slots, so a doc with
  *  only one of them tagged must report only that half, never a fabricated
  *  empty string or empty array for the other. */
-export type CanvasProse = Partial<Omit<ProseV2, 'v' | 'overview'>> & {
+export type CanvasProse = Partial<Omit<ProseV2, 'v' | 'overview' | 'authored'>> & {
   overview?: { lede?: string; body?: string[] };
+  /** The prose keys that took content from a placeholder someone typed
+   *  over, in PROSE_V2_KEYS order. Absent when there are none. */
+  authored?: ProseV2Key[];
 };
 
 /**
@@ -111,8 +122,9 @@ function allTexts(node: ProseNodeLike, out: ProseNodeLike[] = []): ProseNodeLike
   return out;
 }
 
-/** One markdown line per child of a prose block container. */
-function readLines(container: ProseNodeLike): string[] {
+/** One markdown line per child of a prose block container. `typed` is called
+ *  when a line came from a placeholder someone typed over. */
+function readLines(container: ProseNodeLike, typed: () => void = () => {}): string[] {
   const lines: string[] = [];
   for (const child of container.children ?? []) {
     const kind = child.getPluginData(LINE_KEY);
@@ -125,12 +137,15 @@ function readLines(container: ProseNodeLike): string[] {
     if (kind === 'placeholder' && md.trim() === PLACEHOLDER_TEXT) continue;
     if (md.trim() === '') continue;
     lines.push(md);
+    if (isStamped(texts[0])) typed();
   }
   return lines;
 }
 
-/** One item per bullet row of a list block: the last text node is the content. */
-function readBullets(container: ProseNodeLike): string[] {
+/** One item per bullet row of a list block: the last text node is the
+ *  content. `typed` is called when an item came from a placeholder someone
+ *  typed over. */
+function readBullets(container: ProseNodeLike, typed: () => void = () => {}): string[] {
   const items: string[] = [];
   for (const row of container.children ?? []) {
     const texts = allTexts(row);
@@ -140,6 +155,7 @@ function readBullets(container: ProseNodeLike): string[] {
     const md = textToMarkdown(last);
     if (md.trim() === '' || md.trim() === PLACEHOLDER_TEXT) continue;
     items.push(md);
+    if (isStamped(last)) typed();
   }
   return items;
 }
@@ -197,6 +213,7 @@ export function readCanvasProse(root: ProseNodeLike): CanvasProse {
   let properties: { name: string; description: string }[] | undefined;
   let keyboard: { keys: string[]; action: string }[] | undefined;
   const pairs = new Map<number, GuidelinePair>();
+  const authored = new Set<ProseV2Key>();
 
   const push = <T>(list: T[] | undefined, item: T): T[] => { const l = list ?? []; l.push(item); return l; };
   const lastText = (node: ProseNodeLike): string => {
@@ -219,6 +236,7 @@ export function readCanvasProse(root: ProseNodeLike): CanvasProse {
     const rule = unlessGuidance(texts[0], plainText);
     if (!rule) return null;
     const reason = unlessGuidance(texts[1], (n) => textToMarkdown(n).trim());
+    if (isStamped(texts[0]) || (reason && isStamped(texts[1]))) authored.add('guidelines');
     return { rule, reason };
   };
 
@@ -229,12 +247,12 @@ export function readCanvasProse(root: ProseNodeLike): CanvasProse {
     const slot = slotName as ProseSlot;
     const key = node.getPluginData(SLOT_PART_KEY);
     if (LIST_SLOTS.has(slot)) {
-      lists.set(slot, [...(lists.get(slot) ?? []), ...readBullets(node)]);
+      lists.set(slot, [...(lists.get(slot) ?? []), ...readBullets(node, () => authored.add(slot as ProseV2Key))]);
       return;
     }
     switch (slot) {
       case 'definitionLead': { const v = textToMarkdown(node).trim(); if (v) lead = lead ? `${lead} ${v}` : v; return; }
-      case 'definition': definitionLines.push(...readLines(node)); return;
+      case 'definition': definitionLines.push(...readLines(node, () => authored.add('overview'))); return;
       case 'variantsIntro': variantsIntro = [...(variantsIntro ?? []), ...readLines(node)]; return;
       case 'anatomySummary': { const v = textToMarkdown(node).trim(); if (v) anatomySummary = anatomySummary ? `${anatomySummary} ${v}` : v; return; }
       case 'variantsGuide': {
@@ -278,7 +296,10 @@ export function readCanvasProse(root: ProseNodeLike): CanvasProse {
         const keys = key
           ? key.split(' + ').map((k) => k.trim()).filter(Boolean)
           : texts.length >= 2 ? typedKeys(unlessGuidance(texts[0], plainText)) : [];
-        if (keys.length && action) keyboard = push(keyboard, { keys, action });
+        if (keys.length && action) {
+          keyboard = push(keyboard, { keys, action });
+          if (isStamped(texts[0]) || isStamped(texts[texts.length - 1])) authored.add('keyboard');
+        }
         return;
       }
       case 'guidelinePair': {
@@ -316,6 +337,8 @@ export function readCanvasProse(root: ProseNodeLike): CanvasProse {
   if (properties) out.properties = properties;
   if (keyboard) out.keyboard = keyboard;
   if (pairs.size) out.guidelines = [...pairs.keys()].sort((a, b) => a - b).map((i) => pairs.get(i)!);
+  const typed = PROSE_V2_KEYS.filter((k) => authored.has(k) && out[k as keyof CanvasProse] !== undefined);
+  if (typed.length) out.authored = typed;
   return out;
 }
 
@@ -330,7 +353,9 @@ const _HANDLED_PROSE_KEYS = [
 // Compile-time guard: a future field added to ProseV2 must be added to
 // _HANDLED_PROSE_KEYS above, or readCanvasProse would silently never fill it.
 // This fails to compile when ProseV2 gains a field this list does not name.
-type UncoveredProseKey = Exclude<Exclude<keyof ProseV2, 'v'>, (typeof _HANDLED_PROSE_KEYS)[number]>;
+// `authored` is metadata about the keys below, not a slot, so it is excluded
+// alongside `v`.
+type UncoveredProseKey = Exclude<Exclude<keyof ProseV2, 'v' | 'authored'>, (typeof _HANDLED_PROSE_KEYS)[number]>;
 const _everyProseKeyHasASlot: UncoveredProseKey extends never ? true : never = true;
 
 /**
@@ -339,14 +364,24 @@ const _everyProseKeyHasASlot: UncoveredProseKey extends never ? true : never = t
  * can show only the lede or only the body: each half falls back to the
  * stored half independently, and the merged overview is included only when
  * at least one half exists, never fabricated as `{ lede: '', body: [] }`.
+ *
+ * `authored` is the union of both sides, kept only for keys the merged prose
+ * still has content for, in PROSE_V2_KEYS order. The union is what carries
+ * authorship past the first Update: a filled placeholder is rebuilt as an
+ * ordinary section, so the canvas stops saying who wrote it and the stored
+ * blob keeps saying it.
  */
 export function mergeProse(stored: ProseV2 | null, canvas: CanvasProse): ProseV2 | null {
-  const { overview: canvasOverview, ...restCanvas } = canvas;
+  const { overview: canvasOverview, authored: canvasAuthored, ...restCanvas } = canvas;
   const out: ProseV2 = { ...(stored ?? {}), ...restCanvas, v: 2 };
+  delete out.authored;
   const lede = canvasOverview?.lede ?? stored?.overview?.lede;
   const body = canvasOverview?.body ?? stored?.overview?.body;
   if (lede !== undefined || body !== undefined) out.overview = { lede: lede ?? '', body: body ?? [] };
   else delete out.overview;
+  const either = new Set([...normalizeAuthored(stored?.authored), ...normalizeAuthored(canvasAuthored)]);
+  const authored = PROSE_V2_KEYS.filter((k) => either.has(k) && hasProseContent({ v: 2, [k]: out[k] }));
+  if (authored.length) out.authored = authored;
   return hasProseContent(out) ? out : null;
 }
 

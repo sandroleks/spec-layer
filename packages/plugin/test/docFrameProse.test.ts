@@ -4,6 +4,7 @@ import { installFakeFigma, uninstallFakeFigma, FakeSection, FakeFrame, FakeText 
 import { buildDocFrames } from '../src/docFrame';
 import { buildDocModel, ALL_SECTIONS, type SectionId } from '../src/ui/docModel';
 import { placeholderShapeFor } from '../src/ui/placeholders';
+import { parseProse, serializeProse } from '../src/docLink';
 import { emptyBrandTheme, resolveTheme } from '../src/brandColors';
 import { palette, solidFill } from '../src/frameKit';
 import {
@@ -162,6 +163,28 @@ describe('docFrame', () => {
     expect(a11y).not.toContain('Describe what hover, press, and drag do.');
     // The other three a11y sections are still placeholders.
     expect(a11y.filter((t) => t === 'Placeholder')).toHaveLength(3);
+  });
+
+  it('keeps pointer marked as written by a person after its placeholder box is gone', async () => {
+    const first = await build(null);
+    (first.children[2] as FakeFrame).findText('Describe what hover, press, and drag do.')!.characters = 'Hover darkens the box.';
+    // The first Update: nothing stored yet, the canvas says a person typed it.
+    const read = readCanvasProse(asNode(first));
+    expect(read.authored).toEqual(['pointer']);
+    const merged = mergeProse(null, read)!;
+    expect(merged.authored).toEqual(['pointer']);
+    // main.ts stores the merged prose beside the rebuilt doc.
+    const storedBlob = serializeProse(merged);
+    const second = await build(merged);
+    expect((second.children[2] as FakeFrame).textChars()).not.toContain('Describe what hover, press, and drag do.');
+    // The rebuilt Pointer section is ordinary prose, so the canvas no longer
+    // says who wrote it; the stored blob still does.
+    const reread = readCanvasProse(asNode(second));
+    expect(reread.pointer).toEqual(['Hover darkens the box.']);
+    expect('authored' in reread).toBe(false);
+    const again = mergeProse(parseProse(storedBlob), reread)!;
+    expect(again.pointer).toEqual(['Hover darkens the box.']);
+    expect(again.authored).toEqual(['pointer']);
   });
 
   it('keeps editorial text out of the generated lane', async () => {

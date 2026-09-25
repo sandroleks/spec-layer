@@ -34,15 +34,30 @@ export interface ProseV2 {
   semantics?: string[];
   content?: string[];
   guidelines?: GuidelinePair[];
+  /**
+   * The keys whose content a person typed on the canvas into a placeholder,
+   * so the export can say who wrote them. Not a prose key: it is metadata
+   * about the keys above, never counted as content, never sent to or asked of
+   * the model, and omitted when empty. Read through `normalizeAuthored`.
+   */
+  authored?: ProseV2Key[];
 }
 
-export type ProseV2Key = Exclude<keyof ProseV2, 'v'>;
+export type ProseV2Key = Exclude<keyof ProseV2, 'v' | 'authored'>;
 
 export const PROSE_V2_KEYS: readonly ProseV2Key[] = [
   'overview', 'whenToUse', 'whenNotToUse', 'variantsIntro', 'variantsGuide',
   'anatomySummary', 'anatomyParts', 'properties', 'states', 'keyboard',
   'pointer', 'semantics', 'content', 'guidelines',
 ];
+
+/** A stored `authored` value as the known prose keys it names, each once, in
+ *  PROSE_V2_KEYS order. Anything else (an unknown entry, a non-array) is
+ *  dropped, never thrown on. */
+export function normalizeAuthored(value: unknown): ProseV2Key[] {
+  if (!Array.isArray(value)) return [];
+  return PROSE_V2_KEYS.filter((key) => value.includes(key));
+}
 
 /** The keyboard vocabulary. A row whose key is not one of these is dropped. */
 export const KEYBOARD_KEYS: readonly string[] = [
@@ -302,6 +317,24 @@ const cardToLegacy = (c: GuidelineCard | null | undefined): string => {
   return reason ? `**${rule}** ${reason}` : `**${rule}**`;
 };
 
+/**
+ * Each field of the brief's `guidelines` block that `proseToLegacy` fills, in
+ * the block's own field order, with its ProseDrafts name and the v2 keys it
+ * is built from. `design_considerations` has no v2 source, so no person can
+ * have written it.
+ */
+const LEGACY_SOURCES: readonly (readonly [string, 'definition' | 'accessibility' | 'interactions'
+  | 'variantsSummary' | 'anatomySummary' | 'contentConsiderations' | 'dos' | 'donts', readonly ProseV2Key[]])[] = [
+  ['definition', 'definition', ['overview']],
+  ['accessibility', 'accessibility', ['semantics']],
+  ['interactions', 'interactions', ['keyboard', 'pointer']],
+  ['variants_summary', 'variantsSummary', ['variantsIntro', 'variantsGuide']],
+  ['anatomy_summary', 'anatomySummary', ['anatomySummary']],
+  ['content_considerations', 'contentConsiderations', ['content']],
+  ['dos', 'dos', ['guidelines']],
+  ['donts', 'donts', ['guidelines']],
+];
+
 /** Flatten v2 to the v1 shape the brief and the v5 artifact still consume.
  *  `p` is only shaped like a validated `ProseV2` (see `isProseV2`'s doc
  *  comment), so every field is read through `asArray`/`asStr` rather than
@@ -334,21 +367,40 @@ export function proseToLegacy(p: ProseV2): ProseDrafts {
   if (anatomyParts.length) out.anatomyParts = anatomyParts.map((a) => ({ name: asStr(a.name), description: asStr(a.role) }));
   const content = asArray<unknown>(p.content).map(asStr).filter(Boolean);
   if (content.length) out.contentConsiderations = content.map((s) => `- ${s}`).join('\n');
+  // A field reads as written by a person only when every v2 key it is built
+  // from that carries content was typed on the canvas: a Keyboard table a
+  // person filled beside AI-written Pointer bullets is not a person's
+  // Interactions section, so a mixed field is never listed.
+  const authored = new Set(normalizeAuthored(p.authored));
+  if (authored.size) {
+    const names = LEGACY_SOURCES.filter(([, field, keys]) => {
+      const value = out[field];
+      const filled = Array.isArray(value) ? value.length > 0 : Boolean(value);
+      return filled && keys.every((key) => authored.has(key) || !proseKeyHasContent(p, key));
+    }).map(([name]) => name);
+    if (names.length) out.authored = names;
+  }
   return out;
 }
 
-export function hasProseContent(p: ProseV2 | null | undefined): boolean {
-  if (!p) return false;
-  for (const key of PROSE_V2_KEYS) {
-    const value = p[key];
-    if (typeof value === 'string') { if (value.trim()) return true; continue; }
-    if (Array.isArray(value)) { if (value.length) return true; continue; }
-    if (value && typeof value === 'object') {
-      const o = value as { lede?: unknown; body?: unknown };
-      if (asStr(o.lede).trim() || asArray(o.body).length) return true;
-    }
+/** True when `p[key]` has something to show. Defensive like every reader
+ *  here: `p` is only shaped like a ProseV2. */
+function proseKeyHasContent(p: ProseV2, key: ProseV2Key): boolean {
+  const value = p[key];
+  if (typeof value === 'string') return value.trim() !== '';
+  if (Array.isArray(value)) return value.length > 0;
+  if (value && typeof value === 'object') {
+    const o = value as { lede?: unknown; body?: unknown };
+    return Boolean(asStr(o.lede).trim() || asArray(o.body).length);
   }
   return false;
+}
+
+/** True when any prose key has content. `authored` is not a prose key and
+ *  never counts. */
+export function hasProseContent(p: ProseV2 | null | undefined): boolean {
+  if (!p) return false;
+  return PROSE_V2_KEYS.some((key) => proseKeyHasContent(p, key));
 }
 
 /** Em dashes and spaced en dashes become commas; same rule as prompt.ts, and

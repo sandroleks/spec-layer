@@ -8,7 +8,7 @@
  * extractor-purity boundary).
  */
 import {
-  contentHash, upgradeProseV1, isProseV2, hasProseContent,
+  contentHash, upgradeProseV1, isProseV2, hasProseContent, normalizeAuthored,
   type FoundationScope, type ProseV2, type ProseDrafts, type SpecHashProjection, type FoundationUnitContent,
 } from '@spec-layer/extractor';
 import { KNOWN_SECTION_IDS, LEGACY_SECTION_IDS, type SectionId, type MeasureView } from './ui/docModel';
@@ -146,6 +146,10 @@ function readProseV2(o: Record<string, unknown>): ProseV2 | null {
   for (const k of V2_ARRAY_KEYS) {
     if (Array.isArray(o[k])) (out as unknown as Record<string, unknown>)[k] = o[k];
   }
+  // Which keys a person typed on the canvas. Known keys only, once each;
+  // omitted when empty so a blob without it reads exactly as before.
+  const authored = normalizeAuthored(o.authored);
+  if (authored.length) out.authored = authored;
   return hasProseContent(out) ? out : null;
 }
 

@@ -619,28 +619,37 @@ function hasKeyContent(prose: ProseV2 | null, key: ProseV2Key): boolean {
   return Boolean(overview.lede?.trim()) || (overview.body?.length ?? 0) > 0;
 }
 
+/** True when a person typed `key` on the canvas. Their text is never asked
+ *  of the model again and never replaced by it. */
+function isAuthored(prose: ProseV2 | null, key: ProseV2Key): boolean {
+  return Array.isArray(prose?.authored) && prose.authored.includes(key);
+}
+
 /**
  * The keys a stale-version rebuild asks the model for: every requested key the
  * upgraded prose left empty, plus `keyboard` whenever it is requested, because
  * the v1 keyboard bullets upgrade lossily (a bullet that did not open with a
- * key was dropped). This is what the rebuild note promises.
+ * key was dropped). This is what the rebuild note promises. A key a person
+ * wrote is never asked for.
  */
 export function missingProseKeys(prose: ProseV2 | null, requested: ReadonlySet<ProseV2Key>): Set<ProseV2Key> {
   const out = new Set<ProseV2Key>();
   for (const key of requested) {
+    if (isAuthored(prose, key)) continue;
     if (key === 'keyboard' || !hasKeyContent(prose, key)) out.add(key);
   }
   return out;
 }
 
 /** Stored prose wins wherever it has content; the fresh draft fills the rest
- *  and always replaces keyboard. Null when the result has nothing to show. */
+ *  and replaces keyboard, unless a person wrote it. The stored `authored`
+ *  list is kept as it was. Null when the result has nothing to show. */
 export function mergeTopUp(stored: ProseV2 | null, generated: ProseV2 | null): ProseV2 | null {
   if (!generated) return stored;
   const out: ProseV2 = { ...(stored ?? {}), v: 2 };
   for (const key of PROSE_V2_KEYS) {
     const fresh = generated[key];
-    if (fresh === undefined) continue;
+    if (fresh === undefined || isAuthored(stored, key)) continue;
     if (key === 'keyboard' || !hasKeyContent(stored, key)) {
       (out as unknown as Record<string, unknown>)[key] = fresh;
     }

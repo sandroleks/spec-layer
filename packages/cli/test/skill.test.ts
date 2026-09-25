@@ -148,6 +148,12 @@ describe('buildSkillGuide', () => {
     expect(guide).toContain('extracted deterministically from Figma and validated against a published schema');
     expect(guide).toContain('`guidelines`');
     expect(guide).toContain('`origin: generated`');
+    // A person can write guidelines on the canvas, and the guide says how
+    // that reads, in both formats.
+    for (const g of [guide, buildSkillGuide(input({ config: { libraryId: 'lib_x', componentSpecsFormat: 'md' } }))]) {
+      expect(g).toContain('(`origin: authored` when a person wrote all of it on the Figma canvas, and `authored` lists the fields a person wrote when they wrote only some)');
+      expect(g).not.toContain('\u2014');
+    }
     expect(guide).toContain('`$extensions["com.spec-layer"].generated_description`');
     expect(guide).not.toMatch(/token group's `\$description`/);
     expect(guide).not.toContain('no model wrote any of it');

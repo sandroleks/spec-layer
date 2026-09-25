@@ -95,6 +95,16 @@ describe('copyBriefFromSource', () => {
     expect(y.guidelines?.definition).toBe('A button.');
   });
 
+  it('says which guidelines a person wrote on the canvas', async () => {
+    await copyBriefFromSource(createState(), SRC, { ...STORED, authored: ['semantics'] }, presenter());
+    const partly = load(copyText.mock.calls[0][0]) as { guidelines?: Record<string, unknown> };
+    expect(partly.guidelines).toMatchObject({ origin: 'generated', authored: ['accessibility'] });
+    await copyBriefFromSource(createState(), SRC, { ...STORED, authored: ['overview', 'semantics'] }, presenter());
+    const wholly = load(copyText.mock.calls[1][0]) as { guidelines?: Record<string, unknown> };
+    expect(wholly.guidelines?.origin).toBe('authored');
+    expect(wholly.guidelines && 'authored' in wholly.guidelines).toBe(false);
+  });
+
   it('omits guidelines when the document has none stored', async () => {
     await copyBriefFromSource(createState(), SRC, null, presenter());
     expect('guidelines' in (load(copyText.mock.calls[0][0]) as ParsedCopyBrief)).toBe(false);

@@ -325,6 +325,30 @@ describe('Component Context v5', () => {
     expect(first.guidelines).not.toEqual(second.guidelines);
   });
 
+  it('carries authored guidelines without moving the hash or raising a diagnostic', () => {
+    const source = foundation();
+    const component = spec([rule(
+      'VariableID:semantic', 'space/component', 'variable', 'gap', 'CollectionID:space',
+    )]);
+    const prose = { definition: 'A button.', accessibility: 'Name it.', dos: [], donts: [] };
+    const generated = buildComponentArtifactV5(component, { ...META, foundation: source, prose });
+    const partly = buildComponentArtifactV5(component, {
+      ...META, foundation: source, prose: { ...prose, authored: ['accessibility'] },
+    });
+    const wholly = buildComponentArtifactV5(component, {
+      ...META, foundation: source, prose: { ...prose, authored: ['definition', 'accessibility'] },
+    });
+
+    expect(partly.guidelines).toEqual({
+      origin: 'generated', authored: ['accessibility'], definition: 'A button.', accessibility: 'Name it.',
+    });
+    expect(wholly.guidelines).toEqual({ origin: 'authored', definition: 'A button.', accessibility: 'Name it.' });
+    for (const artifact of [partly, wholly]) {
+      expect(artifact.spec_layer.export.content_hash).toBe(generated.spec_layer.export.content_hash);
+      expect(artifact.diagnostics).toEqual(generated.diagnostics);
+    }
+  });
+
   it('does not move a component hash for an unrelated Foundation read failure', () => {
     const complete = foundation();
     const partial = structuredClone(complete);

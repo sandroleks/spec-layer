@@ -181,11 +181,13 @@ describe('buildPlaceholderBlock', () => {
     keyCell.characters = 'Shift + Tab';
     actionCell.characters = 'Moves focus back.';
     // Typed with spaces, read as one combination.
-    expect(readCanvasProse(asNode(box))).toEqual({ keyboard: [{ keys: ['Shift+Tab'], action: 'Moves focus back.' }] });
+    expect(readCanvasProse(asNode(box))).toEqual({
+      keyboard: [{ keys: ['Shift+Tab'], action: 'Moves focus back.' }], authored: ['keyboard'],
+    });
 
     const bullets = buildPlaceholderBlock(shapeOf('accessibility'), 800) as unknown as FakeFrame;
     texts(bullets).find((t) => t.getPluginData(PLACEHOLDER_KEY) !== '')!.characters = 'Render a native input.';
-    expect(readCanvasProse(asNode(bullets))).toEqual({ semantics: ['Render a native input.'] });
+    expect(readCanvasProse(asNode(bullets))).toEqual({ semantics: ['Render a native input.'], authored: ['semantics'] });
   });
 
   it('keeps guidance out of the generated lane, and the tag in it', () => {

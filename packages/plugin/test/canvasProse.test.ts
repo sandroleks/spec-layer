@@ -257,7 +257,30 @@ describe('readCanvasProse placeholders', () => {
       pointer: ['Hover darkens the box.', 'Clicking the label toggles it.'],
       guidelines: [{ do: { rule: 'Pair it with a label.', reason: '' }, dont: null }],
       keyboard: [{ keys: ['Shift+Tab'], action: 'Moves focus back.' }],
+      authored: ['overview', 'keyboard', 'pointer', 'guidelines'],
     });
+  });
+
+  it('marks as authored only the keys whose content came from a placeholder someone typed over', () => {
+    const root = frame([
+      box(frame([
+        frame([text('When to use'), frame([frame([guidance('A.', 'In forms.')])], slot('whenToUse'))]),
+        frame([text('When not to use'), frame([frame([guidance('B.')])], slot('whenNotToUse'))]),
+      ])),
+      // Written by the AI, never a placeholder: content, but not authored.
+      block('semantics', [bulletRow('Name: the label.')]),
+      // Only the action typed: the row is dropped, so keyboard is not authored.
+      box(frame([guidance('Key'), guidance('Describe it.', 'Moves focus.')], slot('keyboardRow'))),
+    ]);
+    const read = readCanvasProse(root);
+    expect(read.whenToUse).toEqual(['In forms.']);
+    expect(read.semantics).toEqual(['Name: the label.']);
+    expect(read.authored).toEqual(['whenToUse']);
+  });
+
+  it('reports no authored list when nothing was typed over a placeholder', () => {
+    const root = frame([block('pointer', [bulletRow('Clicking toggles.')])]);
+    expect('authored' in readCanvasProse(root)).toBe(false);
   });
 
   it('reads a typed key cell as alternatives on or, comma and slash, each one key however its + is spaced', () => {
@@ -352,6 +375,26 @@ describe('mergeProse', () => {
       v: 2, overview: { lede: 'Canvas lede.', body: ['Stored body.'] },
     });
   });
+  it('unions stored and canvas authorship, keeping only keys that still have content, in key order', () => {
+    const storedAuthored: ProseV2 = {
+      v: 2, pointer: ['Stored pointer.'], semantics: ['AI semantics.'], authored: ['pointer', 'content'],
+    };
+    const merged = mergeProse(storedAuthored, {
+      keyboard: [{ keys: ['Tab'], action: 'Moves focus.' }], authored: ['keyboard'],
+    });
+    expect(merged?.authored).toEqual(['keyboard', 'pointer']);
+    expect(merged?.pointer).toEqual(['Stored pointer.']);
+  });
+
+  it('leaves no authored list when neither side has one', () => {
+    const merged = mergeProse(stored, { pointer: ['canvas pointer'] });
+    expect(merged && 'authored' in merged).toBe(false);
+  });
+
+  it('never counts an authored list alone as content', () => {
+    expect(mergeProse({ v: 2, authored: ['pointer'] }, { authored: ['content'] })).toBeNull();
+  });
+
   it('keeps the stored lede when only the Overview body is tagged on canvas', () => {
     expect(mergeProse(storedOverview, { overview: { body: ['Canvas body.'] } })).toEqual({
       v: 2, overview: { lede: 'Stored lede.', body: ['Canvas body.'] },

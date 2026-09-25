@@ -153,6 +153,16 @@ describe('buildPublishBundle', () => {
     expect(bundle.foundation?.artifact.guidelines?.origin).toBe('generated');
   });
 
+  it('publishes a component whose guidelines a person wrote as origin: authored', () => {
+    const typed = {
+      ...componentSource('doc-button', 'button', '1:100', 'k-button'),
+      prose: { v: 2 as const, pointer: ['Hover darkens the fill.'], authored: ['pointer' as const] },
+    };
+    const bundle = buildPublishBundle(baseSources({ components: [typed] }), GENERATED_AT);
+    const artifact = bundle.components[0].artifact as { guidelines?: Record<string, unknown> };
+    expect(artifact.guidelines).toEqual({ origin: 'authored', interactions: '### Other\n- Hover darkens the fill.' });
+  });
+
   it('builds foundation: null when sources.foundation is null', () => {
     const bundle = buildPublishBundle(baseSources({ foundation: null }), GENERATED_AT);
     expect(bundle.foundation).toBeNull();

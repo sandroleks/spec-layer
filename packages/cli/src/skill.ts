@@ -598,10 +598,14 @@ export function buildSkillGuide(input: SkillInput): string {
     + 'Everything in those files is extracted deterministically from Figma and validated against a published schema, '
     + (markdown
       ? 'with two exceptions that can carry model-written prose: a section of a component page that says it was written by AI, '
-        + `or a component's or the foundation's ${code('guidelines')} block, marked ${code('origin: generated')}; and a token group's `
+        + `or a component's or the foundation's ${code('guidelines')} block, marked ${code('origin: generated')} `
+        + `(${code('origin: authored')} when a person wrote all of it on the Figma canvas, and ${code('authored')} lists `
+        + 'the fields a person wrote when they wrote only some); and a token group\'s '
         + `${code('$extensions["com.spec-layer"].generated_description')}, whose key names its origin `
       : `with two exceptions that can carry model-written prose: a component's or the foundation's ${code('guidelines')} `
-        + `block, marked ${code('origin: generated')}, and a token group's ${code('$extensions["com.spec-layer"].generated_description')}, whose key names its origin `)
+        + `block, marked ${code('origin: generated')} (${code('origin: authored')} when a person wrote all of it on the `
+        + `Figma canvas, and ${code('authored')} lists the fields a person wrote when they wrote only some), and a token `
+        + `group's ${code('$extensions["com.spec-layer"].generated_description')}, whose key names its origin `)
     + 'and which is model-written wherever it appears; no token group carries a plain `$description`. Treat the rest as the source of truth '
     + 'for what the design system contains, and treat anything it does not state as unknown rather than as something '
     + 'to infer.',

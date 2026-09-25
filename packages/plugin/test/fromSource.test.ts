@@ -246,6 +246,10 @@ describe('missingProseKeys', () => {
   it('asks for everything requested when there is no stored prose', () => {
     expect([...missingProseKeys(null, new Set(['overview', 'content']))].sort()).toEqual(['content', 'overview']);
   });
+  it('never asks again for a keyboard a person typed', () => {
+    const typed: ProseV2 = { ...stored, authored: ['keyboard'] };
+    expect([...missingProseKeys(typed, new Set(['keyboard', 'whenToUse']))]).toEqual(['whenToUse']);
+  });
 });
 
 describe('mergeTopUp', () => {
@@ -259,6 +263,14 @@ describe('mergeTopUp', () => {
   it('returns the stored prose when nothing was generated, and null when both are empty', () => {
     expect(mergeTopUp(stored, null)).toEqual(stored);
     expect(mergeTopUp(null, { v: 2 })).toBeNull();
+  });
+  it('never replaces a key a person wrote, and keeps the stored authored list', () => {
+    const typed: ProseV2 = { ...stored, authored: ['keyboard'] };
+    const fresh: ProseV2 = { v: 2, whenToUse: ['W.'], keyboard: [{ keys: ['Enter'], action: 'New.' }] };
+    expect(mergeTopUp(typed, fresh)).toEqual({
+      v: 2, overview: { lede: 'Kept.', body: [] }, whenToUse: ['W.'],
+      keyboard: [{ keys: ['Tab'], action: 'Old.' }], authored: ['keyboard'],
+    });
   });
 });
 

@@ -177,10 +177,14 @@ function nestAnatomy(parts: AnatomyPart[]): YamlValue[] {
  * Guidelines read from storage, passed through verbatim. Renamed to the
  * brief's snake_case convention; nothing here is written by this function.
  *
- * `origin: 'generated'` leads the block. The prose in here is the only
- * model-written content in the brief, so one marked block is the whole
- * generated-content boundary and a consumer needs no per-field annotation to
- * find it.
+ * `origin` leads the block. The prose in here is the only content in the
+ * brief that was not extracted, so one marked block is the whole boundary a
+ * consumer has to find. It reads `'generated'` (written by AI) unless a
+ * person typed every present field on the Figma canvas, when it reads
+ * `'authored'`. When a person wrote only some fields, `origin: 'generated'`
+ * is followed by `authored`, the names of the fields they wrote, in this
+ * block's field order. With nothing authored the block is byte-identical to
+ * what it was before authorship was recorded.
  *
  * Every field applies the same empty-string-means-absent guard (`|| undefined`
  * for strings, a length check for the two string arrays) so a field that
@@ -194,14 +198,14 @@ function nestAnatomy(parts: AnatomyPart[]): YamlValue[] {
  * optional sections were requested and the model omitted them), and that
  * object is truthy. Deciding on the result means such a case collapses to no
  * `guidelines` key at all, matching every other optional block in this brief,
- * rather than leaking a `guidelines: {}` line. `origin` is excluded from that
- * decision for exactly the same reason: counting it would make a brief with no
- * prose at all emit a guidelines block holding nothing but the marker.
+ * rather than leaking a `guidelines: {}` line. `origin` and `authored` are
+ * excluded from that decision for exactly the same reason: counting either
+ * would make a brief with no prose at all emit a guidelines block holding
+ * nothing but the marker.
  */
 function guidelinesOf(prose: ProseDrafts | null | undefined): YamlValue | undefined {
   if (!prose) return undefined;
-  const result: Record<string, YamlValue | undefined> = {
-    origin: 'generated',
+  const fields: Record<string, YamlValue | undefined> = {
     definition: prose.definition || undefined,
     accessibility: prose.accessibility || undefined,
     interactions: prose.interactions || undefined,
@@ -212,8 +216,13 @@ function guidelinesOf(prose: ProseDrafts | null | undefined): YamlValue | undefi
     dos: prose.dos.length > 0 ? prose.dos : undefined,
     donts: prose.donts.length > 0 ? prose.donts : undefined,
   };
-  const { origin: _origin, ...fields } = result;
-  return Object.values(fields).some((v) => v !== undefined) ? result : undefined;
+  const present = Object.keys(fields).filter((k) => fields[k] !== undefined);
+  if (present.length === 0) return undefined;
+  const byPerson = new Set(Array.isArray(prose.authored) ? prose.authored : []);
+  const authored = present.filter((k) => byPerson.has(k));
+  if (authored.length === 0) return { origin: 'generated', ...fields };
+  if (authored.length === present.length) return { origin: 'authored', ...fields };
+  return { origin: 'generated', authored, ...fields };
 }
 
 // ---------------------------------------------------------------------------

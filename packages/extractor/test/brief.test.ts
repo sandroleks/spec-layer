@@ -591,6 +591,48 @@ describe('componentBrief', () => {
     });
   });
 
+  describe('authored guidelines', () => {
+    const prose = {
+      definition: 'A button.', accessibility: 'Name it.', dos: ['Do'], donts: ['Do not'],
+      interactions: 'Press it.',
+    };
+    const rawGuidelines = (p: Parameters<typeof componentBrief>[1]['prose']) =>
+      (componentBrief(SPEC, { generatedAt: AT, prose: p }) as Record<string, unknown>).guidelines as Record<string, unknown>;
+    /** The keys the emitter writes: an undefined-valued key is dropped. */
+    const keysOf = (g: Record<string, unknown>) => Object.keys(g).filter((k) => g[k] !== undefined);
+
+    it('is byte-identical to a brief with no authored data when the list is empty', () => {
+      const plain = toYaml(componentBrief(SPEC, { generatedAt: AT, prose }));
+      expect(toYaml(componentBrief(SPEC, { generatedAt: AT, prose: { ...prose, authored: [] } }))).toBe(plain);
+      expect(keysOf(rawGuidelines({ ...prose, authored: [] }))).toEqual(
+        ['origin', 'definition', 'accessibility', 'interactions', 'dos', 'donts'],
+      );
+    });
+
+    it('lists the fields a person wrote after origin: generated, in the block field order', () => {
+      const g = rawGuidelines({ ...prose, authored: ['donts', 'interactions', 'content_considerations'] });
+      expect(keysOf(g)).toEqual(['origin', 'authored', 'definition', 'accessibility', 'interactions', 'dos', 'donts']);
+      expect(g.origin).toBe('generated');
+      // content_considerations is not present, so it is not listed.
+      expect(g.authored).toEqual(['interactions', 'donts']);
+    });
+
+    it('reads origin: authored with no list when a person wrote every present field', () => {
+      const g = rawGuidelines({
+        ...prose, authored: ['definition', 'accessibility', 'interactions', 'dos', 'donts', 'anatomy_summary'],
+      });
+      expect(g.origin).toBe('authored');
+      expect('authored' in g).toBe(false);
+    });
+
+    it('still emits no block for empty prose that lists authored fields', () => {
+      const raw = componentBrief(SPEC, {
+        generatedAt: AT, prose: { definition: '', accessibility: '', dos: [], donts: [], authored: ['definition'] },
+      }) as Record<string, unknown>;
+      expect('guidelines' in raw).toBe(false);
+    });
+  });
+
   it('omits guidelines entirely when none were stored', () => {
     expect('guidelines' in brief()).toBe(false);
     expect('guidelines' in brief({ prose: null })).toBe(false);
