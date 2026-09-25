@@ -259,21 +259,6 @@ set that has at least two variant axes and a hardcoded paint. Check that:
     Anatomy and check it again. The switch stays visible and stays on, and the
     other sections still show the revealed icons.
 
-16. **Placeholders, AI off.** Turn AI writing off and create docs with every
-    section selected on a component with no Figma description. Overview, When
-    to use, Do and don't, Keyboard, Pointer and touch, Semantics and focus, and
-    Content each show a dashed box with a **Placeholder** tag and muted
-    guidance. The result line names them and says to fill them in.
-17. **Filling a placeholder.** Type over the Pointer and touch guidance and
-    the Keyboard row (for example `Shift + Tab`, `Moves focus back.`), then
-    Update. Both render as normal sections with no dashed box; the others stay
-    placeholders. The Library does not report a hand edit for the typing.
-18. **Untouched placeholders never leak.** On the same doc, Copy for AI and
-    check the brief carries no guidance text.
-19. **Duplicating a row.** Duplicate the filled Pointer bullet in Figma, edit
-    the copy, Update. Both bullets survive. Duplicating a Do and don't pair is
-    a known limit: the copy merges into the first pair.
-
 Rows 7 to 11 were added on 2026-09-10 and have not been run. Rows 12 to 15
 were added the same day, after the review that found the callouts reading
 2, 1, 4 and the Tokens section empty for a revealed icon.
@@ -391,11 +376,28 @@ were added the same day, after the review that found the callouts reading
     carries one "New layout" item; Update renders the new layout and keeps
     the group lines and overview.
 
+37. **Placeholders, AI off.** Turn AI writing off and create docs with every
+    section selected on a component with no Figma description. Overview, When
+    to use, Do and don't, Keyboard, Pointer and touch, Semantics and focus, and
+    Content each show a dashed box with a **Placeholder** tag and muted
+    guidance. The result line names them and says to fill them in.
+38. **Filling a placeholder.** Type over the Pointer and touch guidance and
+    the Keyboard row (for example `Shift + Tab`, `Moves focus back.`), then
+    Update. Both render as normal sections with no dashed box; the others stay
+    placeholders. The Library does not report a hand edit for the typing.
+39. **Untouched placeholders never leak.** On the same doc, Copy for AI and
+    check the brief carries no guidance text.
+40. **Duplicating a row.** Duplicate the filled Pointer bullet in Figma, edit
+    the copy, Update. Both bullets survive. Duplicating a Do and don't pair is
+    a known limit: the copy merges into the first pair.
+
+
 Rows 16 to 24 were added on 2026-09-17 for Docs 2.0 Plan 1, rows 25 to 28
-on 2026-09-18 for Plan 2, and rows 29 to 36 on 2026-09-19 for Plan 3. None
-of rows 16 to 36 have been run. Before running them, open Plugins,
-Development, Figma Desktop Bridge so the before and after screenshots can be
-captured for the review record.
+on 2026-09-18 for Plan 2, rows 29 to 36 on 2026-09-19 for Plan 3, and rows
+37 to 40 on 2026-09-25 for writing placeholders. None of rows 16 to 40 have
+been run. Before running them, open Plugins, Development, Figma Desktop
+Bridge so the before and after screenshots can be captured for the review
+record.
 
 ## Library
 
