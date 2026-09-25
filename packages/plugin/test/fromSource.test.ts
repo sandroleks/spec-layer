@@ -22,7 +22,6 @@ import {
   topUpProseForRebuild,
   takeTopUpNote,
   quotaExhaustedNote,
-  withoutAiOmissions,
   noteGenerationError,
   type BuildPresenter,
   type DocSource,
@@ -506,15 +505,5 @@ describe('quota exhausted note', () => {
     noteGenerationError(state, new ProseProxyError('quota_exhausted'));
     expect(state.quotaExhausted).toBe(true);
     expect(state.pendingAiNote).toContain('You’ve used all');
-  });
-
-  it('drops only the AI sections left empty, never a placeholder', () => {
-    const kept = withoutAiOmissions([
-      { id: 'definition', label: 'Overview', reason: 'nothingToShow' },
-      { id: 'keyboard', label: 'Keyboard', reason: 'nothingToShow' },
-      { id: 'related', label: 'Related components', reason: 'nothingToShow' },
-      { id: 'whenToUse', label: 'When to use', reason: 'placeholder' },
-    ]);
-    expect(kept.map((o) => o.id)).toEqual(['related', 'whenToUse']);
   });
 });

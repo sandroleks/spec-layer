@@ -29,7 +29,7 @@ import { formatResetDate } from './viewModel/allowance';
 import { emptyBrandTheme, type BrandTheme } from '../brandColors';
 import { DEFAULT_COMPONENT_FORMAT, COMPONENT_FORMAT_NAME, type ComponentFormat } from '../componentFormat';
 import {
-  ALL_SECTIONS, buildDocModel, proseKeysForSections,
+  buildDocModel, proseKeysForSections,
   type SectionId, type MeasureView, type DocFrameModel, type OmittedSection,
 } from './docModel';
 import {
@@ -659,10 +659,9 @@ export function mergeTopUp(stored: ProseV2 | null, generated: ProseV2 | null): P
 
 /**
  * What a build says when the AI allowance ran out: that the uses are gone,
- * what that cost this document, and when they come back. It replaces the
- * per-section "Left out Overview: nothing to show." lines for the sections AI
- * would have written (see withoutAiOmissions), which blamed the component for
- * what was really the allowance.
+ * what that cost this document, and when they come back. It follows the
+ * result line, which names the sections drawn as placeholders because no
+ * model wrote them.
  *
  * Only facts the proxy reported: the limit and the reset date come from the
  * last quota snapshot, and each is left out when that snapshot lacks it
@@ -684,21 +683,6 @@ export function quotaExhaustedNote(
     `You’ve used ${uses} this month, so ${AI_CONSEQUENCE[kind]}.` +
     (reset ? ` Your uses reset on ${reset}.` : '')
   );
-}
-
-const AI_SECTION_IDS: ReadonlySet<SectionId> = new Set(
-  ALL_SECTIONS.filter((section) => section.ai).map((section) => section.id),
-);
-
-/**
- * The omissions still worth listing once an AI note (the quota, or any other
- * failed request) has explained the AI ones. An AI section left empty because
- * no model answered is not "nothing to show", and listing it that way under
- * the note says the same thing twice, the second time wrongly. A placeholder
- * is kept: it says where the section went.
- */
-export function withoutAiOmissions(omitted: readonly OmittedSection[]): OmittedSection[] {
-  return omitted.filter((o) => !(o.reason === 'nothingToShow' && AI_SECTION_IDS.has(o.id)));
 }
 
 /**

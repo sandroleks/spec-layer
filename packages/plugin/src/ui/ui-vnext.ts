@@ -113,7 +113,6 @@ import {
   onSelectionFoundation,
   nextPhaseIndex,
   omissionsMessage,
-  withoutAiOmissions,
   onFoundationToggleAll,
   pluginBuild,
   resultOutcome,
@@ -1116,12 +1115,11 @@ function finishLibraryOperation(error = '', canceled = false): void {
         ? `Updated ${active.completed} ${active.completed === 1 ? 'doc' : 'docs'}.`
         : 'Doc updated.';
     // Same sentences the Create path appends, so a section the Library left
-    // out is reported rather than silently missing from the frame. An AI note
-    // explains the empty AI sections itself, so they are not listed again.
+    // out, or drew as a placeholder, is reported rather than silently
+    // missing from the frame. An AI note follows and says why the
+    // placeholders were needed.
     if (!error && active.omitted.length) {
-      omitted = state.quotaExhausted || active.aiNotes.length > 0
-        ? withoutAiOmissions(active.omitted)
-        : active.omitted;
+      omitted = active.omitted;
       message = omissionsMessage(message, omitted);
     }
     // A failed rebuild top-up, reported the way Create reports its own
@@ -2714,13 +2712,10 @@ window.onmessage = (event: MessageEvent): void => {
       {
         stopComponentProgress();
         const note = state.pendingAiNote;
-        // Out of AI uses, or any other failed AI request: the note explains
-        // the empty AI sections once, so they are not also listed one by one
-        // as "nothing to show".
-        const omittedToList = state.quotaExhausted || note
-          ? withoutAiOmissions(state.lastOmitted)
-          : state.lastOmitted;
-        const outcome = omissionsMessage(resultOutcome(Boolean(msg.replaced)), omittedToList);
+        // Every omission is listed: a writing section no model wrote is drawn
+        // as a placeholder and named as one, and the note (out of AI uses, or
+        // any other failed AI request) follows to say why.
+        const outcome = omissionsMessage(resultOutcome(Boolean(msg.replaced)), state.lastOmitted);
         screen = {
           kind: 'success',
           componentName: currentName(),
