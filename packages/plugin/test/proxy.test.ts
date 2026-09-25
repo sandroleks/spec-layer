@@ -131,17 +131,14 @@ describe('effectiveAuth', () => {
 
 describe('generationErrorCopy', () => {
   it('rate_limited', () => expect(generationErrorCopy('rate_limited')).toBe(
-    'Too many AI writing requests in the last minute, so the AI sections were left out. Try again in a minute.',
+    'Too many AI writing requests in the last minute, so sections that needed AI were added as placeholders. Try again in a minute.',
   ));
   it('generation_pending', () => expect(generationErrorCopy('generation_pending')).toBe(
-    'AI writing is still busy with an earlier request, so the AI sections were left out. Try again in a minute or two.',
+    'AI writing is still busy with an earlier request, so sections that needed AI were added as placeholders. Try again in a minute or two.',
   ));
   it('other codes name the real consequence without leaking the code', () => {
-    // Docs 2.0 draws no placeholder text: a section AI would have filled is
-    // omitted instead, so the copy has to say that and not promise a stand-in.
-    expect(generationErrorCopy('upstream')).toBe('AI writing failed, so the AI sections were left out. Try again.');
+    expect(generationErrorCopy('upstream')).toBe('AI writing failed, so sections that needed AI were added as placeholders. Try again.');
     expect(generationErrorCopy('bad_request')).not.toContain('bad_request');
-    expect(generationErrorCopy('upstream')).not.toContain('placeholder');
   });
   it('words a foundation build for descriptions', () => {
     expect(generationErrorCopy('rate_limited', 'foundation')).toBe(
@@ -150,9 +147,9 @@ describe('generationErrorCopy', () => {
   });
   it('ends a rebuild note at what it cost', () => {
     expect(generationErrorCopy('generation_pending', 'rebuild')).toBe(
-      'AI writing is still busy with an earlier request, so sections that needed AI were left empty.',
+      'AI writing is still busy with an earlier request, so sections that needed AI were left as placeholders.',
     );
-    expect(unreachableCopy('rebuild')).toBe('Couldn’t reach Spec Layer, so sections that needed AI were left empty.');
+    expect(unreachableCopy('rebuild')).toBe('Couldn’t reach Spec Layer, so sections that needed AI were left as placeholders.');
   });
   it('uses no dash as punctuation in any note', () => {
     for (const kind of ['component', 'rebuild', 'foundation'] as const) {

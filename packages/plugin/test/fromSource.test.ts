@@ -299,7 +299,7 @@ describe('topUpProseForRebuild', () => {
     // again", because the rebuilt doc is no longer stale and an Update never
     // asks AI.
     expect(state.pendingAiNote).toBe(
-      'Too many AI writing requests in the last minute, so sections that needed AI were left empty.',
+      'Too many AI writing requests in the last minute, so sections that needed AI were left as placeholders.',
     );
   });
 
@@ -308,7 +308,7 @@ describe('topUpProseForRebuild', () => {
     vi.mocked(generateProse).mockRejectedValueOnce(new TypeError('Failed to fetch'));
     const state = aiState();
     expect(await topUpProseForRebuild(state, src)).toEqual(src.prose);
-    expect(state.pendingAiNote).toBe('Couldn’t reach Spec Layer, so sections that needed AI were left empty.');
+    expect(state.pendingAiNote).toBe('Couldn’t reach Spec Layer, so sections that needed AI were left as placeholders.');
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();
   });
@@ -321,7 +321,7 @@ describe('topUpProseForRebuild', () => {
     expect(await topUpProseForRebuild(state, src)).toEqual(src.prose);
     expect(state.quotaExhausted).toBe(true);
     expect(state.pendingAiNote).toBe(
-      'You’ve used all 10 free AI writing uses this month, so sections that needed AI were left empty. Your uses reset on Oct 1.',
+      'You’ve used all 10 free AI writing uses this month, so sections that needed AI were left as placeholders. Your uses reset on Oct 1.',
     );
     expect(state.pendingAiNote).not.toContain('\u2014');
   });
@@ -340,7 +340,7 @@ describe('topUpProseForRebuild', () => {
 describe('takeTopUpNote', () => {
   it('returns the note and clears the slot', () => {
     const state = createState();
-    const note = 'Too many AI writing requests in the last minute, so sections that needed AI were left empty.';
+    const note = 'Too many AI writing requests in the last minute, so sections that needed AI were left as placeholders.';
     state.pendingAiNote = note;
     expect(takeTopUpNote(state)).toBe(note);
     expect(state.pendingAiNote).toBe('');
@@ -367,7 +367,7 @@ describe('takeTopUpNote', () => {
     // (this is the fix: ui-vnext.ts no longer waits for a later, unrelated
     // completion to read the shared slot).
     expect(takeTopUpNote(state)).toBe(
-      'Too many AI writing requests in the last minute, so sections that needed AI were left empty.',
+      'Too many AI writing requests in the last minute, so sections that needed AI were left as placeholders.',
     );
     expect(state.pendingAiNote).toBe('');
     vi.mocked(generateProse).mockClear();
@@ -471,12 +471,12 @@ describe('createDocFrame', () => {
 describe('quota exhausted note', () => {
   it('names the limit and the reset date the proxy reported', () => {
     expect(quotaExhaustedNote({ tier: 'free', used: 10, limit: 10, remaining: 0, resetsAt: '2026-10-01T00:00:00.000Z' }))
-      .toBe('You’ve used all 10 free AI writing uses this month, so the AI sections were left out. Your uses reset on Oct 1.');
+      .toBe('You’ve used all 10 free AI writing uses this month, so sections that needed AI were added as placeholders. Your uses reset on Oct 1.');
   });
 
   it('invents neither a limit nor a date the snapshot lacks', () => {
     expect(quotaExhaustedNote(null))
-      .toBe('You’ve used all your free AI writing uses this month, so the AI sections were left out.');
+      .toBe('You’ve used all your free AI writing uses this month, so sections that needed AI were added as placeholders.');
   });
 
   it('words a foundation build for descriptions, not sections', () => {
