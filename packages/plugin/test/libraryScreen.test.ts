@@ -100,6 +100,37 @@ describe('library screen presentation', () => {
     expect(markup).not.toContain('Search');
   });
 
+  it('shows the last-checked caption under the filters only when idle', () => {
+    const idle = libraryScrollMarkup(model({ checkedLabel: 'Checked 4 min ago' }));
+    expect(idle).toContain('<p class="sl-library-checked" data-library-checked>Checked 4 min ago</p>');
+    expect(idle.indexOf('data-library-checked')).toBeGreaterThan(idle.indexOf('aria-label="Library filters"'));
+
+    const checking = libraryScrollMarkup(model({ checkedLabel: 'Checked 4 min ago', refreshing: true }));
+    expect(checking).toContain('<p class="sl-library-checked" data-library-checked hidden></p>');
+
+    const never = libraryScrollMarkup(model());
+    expect(never).toContain('<p class="sl-library-checked" data-library-checked hidden></p>');
+  });
+
+  it('disables the actions during a probe without changing labels or the caption', () => {
+    const probing = model({ probing: true, refreshing: false, checkedLabel: 'Checked 4 min ago' });
+    const footer = libraryFooterMarkup(probing);
+    expect(footer).toContain('data-library-refresh disabled');
+    expect(footer).toContain('data-library-update-all disabled');
+    expect(footer).toContain('<span>Refresh library</span>');
+    expect(footer).not.toContain('Refreshing…');
+    expect(footer).not.toContain('Checking…');
+    expect(footer).toContain('<span>Update all docs</span>');
+
+    const scroll = libraryScrollMarkup(probing);
+    expect(scroll).toContain('<p class="sl-library-checked" data-library-checked>Checked 4 min ago</p>');
+    expect(scroll).toContain('data-busy="true"');
+
+    const idle = libraryFooterMarkup(model({ refreshing: false, checkedLabel: 'Checked 4 min ago' }));
+    expect(idle).not.toContain('data-library-refresh disabled');
+    expect(idle).not.toContain('data-library-update-all disabled');
+  });
+
   it('renders disclosure only for source-update rows', () => {
     const markup = libraryScrollMarkup(model());
     expect(markup.match(/data-library-disclosure=/g)).toHaveLength(1);

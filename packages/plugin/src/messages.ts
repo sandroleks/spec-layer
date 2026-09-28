@@ -111,6 +111,9 @@ export type MainToUi =
    *  yet: until it does, a failure with no rows still leaves Library showing
    *  as refreshing. */
   | { type: 'libraryError'; message: string }
+  /** Reply for `requestLibrary` with `ifChanged` when nothing changed since
+   *  the last scan. The UI keeps its rows and resumes a paused pass, if any. */
+  | { type: 'libraryUnchanged' }
   /** Follows a `selection`: whether Create would replace an existing doc for
    *  that component, so the footer can say "Replace docs". Sent separately so
    *  the selection never waits on the registry scan. */
@@ -241,11 +244,18 @@ export type UiToMain =
   /** Lazy: sent only when a drifted row is expanded. Nothing new rides the
    *  `library` message, which is the hot path. */
   | { type: 'requestDocBaseline'; docId: string }
-  | { type: 'requestLibrary' }
+  /** `ifChanged` asks the main thread to scan only if the document changed
+   *  since its last scan (any `nodechange` on a visited page). When it has
+   *  not, the reply is `libraryUnchanged` and no read happens. Absent, the
+   *  scan always runs: Refresh library and the first load send it that way. */
+  | { type: 'requestLibrary'; ifChanged?: true }
   | { type: 'focusNode'; nodeId: string }
   | { type: 'detachDoc'; docId: string }
   | { type: 'removeDoc'; docId: string }
-  | { type: 'requestDrift'; docId: string; sourceNodeId: string }
+  /** `passId` groups one Library check: the main thread keeps one resolver
+   *  memo per pass, so every doc in the pass shares variable and style
+   *  lookups. The UI starts a new id per scan and per resume. */
+  | { type: 'requestDrift'; docId: string; sourceNodeId: string; passId: string }
   | { type: 'requestDocSource'; docId: string; intent: DocSourceIntent }
   | { type: 'requestFoundation' }
   /** `groupDescriptions` is keyed `collectionId|folder`, because two collections

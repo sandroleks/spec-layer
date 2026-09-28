@@ -53,7 +53,7 @@ import { COMPONENT_FORMATS, isComponentFormat, type ComponentFormat } from '../c
 import { computeMenuPlacement } from './fontPicker';
 import { filterFamilies } from '../fonts';
 import { renderLicenseScreen } from './screens/license';
-import { patchLibraryDrift, renderLibraryScreen, revealLibraryRow, type LibraryScreenPresentation } from './screens/library';
+import { patchLibraryCaption, patchLibraryDrift, renderLibraryScreen, revealLibraryRow, type LibraryScreenPresentation } from './screens/library';
 import { patchInitialVersion, renderPublishScreen } from './screens/publish';
 import { renderHistoryScreen } from './screens/history';
 import { globalSearchMarkup, patchGlobalSearch, setSearchActive } from './screens/search';
@@ -69,6 +69,7 @@ import {
 } from './viewModel/componentScreen';
 import {
   buildLibraryModel,
+  formatLibraryCheckedAt,
   isLibraryFilter,
   libraryBadgeVisible,
   libraryUpdateIntent,
@@ -165,6 +166,7 @@ import {
   onHistoryToggle,
   setHistoryHost,
 } from './history';
+import { DriftQueue } from './libraryPass';
 
 const refs: ShellRefs = mountShell('component');
 wireShellTheme(refs);
@@ -218,6 +220,18 @@ const currentHasDoc = (): boolean => {
 };
 const libraryDrift = new Map<string, LibraryDriftState>();
 const libraryBaseline = new Map<string, string>();
+/** The current drift pass; see libraryPass.ts. */
+const driftQueue = new DriftQueue();
+let driftPassCounter = 0;
+function newPassId(): string { return String(++driftPassCounter); }
+/** A `requestLibrary { ifChanged }` probe awaiting its reply. */
+let libraryProbeInFlight = false;
+/** When the last drift pass completed, or null before the first one. */
+let libraryCheckedAt: number | null = null;
+/** Re-patches the caption once a minute while the Library list is showing. */
+let libraryCheckedTimer: ReturnType<typeof setInterval> | null = null;
+/** Mirrors main.ts; flip both for a local timing build. */
+const DRIFT_TIMING = false;
 // docId → the EXTRACTOR_VERSION stamped on its doc link (undefined on blobs
 // written before the field existed). Checked before comparing hashes, since a
 // hash comparison against a doc built by an older extractor is meaningless.
@@ -565,7 +579,9 @@ function libraryPresentation(): LibraryScreenPresentation {
     readIncomplete: libraryReadIncomplete,
     loading: (!libraryRequested || libraryRefreshing) && libraryEntries.length === 0,
     refreshing: libraryRefreshing || pendingChecks,
+    probing: libraryProbeInFlight,
     checksIncomplete: failedChecks,
+    checkedLabel: formatLibraryCheckedAt(libraryCheckedAt),
     updatingAll: Boolean(update?.batch),
     updatingDocId: update?.currentDocId ?? null,
     progress,
@@ -581,6 +597,29 @@ function libraryPresentation(): LibraryScreenPresentation {
 function paintLibraryDrift(): void {
   if (view !== 'library' || libraryPane !== 'list') return;
   if (!patchLibraryDrift(refs, libraryPresentation())) paint();
+}
+
+/** Re-say "Checked 4 min ago" in place; the rows and the footer are left alone. */
+function paintLibraryCaption(): void {
+  if (view !== 'library' || libraryPane !== 'list') return;
+  patchLibraryCaption(refs, libraryPresentation());
+}
+
+/**
+ * Keep "Checked 4 min ago" honest while the list sits on screen. Runs only
+ * while the Library list is the visible pane; anything else stops it.
+ */
+function syncLibraryCheckedTimer(): void {
+  const wanted = view === 'library' && libraryPane === 'list';
+  if (!wanted && libraryCheckedTimer !== null) {
+    clearInterval(libraryCheckedTimer);
+    libraryCheckedTimer = null;
+  }
+  if (wanted && libraryCheckedTimer === null) {
+    libraryCheckedTimer = setInterval(() => {
+      if (libraryCheckedAt !== null) paintLibraryCaption();
+    }, 60_000);
+  }
 }
 
 function navigateToView(
@@ -602,7 +641,15 @@ function navigateToView(
   // operation lock but reads none of that Library state, so it is no reason
   // to skip the read: skipping it on a first visit left the Library on its
   // loading skeleton with no request in flight to ever replace it.
-  if (view === 'library' && options.refreshLibrary !== false && libraryOperation === null) refreshLibrary();
+  if (view === 'library' && options.refreshLibrary !== false && libraryOperation === null) checkLibrary();
+  // Any arrival that sends no probe (a search result, or a Library operation
+  // still running) must still resume a paused pass: its rows read
+  // "Checking…" and Refresh stays disabled, with nothing in flight to ever
+  // finish them. pumpDriftQueue sends nothing while a check is in flight.
+  else if (view === 'library' && !driftQueue.done()) {
+    driftQueue.resume(newPassId());
+    pumpDriftQueue();
+  }
   if (view === 'library' && !publishInfoRequested) {
     publishInfoRequested = true;
     send({ type: 'requestPublishInfo' });
@@ -612,6 +659,7 @@ function navigateToView(
     send({ type: 'requestFonts' });
   }
   paint();
+  syncLibraryCheckedTimer();
 }
 
 // ---------------------------------------------------------------------------
@@ -951,8 +999,37 @@ function refreshLibrary(): void {
   libraryError = null;
   libraryLiveProjection.clear();
   libraryChanges.clear();
+  driftQueue.clear();
   if (view === 'library') paint();
   send({ type: 'requestLibrary' });
+}
+
+/**
+ * Coming back to the Library from another rail tab.
+ *
+ * A first visit, or one after a failed read, loads the list the way it
+ * always did. Otherwise the main thread is asked whether the document
+ * changed since its last scan, so an unchanged file sends no extraction
+ * work at all: `libraryUnchanged` resumes a pass that was paused by
+ * leaving, and `library` restarts one from the fresh scan. An arrival that
+ * skips this probe resumes a paused pass in navigateToView instead. Refresh
+ * library never routes through here, so a forced re-check is always one
+ * click away.
+ *
+ * While the probe is out, Update, Update all and Refresh are disabled
+ * (`probing` in libraryPresentation): a dirty file answers with a full scan,
+ * and that must not land in the middle of an update. No paint here: the
+ * only caller, navigateToView, paints right after this returns, with the
+ * flag already set.
+ */
+function checkLibrary(): void {
+  if (!libraryRequested || libraryError !== null) {
+    refreshLibrary();
+    return;
+  }
+  if (libraryProbeInFlight) return;
+  libraryProbeInFlight = true;
+  send({ type: 'requestLibrary', ifChanged: true });
 }
 
 function startLibraryDriftChecks(): void {
@@ -979,13 +1056,43 @@ function startLibraryDriftChecks(): void {
     libraryBaseline.set(entry.docId, entry.storedContentHash);
     libraryExtractorVersion.set(entry.docId, entry.extractorVersion);
     libraryIncludeHidden.set(entry.docId, entry.includeHidden === true);
-    send({
-      type: 'requestDrift',
-      docId: entry.docId,
-      sourceNodeId: entry.sourceNodeId,
-    });
   }
+  // Display order: the rows the user sees first settle first.
+  const order = new Map(currentLibraryModel().allRows.map((row, index) => [row.docId, index] as const));
+  const pendingIds = [...libraryDrift.entries()]
+    .filter(([, status]) => status === 'pending')
+    .map(([docId]) => docId)
+    .sort((a, b) => (order.get(a) ?? Number.MAX_SAFE_INTEGER) - (order.get(b) ?? Number.MAX_SAFE_INTEGER));
+  driftQueue.start(newPassId(), pendingIds);
   syncLibraryBadge();
+  pumpDriftQueue();
+}
+
+/**
+ * Send the next source check, if the Library is showing and none is in
+ * flight. Not sending while another view is up is the pause: the pending
+ * ids stay in the queue and are resumed on return, by the probe's
+ * `libraryUnchanged` reply or by navigateToView when no probe is sent.
+ */
+function pumpDriftQueue(): void {
+  if (view !== 'library') return;
+  const docId = driftQueue.next();
+  if (docId === null) return;
+  const passId = driftQueue.id();
+  const entry = libraryEntries.find((candidate) => candidate.docId === docId);
+  if (passId === null || !entry) {
+    driftQueue.settle(docId);
+    pumpDriftQueue();
+    return;
+  }
+  send({ type: 'requestDrift', docId, sourceNodeId: entry.sourceNodeId, passId });
+}
+
+/** One check landed (a result or an error): advance the pass, stamp its end. */
+function settleDriftCheck(docId: string): void {
+  if (!driftQueue.settle(docId)) return;
+  if (driftQueue.done()) libraryCheckedAt = Date.now();
+  pumpDriftQueue();
 }
 
 function closeLibraryMenu(restoreFocus = false): void {
@@ -1207,7 +1314,9 @@ async function startLibraryUpdates(
   batch: boolean,
   batchLabel = 'Update all docs',
 ): Promise<void> {
-  if (docIds.length === 0 || operation.active) return;
+  // A probe's reply may be a full scan that restarts the pass; it must not
+  // land in the middle of an update. The buttons are disabled too.
+  if (docIds.length === 0 || operation.active || libraryProbeInFlight) return;
   const edited = docIds.filter((docId) => libraryEntry(docId)?.selfEdited);
   if (edited.length > 0) {
     const ok = await confirmDialog(batch
@@ -1223,7 +1332,7 @@ async function startLibraryUpdates(
         });
     if (!ok) return;
   }
-  if (!beginOperation(operation)) return;
+  if (libraryProbeInFlight || !beginOperation(operation)) return;
   // Start from nothing: a Create earlier in this session (or an aborted
   // Library run) may have left a record behind, and it says nothing about
   // these documents.
@@ -1652,6 +1761,7 @@ function setLibraryPane(next: 'list' | 'publish' | 'history', focusSelector: str
   libraryMenuRestore = null;
   paint();
   document.querySelector<HTMLElement>(focusSelector)?.focus({ preventScroll: true });
+  syncLibraryCheckedTimer();
 }
 
 function paintAndFocus(selector: string): void {
@@ -1775,8 +1885,9 @@ document.addEventListener('click', (event) => {
   const rail = target.closest<HTMLButtonElement>('[data-view]');
   const railView = rail?.dataset.view;
   if (railView && isPluginView(railView)) {
-    // Re-selecting the Library re-runs no source checks: the list is what it
-    // was, and Refresh library sits beside it for when a re-check is wanted.
+    // Re-selecting the Library sends nothing. Arriving from another tab asks
+    // the main thread whether the document changed and re-checks only then;
+    // Refresh library sits beside the list for a forced re-check.
     navigateToView(railView, { refreshLibrary: railView !== view });
     return;
   }
@@ -1812,12 +1923,14 @@ document.addEventListener('click', (event) => {
   }
 
   if (target.closest('[data-library-refresh]')) {
-    if (!operation.active) refreshLibrary();
+    // Beside the disabled attribute: a probe's reply may start a pass itself.
+    if (!operation.active && !libraryProbeInFlight) refreshLibrary();
     return;
   }
 
   const batchButton = target.closest('[data-library-update-all], [data-library-rebuild-all]');
   if (batchButton) {
+    if (libraryProbeInFlight) return;
     const model = currentLibraryModel();
     if (
       model.allRows.some((row) => row.status === 'pending' || row.status === 'unavailable')
@@ -2944,12 +3057,16 @@ window.onmessage = (event: MessageEvent): void => {
       return;
 
     case 'library':
+      libraryProbeInFlight = false;
       libraryRequested = true;
       libraryError = null;
       libraryReadIncomplete = msg.incomplete === true;
       libraryEntries = msg.entries;
       libraryMenuDocId = null;
       startLibraryDriftChecks();
+      // A file with no component docs has no pass to wait for: this reply is
+      // the check.
+      if (driftQueue.done()) libraryCheckedAt = Date.now();
       libraryRefreshing = [...libraryDrift.values()].some((value) => value === 'pending');
       syncLibraryBadge();
       // Fired from the reply rather than from navigateToView: requestLibrary
@@ -2967,7 +3084,21 @@ window.onmessage = (event: MessageEvent): void => {
       if (searchOpen) renderGlobalSearch();
       return;
 
+    case 'libraryUnchanged':
+      libraryProbeInFlight = false;
+      // Nothing to reload. A pass paused by leaving the Library picks up
+      // where it stopped, under a new pass id so the main thread's resolver
+      // memo is not one from before the pause.
+      if (!driftQueue.done()) {
+        driftQueue.resume(newPassId());
+        pumpDriftQueue();
+      }
+      // The probe held Update, Update all and Refresh disabled; give them back.
+      paintLibraryDrift();
+      return;
+
     case 'driftSource': {
+      settleDriftCheck(msg.docId);
       const baseline = libraryBaseline.get(msg.docId);
       if (baseline === undefined) return;
       // A doc from an older extractor has a different hash projection, so
@@ -2976,6 +3107,7 @@ window.onmessage = (event: MessageEvent): void => {
         libraryDrift.set(msg.docId, 'staleVersion');
       } else {
         try {
+          const started = DRIFT_TIMING ? Date.now() : 0;
           const spec = extract(msg.node, { figmaFile: msg.fileKey, ...(msg.fileName ? { figmaFileName: msg.fileName } : {}) });
           // One projection serves both the hash and the later diff, so the
           // live side of "Review detected changes" is the object that decided
@@ -2988,6 +3120,7 @@ window.onmessage = (event: MessageEvent): void => {
             msg.docId,
             contentHash(projection) === baseline ? 'inSync' : 'drifted',
           );
+          if (DRIFT_TIMING) console.log('[Spec Layer] drift hash timing', msg.docId, { ms: Date.now() - started });
         } catch {
           libraryDrift.set(msg.docId, 'unavailable');
         }
@@ -2999,6 +3132,7 @@ window.onmessage = (event: MessageEvent): void => {
     }
 
     case 'driftError':
+      settleDriftCheck(msg.docId);
       if (!libraryBaseline.has(msg.docId)) return;
       libraryDrift.set(msg.docId, 'unavailable');
       libraryRefreshing = [...libraryDrift.values()].some((value) => value === 'pending');
@@ -3014,6 +3148,9 @@ window.onmessage = (event: MessageEvent): void => {
       // Refresh comes back because `libraryRefreshing` is what disabled it.
       libraryRequested = true;
       libraryRefreshing = false;
+      // A failed read establishes nothing, so a paused pass has nothing to resume.
+      driftQueue.clear();
+      libraryProbeInFlight = false;
       libraryError = msg.message;
       // Not a partial success, so there is no honest "list may be missing
       // some docs" note to layer under the failure banner.

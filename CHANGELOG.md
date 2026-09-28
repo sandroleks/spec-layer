@@ -8,6 +8,27 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
+- Coming back to the Library from another tab no longer re-runs the source
+  check on every visit. The plugin now watches the current page for edits
+  and re-checks only when something changed since the last scan; an
+  unchanged file sends no extraction work at all. When a check does run it
+  goes one document at a time in the order the rows are shown, pauses when
+  you leave the Library and resumes when you return, and shares one
+  variable and style lookup cache across the whole pass instead of one per
+  document. A caption under the filters says when the rows were last
+  checked ("Checked just now", "Checked 4 min ago", "Checked at 10:42"),
+  and Refresh library still forces a full check. A variable or style
+  rename, addition, or deletion also counts as a change. A spacing or
+  radius (number) variable value edit also counts, since a component's
+  layout summary carries the resolved numbers. A color, string or boolean
+  value edit does not, because no component row carries those values, and
+  the Foundation row that shows them keeps its last result until the next
+  change or Refresh library. The plugin listens on the page you have open
+  only, so edits by others on any other page are not seen, visited or not.
+  While the plugin is asking whether anything changed, Update, Update all
+  docs and Refresh library are disabled for that moment. No extraction
+  output changes.
+
 - Free AI writing is now a flat 20 generations per UTC calendar month. It
   was 20 in the first 30 days after first use and then 10 a month; the
   first-sight boost window is gone from the proxy's quota engine, and its

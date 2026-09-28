@@ -164,6 +164,29 @@ export function formatLibraryAge(
 }
 
 /**
+ * When the Library's source check last completed, as a caption.
+ *
+ * A skipped check is only honest if the screen says when the rows were
+ * last checked, so this is what lets a Library visit send no work. Relative
+ * under an hour, the clock time after, because "3 h ago" invites the wrong
+ * question (was it before or after my edit) and the clock answers it. Null
+ * with no stamp: no caption rather than a made-up time.
+ */
+export function formatLibraryCheckedAt(
+  checkedAt: number | null,
+  now = Date.now(),
+  locale?: string,
+): string | null {
+  if (checkedAt === null || !Number.isFinite(checkedAt) || !Number.isFinite(now)) return null;
+  const elapsed = Math.max(0, now - checkedAt);
+  const minute = 60_000;
+  if (elapsed < minute) return 'Checked just now';
+  if (elapsed < 60 * minute) return `Checked ${Math.floor(elapsed / minute)} min ago`;
+  const time = new Date(checkedAt).toLocaleTimeString(locale, { hour: 'numeric', minute: '2-digit' });
+  return `Checked at ${time}`;
+}
+
+/**
  * Status resolution preserves the domain priority:
  * orphaned > update available > edited > in sync.
  *

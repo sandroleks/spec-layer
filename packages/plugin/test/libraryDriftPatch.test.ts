@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  patchLibraryCaption,
   patchLibraryDrift,
   renderLibraryScreen,
   type LibraryRowPresentation,
@@ -96,6 +97,47 @@ describe('patchLibraryDrift', () => {
     // rebuilt, because the rebuild count did not change.
     expect(refs.scroll.querySelector('[data-library-rebuild-all]')).toBe(button);
     expect(button?.hasAttribute('disabled')).toBe(false);
+  });
+
+  it('updates the last-checked caption in place', () => {
+    const refs = mount([row('a', 'pending')]);
+    const caption = refs.scroll.querySelector<HTMLElement>('[data-library-checked]')!;
+    expect(caption.hidden).toBe(true);
+
+    patchLibraryDrift(refs, model([row('a', 'inSync')], { checkedLabel: 'Checked just now' }));
+    expect(caption.hidden).toBe(false);
+    expect(caption.textContent).toBe('Checked just now');
+
+    patchLibraryDrift(refs, model([row('a', 'inSync')], { checkedLabel: 'Checked 1 min ago' }));
+    expect(caption.textContent).toBe('Checked 1 min ago');
+
+    // Same element: the caption is updated in place, not rebuilt.
+    expect(refs.scroll.querySelector('[data-library-checked]')).toBe(caption);
+  });
+
+  it('patchLibraryCaption alone updates the caption and leaves the footer and rows alone', () => {
+    const refs = mountShell('library');
+    renderLibraryScreen(refs, model([row('a', 'inSync')], { checkedLabel: 'Checked just now' }));
+    const caption = refs.scroll.querySelector<HTMLElement>('[data-library-checked]')!;
+    const footerActions = refs.footer.querySelector('.sl-footer-actions');
+    const refresh = refs.footer.querySelector('[data-library-refresh]');
+    const rowElement = refs.scroll.querySelector('.sl-library-row[data-doc-id="a"]');
+    const footerHtml = refs.footer.innerHTML;
+
+    patchLibraryCaption(refs, model([row('a', 'inSync')], { checkedLabel: 'Checked 1 min ago' }));
+
+    expect(refs.scroll.querySelector('[data-library-checked]')).toBe(caption);
+    expect(caption.textContent).toBe('Checked 1 min ago');
+    expect(caption.hidden).toBe(false);
+    expect(refs.footer.querySelector('.sl-footer-actions')).toBe(footerActions);
+    expect(refs.footer.querySelector('[data-library-refresh]')).toBe(refresh);
+    expect(refs.footer.innerHTML).toBe(footerHtml);
+    expect(refs.scroll.querySelector('.sl-library-row[data-doc-id="a"]')).toBe(rowElement);
+
+    // The same hidden rule as the full paint: a check in progress hides it.
+    patchLibraryCaption(refs, model([row('a', 'inSync')], { checkedLabel: 'Checked 1 min ago', refreshing: true }));
+    expect(caption.hidden).toBe(true);
+    expect(caption.textContent).toBe('');
   });
 
   it('redraws an open row menu when busy changes, even though that row\'s own status did not', () => {
