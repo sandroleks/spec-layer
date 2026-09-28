@@ -169,16 +169,26 @@ let lastLibraryFoundation: { fileKey: string; spec: FoundationSpec } | null = nu
 
 /**
  * Whether the document changed since the Library last scanned it. Attached
- * to the current page's nodechange and re-attached on page change. If the
- * runtime lacks either event the flag stays dirty forever and every visit
- * re-checks, which is the behaviour before this flag existed.
+ * to the current page's nodechange and re-attached on page change. `consume()`
+ * runs on every scan regardless of whether the watch is live, so the flag
+ * alone cannot carry "the watch failed, never trust a clean read": that is
+ * `libraryDirtyWatched` below. If the runtime lacks either event, the watch
+ * never starts, `libraryDirtyWatched` stays false, and every visit re-checks,
+ * which is the behaviour before this flag existed.
  */
 const libraryDirty = new DocumentDirtyFlag();
+
+/** True once `libraryDirty.attach` has run without throwing. The `ifChanged`
+ *  shortcut in `requestLibrary` requires this too, not just `!isDirty`,
+ *  because `consume()` clears the flag on every scan whether or not anything
+ *  is listening for the next edit. */
+let libraryDirtyWatched = false;
 try {
   libraryDirty.attach({
     currentPage: () => figma.currentPage,
     onPageChange: (cb) => figma.on('currentpagechange', cb),
   });
+  libraryDirtyWatched = true;
 } catch (err) {
   console.error('[Spec Layer] could not watch for document edits; every Library visit will re-check', err);
 }
@@ -890,8 +900,14 @@ figma.ui.onmessage = async (raw: unknown) => {
       // scan, or a variable/style rename, addition, or deletion (which fires
       // no nodechange but moves a component's drift hash). The fingerprint
       // read fails toward scanning: an unreadable list is not "unchanged".
+      // The shortcut also requires libraryDirtyWatched: without a live watch
+      // `!libraryDirty.isDirty` would still read true after the first scan
+      // (consume() runs below regardless of the watch), and nothing would
+      // ever mark it dirty again.
       let fingerprint: string | null = null;
-      if (msg.ifChanged === true && !libraryDirty.isDirty) {
+      let probed = false;
+      if (msg.ifChanged === true && libraryDirtyWatched && !libraryDirty.isDirty) {
+        probed = true;
         const probeStarted = DRIFT_TIMING ? Date.now() : 0;
         try { fingerprint = await readFoundationFingerprint(); } catch { fingerprint = null; }
         if (DRIFT_TIMING) console.log('[Spec Layer] probe timing', { ms: Date.now() - probeStarted });
@@ -902,13 +918,19 @@ figma.ui.onmessage = async (raw: unknown) => {
       }
       // Cleared when the scan STARTS, not when it ends, so an edit made during
       // the scan or the drift pass after it marks the next visit dirty. The
-      // fingerprint is taken at the same moment for the same reason.
+      // fingerprint is taken at the same moment for the same reason. The list
+      // is read at most once here: when the probe above already ran, its
+      // result (success or failure) is reused rather than reading again.
       libraryDirty.consume();
       driftPassResolvers.reset();
-      try {
-        lastFoundationFingerprint = fingerprint ?? await readFoundationFingerprint();
-      } catch {
-        lastFoundationFingerprint = null;
+      if (probed) {
+        lastFoundationFingerprint = fingerprint;
+      } else {
+        try {
+          lastFoundationFingerprint = await readFoundationFingerprint();
+        } catch {
+          lastFoundationFingerprint = null;
+        }
       }
       // Foundation drift needs one live extraction to answer every foundation
       // row, unlike component docs, which the UI checks one at a time via
