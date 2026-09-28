@@ -98,6 +98,19 @@ describe('patchLibraryDrift', () => {
     expect(button?.hasAttribute('disabled')).toBe(false);
   });
 
+  it('updates the last-checked caption in place', () => {
+    const refs = mount([row('a', 'pending')]);
+    const caption = () => refs.scroll.querySelector<HTMLElement>('[data-library-checked]');
+    expect(caption()?.hidden).toBe(true);
+
+    patchLibraryDrift(refs, model([row('a', 'inSync')], { checkedLabel: 'Checked just now' }));
+    expect(caption()?.hidden).toBe(false);
+    expect(caption()?.textContent).toBe('Checked just now');
+
+    patchLibraryDrift(refs, model([row('a', 'inSync')], { checkedLabel: 'Checked 1 min ago' }));
+    expect(caption()?.textContent).toBe('Checked 1 min ago');
+  });
+
   it('redraws an open row menu when busy changes, even though that row\'s own status did not', () => {
     const refs = mountShell('library');
     renderLibraryScreen(refs, model([row('a', 'pending'), row('b', 'updateAvailable')], { menuDocId: 'b' }));

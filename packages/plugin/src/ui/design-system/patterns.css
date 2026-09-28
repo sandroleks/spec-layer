@@ -912,6 +912,12 @@
   font-size: var(--sl-font-size-caption);
 }
 
+.sl-library-checked {
+  margin: var(--sl-space-6) 0 0;
+  color: var(--sl-color-text-muted);
+  font-size: var(--sl-font-size-caption);
+}
+
 .sl-library-list {
   /* 68px clears the sticky footer so the last row can scroll fully into
      view. Computed layout, not rhythm: it tracks --sl-footer-height, and it

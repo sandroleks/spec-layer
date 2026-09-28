@@ -4,6 +4,7 @@ import {
   buildLibraryModel,
   buildLibraryRow,
   formatLibraryAge,
+  formatLibraryCheckedAt,
   isLibraryFilter,
   libraryBadgeVisible,
   libraryDriftForEntry,
@@ -100,6 +101,30 @@ describe('formatLibraryAge', () => {
     expect(formatLibraryAge(undefined, NOW)).toBe('Unknown');
     expect(formatLibraryAge(Number.NaN, NOW)).toBe('Unknown');
     expect(formatLibraryAge(NOW + 60_000, NOW)).toBe('just now');
+  });
+});
+
+describe('formatLibraryCheckedAt', () => {
+  const at = new Date(2026, 0, 1, 10, 42).getTime();
+
+  it('returns null with no stamp', () => {
+    expect(formatLibraryCheckedAt(null, at)).toBeNull();
+    expect(formatLibraryCheckedAt(Number.NaN, at)).toBeNull();
+  });
+
+  it('says just now under a minute, minutes under an hour', () => {
+    expect(formatLibraryCheckedAt(at, at)).toBe('Checked just now');
+    expect(formatLibraryCheckedAt(at, at + 59_000)).toBe('Checked just now');
+    expect(formatLibraryCheckedAt(at, at + 60_000)).toBe('Checked 1 min ago');
+    expect(formatLibraryCheckedAt(at, at + 59 * 60_000)).toBe('Checked 59 min ago');
+  });
+
+  it('falls back to the clock time after an hour', () => {
+    expect(formatLibraryCheckedAt(at, at + 60 * 60_000, 'en-GB')).toBe('Checked at 10:42');
+  });
+
+  it('treats a future stamp as just now', () => {
+    expect(formatLibraryCheckedAt(at + 5_000, at)).toBe('Checked just now');
   });
 });
 

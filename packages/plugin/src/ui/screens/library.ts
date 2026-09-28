@@ -49,6 +49,9 @@ export interface LibraryScreenPresentation
   refreshing?: boolean;
   /** At least one source check failed, so a batch would silently miss work. */
   checksIncomplete?: boolean;
+  /** "Checked 4 min ago", or null before the first pass completes. Shown
+   *  only while no check is in progress; see libraryCheckedMarkup. */
+  checkedLabel?: string | null;
   updatingAll?: boolean;
   updatingDocId?: string | null;
   progress?: ProgressPresentation | null;
@@ -550,6 +553,21 @@ function libraryFilterCount(model: LibraryScreenPresentation, id: LibraryFilter)
   }
 }
 
+/**
+ * The last-checked caption under the filters. Rendered always, hidden when
+ * there is nothing true to say, so patchLibraryDrift can update it in place
+ * without deciding whether to insert it. Hidden while a check runs: the
+ * footer's "Checking…" is the live fact then, and two claims about the same
+ * pass would compete. The label is the plugin's own string, never user text,
+ * so it is not escaped.
+ */
+function libraryCheckedMarkup(model: LibraryScreenPresentation): string {
+  const label = model.refreshing ? null : (model.checkedLabel ?? null);
+  return label
+    ? `<p class="sl-library-checked" data-library-checked>${label}</p>`
+    : '<p class="sl-library-checked" data-library-checked hidden></p>';
+}
+
 export function libraryScrollMarkup(model: LibraryScreenPresentation): string {
   const busy = Boolean(
     model.refreshing ||
@@ -600,7 +618,7 @@ export function libraryScrollMarkup(model: LibraryScreenPresentation): string {
     ) +
     (model.error && model.allRows.length > 0 ? errorBannerMarkup(model.error) : '') +
     (model.readIncomplete ? incompleteNoteMarkup() : '') +
-    (noDocs ? '' : filterMarkup) +
+    (noDocs ? '' : filterMarkup + libraryCheckedMarkup(model)) +
     content
   );
 }
@@ -900,6 +918,14 @@ export function patchLibraryDrift(refs: ShellRefs, model: LibraryScreenPresentat
     const small = button.querySelector('small');
     if (small) small.textContent = String(libraryFilterCount(model, id));
   }
+
+  const caption = refs.scroll.querySelector<HTMLElement>('[data-library-checked]');
+  if (caption) {
+    const label = model.refreshing ? null : (model.checkedLabel ?? null);
+    caption.textContent = label ?? '';
+    caption.hidden = label === null;
+  }
+
   // The footer is replaced wholesale, so a focused footer control is re-found
   // by selector afterwards, the way a redrawn row's control is above. A
   // control the new footer disables cannot take focus back, which is also
