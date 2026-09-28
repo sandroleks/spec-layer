@@ -48,3 +48,26 @@ function variableEntry({ id, name, collectionId, values }: FingerprintVariable):
 export function foundationFingerprint(variables: readonly FingerprintVariable[]): string {
   return [...variables].sort(byId).map(variableEntry).join('\u001f');
 }
+
+/**
+ * The fingerprint the last Library scan took, for the next probe to compare
+ * with.
+ *
+ * Held as the read itself, set the moment a scan starts, so the read runs
+ * alongside the scan instead of in front of it, and a probe that arrives
+ * mid-scan waits for that scan's value rather than comparing with the one
+ * before it. Nothing matches before the first scan or after a failed read,
+ * on either side, so both fall toward scanning.
+ */
+export class FingerprintBaseline {
+  private held: Promise<string | null> = Promise.resolve(null);
+
+  set(read: Promise<string | null>): void {
+    this.held = read.catch(() => null);
+  }
+
+  async matches(fresh: string | null): Promise<boolean> {
+    if (fresh === null) return false;
+    return fresh === await this.held;
+  }
+}

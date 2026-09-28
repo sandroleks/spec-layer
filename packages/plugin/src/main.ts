@@ -40,7 +40,7 @@ import {
 } from './publishPill';
 import { DocumentDirtyFlag } from './libraryDirty';
 import { DriftPassResolvers, countSerializedNodes } from './driftPass';
-import { foundationFingerprint } from './foundationFingerprint';
+import { FingerprintBaseline, foundationFingerprint } from './foundationFingerprint';
 
 declare const __PLUGIN_VERSION__: string;
 
@@ -204,9 +204,9 @@ const driftPassResolvers = new DriftPassResolvers(resolver);
  * deletion, or a number variable's value edit can move a component's drift
  * hash without any nodechange, and variables have no event of their own, so
  * the probe compares this too, for equality only. Styles are watched by
- * stylechange instead. Null until the first scan.
+ * stylechange instead. Set as each scan starts; see FingerprintBaseline.
  */
-let lastFoundationFingerprint: string | null = null;
+const lastFoundationFingerprint = new FingerprintBaseline();
 
 /**
  * Names for every variable, plus the raw per-mode values of FLOAT variables
@@ -918,27 +918,22 @@ figma.ui.onmessage = async (raw: unknown) => {
         const probeStarted = __DRIFT_TIMING__ ? Date.now() : 0;
         try { fingerprint = await readFoundationFingerprint(); } catch { fingerprint = null; }
         if (__DRIFT_TIMING__) console.log('[Spec Layer] probe timing', { ms: Date.now() - probeStarted });
-        if (fingerprint !== null && fingerprint === lastFoundationFingerprint) {
+        // isDirty again after the awaits: an edit that landed while the
+        // probe read, or while it waited on a scan's read, scans now.
+        if (await lastFoundationFingerprint.matches(fingerprint) && !libraryDirty.isDirty) {
           figma.ui.postMessage({ type: 'libraryUnchanged' } as MainToUi);
           break;
         }
       }
       // Cleared when the scan STARTS, not when it ends, so an edit made during
       // the scan or the drift pass after it marks the next visit dirty. The
-      // fingerprint is taken at the same moment for the same reason. The list
+      // fingerprint is taken at the same moment for the same reason, and not
+      // awaited here: nothing below needs it, only the next probe. The list
       // is read at most once here: when the probe above already ran, its
       // result (success or failure) is reused rather than reading again.
       libraryDirty.consume();
       driftPassResolvers.reset();
-      if (probed) {
-        lastFoundationFingerprint = fingerprint;
-      } else {
-        try {
-          lastFoundationFingerprint = await readFoundationFingerprint();
-        } catch {
-          lastFoundationFingerprint = null;
-        }
-      }
+      lastFoundationFingerprint.set(probed ? Promise.resolve(fingerprint) : readFoundationFingerprint());
       // Foundation drift needs one live extraction to answer every foundation
       // row, unlike component docs, which the UI checks one at a time via
       // requestDrift. scanLibrary calls this lazily and at most once, so a

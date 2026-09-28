@@ -1,5 +1,44 @@
 import { describe, expect, it } from 'vitest';
-import { foundationFingerprint } from '../src/foundationFingerprint';
+import { FingerprintBaseline, foundationFingerprint } from '../src/foundationFingerprint';
+
+describe('FingerprintBaseline', () => {
+  it('matches nothing before the first scan', async () => {
+    const baseline = new FingerprintBaseline();
+    expect(await baseline.matches('v')).toBe(false);
+  });
+
+  it('matches the value the last scan read, and only that', async () => {
+    const baseline = new FingerprintBaseline();
+    baseline.set(Promise.resolve('v1'));
+    expect(await baseline.matches('v1')).toBe(true);
+    expect(await baseline.matches('v2')).toBe(false);
+  });
+
+  it('never matches a probe whose own read failed', async () => {
+    const baseline = new FingerprintBaseline();
+    baseline.set(Promise.resolve('v1'));
+    expect(await baseline.matches(null)).toBe(false);
+  });
+
+  it('falls toward scanning when the scan\'s read fails', async () => {
+    const baseline = new FingerprintBaseline();
+    baseline.set(Promise.reject(new Error('unreadable')));
+    expect(await baseline.matches('v1')).toBe(false);
+  });
+
+  // A probe can arrive while a scan is still running. It must compare with
+  // the read that scan started, not the one before it, or a scan that just
+  // saw a rename would be followed by a second full scan for nothing.
+  it('waits for the read of a scan still in progress', async () => {
+    const baseline = new FingerprintBaseline();
+    baseline.set(Promise.resolve('old'));
+    let finish!: (value: string) => void;
+    baseline.set(new Promise<string>((resolve) => { finish = resolve; }));
+    const answer = baseline.matches('new');
+    finish('new');
+    expect(await answer).toBe(true);
+  });
+});
 
 const vars = [
   { id: 'VariableID:2', name: 'color/primary', collectionId: 'C:1' },
