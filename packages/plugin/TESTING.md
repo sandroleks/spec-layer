@@ -503,9 +503,10 @@ record.
 16. Open Library on a file with several component docs and wait for every row
     to settle. Note the caption under the filters reads **Checked just now**.
     Switch to Foundations and back. Confirm no row returns to **Checking…**,
-    no progress appears in the footer, and the caption is still there. Wait
-    a minute on the Library and confirm it changes to **Checked 1 min ago**
-    without any interaction.
+    no progress appears in the footer, and the caption is still there. Stay
+    on the Library and confirm it changes to **Checked 1 min ago** about a
+    minute after the rows settled, without any interaction, and not up to a
+    minute later than that.
 17. Edit a documented component (move a layer or change a padding value),
     switch to another tab and back to the Library. Confirm the check runs,
     rows settle from the top of the list down, and the edited row reads

@@ -70,6 +70,7 @@ import {
 import {
   buildLibraryModel,
   formatLibraryCheckedAt,
+  libraryCheckedLabelChangesIn,
   isLibraryFilter,
   libraryBadgeVisible,
   libraryUpdateIntent,
@@ -228,8 +229,8 @@ function newPassId(): string { return String(++driftPassCounter); }
 let libraryProbeInFlight = false;
 /** When the last drift pass completed, or null before the first one. */
 let libraryCheckedAt: number | null = null;
-/** Re-patches the caption once a minute while the Library list is showing. */
-let libraryCheckedTimer: ReturnType<typeof setInterval> | null = null;
+/** Wakes when the caption's label next changes, while the Library list shows. */
+let libraryCheckedTimer: ReturnType<typeof setTimeout> | null = null;
 /** The same `DRIFT_TIMING=1` build define main.ts reads; see build.mjs. */
 declare const __DRIFT_TIMING__: boolean;
 // docId → the EXTRACTOR_VERSION stamped on its doc link (undefined on blobs
@@ -606,20 +607,32 @@ function paintLibraryCaption(): void {
 }
 
 /**
- * Keep "Checked 4 min ago" honest while the list sits on screen. Runs only
- * while the Library list is the visible pane; anything else stops it.
+ * Keep "Checked 4 min ago" honest while the list sits on screen. One timeout,
+ * set for the moment the label next reads differently and re-armed from
+ * there, so it flips on the minute of the check and stops for good once the
+ * label is a clock time. Runs only while the Library list is the visible
+ * pane; anything else stops it. Called again whenever the stamp moves.
  */
 function syncLibraryCheckedTimer(): void {
-  const wanted = view === 'library' && libraryPane === 'list';
-  if (!wanted && libraryCheckedTimer !== null) {
-    clearInterval(libraryCheckedTimer);
+  if (libraryCheckedTimer !== null) {
+    clearTimeout(libraryCheckedTimer);
     libraryCheckedTimer = null;
   }
-  if (wanted && libraryCheckedTimer === null) {
-    libraryCheckedTimer = setInterval(() => {
-      if (libraryCheckedAt !== null) paintLibraryCaption();
-    }, 60_000);
-  }
+  if (view !== 'library' || libraryPane !== 'list') return;
+  const wait = libraryCheckedLabelChangesIn(libraryCheckedAt);
+  if (wait === null) return;
+  // A little past the boundary, so the label has moved when it is read.
+  libraryCheckedTimer = setTimeout(() => {
+    libraryCheckedTimer = null;
+    paintLibraryCaption();
+    syncLibraryCheckedTimer();
+  }, wait + 50);
+}
+
+/** A pass just finished: stamp it and re-arm the caption from the new stamp. */
+function stampLibraryChecked(): void {
+  libraryCheckedAt = Date.now();
+  syncLibraryCheckedTimer();
 }
 
 function navigateToView(
@@ -1099,7 +1112,7 @@ function pumpDriftQueue(): void {
  */
 function settleDriftCheck(docId: string, passId: string): boolean {
   if (!driftQueue.settle(docId, passId)) return false;
-  if (driftQueue.done()) libraryCheckedAt = Date.now();
+  if (driftQueue.done()) stampLibraryChecked();
   pumpDriftQueue();
   return true;
 }
@@ -3075,7 +3088,7 @@ window.onmessage = (event: MessageEvent): void => {
       startLibraryDriftChecks();
       // A file with no component docs has no pass to wait for: this reply is
       // the check.
-      if (driftQueue.done()) libraryCheckedAt = Date.now();
+      if (driftQueue.done()) stampLibraryChecked();
       libraryRefreshing = [...libraryDrift.values()].some((value) => value === 'pending');
       syncLibraryBadge();
       // Fired from the reply rather than from navigateToView: requestLibrary

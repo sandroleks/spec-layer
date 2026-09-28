@@ -5,6 +5,7 @@ import {
   buildLibraryRow,
   formatLibraryAge,
   formatLibraryCheckedAt,
+  libraryCheckedLabelChangesIn,
   isLibraryFilter,
   libraryBadgeVisible,
   libraryDriftForEntry,
@@ -125,6 +126,45 @@ describe('formatLibraryCheckedAt', () => {
 
   it('treats a future stamp as just now', () => {
     expect(formatLibraryCheckedAt(at + 5_000, at)).toBe('Checked just now');
+  });
+});
+
+// The caption's timer sleeps until the label would read differently, so it
+// flips on the minute of the check rather than up to a minute late, and it
+// stops once the label is a clock time that never changes again.
+describe('libraryCheckedLabelChangesIn', () => {
+  const at = new Date(2026, 0, 1, 10, 42).getTime();
+  const minute = 60_000;
+
+  it('is null with no stamp', () => {
+    expect(libraryCheckedLabelChangesIn(null, at)).toBeNull();
+    expect(libraryCheckedLabelChangesIn(Number.NaN, at)).toBeNull();
+  });
+
+  it('counts to the next minute boundary of the check, not of the clock', () => {
+    expect(libraryCheckedLabelChangesIn(at, at)).toBe(minute);
+    expect(libraryCheckedLabelChangesIn(at, at + 59_000)).toBe(1_000);
+    expect(libraryCheckedLabelChangesIn(at, at + minute)).toBe(minute);
+    expect(libraryCheckedLabelChangesIn(at, at + 5 * minute + 20_000)).toBe(40_000);
+  });
+
+  it('agrees with the label: it reads differently at the boundary and not before', () => {
+    for (const offset of [0, 30_000, 59_999, minute, 17 * minute + 1]) {
+      const now = at + offset;
+      const wait = libraryCheckedLabelChangesIn(at, now)!;
+      expect(formatLibraryCheckedAt(at, now + wait - 1, 'en-GB')).toBe(formatLibraryCheckedAt(at, now, 'en-GB'));
+      expect(formatLibraryCheckedAt(at, now + wait, 'en-GB')).not.toBe(formatLibraryCheckedAt(at, now, 'en-GB'));
+    }
+  });
+
+  it('wakes once more for the switch to the clock time, then never', () => {
+    expect(libraryCheckedLabelChangesIn(at, at + 59 * minute + 30_000)).toBe(30_000);
+    expect(libraryCheckedLabelChangesIn(at, at + 60 * minute)).toBeNull();
+    expect(libraryCheckedLabelChangesIn(at, at + 3 * 60 * minute)).toBeNull();
+  });
+
+  it('waits out a future stamp before its first minute', () => {
+    expect(libraryCheckedLabelChangesIn(at + 5_000, at)).toBe(65_000);
   });
 });
 

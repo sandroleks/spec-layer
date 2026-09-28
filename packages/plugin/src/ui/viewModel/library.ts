@@ -187,6 +187,25 @@ export function formatLibraryCheckedAt(
 }
 
 /**
+ * How long until formatLibraryCheckedAt reads differently, or null when it
+ * never will again: no stamp, or an hour or more old, where the caption is
+ * a clock time. The label moves on whole minutes counted from the check, so
+ * a timer that sleeps this long flips it on time, where one ticking every
+ * minute from whenever the list opened could leave "Checked just now" up
+ * for almost two.
+ */
+export function libraryCheckedLabelChangesIn(
+  checkedAt: number | null,
+  now = Date.now(),
+): number | null {
+  if (checkedAt === null || !Number.isFinite(checkedAt) || !Number.isFinite(now)) return null;
+  const minute = 60_000;
+  const minutesShown = Math.floor(Math.max(0, now - checkedAt) / minute);
+  if (minutesShown >= 60) return null;
+  return checkedAt + (minutesShown + 1) * minute - now;
+}
+
+/**
  * Status resolution preserves the domain priority:
  * orphaned > update available > edited > in sync.
  *
