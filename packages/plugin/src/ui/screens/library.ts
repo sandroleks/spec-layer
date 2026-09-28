@@ -47,10 +47,17 @@ export interface LibraryScreenPresentation
   menuDocId: string | null;
   loading?: boolean;
   refreshing?: boolean;
+  /**
+   * A "has anything changed?" probe is out. Its reply may start a new pass,
+   * so Update, Update all and Refresh are disabled until it lands. Nothing
+   * else reads it: the probe is usually answered at once with no work, so
+   * the labels and the caption keep following `refreshing` and do not flash.
+   */
+  probing?: boolean;
   /** At least one source check failed, so a batch would silently miss work. */
   checksIncomplete?: boolean;
   /** "Checked 4 min ago", or null before the first pass completes. Shown
-   * only while no check is in progress; see libraryCheckedMarkup. */
+   * only while no check is in progress; see checkedCaptionLabel. */
   checkedLabel?: string | null;
   updatingAll?: boolean;
   updatingDocId?: string | null;
@@ -554,18 +561,27 @@ function libraryFilterCount(model: LibraryScreenPresentation, id: LibraryFilter)
 }
 
 /**
+ * What the last-checked caption says, or null when it is hidden. The one
+ * place the rule lives, shared by the full paint and patchLibraryCaption.
+ * Hidden while a check runs: the footer's "Checking…" is the live fact then,
+ * and two claims about the same pass would compete.
+ */
+function checkedCaptionLabel(model: LibraryScreenPresentation): string | null {
+  return model.refreshing ? null : (model.checkedLabel ?? null);
+}
+
+/**
  * The last-checked caption under the filters. Rendered whenever the filter
  * group is (a Library with rows), hidden when there is nothing true to say,
- * so patchLibraryDrift can update it in place without deciding whether to
+ * so patchLibraryCaption can update it in place without deciding whether to
  * insert it. With no rows there is no filter group and no caption either;
  * the drift patch already falls back to a full paint when there is no
  * `.sl-library-list`, so that case never needs an in-place update anyway.
- * Hidden while a check runs: the footer's "Checking…" is the live fact then,
- * and two claims about the same pass would compete. The label is the
- * plugin's own string, never user text, so it is not escaped.
+ * The label is the plugin's own string, never user text, so it is not
+ * escaped.
  */
 function libraryCheckedMarkup(model: LibraryScreenPresentation): string {
-  const label = model.refreshing ? null : (model.checkedLabel ?? null);
+  const label = checkedCaptionLabel(model);
   return label
     ? `<p class="sl-library-checked" data-library-checked>${label}</p>`
     : '<p class="sl-library-checked" data-library-checked hidden></p>';
@@ -574,6 +590,7 @@ function libraryCheckedMarkup(model: LibraryScreenPresentation): string {
 export function libraryScrollMarkup(model: LibraryScreenPresentation): string {
   const busy = Boolean(
     model.refreshing ||
+    model.probing ||
     model.updatingAll ||
     model.updatingDocId,
   );
@@ -629,6 +646,7 @@ export function libraryScrollMarkup(model: LibraryScreenPresentation): string {
 export function libraryFooterMarkup(model: LibraryScreenPresentation): string {
   const busy = Boolean(
     model.refreshing ||
+    model.probing ||
     model.updatingAll ||
     model.updatingDocId,
   );
@@ -883,7 +901,7 @@ export function patchLibraryDrift(refs: ShellRefs, model: LibraryScreenPresentat
   }
   if (drawn.size !== model.rows.length || model.rows.some((row) => !drawn.has(row.docId))) return false;
 
-  const busy = Boolean(model.refreshing || model.updatingAll || model.updatingDocId);
+  const busy = Boolean(model.refreshing || model.probing || model.updatingAll || model.updatingDocId);
   // menuMarkup's overflow items are only rendered while the menu is open, and
   // only the "Update this doc" item there depends on `busy`. A row whose own
   // status did not move is otherwise left untouched, so if busy changed while
@@ -922,12 +940,7 @@ export function patchLibraryDrift(refs: ShellRefs, model: LibraryScreenPresentat
     if (small) small.textContent = String(libraryFilterCount(model, id));
   }
 
-  const caption = refs.scroll.querySelector<HTMLElement>('[data-library-checked]');
-  if (caption) {
-    const label = model.refreshing ? null : (model.checkedLabel ?? null);
-    caption.textContent = label ?? '';
-    caption.hidden = label === null;
-  }
+  patchLibraryCaption(refs, model);
 
   // The footer is replaced wholesale, so a focused footer control is re-found
   // by selector afterwards, the way a redrawn row's control is above. A
@@ -944,6 +957,20 @@ export function patchLibraryDrift(refs: ShellRefs, model: LibraryScreenPresentat
   // already does after every full paint.
   if (redrewAny) placeOpenRowMenu(refs);
   return true;
+}
+
+/**
+ * Rewrites only the last-checked caption, in place. The minute timer calls
+ * this alone, so keeping "Checked 4 min ago" current never touches the rows
+ * or the footer. A Library with no drawn caption (no rows) has nothing to
+ * patch.
+ */
+export function patchLibraryCaption(refs: ShellRefs, model: LibraryScreenPresentation): void {
+  const caption = refs.scroll.querySelector<HTMLElement>('[data-library-checked]');
+  if (!caption) return;
+  const label = checkedCaptionLabel(model);
+  caption.textContent = label ?? '';
+  caption.hidden = label === null;
 }
 
 export function renderLibraryScreen(

@@ -516,21 +516,32 @@ record.
     stops. Switch back: it continues from where it stopped, not from zero.
     While a check runs, pan and zoom the canvas: Figma should stay
     responsive, with at most brief pauses between rows.
-19. Change a variable **value** that a documented Foundation uses, switch
-    tabs and back. The Foundation row does **not** change on its own (the
-    plugin does not see value edits) and any component row bound to that
-    variable stays **In sync**, as it would after a Refresh too. Click
-    **Refresh library**: the Foundation row reads **Update available**, the
-    component rows stay **In sync**, and the caption returns to **Checked
-    just now**.
-19a. **Rename** a variable that a documented component binds, switch tabs
+19. Change a **color** variable's value that a documented Foundation uses,
+    switch tabs and back. The Foundation row does **not** change on its own
+    (the plugin does not see color, string or boolean value edits) and any
+    component row bound to that variable stays **In sync**, as it would
+    after a Refresh too. Click **Refresh library**: the Foundation row reads
+    **Update available**, the component rows stay **In sync**, and the
+    caption returns to **Checked just now**.
+20. Change the value of a **number** variable bound to a documented
+    component's padding or gap, switch tabs and back. The check runs on its
+    own and the component row reads **Update available**; **Show changes**
+    lists the layout change. Set the value back, switch away and back: **In
+    sync**.
+21. **Rename** a variable that a documented component binds, switch tabs
     and back. The check runs on its own and the component row reads **Update
     available**; **Show changes** names the old and new token. Rename it
     back, switch away and back: **In sync**. Repeat with a text style
     rename and with deleting an unused paint style: each triggers the
     check.
-20. On a file with only Foundation docs, open Library. The caption reads
+22. On a file with only Foundation docs, open Library. The caption reads
     **Checked just now** as soon as the rows appear.
+23. On a file with at least ten component docs, open Library and switch to
+    Foundations while the footer still counts checks. Open search, pick a
+    component doc, and confirm the Library opens on that row and the
+    footer count continues to the end, with every row settling. Close and
+    reopen the plugin and, before ever opening the Library, pick a doc from
+    search on another tab: the rows still settle.
 
 ## AI-writing allowance (free plan)
 

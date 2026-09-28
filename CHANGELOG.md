@@ -18,11 +18,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   document. A caption under the filters says when the rows were last
   checked ("Checked just now", "Checked 4 min ago", "Checked at 10:42"),
   and Refresh library still forces a full check. A variable or style
-  rename, addition, or deletion also counts as a change. A variable value
-  edit does not: it never affected a component row, and the Foundation row
-  that shows it keeps its last result until the next change or Refresh
-  library. Edits by others on pages you have not visited this session are
-  not seen either. No extraction output changes.
+  rename, addition, or deletion also counts as a change. A spacing or
+  radius (number) variable value edit also counts, since a component's
+  layout summary carries the resolved numbers. A color, string or boolean
+  value edit does not, because no component row carries those values, and
+  the Foundation row that shows them keeps its last result until the next
+  change or Refresh library. The plugin listens on the page you have open
+  only, so edits by others on any other page are not seen, visited or not.
+  While the plugin is asking whether anything changed, Update, Update all
+  docs and Refresh library are disabled for that moment. No extraction
+  output changes.
 
 - Free AI writing is now a flat 20 generations per UTC calendar month. It
   was 20 in the first 30 days after first use and then 10 a month; the

@@ -197,13 +197,18 @@ try {
 const driftPassResolvers = new DriftPassResolvers(resolver);
 
 /**
- * Identity of local variables and styles at the last Library scan. A rename
- * or deletion moves a component's drift hash without any nodechange, so the
- * probe compares this too. Null until the first scan.
+ * Identity of local variables and styles at the last Library scan. A rename,
+ * a deletion, or a number variable's value edit can move a component's drift
+ * hash without any nodechange, so the probe compares this too, for equality
+ * only. Null until the first scan.
  */
 let lastFoundationFingerprint: string | null = null;
 
-/** Names only: one pass over the variable list, no values, no modes. */
+/**
+ * Names for every variable and style, plus the raw per-mode values of FLOAT
+ * variables (a component's layout summary carries resolved padding, gap and
+ * radius numbers). One pass over the variable list, no mode resolution.
+ */
 async function readFoundationFingerprint(): Promise<string> {
   const [variables, paint, text, effect, grid] = await Promise.all([
     figma.variables.getLocalVariablesAsync(),
@@ -213,7 +218,10 @@ async function readFoundationFingerprint(): Promise<string> {
     figma.getLocalGridStylesAsync(),
   ]);
   return foundationFingerprint(
-    variables.map((v) => ({ id: v.id, name: v.name, collectionId: v.variableCollectionId })),
+    variables.map((v) => ({
+      id: v.id, name: v.name, collectionId: v.variableCollectionId,
+      ...(v.resolvedType === 'FLOAT' ? { values: v.valuesByMode } : {}),
+    })),
     [...paint, ...text, ...effect, ...grid].map((s) => ({ id: s.id, name: s.name })),
   );
 }
@@ -897,8 +905,9 @@ figma.ui.onmessage = async (raw: unknown) => {
 
     case 'requestLibrary': {
       // Two signals, either one runs the scan: a nodechange since the last
-      // scan, or a variable/style rename, addition, or deletion (which fires
-      // no nodechange but moves a component's drift hash). The fingerprint
+      // scan, or a variable/style rename, addition, or deletion, or a number
+      // variable's value edit (none of which is known to fire a nodechange,
+      // and each can move a component's drift hash). The fingerprint
       // read fails toward scanning: an unreadable list is not "unchanged".
       // The shortcut also requires libraryDirtyWatched: without a live watch
       // `!libraryDirty.isDirty` would still read true after the first scan

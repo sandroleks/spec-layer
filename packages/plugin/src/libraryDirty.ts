@@ -10,9 +10,16 @@
  * Why `nodechange` and not `documentchange`: under dynamic-page access
  * `figma.on('documentchange')` needs every page loaded, and it fires for
  * every edit anywhere. `PageNode.on('nodechange')` needs no page loading and
- * is scoped to the page the user can edit. Edits on pages never visited this
- * session, and variable or style edits (not nodes), are not seen; the
- * Library's last-checked caption and Refresh library are the recovery.
+ * is scoped to the page the user can edit. The listener is on the current
+ * page only, so edits by others on any other page are not seen, whether or
+ * not you visited it this session. Variable and style edits are not node
+ * changes either: the Library probe's foundation fingerprint catches
+ * renames, additions and deletions, and number (FLOAT) value edits, since a
+ * component's layout summary carries the resolved padding, gap and radius.
+ * A color, string or boolean value edit is not seen, and no component row
+ * carries those values; the Foundation row that shows them keeps its last
+ * result until the next change or Refresh library. The last-checked caption
+ * and Refresh library are the recovery.
  *
  * Starts dirty so the first scan of a session always runs.
  */
@@ -39,8 +46,6 @@ export class DocumentDirtyFlag {
     this.dirty = false;
     return was;
   }
-
-  markDirty(): void { this.dirty = true; }
 
   attach(host: DirtyFlagHost): void {
     this.listenTo(host.currentPage());
