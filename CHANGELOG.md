@@ -17,14 +17,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   variable and style lookup cache across the whole pass instead of one per
   document. A caption under the filters says when the rows were last
   checked ("Checked just now", "Checked 4 min ago", "Checked at 10:42"),
-  and Refresh library still forces a full check. A variable or style
-  rename, addition, or deletion also counts as a change. A spacing or
-  radius (number) variable value edit also counts, since a component's
-  layout summary carries the resolved numbers. A color, string or boolean
-  value edit does not, because no component row carries those values, and
-  the Foundation row that shows them keeps its last result until the next
-  change or Refresh library. The plugin listens on the page you have open
-  only, so edits by others on any other page are not seen, visited or not.
+  and Refresh library still forces a full check. A variable rename,
+  addition, or deletion also counts as a change. A spacing or radius
+  (number) variable value edit also counts, since a component's layout
+  summary carries the resolved numbers. Any style edit counts, a paint,
+  text, effect or grid value edit included, whichever page you make it
+  on, so a Foundation row that shows a style re-checks after it. A color,
+  string or boolean variable value edit does not, because no component row
+  carries those values and Figma sends no event for variables, and the
+  Foundation row that shows them keeps its last result until the next
+  change or Refresh library. The plugin watches layer edits on the page you
+  have open only, so layer edits by others on any other page are not seen,
+  visited or not.
   While the plugin is asking whether anything changed, Update, Update all
   docs and Refresh library are disabled for that moment. A source check
   still running when a new scan starts no longer sets a row from a read

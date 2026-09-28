@@ -169,24 +169,27 @@ let lastLibraryFoundation: { fileKey: string; spec: FoundationSpec } | null = nu
 
 /**
  * Whether the document changed since the Library last scanned it. Attached
- * to the current page's nodechange and re-attached on page change. `consume()`
- * runs on every scan regardless of whether the watch is live, so the flag
- * alone cannot carry "the watch failed, never trust a clean read": that is
- * `libraryDirtyWatched` below. If the runtime lacks either event, the watch
- * never starts, `libraryDirtyWatched` stays false, and every visit re-checks,
- * which is the behaviour before this flag existed.
+ * to the current page's nodechange (re-attached on page change) and to the
+ * document's stylechange. `consume()` runs on every scan regardless of
+ * whether the watch is live, so the flag alone cannot carry "the watch
+ * failed, never trust a clean read": that is `libraryDirtyWatched` below. If
+ * the runtime lacks any of these events, the watch never starts,
+ * `libraryDirtyWatched` stays false, and every visit re-checks, which is the
+ * behaviour before this flag existed.
  */
 const libraryDirty = new DocumentDirtyFlag();
 
 /** True once `libraryDirty.attach` has run without throwing. The `ifChanged`
  *  shortcut in `requestLibrary` requires this too, not just `!isDirty`,
  *  because `consume()` clears the flag on every scan whether or not anything
- *  is listening for the next edit. */
+ *  is listening for the next edit. It is also what lets the fingerprint
+ *  leave styles out: with no style watch, the shortcut is never taken. */
 let libraryDirtyWatched = false;
 try {
   libraryDirty.attach({
     currentPage: () => figma.currentPage,
     onPageChange: (cb) => figma.on('currentpagechange', cb),
+    onStyleChange: (cb) => figma.on('stylechange', cb),
   });
   libraryDirtyWatched = true;
 } catch (err) {
@@ -197,33 +200,25 @@ try {
 const driftPassResolvers = new DriftPassResolvers(resolver);
 
 /**
- * Identity of local variables and styles at the last Library scan. A rename,
- * a deletion, or a number variable's value edit can move a component's drift
- * hash without any nodechange, so the probe compares this too, for equality
- * only. Null until the first scan.
+ * Identity of local variables at the last Library scan. A rename, a
+ * deletion, or a number variable's value edit can move a component's drift
+ * hash without any nodechange, and variables have no event of their own, so
+ * the probe compares this too, for equality only. Styles are watched by
+ * stylechange instead. Null until the first scan.
  */
 let lastFoundationFingerprint: string | null = null;
 
 /**
- * Names for every variable and style, plus the raw per-mode values of FLOAT
- * variables (a component's layout summary carries resolved padding, gap and
- * radius numbers). One pass over the variable list, no mode resolution.
+ * Names for every variable, plus the raw per-mode values of FLOAT variables
+ * (a component's layout summary carries resolved padding, gap and radius
+ * numbers). One pass over the variable list, no mode resolution.
  */
 async function readFoundationFingerprint(): Promise<string> {
-  const [variables, paint, text, effect, grid] = await Promise.all([
-    figma.variables.getLocalVariablesAsync(),
-    figma.getLocalPaintStylesAsync(),
-    figma.getLocalTextStylesAsync(),
-    figma.getLocalEffectStylesAsync(),
-    figma.getLocalGridStylesAsync(),
-  ]);
-  return foundationFingerprint(
-    variables.map((v) => ({
-      id: v.id, name: v.name, collectionId: v.variableCollectionId,
-      ...(v.resolvedType === 'FLOAT' ? { values: v.valuesByMode } : {}),
-    })),
-    [...paint, ...text, ...effect, ...grid].map((s) => ({ id: s.id, name: s.name })),
-  );
+  const variables = await figma.variables.getLocalVariablesAsync();
+  return foundationFingerprint(variables.map((v) => ({
+    id: v.id, name: v.name, collectionId: v.variableCollectionId,
+    ...(v.resolvedType === 'FLOAT' ? { values: v.valuesByMode } : {}),
+  })));
 }
 
 /**
@@ -906,11 +901,12 @@ figma.ui.onmessage = async (raw: unknown) => {
     }
 
     case 'requestLibrary': {
-      // Two signals, either one runs the scan: a nodechange since the last
-      // scan, or a variable/style rename, addition, or deletion, or a number
-      // variable's value edit (none of which is known to fire a nodechange,
-      // and each can move a component's drift hash). The fingerprint
-      // read fails toward scanning: an unreadable list is not "unchanged".
+      // Two signals, either one runs the scan: the dirty flag (a nodechange
+      // on the current page or any stylechange since the last scan), or a
+      // variable rename, addition, or deletion, or a number variable's value
+      // edit (variables fire neither event, and each of those can move a
+      // component's drift hash). The fingerprint read fails toward
+      // scanning: an unreadable list is not "unchanged".
       // The shortcut also requires libraryDirtyWatched: without a live watch
       // `!libraryDirty.isDirty` would still read true after the first scan
       // (consume() runs below regardless of the watch), and nothing would

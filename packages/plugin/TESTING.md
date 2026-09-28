@@ -534,6 +534,12 @@ record.
     back, switch away and back: **In sync**. Repeat with a text style
     rename and with deleting an unused paint style: each triggers the
     check.
+24. Change the colour of a paint style, or the size of a text style, that a
+    documented Foundation shows, from a page other than the one the docs are
+    on. Switch tabs and back. The check runs on its own and that Foundation
+    row reads **Update available**. Set the value back, switch away and
+    back: **In sync**. (Style edits arrive as a document-wide style change;
+    only color, string and boolean variable value edits are not seen, row 19.)
 22. On a file with only Foundation docs, open Library. The caption reads
     **Checked just now** as soon as the rows appear.
 23. On a file with at least ten component docs, open Library and switch to

@@ -1,11 +1,14 @@
 /**
- * Identity of the file's local variables and styles, as one string, so the
- * Library probe can tell "a token was renamed, added, or removed" apart from
+ * Identity of the file's local variables, as one string, so the Library
+ * probe can tell "a variable was renamed, added, or removed" apart from
  * "nothing changed" without the full foundation read.
  *
- * Names for every variable and style. A component's drift hash (extractor
- * hash.ts, `tokens`) carries the bound token's name, so a rename moves it,
- * and a deleted variable matters because a binding to it resolves to null.
+ * Names for every variable. A component's drift hash (extractor hash.ts,
+ * `tokens`) carries the bound token's name, so a rename moves it, and a
+ * deleted variable matters because a binding to it resolves to null. Styles
+ * are not read here: they have an event, `stylechange`, which sets the
+ * document dirty flag for any style edit, values included (libraryDirty.ts).
+ * Variables have none, which is the only reason this read exists.
  *
  * Values as well for FLOAT variables, because a component's layout summary
  * (extractor layout.ts, carried in the hash's `layout`) renders the resolved
@@ -27,7 +30,6 @@ export interface FingerprintVariable {
   /** The variable's `valuesByMode`; passed only for FLOAT variables. */
   values?: Readonly<Record<string, unknown>>;
 }
-export interface FingerprintStyle { id: string; name: string }
 
 function byId<T extends { id: string }>(a: T, b: T): number {
   return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
@@ -43,12 +45,6 @@ function variableEntry({ id, name, collectionId, values }: FingerprintVariable):
   return JSON.stringify([id, name, collectionId, pairs]);
 }
 
-export function foundationFingerprint(
-  variables: readonly FingerprintVariable[],
-  styles: readonly FingerprintStyle[],
-): string {
-  const v = [...variables].sort(byId).map(variableEntry);
-  const s = [...styles].sort(byId)
-    .map(({ id, name }) => JSON.stringify([id, name]));
-  return `v:${v.join('\u001f')}|s:${s.join('\u001f')}`;
+export function foundationFingerprint(variables: readonly FingerprintVariable[]): string {
+  return [...variables].sort(byId).map(variableEntry).join('\u001f');
 }
