@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { DriftPassResolvers, countSerializedNodes } from '../src/driftPass';
-import type { NodeResolver, SerializedNode } from '../src/serialize';
+import type { NodeResolver } from '../src/serialize';
+import type { SerializedNode } from '@spec-layer/extractor';
 
 function base(): NodeResolver {
   return {

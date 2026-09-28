@@ -1,5 +1,6 @@
 import { memoizedResolver } from './resolverMemo';
-import type { NodeResolver, SerializedNode } from './serialize';
+import type { NodeResolver } from './serialize';
+import type { SerializedNode } from '@spec-layer/extractor';
 
 /**
  * One resolver memo per Library drift pass.
