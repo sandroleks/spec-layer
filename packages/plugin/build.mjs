@@ -25,6 +25,11 @@ const pkg = JSON.parse(readFileSync(resolve(__dirname, 'package.json'), 'utf-8')
 // looked exactly like a catastrophic regression.
 const define = {
   __PLUGIN_VERSION__: JSON.stringify(pkg.version),
+  // DRIFT_TIMING=1 compiles in the Library drift timing logs, main thread and
+  // UI both, for a local measurement build. A literal here, not a const in
+  // the source, so a normal build drops those branches instead of shipping
+  // them behind a minified variable.
+  __DRIFT_TIMING__: process.env.DRIFT_TIMING === '1' ? 'true' : 'false',
 };
 
 // ---------------------------------------------------------------------------

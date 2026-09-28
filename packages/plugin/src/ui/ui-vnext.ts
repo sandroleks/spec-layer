@@ -230,8 +230,8 @@ let libraryProbeInFlight = false;
 let libraryCheckedAt: number | null = null;
 /** Re-patches the caption once a minute while the Library list is showing. */
 let libraryCheckedTimer: ReturnType<typeof setInterval> | null = null;
-/** Mirrors main.ts; flip both for a local timing build. */
-const DRIFT_TIMING = false;
+/** The same `DRIFT_TIMING=1` build define main.ts reads; see build.mjs. */
+declare const __DRIFT_TIMING__: boolean;
 // docId → the EXTRACTOR_VERSION stamped on its doc link (undefined on blobs
 // written before the field existed). Checked before comparing hashes, since a
 // hash comparison against a doc built by an older extractor is meaningless.
@@ -3107,7 +3107,7 @@ window.onmessage = (event: MessageEvent): void => {
         libraryDrift.set(msg.docId, 'staleVersion');
       } else {
         try {
-          const started = DRIFT_TIMING ? Date.now() : 0;
+          const started = __DRIFT_TIMING__ ? Date.now() : 0;
           const spec = extract(msg.node, { figmaFile: msg.fileKey, ...(msg.fileName ? { figmaFileName: msg.fileName } : {}) });
           // One projection serves both the hash and the later diff, so the
           // live side of "Review detected changes" is the object that decided
@@ -3120,7 +3120,7 @@ window.onmessage = (event: MessageEvent): void => {
             msg.docId,
             contentHash(projection) === baseline ? 'inSync' : 'drifted',
           );
-          if (DRIFT_TIMING) console.log('[Spec Layer] drift hash timing', msg.docId, { ms: Date.now() - started });
+          if (__DRIFT_TIMING__) console.log('[Spec Layer] drift hash timing', msg.docId, { ms: Date.now() - started });
         } catch {
           libraryDrift.set(msg.docId, 'unavailable');
         }

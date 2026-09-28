@@ -227,10 +227,12 @@ async function readFoundationFingerprint(): Promise<string> {
 }
 
 /**
- * Flip to true for a local build to log per-document drift timing to the
- * Figma console. Off in every shipped build; esbuild drops the branches.
+ * True only in a `DRIFT_TIMING=1` build (see build.mjs), which logs
+ * per-document drift timing to the Figma console. Read it directly at each
+ * use: esbuild substitutes the literal there and drops the branch, which an
+ * alias const would stop it from doing.
  */
-const DRIFT_TIMING = false;
+declare const __DRIFT_TIMING__: boolean;
 
 // ---------------------------------------------------------------------------
 // Find the relevant component in the current selection (walk up if needed)
@@ -917,9 +919,9 @@ figma.ui.onmessage = async (raw: unknown) => {
       let probed = false;
       if (msg.ifChanged === true && libraryDirtyWatched && !libraryDirty.isDirty) {
         probed = true;
-        const probeStarted = DRIFT_TIMING ? Date.now() : 0;
+        const probeStarted = __DRIFT_TIMING__ ? Date.now() : 0;
         try { fingerprint = await readFoundationFingerprint(); } catch { fingerprint = null; }
-        if (DRIFT_TIMING) console.log('[Spec Layer] probe timing', { ms: Date.now() - probeStarted });
+        if (__DRIFT_TIMING__) console.log('[Spec Layer] probe timing', { ms: Date.now() - probeStarted });
         if (fingerprint !== null && fingerprint === lastFoundationFingerprint) {
           figma.ui.postMessage({ type: 'libraryUnchanged' } as MainToUi);
           break;
@@ -1502,7 +1504,7 @@ figma.ui.onmessage = async (raw: unknown) => {
 
     case 'requestDrift': {
       try {
-        const started = DRIFT_TIMING ? Date.now() : 0;
+        const started = __DRIFT_TIMING__ ? Date.now() : 0;
         const src = await figma.getNodeByIdAsync(msg.sourceNodeId);
         if (!src || (src.type !== 'COMPONENT' && src.type !== 'COMPONENT_SET')) {
           // Both branches of this case render the same "Check unavailable" row,
@@ -1516,7 +1518,7 @@ figma.ui.onmessage = async (raw: unknown) => {
         }
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const node = await serializeNode(src as any, driftPassResolvers.forPass(msg.passId));
-        if (DRIFT_TIMING) {
+        if (__DRIFT_TIMING__) {
           console.log('[Spec Layer] drift timing', msg.docId, {
             ms: Date.now() - started,
             nodes: countSerializedNodes(node),
