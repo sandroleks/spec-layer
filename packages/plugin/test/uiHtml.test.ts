@@ -210,15 +210,16 @@ describe('dist/ui-harness.html', () => {
 describe('drift timing logs', () => {
   const read = (dir: string, file: string): string => readFileSync(join(dir, file), 'utf-8');
 
+  const mainLogs = ['drift timing', 'probe timing', 'timing scan', 'timing main blocked', 'timing main '];
+  const uiLogs = ['drift hash timing', 'timing ui blocked', 'timing ui navigate'];
+
   it('are stripped from a normal build, main thread and UI alike', () => {
-    expect(read(plainOut, 'main.js')).not.toContain('drift timing');
-    expect(read(plainOut, 'main.js')).not.toContain('probe timing');
-    expect(read(plainOut, 'ui.html')).not.toContain('drift hash timing');
+    for (const log of mainLogs) expect(read(plainOut, 'main.js')).not.toContain(log);
+    for (const log of uiLogs) expect(read(plainOut, 'ui.html')).not.toContain(log);
   });
 
   it('are compiled in by DRIFT_TIMING=1', () => {
-    expect(read(timingOut, 'main.js')).toContain('drift timing');
-    expect(read(timingOut, 'main.js')).toContain('probe timing');
-    expect(read(timingOut, 'ui.html')).toContain('drift hash timing');
+    for (const log of mainLogs) expect(read(timingOut, 'main.js')).toContain(log);
+    for (const log of uiLogs) expect(read(timingOut, 'ui.html')).toContain(log);
   });
 });

@@ -168,6 +168,7 @@ import {
   setHistoryHost,
 } from './history';
 import { DriftQueue } from './libraryPass';
+import { BlockWatch } from '../timing';
 
 const refs: ShellRefs = mountShell('component');
 wireShellTheme(refs);
@@ -233,6 +234,17 @@ let libraryCheckedAt: number | null = null;
 let libraryCheckedTimer: ReturnType<typeof setTimeout> | null = null;
 /** The same `DRIFT_TIMING=1` build define main.ts reads; see build.mjs. */
 declare const __DRIFT_TIMING__: boolean;
+/**
+ * `DRIFT_TIMING=1` only: every stretch over 100ms in which the iframe could
+ * not run a timer, and what ran in it (see timing.ts). Plain strings, so a
+ * copy out of Figma's console keeps every number.
+ */
+const uiBlocks = __DRIFT_TIMING__
+  ? new BlockWatch(() => Date.now(), 100, (ms, during) => {
+    console.log(`[Spec Layer] timing ui blocked ${ms}ms during ${during.join(', ')}`);
+  })
+  : null;
+if (__DRIFT_TIMING__ && uiBlocks) setInterval(() => uiBlocks.tick(50), 50);
 // docId → the EXTRACTOR_VERSION stamped on its doc link (undefined on blobs
 // written before the field existed). Checked before comparing hashes, since a
 // hash comparison against a doc built by an older extractor is meaningless.
@@ -675,7 +687,13 @@ function navigateToView(
     settingsFontsRequested = true;
     send({ type: 'requestFonts' });
   }
+  const paintStarted = __DRIFT_TIMING__ ? Date.now() : 0;
+  if (__DRIFT_TIMING__) uiBlocks?.doing(`ui paint ${next}`);
   paint();
+  if (__DRIFT_TIMING__) {
+    uiBlocks?.done();
+    console.log(`[Spec Layer] timing ui navigate to ${next}, paint ${Date.now() - paintStarted}ms`);
+  }
   syncLibraryCheckedTimer();
 }
 
@@ -2821,7 +2839,7 @@ function applySelection(msg: SelectionMessage): void {
   );
 }
 
-window.onmessage = (event: MessageEvent): void => {
+const handleMainMessage = (event: MessageEvent): void => {
   const msg = (event.data?.pluginMessage ?? null) as MainToUi | null;
   if (!msg) return;
 
@@ -3142,7 +3160,7 @@ window.onmessage = (event: MessageEvent): void => {
             msg.docId,
             contentHash(projection) === baseline ? 'inSync' : 'drifted',
           );
-          if (__DRIFT_TIMING__) console.log('[Spec Layer] drift hash timing', msg.docId, { ms: Date.now() - started });
+          if (__DRIFT_TIMING__) console.log(`[Spec Layer] drift hash timing ${msg.docId} ${Date.now() - started}ms`);
         } catch {
           libraryDrift.set(msg.docId, 'unavailable');
         }
@@ -3355,6 +3373,22 @@ window.onmessage = (event: MessageEvent): void => {
       return;
   }
 };
+
+/** `DRIFT_TIMING=1` only: how long the UI held its thread for each message. */
+function timedMainMessage(event: MessageEvent): void {
+  const type = (event.data?.pluginMessage as { type?: string } | undefined)?.type ?? 'unknown';
+  const started = Date.now();
+  uiBlocks?.doing(`ui ${type}`);
+  try {
+    handleMainMessage(event);
+  } finally {
+    uiBlocks?.done();
+    const ms = Date.now() - started;
+    if (ms >= 30) console.log(`[Spec Layer] timing ui ${type} took ${ms}ms`);
+  }
+}
+
+window.onmessage = __DRIFT_TIMING__ ? timedMainMessage : handleMainMessage;
 
 paintAllowance();
 paint();

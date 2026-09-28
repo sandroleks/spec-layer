@@ -41,6 +41,7 @@ import {
 import { DocumentDirtyFlag } from './libraryDirty';
 import { DriftPassResolvers, countSerializedNodes } from './driftPass';
 import { FingerprintBaseline, foundationFingerprint } from './foundationFingerprint';
+import { BlockWatch } from './timing';
 
 declare const __PLUGIN_VERSION__: string;
 
@@ -228,6 +229,19 @@ async function readFoundationFingerprint(): Promise<string> {
  * alias const would stop it from doing.
  */
 declare const __DRIFT_TIMING__: boolean;
+
+/**
+ * `DRIFT_TIMING=1` only: every stretch over 100ms in which the main thread
+ * could not run a timer, which is time Figma could not repaint or take
+ * input, and what ran in it (see timing.ts). Plain strings, so a copy out
+ * of Figma's console keeps every number.
+ */
+const mainBlocks = __DRIFT_TIMING__
+  ? new BlockWatch(() => Date.now(), 100, (ms, during) => {
+    console.log(`[Spec Layer] timing main blocked ${ms}ms during ${during.join(', ')}`);
+  })
+  : null;
+if (__DRIFT_TIMING__ && mainBlocks) setInterval(() => mainBlocks.tick(50), 50);
 
 // ---------------------------------------------------------------------------
 // Find the relevant component in the current selection (walk up if needed)
@@ -594,7 +608,7 @@ function descriptionsForUnit(
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
-figma.ui.onmessage = async (raw: unknown) => {
+const handleUiMessage = async (raw: unknown): Promise<void> => {
   const msg = raw as UiToMain;
   switch (msg.type) {
     case 'requestSelection':
@@ -917,7 +931,7 @@ figma.ui.onmessage = async (raw: unknown) => {
         probed = true;
         const probeStarted = __DRIFT_TIMING__ ? Date.now() : 0;
         try { fingerprint = await readFoundationFingerprint(); } catch { fingerprint = null; }
-        if (__DRIFT_TIMING__) console.log('[Spec Layer] probe timing', { ms: Date.now() - probeStarted });
+        if (__DRIFT_TIMING__) console.log(`[Spec Layer] probe timing ${Date.now() - probeStarted}ms, dirty ${libraryDirty.isDirty}`);
         // isDirty again after the awaits: an edit that landed while the
         // probe read, or while it waited on a scan's read, scans now.
         if (await lastFoundationFingerprint.matches(fingerprint) && !libraryDirty.isDirty) {
@@ -940,7 +954,10 @@ figma.ui.onmessage = async (raw: unknown) => {
       // file with only component docs pays nothing. Resolves null on failure
       // rather than rejecting: a foundation that cannot be read is a fact
       // about those rows (badge unavailable), not a reason to drop the list.
+      let foundationMs = 0;
       const liveFoundation = async (): Promise<FoundationSpec | null> => {
+        const foundationStarted = __DRIFT_TIMING__ ? Date.now() : 0;
+        if (__DRIFT_TIMING__) mainBlocks?.doing('requestLibrary foundation read');
         try {
           const { fileKey } = resolveFileKey(figma.fileKey, null);
           const spec = buildFoundation(await readFoundationDump(fileKey, false));
@@ -949,14 +966,24 @@ figma.ui.onmessage = async (raw: unknown) => {
         } catch (err) {
           console.error('[Spec Layer] foundation read failed during the library scan', err);
           return null;
+        } finally {
+          if (__DRIFT_TIMING__) {
+            foundationMs = Date.now() - foundationStarted;
+            mainBlocks?.doing('requestLibrary');
+          }
         }
       };
       let scan: LibraryScan;
+      const scanStarted = __DRIFT_TIMING__ ? Date.now() : 0;
       try {
         const reg = readRegistry();
         scan = await scanLibrary(reg.docIds, { getNodeByIdAsync: (id) => figma.getNodeByIdAsync(id), liveFoundation });
       } catch (err) {
         scan = { entries: [], alive: new Set<string>(), error: err instanceof Error ? err.message : String(err) };
+      }
+      if (__DRIFT_TIMING__) {
+        const ms = Date.now() - scanStarted;
+        console.log(`[Spec Layer] timing scan ${scan.entries.length} docs in ${ms}ms (foundation read ${foundationMs}ms, registry and doc frames ${ms - foundationMs}ms)`);
       }
       if (scan.error !== null) console.error('[Spec Layer] library scan failed', scan.error);
       // libraryReply is the one place that turns a scan into a reply and a
@@ -1510,11 +1537,7 @@ figma.ui.onmessage = async (raw: unknown) => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const node = await serializeNode(src as any, driftPassResolvers.forPass(msg.passId));
         if (__DRIFT_TIMING__) {
-          console.log('[Spec Layer] drift timing', msg.docId, {
-            ms: Date.now() - started,
-            nodes: countSerializedNodes(node),
-            bytes: JSON.stringify(node).length,
-          });
+          console.log(`[Spec Layer] drift timing ${msg.docId} ${Date.now() - started}ms, ${countSerializedNodes(node)} nodes, ${JSON.stringify(node).length} bytes`);
         }
         const { fileKey } = resolveFileKey(figma.fileKey, null);
         figma.ui.postMessage({
@@ -1776,3 +1799,24 @@ figma.ui.onmessage = async (raw: unknown) => {
     }
   }
 };
+
+/**
+ * `DRIFT_TIMING=1` only: how long each UI message's handler ran, awaits
+ * included. Beside mainBlocks this separates waiting on Figma from holding
+ * the thread: a long handler with no block was waiting.
+ */
+async function timedUiMessage(raw: unknown): Promise<void> {
+  const msg = raw as { type?: string; docId?: string };
+  const label = msg.type === 'requestDrift' ? `requestDrift ${msg.docId ?? ''}` : (msg.type ?? 'unknown');
+  const started = Date.now();
+  mainBlocks?.doing(label);
+  try {
+    await handleUiMessage(raw);
+  } finally {
+    mainBlocks?.done();
+    const ms = Date.now() - started;
+    if (ms >= 30) console.log(`[Spec Layer] timing main ${label} took ${ms}ms`);
+  }
+}
+
+figma.ui.onmessage = __DRIFT_TIMING__ ? timedUiMessage : handleUiMessage;
