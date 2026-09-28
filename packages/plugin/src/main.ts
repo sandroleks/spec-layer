@@ -38,6 +38,9 @@ import {
   PUBLISH_RECORD_KEY, parsePublishRecord, serializePublishRecord, pillState,
   type DocPublishRecord, type PillState,
 } from './publishPill';
+import { DocumentDirtyFlag } from './libraryDirty';
+import { DriftPassResolvers, countSerializedNodes } from './driftPass';
+import { foundationFingerprint } from './foundationFingerprint';
 
 declare const __PLUGIN_VERSION__: string;
 
@@ -163,6 +166,53 @@ async function foundationFor(fileKey: string): Promise<SerializedFoundation> {
  * projection, Copy for AI or Publish; those read the file with it.
  */
 let lastLibraryFoundation: { fileKey: string; spec: FoundationSpec } | null = null;
+
+/**
+ * Whether the document changed since the Library last scanned it. Attached
+ * to the current page's nodechange and re-attached on page change. If the
+ * runtime lacks either event the flag stays dirty forever and every visit
+ * re-checks, which is the behaviour before this flag existed.
+ */
+const libraryDirty = new DocumentDirtyFlag();
+try {
+  libraryDirty.attach({
+    currentPage: () => figma.currentPage,
+    onPageChange: (cb) => figma.on('currentpagechange', cb),
+  });
+} catch (err) {
+  console.error('[Spec Layer] could not watch for document edits; every Library visit will re-check', err);
+}
+
+/** One resolver memo per drift pass; see driftPass.ts. */
+const driftPassResolvers = new DriftPassResolvers(resolver);
+
+/**
+ * Identity of local variables and styles at the last Library scan. A rename
+ * or deletion moves a component's drift hash without any nodechange, so the
+ * probe compares this too. Null until the first scan.
+ */
+let lastFoundationFingerprint: string | null = null;
+
+/** Names only: one pass over the variable list, no values, no modes. */
+async function readFoundationFingerprint(): Promise<string> {
+  const [variables, paint, text, effect, grid] = await Promise.all([
+    figma.variables.getLocalVariablesAsync(),
+    figma.getLocalPaintStylesAsync(),
+    figma.getLocalTextStylesAsync(),
+    figma.getLocalEffectStylesAsync(),
+    figma.getLocalGridStylesAsync(),
+  ]);
+  return foundationFingerprint(
+    variables.map((v) => ({ id: v.id, name: v.name, collectionId: v.variableCollectionId })),
+    [...paint, ...text, ...effect, ...grid].map((s) => ({ id: s.id, name: s.name })),
+  );
+}
+
+/**
+ * Flip to true for a local build to log per-document drift timing to the
+ * Figma console. Off in every shipped build; esbuild drops the branches.
+ */
+const DRIFT_TIMING = false;
 
 // ---------------------------------------------------------------------------
 // Find the relevant component in the current selection (walk up if needed)
@@ -836,6 +886,30 @@ figma.ui.onmessage = async (raw: unknown) => {
     }
 
     case 'requestLibrary': {
+      // Two signals, either one runs the scan: a nodechange since the last
+      // scan, or a variable/style rename, addition, or deletion (which fires
+      // no nodechange but moves a component's drift hash). The fingerprint
+      // read fails toward scanning: an unreadable list is not "unchanged".
+      let fingerprint: string | null = null;
+      if (msg.ifChanged === true && !libraryDirty.isDirty) {
+        const probeStarted = DRIFT_TIMING ? Date.now() : 0;
+        try { fingerprint = await readFoundationFingerprint(); } catch { fingerprint = null; }
+        if (DRIFT_TIMING) console.log('[Spec Layer] probe timing', { ms: Date.now() - probeStarted });
+        if (fingerprint !== null && fingerprint === lastFoundationFingerprint) {
+          figma.ui.postMessage({ type: 'libraryUnchanged' } as MainToUi);
+          break;
+        }
+      }
+      // Cleared when the scan STARTS, not when it ends, so an edit made during
+      // the scan or the drift pass after it marks the next visit dirty. The
+      // fingerprint is taken at the same moment for the same reason.
+      libraryDirty.consume();
+      driftPassResolvers.reset();
+      try {
+        lastFoundationFingerprint = fingerprint ?? await readFoundationFingerprint();
+      } catch {
+        lastFoundationFingerprint = null;
+      }
       // Foundation drift needs one live extraction to answer every foundation
       // row, unlike component docs, which the UI checks one at a time via
       // requestDrift. scanLibrary calls this lazily and at most once, so a
@@ -1397,6 +1471,7 @@ figma.ui.onmessage = async (raw: unknown) => {
 
     case 'requestDrift': {
       try {
+        const started = DRIFT_TIMING ? Date.now() : 0;
         const src = await figma.getNodeByIdAsync(msg.sourceNodeId);
         if (!src || (src.type !== 'COMPONENT' && src.type !== 'COMPONENT_SET')) {
           // Both branches of this case render the same "Check unavailable" row,
@@ -1409,7 +1484,14 @@ figma.ui.onmessage = async (raw: unknown) => {
           break;
         }
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const node = await serializeNode(src as any, memoizedResolver(resolver));
+        const node = await serializeNode(src as any, driftPassResolvers.forPass(msg.passId));
+        if (DRIFT_TIMING) {
+          console.log('[Spec Layer] drift timing', msg.docId, {
+            ms: Date.now() - started,
+            nodes: countSerializedNodes(node),
+            bytes: JSON.stringify(node).length,
+          });
+        }
         const { fileKey } = resolveFileKey(figma.fileKey, null);
         figma.ui.postMessage({ type: 'driftSource', docId: msg.docId, node, fileKey, fileName: figma.root.name } as MainToUi);
       } catch (err) {

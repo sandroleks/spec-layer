@@ -979,10 +979,12 @@ function startLibraryDriftChecks(): void {
     libraryBaseline.set(entry.docId, entry.storedContentHash);
     libraryExtractorVersion.set(entry.docId, entry.extractorVersion);
     libraryIncludeHidden.set(entry.docId, entry.includeHidden === true);
+    // Replaced in the sequential pass; see DriftQueue.
     send({
       type: 'requestDrift',
       docId: entry.docId,
       sourceNodeId: entry.sourceNodeId,
+      passId: 'legacy',
     });
   }
   syncLibraryBadge();
