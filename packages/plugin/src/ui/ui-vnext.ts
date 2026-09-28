@@ -69,6 +69,7 @@ import {
 } from './viewModel/componentScreen';
 import {
   buildLibraryModel,
+  formatLibraryCheckedAt,
   isLibraryFilter,
   libraryBadgeVisible,
   libraryUpdateIntent,
@@ -225,6 +226,10 @@ let driftPassCounter = 0;
 function newPassId(): string { return String(++driftPassCounter); }
 /** A `requestLibrary { ifChanged }` probe awaiting its reply. */
 let libraryProbeInFlight = false;
+/** When the last drift pass completed, or null before the first one. */
+let libraryCheckedAt: number | null = null;
+/** Re-patches the caption once a minute while the Library list is showing. */
+let libraryCheckedTimer: ReturnType<typeof setInterval> | null = null;
 /** Mirrors main.ts; flip both for a local timing build. */
 const DRIFT_TIMING = false;
 // docId → the EXTRACTOR_VERSION stamped on its doc link (undefined on blobs
@@ -575,6 +580,7 @@ function libraryPresentation(): LibraryScreenPresentation {
     loading: (!libraryRequested || libraryRefreshing) && libraryEntries.length === 0,
     refreshing: libraryRefreshing || pendingChecks,
     checksIncomplete: failedChecks,
+    checkedLabel: formatLibraryCheckedAt(libraryCheckedAt),
     updatingAll: Boolean(update?.batch),
     updatingDocId: update?.currentDocId ?? null,
     progress,
@@ -590,6 +596,23 @@ function libraryPresentation(): LibraryScreenPresentation {
 function paintLibraryDrift(): void {
   if (view !== 'library' || libraryPane !== 'list') return;
   if (!patchLibraryDrift(refs, libraryPresentation())) paint();
+}
+
+/**
+ * Keep "Checked 4 min ago" honest while the list sits on screen. Runs only
+ * while the Library list is the visible pane; anything else stops it.
+ */
+function syncLibraryCheckedTimer(): void {
+  const wanted = view === 'library' && libraryPane === 'list';
+  if (!wanted && libraryCheckedTimer !== null) {
+    clearInterval(libraryCheckedTimer);
+    libraryCheckedTimer = null;
+  }
+  if (wanted && libraryCheckedTimer === null) {
+    libraryCheckedTimer = setInterval(() => {
+      if (libraryCheckedAt !== null) paintLibraryDrift();
+    }, 60_000);
+  }
 }
 
 function navigateToView(
@@ -621,6 +644,7 @@ function navigateToView(
     send({ type: 'requestFonts' });
   }
   paint();
+  syncLibraryCheckedTimer();
 }
 
 // ---------------------------------------------------------------------------
@@ -1040,9 +1064,10 @@ function pumpDriftQueue(): void {
   send({ type: 'requestDrift', docId, sourceNodeId: entry.sourceNodeId, passId });
 }
 
-/** One check landed (a result or an error): advance the pass. */
+/** One check landed (a result or an error): advance the pass, stamp its end. */
 function settleDriftCheck(docId: string): void {
   if (!driftQueue.settle(docId)) return;
+  if (driftQueue.done()) libraryCheckedAt = Date.now();
   pumpDriftQueue();
 }
 
@@ -1710,6 +1735,7 @@ function setLibraryPane(next: 'list' | 'publish' | 'history', focusSelector: str
   libraryMenuRestore = null;
   paint();
   document.querySelector<HTMLElement>(focusSelector)?.focus({ preventScroll: true });
+  syncLibraryCheckedTimer();
 }
 
 function paintAndFocus(selector: string): void {
@@ -3010,6 +3036,9 @@ window.onmessage = (event: MessageEvent): void => {
       libraryEntries = msg.entries;
       libraryMenuDocId = null;
       startLibraryDriftChecks();
+      // A file with no component docs has no pass to wait for: this reply is
+      // the check.
+      if (driftQueue.done()) libraryCheckedAt = Date.now();
       libraryRefreshing = [...libraryDrift.values()].some((value) => value === 'pending');
       syncLibraryBadge();
       // Fired from the reply rather than from navigateToView: requestLibrary
@@ -3089,6 +3118,9 @@ window.onmessage = (event: MessageEvent): void => {
       // Refresh comes back because `libraryRefreshing` is what disabled it.
       libraryRequested = true;
       libraryRefreshing = false;
+      // A failed read establishes nothing, so a paused pass has nothing to resume.
+      driftQueue.clear();
+      libraryProbeInFlight = false;
       libraryError = msg.message;
       // Not a partial success, so there is no honest "list may be missing
       // some docs" note to layer under the failure banner.
