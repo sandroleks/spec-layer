@@ -100,15 +100,18 @@ describe('patchLibraryDrift', () => {
 
   it('updates the last-checked caption in place', () => {
     const refs = mount([row('a', 'pending')]);
-    const caption = () => refs.scroll.querySelector<HTMLElement>('[data-library-checked]');
-    expect(caption()?.hidden).toBe(true);
+    const caption = refs.scroll.querySelector<HTMLElement>('[data-library-checked]')!;
+    expect(caption.hidden).toBe(true);
 
     patchLibraryDrift(refs, model([row('a', 'inSync')], { checkedLabel: 'Checked just now' }));
-    expect(caption()?.hidden).toBe(false);
-    expect(caption()?.textContent).toBe('Checked just now');
+    expect(caption.hidden).toBe(false);
+    expect(caption.textContent).toBe('Checked just now');
 
     patchLibraryDrift(refs, model([row('a', 'inSync')], { checkedLabel: 'Checked 1 min ago' }));
-    expect(caption()?.textContent).toBe('Checked 1 min ago');
+    expect(caption.textContent).toBe('Checked 1 min ago');
+
+    // Same element: the caption is updated in place, not rebuilt.
+    expect(refs.scroll.querySelector('[data-library-checked]')).toBe(caption);
   });
 
   it('redraws an open row menu when busy changes, even though that row\'s own status did not', () => {

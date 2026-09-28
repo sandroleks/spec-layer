@@ -50,7 +50,7 @@ export interface LibraryScreenPresentation
   /** At least one source check failed, so a batch would silently miss work. */
   checksIncomplete?: boolean;
   /** "Checked 4 min ago", or null before the first pass completes. Shown
-   *  only while no check is in progress; see libraryCheckedMarkup. */
+   * only while no check is in progress; see libraryCheckedMarkup. */
   checkedLabel?: string | null;
   updatingAll?: boolean;
   updatingDocId?: string | null;
@@ -554,12 +554,15 @@ function libraryFilterCount(model: LibraryScreenPresentation, id: LibraryFilter)
 }
 
 /**
- * The last-checked caption under the filters. Rendered always, hidden when
- * there is nothing true to say, so patchLibraryDrift can update it in place
- * without deciding whether to insert it. Hidden while a check runs: the
- * footer's "Checking…" is the live fact then, and two claims about the same
- * pass would compete. The label is the plugin's own string, never user text,
- * so it is not escaped.
+ * The last-checked caption under the filters. Rendered whenever the filter
+ * group is (a Library with rows), hidden when there is nothing true to say,
+ * so patchLibraryDrift can update it in place without deciding whether to
+ * insert it. With no rows there is no filter group and no caption either;
+ * the drift patch already falls back to a full paint when there is no
+ * `.sl-library-list`, so that case never needs an in-place update anyway.
+ * Hidden while a check runs: the footer's "Checking…" is the live fact then,
+ * and two claims about the same pass would compete. The label is the
+ * plugin's own string, never user text, so it is not escaped.
  */
 function libraryCheckedMarkup(model: LibraryScreenPresentation): string {
   const label = model.refreshing ? null : (model.checkedLabel ?? null);
