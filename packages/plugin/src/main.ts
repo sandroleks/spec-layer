@@ -1513,7 +1513,7 @@ figma.ui.onmessage = async (raw: unknown) => {
             '[Spec Layer] drift source unresolved', msg.docId, msg.sourceNodeId,
             'resolved to', src ? src.type : 'null',
           );
-          figma.ui.postMessage({ type: 'driftError', docId: msg.docId } as MainToUi);
+          figma.ui.postMessage({ type: 'driftError', docId: msg.docId, passId: msg.passId } as MainToUi);
           break;
         }
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1526,12 +1526,14 @@ figma.ui.onmessage = async (raw: unknown) => {
           });
         }
         const { fileKey } = resolveFileKey(figma.fileKey, null);
-        figma.ui.postMessage({ type: 'driftSource', docId: msg.docId, node, fileKey, fileName: figma.root.name } as MainToUi);
+        figma.ui.postMessage({
+          type: 'driftSource', docId: msg.docId, passId: msg.passId, node, fileKey, fileName: figma.root.name,
+        } as MainToUi);
       } catch (err) {
         console.error(
           '[Spec Layer] drift check threw for', msg.docId, msg.sourceNodeId, err,
         );
-        figma.ui.postMessage({ type: 'driftError', docId: msg.docId } as MainToUi);
+        figma.ui.postMessage({ type: 'driftError', docId: msg.docId, passId: msg.passId } as MainToUi);
       }
       break;
     }

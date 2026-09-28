@@ -626,6 +626,7 @@ function navigateToView(
   next: PluginView,
   options: { refreshLibrary?: boolean } = {},
 ): void {
+  const arrived = view !== next;
   view = next;
   closeFontMenu();
   if (view !== 'library') libraryRevealDocId = null;
@@ -646,7 +647,10 @@ function navigateToView(
   // still running) must still resume a paused pass: its rows read
   // "Checking…" and Refresh stays disabled, with nothing in flight to ever
   // finish them. pumpDriftQueue sends nothing while a check is in flight.
-  else if (view === 'library' && !driftQueue.done()) {
+  // Only on arrival: re-selecting the Library while on it paused nothing,
+  // and a new pass id there would only throw away the main thread's
+  // resolver memo halfway through the pass.
+  else if (arrived && view === 'library' && !driftQueue.done()) {
     driftQueue.resume(newPassId());
     pumpDriftQueue();
   }
@@ -1076,23 +1080,28 @@ function startLibraryDriftChecks(): void {
  */
 function pumpDriftQueue(): void {
   if (view !== 'library') return;
-  const docId = driftQueue.next();
-  if (docId === null) return;
-  const passId = driftQueue.id();
-  const entry = libraryEntries.find((candidate) => candidate.docId === docId);
-  if (passId === null || !entry) {
-    driftQueue.settle(docId);
+  const check = driftQueue.next();
+  if (check === null) return;
+  const entry = libraryEntries.find((candidate) => candidate.docId === check.docId);
+  if (!entry) {
+    driftQueue.settle(check.docId, check.passId);
     pumpDriftQueue();
     return;
   }
-  send({ type: 'requestDrift', docId, sourceNodeId: entry.sourceNodeId, passId });
+  send({ type: 'requestDrift', docId: check.docId, sourceNodeId: entry.sourceNodeId, passId: check.passId });
 }
 
-/** One check landed (a result or an error): advance the pass, stamp its end. */
-function settleDriftCheck(docId: string): void {
-  if (!driftQueue.settle(docId)) return;
+/**
+ * One reply landed (a result or an error). False when it does not answer
+ * the check in flight: a reply from a pass a newer scan replaced, which the
+ * caller drops rather than letting a read from before that scan set a row.
+ * True advances the pass and stamps its end.
+ */
+function settleDriftCheck(docId: string, passId: string): boolean {
+  if (!driftQueue.settle(docId, passId)) return false;
   if (driftQueue.done()) libraryCheckedAt = Date.now();
   pumpDriftQueue();
+  return true;
 }
 
 function closeLibraryMenu(restoreFocus = false): void {
@@ -3098,7 +3107,7 @@ window.onmessage = (event: MessageEvent): void => {
       return;
 
     case 'driftSource': {
-      settleDriftCheck(msg.docId);
+      if (!settleDriftCheck(msg.docId, msg.passId)) return;
       const baseline = libraryBaseline.get(msg.docId);
       if (baseline === undefined) return;
       // A doc from an older extractor has a different hash projection, so
@@ -3132,7 +3141,7 @@ window.onmessage = (event: MessageEvent): void => {
     }
 
     case 'driftError':
-      settleDriftCheck(msg.docId);
+      if (!settleDriftCheck(msg.docId, msg.passId)) return;
       if (!libraryBaseline.has(msg.docId)) return;
       libraryDrift.set(msg.docId, 'unavailable');
       libraryRefreshing = [...libraryDrift.values()].some((value) => value === 'pending');

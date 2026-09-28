@@ -26,8 +26,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   change or Refresh library. The plugin listens on the page you have open
   only, so edits by others on any other page are not seen, visited or not.
   While the plugin is asking whether anything changed, Update, Update all
-  docs and Refresh library are disabled for that moment. No extraction
-  output changes.
+  docs and Refresh library are disabled for that moment. A source check
+  still running when a new scan starts no longer sets a row from a read
+  taken before that scan; each reply carries the pass it was asked for. No
+  extraction output changes.
 
 - Free AI writing is now a flat 20 generations per UTC calendar month. It
   was 20 in the first 30 days after first use and then 10 a month; the
