@@ -5,6 +5,7 @@ import {
   buildLibraryRow,
   formatLibraryAge,
   formatLibraryCheckedAt,
+  initialLibraryDrift,
   libraryCheckedLabelChangesIn,
   isLibraryFilter,
   libraryBadgeVisible,
@@ -87,6 +88,34 @@ describe('libraryDriftForEntry', () => {
       new Map(),
     )).toBe('drifted');
     expect(libraryDriftForEntry(foundation, new Map())).toBe('unavailable');
+  });
+});
+
+describe('initialLibraryDrift', () => {
+  it('queues a source check only for a component doc built by this extractor', () => {
+    expect(initialLibraryDrift(entry({ extractorVersion: '3' }), '3')).toBe('check');
+  });
+
+  // The hash of a doc from another extractor cannot be compared with a live
+  // one, so its source check only ever answered "rebuild". Knowing that from
+  // the entry puts the rebuild banner up with the rows, where arriving mid
+  // pass moved the whole list 66px, and spares its source read.
+  it('marks a doc from an older extractor for rebuild at once, with no check', () => {
+    expect(initialLibraryDrift(entry({ extractorVersion: '2' }), '3')).toBe('staleVersion');
+    // Written before the link carried a version at all.
+    expect(initialLibraryDrift(entry({ extractorVersion: undefined }), '3')).toBe('staleVersion');
+  });
+
+  it('leaves a doc whose source is gone to its orphaned row', () => {
+    expect(initialLibraryDrift(entry({ sourceExists: false, extractorVersion: '3' }), '3')).toBeNull();
+    expect(initialLibraryDrift(entry({ sourceExists: false, extractorVersion: '2' }), '3')).toBeNull();
+  });
+
+  it('answers a foundation doc from the hashes the scan already carries', () => {
+    const foundation = entry({ kind: 'foundation', sourceNodeId: '', storedContentHash: 'old' });
+    expect(initialLibraryDrift({ ...foundation, currentContentHash: 'old' }, '3')).toBe('inSync');
+    expect(initialLibraryDrift({ ...foundation, currentContentHash: 'new' }, '3')).toBe('drifted');
+    expect(initialLibraryDrift(foundation, '3')).toBe('unavailable');
   });
 });
 

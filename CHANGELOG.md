@@ -15,10 +15,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   goes one document at a time in the order the rows are shown, pauses when
   you leave the Library and resumes when you return, and shares one
   variable and style lookup cache across the whole pass instead of one per
-  document. A caption under the filters says when the rows were last
-  checked ("Checked just now", "Checked 4 min ago", "Checked at 10:42"),
-  and Refresh library still forces a full check. A variable rename,
-  addition, or deletion also counts as a change. A spacing or radius
+  document. One line under the filters shows a running check's progress
+  ("Checking for source changes", a bar, "3 of 14") and, once it
+  finishes, when the rows were last checked ("Checked just now", "Checked
+  4 min ago", "Checked at 10:42"). It keeps the same height in every
+  state, so a check starting or finishing no longer moves the list, and
+  the progress no longer floats over the last rows; Update and Update all
+  docs keep their progress above the footer. A doc built by an older
+  version of the plugin reads "Rebuild needed" as soon as the rows appear,
+  with no check to wait for, so the rebuild banner no longer drops in
+  above the list partway through, and those docs skip a source read that
+  could only ever say that. Refresh library still forces a full check. A
+  variable rename, addition, or deletion also counts as a change. A spacing or radius
   (number) variable value edit also counts, since a component's layout
   summary carries the resolved numbers. Any style edit counts, a paint,
   text, effect or grid value edit included, whichever page you make it

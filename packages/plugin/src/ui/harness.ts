@@ -541,6 +541,21 @@ if (view === 'library') {
     : null;
   let refreshing = param('state', 'expanded') === 'refreshing';
   let updatingAll = param('state', 'expanded') === 'updating';
+  // `?state=checking` replays a source check the way ui-vnext.ts paints one:
+  // every component row starts pending, one settles every 400ms in display
+  // order after a 1.5s pause (time to start watching), and the last-checked
+  // stamp takes over the check line when the last one lands. `?checked=1`
+  // starts from a Library that was checked before. A `?rebuild=N` row is
+  // never pending: like the plugin (initialLibraryDrift), it reads "Rebuild
+  // needed" from the start, with no check to wait for.
+  const replayCheck = param('state', 'expanded') === 'checking';
+  let checkedLabel: string | null = param('checked', '0') === '1' ? 'Checked 4 min ago' : null;
+  const pendingDocs = new Set<string>(replayCheck
+    ? LIBRARY_ENTRIES
+      .filter((entry) => entry.kind === 'component' && drift.get(entry.docId) !== 'staleVersion')
+      .map((entry) => entry.docId)
+    : []);
+  const pendingTotal = pendingDocs.size;
 
   /*
    * The Library's publish screen.
@@ -696,9 +711,13 @@ if (view === 'library') {
       renderPublishScreen(refs, publishFixture, publishAllowanceFixture, storedComponentFormat(param('format', 'yaml')));
       return;
     }
+    const shownDrift = pendingDocs.size === 0
+      ? drift
+      : new Map([...drift].map(([docId, state]) => [docId, pendingDocs.has(docId) ? 'pending' as const : state]));
+    const checking = refreshing || pendingDocs.size > 0;
     // `?empty=1` is a file with no docs yet.
     const model = buildLibraryModel(param('empty', '0') === '1' ? [] : LIBRARY_ENTRIES, {
-      drift,
+      drift: shownDrift,
       changes,
       filter: libraryFilter,
       expandedDocId,
@@ -711,17 +730,27 @@ if (view === 'library') {
       ...model,
       menuDocId,
       revealedDocId,
-      refreshing,
+      refreshing: checking,
+      checkedLabel,
       updatingAll,
+      // As in ui-vnext.ts: an Update run floats in the footer card, a
+      // source check fills the check line under the filters.
       progress: updatingAll
         ? {
             label: 'Updating document 1 of 3',
             current: 0,
             total: 3,
           }
+        : null,
+      checkProgress: pendingDocs.size > 0
+        ? {
+            label: 'Checking for source changes',
+            current: pendingTotal - pendingDocs.size,
+            total: pendingTotal,
+          }
         : refreshing
           ? {
-              label: 'Checking source changes',
+              label: 'Checking for source changes',
               current: 3,
               total: LIBRARY_ENTRIES.length,
             }
@@ -729,6 +758,18 @@ if (view === 'library') {
     });
   };
   renderLibraryFixture();
+
+  if (replayCheck) {
+    const settleNext = (): void => {
+      const [next] = pendingDocs;
+      if (next === undefined) return;
+      pendingDocs.delete(next);
+      if (pendingDocs.size === 0) checkedLabel = 'Checked just now';
+      renderLibraryFixture();
+      if (pendingDocs.size > 0) window.setTimeout(settleNext, 400);
+    };
+    window.setTimeout(settleNext, 1500);
+  }
 
   revealLibraryFixtureRow = (docId: string) => {
     libraryPane = 'list';

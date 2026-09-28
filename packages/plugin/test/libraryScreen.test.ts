@@ -100,16 +100,64 @@ describe('library screen presentation', () => {
     expect(markup).not.toContain('Search');
   });
 
-  it('shows the last-checked caption under the filters only when idle', () => {
+  /** The check line's opening tag, which carries its state. */
+  const checkLine = (markup: string): string =>
+    /<div class="sl-library-check-line"[^>]*>/.exec(markup)?.[0] ?? '';
+  const CHECKING = { label: 'Checking for source changes', current: 3, total: 14 };
+
+  it('draws one check line under the filters: progress while a check runs, then when it ran', () => {
+    const checking = libraryScrollMarkup(model({
+      refreshing: true, checkedLabel: 'Checked 4 min ago', checkProgress: CHECKING,
+    }));
+    expect(checking.indexOf('data-library-check-line')).toBeGreaterThan(checking.indexOf('aria-label="Library filters"'));
+    expect(checking).toContain('Checking for source changes');
+    expect(checking).toContain('3 of 14');
+    expect(checking).toContain('role="progressbar" aria-valuemin="0" aria-valuemax="14" aria-valuenow="3"');
+    // The stamp is from the check before; this one is the live fact.
+    expect(checking).not.toContain('Checked 4 min ago');
+    expect(checkLine(checking)).toContain('data-mode="progress"');
+
     const idle = libraryScrollMarkup(model({ checkedLabel: 'Checked 4 min ago' }));
-    expect(idle).toContain('<p class="sl-library-checked" data-library-checked>Checked 4 min ago</p>');
-    expect(idle.indexOf('data-library-checked')).toBeGreaterThan(idle.indexOf('aria-label="Library filters"'));
+    expect(idle).toContain('Checked 4 min ago');
+    expect(idle).not.toContain('role="progressbar"');
+    expect(checkLine(idle)).toContain('data-mode="text"');
 
-    const checking = libraryScrollMarkup(model({ checkedLabel: 'Checked 4 min ago', refreshing: true }));
-    expect(checking).toContain('<p class="sl-library-checked" data-library-checked hidden></p>');
+    // Finding the docs has no count yet: the label alone, no empty bar.
+    const finding = libraryScrollMarkup(model({ loading: true, checkProgress: { label: 'Finding docs in this file' } }));
+    expect(finding).toContain('Finding docs in this file');
+    expect(finding).not.toContain('role="progressbar"');
+  });
 
-    const never = libraryScrollMarkup(model());
-    expect(never).toContain('<p class="sl-library-checked" data-library-checked hidden></p>');
+  // The measured bug: the caption was `hidden` while a check ran and shown
+  // after, so the start and the end of every check moved the list 15px.
+  it('never hides the check line, in any state, so a check starting or ending moves no row', () => {
+    const states = [
+      model(),
+      model({ checkedLabel: 'Checked just now' }),
+      model({ refreshing: true, checkProgress: CHECKING }),
+      model({ loading: true, checkProgress: { label: 'Finding docs in this file' } }),
+      model({ probing: true, checkedLabel: 'Checked 4 min ago' }),
+    ];
+    for (const state of states) {
+      const line = checkLine(libraryScrollMarkup(state));
+      expect(line).not.toBe('');
+      expect(line).not.toContain('hidden');
+    }
+    expect(checkLine(libraryScrollMarkup(model()))).toContain('data-mode="empty"');
+  });
+
+  it('announces a running check but not the minute-by-minute stamp', () => {
+    expect(checkLine(libraryScrollMarkup(model({ refreshing: true, checkProgress: CHECKING }))))
+      .toContain('aria-live="polite"');
+    expect(checkLine(libraryScrollMarkup(model({ checkedLabel: 'Checked 4 min ago' }))))
+      .toContain('aria-live="off"');
+  });
+
+  it('keeps a check out of the footer card, which belongs to Update', () => {
+    const footer = libraryFooterMarkup(model({ refreshing: true, checkProgress: CHECKING }));
+    expect(footer).not.toContain('sl-footer-progress');
+    expect(footer).not.toContain('Checking for source changes');
+    expect(footer).toContain('Checking…');
   });
 
   it('disables the actions during a probe without changing labels or the caption', () => {
@@ -123,7 +171,8 @@ describe('library screen presentation', () => {
     expect(footer).toContain('<span>Update all docs</span>');
 
     const scroll = libraryScrollMarkup(probing);
-    expect(scroll).toContain('<p class="sl-library-checked" data-library-checked>Checked 4 min ago</p>');
+    expect(scroll).toContain('Checked 4 min ago');
+    expect(scroll).not.toContain('role="progressbar"');
     expect(scroll).toContain('data-busy="true"');
 
     const idle = libraryFooterMarkup(model({ refreshing: false, checkedLabel: 'Checked 4 min ago' }));
@@ -810,6 +859,17 @@ describe('footer work status', () => {
   );
   const rule = (selector: string) =>
     new RegExp(`\\n\\${selector}\\s*\\{([^}]*)\\}`).exec(css)?.[1] ?? '';
+
+  it('gives the check line a fixed height and the filters\' left inset', () => {
+    const line = rule('.sl-library-check-line');
+    // A height, not a min-height: the line is the same size empty, with a
+    // stamp, and with a bar, which is what keeps the rows still.
+    expect(line).toMatch(/(^|[^-])height:\s*var\(--sl-space-16\)/);
+    const filters = rule('.sl-library-filters');
+    const inset = /margin:\s*\S+\s+var\(--sl-space-12\)\s+\S+\s+(var\(--sl-space-14\))/;
+    expect(filters).toMatch(inset);
+    expect(line).toMatch(inset);
+  });
 
   it('floats the progress instead of adding a row to the footer', () => {
     // Measured before this: starting a Library refresh took the footer from

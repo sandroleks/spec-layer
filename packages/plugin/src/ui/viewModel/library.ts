@@ -254,6 +254,28 @@ export function libraryDriftForEntry(
   return 'pending';
 }
 
+/**
+ * Where a row stands the moment a scan lands, before any source check:
+ * `'check'` when it needs one, the state it already has when it does not,
+ * or null for a doc whose source is gone (its row reads orphaned, which
+ * outranks any drift).
+ *
+ * A component doc built by another extractor is `staleVersion` right away.
+ * Its hash projection differs from this build's, so its source check could
+ * only ever answer "rebuild", and waiting for that answer put the rebuild
+ * banner up mid-pass, over rows the user was already reading. It also
+ * spares that doc's source read. A missing version (a link written before
+ * the field existed) is another extractor too.
+ */
+export function initialLibraryDrift(
+  entry: LibraryEntry,
+  extractorVersion: string,
+): LibraryDriftState | 'check' | null {
+  if (!entry.sourceExists) return null;
+  if (entry.kind === 'foundation') return libraryDriftForEntry(entry, new Map());
+  return entry.extractorVersion === extractorVersion ? 'check' : 'staleVersion';
+}
+
 export function buildLibraryRow(
   entry: LibraryEntry,
   options: BuildLibraryModelOptions = {},

@@ -912,10 +912,44 @@
   font-size: var(--sl-font-size-caption);
 }
 
-.sl-library-checked {
-  margin: var(--sl-space-6) 0 0;
+/*
+ * The check line under the filters (library.ts, libraryCheckLineMarkup):
+ * a check's progress while one runs, then when the rows were last checked.
+ * A fixed `height`, the same empty, with a stamp and with a bar, so neither
+ * end of a check moves the list; the caption it replaced took no space
+ * while hidden and moved every row 15px when it came back. Inset like the
+ * filters above it, which it reads as part of.
+ */
+.sl-library-check-line {
+  min-width: 0;
+  height: var(--sl-space-16);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--sl-space-8);
+  margin: 0 var(--sl-space-12) var(--sl-space-8) var(--sl-space-14);
   color: var(--sl-color-text-muted);
   font-size: var(--sl-font-size-caption);
+  line-height: var(--sl-space-16);
+  white-space: nowrap;
+}
+
+.sl-library-check-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The page behind this line is --sl-color-surface in the light theme, so the
+   track's usual surface fill vanished there; accent-soft shows in both
+   themes and reads as the empty part of the same bar. */
+.sl-library-check-line .sl-progress-track {
+  height: 4px;
+  background: var(--sl-color-accent-soft);
+}
+
+.sl-library-check-count {
+  font-variant-numeric: tabular-nums;
 }
 
 .sl-library-list {

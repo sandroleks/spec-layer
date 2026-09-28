@@ -51,16 +51,22 @@ export interface LibraryScreenPresentation
    * A "has anything changed?" probe is out. Its reply may start a new pass,
    * so Update, Update all and Refresh are disabled until it lands. Nothing
    * else reads it: the probe is usually answered at once with no work, so
-   * the labels and the caption keep following `refreshing` and do not flash.
+   * the labels and the check line keep following `refreshing` and do not
+   * flash.
    */
   probing?: boolean;
   /** At least one source check failed, so a batch would silently miss work. */
   checksIncomplete?: boolean;
-  /** "Checked 4 min ago", or null before the first pass completes. Shown
-   * only while no check is in progress; see checkedCaptionLabel. */
+  /** "Checked 4 min ago", or null before the first pass completes. Shown in
+   * the check line whenever no check is running; see checkLineState. */
   checkedLabel?: string | null;
+  /** A source check (or the read that finds the docs) running now. It fills
+   * the check line under the filters, never the footer card. */
+  checkProgress?: ProgressPresentation | null;
   updatingAll?: boolean;
   updatingDocId?: string | null;
+  /** An Update or Update all run. The footer card floats this above the
+   * buttons it came from; a source check goes in the check line instead. */
   progress?: ProgressPresentation | null;
   /**
    * The row the global search palette just opened, if any. It is marked and
@@ -561,30 +567,70 @@ function libraryFilterCount(model: LibraryScreenPresentation, id: LibraryFilter)
 }
 
 /**
- * What the last-checked caption says, or null when it is hidden. The one
- * place the rule lives, shared by the full paint and patchLibraryCaption.
- * Hidden while a check runs: the footer's "Checking…" is the live fact then,
- * and two claims about the same pass would compete.
+ * The check line under the filters: one line that says what the source
+ * check is doing. While a check runs it carries that check's progress; once
+ * none is running, when the rows were last checked; before either, nothing.
+ *
+ * Always drawn, at a fixed height (patterns.css), whenever the filter group
+ * is. The caption this replaced was `hidden` during a check and shown after
+ * it, with the check's progress in the footer card, so the start and the
+ * end of every check moved the whole list. Measured at 15px each way.
+ *
+ * The one place the rule lives, shared by the full paint and
+ * patchLibraryCheckLine. With no rows there is no filter group and no line
+ * either; the drift patch already falls back to a full paint when there is
+ * no `.sl-library-list`, so that case never needs an in-place update.
  */
-function checkedCaptionLabel(model: LibraryScreenPresentation): string | null {
-  return model.refreshing ? null : (model.checkedLabel ?? null);
+/** `live` is true for a check running now, false for the stamp of one past. */
+type CheckLineState =
+  | { mode: 'progress'; label: string; current: number; total: number }
+  | { mode: 'text'; label: string; live: boolean }
+  | { mode: 'empty' };
+
+function checkLineState(model: LibraryScreenPresentation): CheckLineState {
+  const progress = model.checkProgress;
+  if (progress) {
+    const { label, current, total } = progress;
+    return current !== undefined && total !== undefined && total > 0
+      ? { mode: 'progress', label, current: Math.max(0, Math.min(current, total)), total }
+      : { mode: 'text', label, live: true };
+  }
+  // A check with no progress to show says nothing rather than a stamp the
+  // check under way is about to replace.
+  if (model.refreshing) return { mode: 'empty' };
+  return model.checkedLabel
+    ? { mode: 'text', label: model.checkedLabel, live: false }
+    : { mode: 'empty' };
+}
+
+function checkLineContent(state: CheckLineState): string {
+  if (state.mode === 'empty') return '';
+  if (state.mode === 'text') return `<span class="sl-library-check-label">${esc(state.label)}</span>`;
+  const percent = Math.round((state.current / state.total) * 100);
+  return (
+    `<span class="sl-library-check-label">${esc(state.label)}</span>` +
+    `<span class="sl-progress-track" role="progressbar" aria-valuemin="0" ` +
+    `aria-valuemax="${state.total}" aria-valuenow="${state.current}" ` +
+    `aria-label="${esc(state.label)}"><i style="width:${percent}%"></i></span>` +
+    `<span class="sl-library-check-count">${state.current} of ${state.total}</span>`
+  );
 }
 
 /**
- * The last-checked caption under the filters. Rendered whenever the filter
- * group is (a Library with rows), hidden when there is nothing true to say,
- * so patchLibraryCaption can update it in place without deciding whether to
- * insert it. With no rows there is no filter group and no caption either;
- * the drift patch already falls back to a full paint when there is no
- * `.sl-library-list`, so that case never needs an in-place update anyway.
- * The label is the plugin's own string, never user text, so it is not
- * escaped.
+ * Polite while a check runs, so its progress is announced; off otherwise,
+ * so the stamp moving from "Checked 3 min ago" to "4 min ago" is not read
+ * out every minute.
  */
-function libraryCheckedMarkup(model: LibraryScreenPresentation): string {
-  const label = checkedCaptionLabel(model);
-  return label
-    ? `<p class="sl-library-checked" data-library-checked>${label}</p>`
-    : '<p class="sl-library-checked" data-library-checked hidden></p>';
+function checkLineLive(state: CheckLineState): 'polite' | 'off' {
+  return state.mode === 'progress' || (state.mode === 'text' && state.live) ? 'polite' : 'off';
+}
+
+function libraryCheckLineMarkup(model: LibraryScreenPresentation): string {
+  const state = checkLineState(model);
+  return (
+    `<div class="sl-library-check-line" data-library-check-line data-mode="${state.mode}" ` +
+    `aria-live="${checkLineLive(state)}">${checkLineContent(state)}</div>`
+  );
 }
 
 export function libraryScrollMarkup(model: LibraryScreenPresentation): string {
@@ -638,7 +684,7 @@ export function libraryScrollMarkup(model: LibraryScreenPresentation): string {
     ) +
     (model.error && model.allRows.length > 0 ? errorBannerMarkup(model.error) : '') +
     (model.readIncomplete ? incompleteNoteMarkup() : '') +
-    (noDocs ? '' : filterMarkup + libraryCheckedMarkup(model)) +
+    (noDocs ? '' : filterMarkup + libraryCheckLineMarkup(model)) +
     content
   );
 }
@@ -940,7 +986,7 @@ export function patchLibraryDrift(refs: ShellRefs, model: LibraryScreenPresentat
     if (small) small.textContent = String(libraryFilterCount(model, id));
   }
 
-  patchLibraryCaption(refs, model);
+  patchLibraryCheckLine(refs, model);
 
   // The footer is replaced wholesale, so a focused footer control is re-found
   // by selector afterwards, the way a redrawn row's control is above. A
@@ -960,17 +1006,33 @@ export function patchLibraryDrift(refs: ShellRefs, model: LibraryScreenPresentat
 }
 
 /**
- * Rewrites only the last-checked caption, in place. The minute timer calls
- * this alone, so keeping "Checked 4 min ago" current never touches the rows
- * or the footer. A Library with no drawn caption (no rows) has nothing to
- * patch.
+ * Rewrites only the check line, in place. The caption timer calls this
+ * alone, so keeping "Checked 4 min ago" current never touches the rows or
+ * the footer. From one progress state to the next it moves the existing bar
+ * rather than redrawing it, so the bar's width transition runs instead of
+ * restarting from nothing on every row that lands. A Library with no drawn
+ * line (no rows) has nothing to patch.
  */
-export function patchLibraryCaption(refs: ShellRefs, model: LibraryScreenPresentation): void {
-  const caption = refs.scroll.querySelector<HTMLElement>('[data-library-checked]');
-  if (!caption) return;
-  const label = checkedCaptionLabel(model);
-  caption.textContent = label ?? '';
-  caption.hidden = label === null;
+export function patchLibraryCheckLine(refs: ShellRefs, model: LibraryScreenPresentation): void {
+  const line = refs.scroll.querySelector<HTMLElement>('[data-library-check-line]');
+  if (!line) return;
+  const state = checkLineState(model);
+  line.setAttribute('aria-live', checkLineLive(state));
+  const bar = line.querySelector<HTMLElement>('.sl-progress-track');
+  if (state.mode === 'progress' && line.dataset.mode === 'progress' && bar) {
+    const label = line.querySelector('.sl-library-check-label');
+    if (label) label.textContent = state.label;
+    bar.setAttribute('aria-valuemax', String(state.total));
+    bar.setAttribute('aria-valuenow', String(state.current));
+    bar.setAttribute('aria-label', state.label);
+    const fill = bar.querySelector<HTMLElement>('i');
+    if (fill) fill.style.width = `${Math.round((state.current / state.total) * 100)}%`;
+    const count = line.querySelector('.sl-library-check-count');
+    if (count) count.textContent = `${state.current} of ${state.total}`;
+    return;
+  }
+  line.dataset.mode = state.mode;
+  line.innerHTML = checkLineContent(state);
 }
 
 export function renderLibraryScreen(

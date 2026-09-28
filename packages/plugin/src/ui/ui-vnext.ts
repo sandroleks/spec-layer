@@ -53,7 +53,7 @@ import { COMPONENT_FORMATS, isComponentFormat, type ComponentFormat } from '../c
 import { computeMenuPlacement } from './fontPicker';
 import { filterFamilies } from '../fonts';
 import { renderLicenseScreen } from './screens/license';
-import { patchLibraryCaption, patchLibraryDrift, renderLibraryScreen, revealLibraryRow, type LibraryScreenPresentation } from './screens/library';
+import { patchLibraryCheckLine, patchLibraryDrift, renderLibraryScreen, revealLibraryRow, type LibraryScreenPresentation } from './screens/library';
 import { patchInitialVersion, renderPublishScreen } from './screens/publish';
 import { renderHistoryScreen } from './screens/history';
 import { globalSearchMarkup, patchGlobalSearch, setSearchActive } from './screens/search';
@@ -70,6 +70,7 @@ import {
 import {
   buildLibraryModel,
   formatLibraryCheckedAt,
+  initialLibraryDrift,
   libraryCheckedLabelChangesIn,
   isLibraryFilter,
   libraryBadgeVisible,
@@ -570,6 +571,10 @@ function libraryPresentation(): LibraryScreenPresentation {
   const checkTotal = [...libraryDrift.values()].length;
   const checkDone = [...libraryDrift.values()]
     .filter((status) => status !== 'pending').length;
+  // An Update run floats its progress above the footer buttons it came
+  // from. A source check says its progress in the check line under the
+  // filters instead, the same line that says when the last one ran, so the
+  // start and the end of a check swap text in place and move no row.
   const progress = update
     ? {
         label: update.batch
@@ -578,12 +583,13 @@ function libraryPresentation(): LibraryScreenPresentation {
         current: update.completed,
         total: update.total,
       }
-    : libraryRefreshing || pendingChecks
-        ? {
-            label: libraryEntries.length === 0 ? 'Finding docs in this file' : 'Checking for source changes',
-            ...(checkTotal > 0 ? { current: checkDone, total: checkTotal } : {}),
-          }
-        : null;
+    : null;
+  const checkProgress = libraryRefreshing || pendingChecks
+    ? {
+        label: libraryEntries.length === 0 ? 'Finding docs in this file' : 'Checking for source changes',
+        ...(checkTotal > 0 ? { current: checkDone, total: checkTotal } : {}),
+      }
+    : null;
   return {
     ...model,
     menuDocId: libraryMenuDocId,
@@ -595,6 +601,7 @@ function libraryPresentation(): LibraryScreenPresentation {
     probing: libraryProbeInFlight,
     checksIncomplete: failedChecks,
     checkedLabel: formatLibraryCheckedAt(libraryCheckedAt),
+    checkProgress,
     updatingAll: Boolean(update?.batch),
     updatingDocId: update?.currentDocId ?? null,
     progress,
@@ -615,7 +622,7 @@ function paintLibraryDrift(): void {
 /** Re-say "Checked 4 min ago" in place; the rows and the footer are left alone. */
 function paintLibraryCaption(): void {
   if (view !== 'library' || libraryPane !== 'list') return;
-  patchLibraryCaption(refs, libraryPresentation());
+  patchLibraryCheckLine(refs, libraryPresentation());
 }
 
 /**
@@ -1075,16 +1082,10 @@ function startLibraryDriftChecks(): void {
   libraryChanges.clear();
   libraryIncludeHidden.clear();
   for (const entry of libraryEntries) {
-    if (!entry.sourceExists) continue;
-    if (entry.kind === 'foundation') {
-      libraryDrift.set(
-        entry.docId,
-        entry.currentContentHash === undefined
-          ? 'unavailable'
-          : entry.currentContentHash === entry.storedContentHash
-            ? 'inSync'
-            : 'drifted',
-      );
+    const initial = initialLibraryDrift(entry, EXTRACTOR_VERSION);
+    if (initial === null) continue;
+    if (initial !== 'check') {
+      libraryDrift.set(entry.docId, initial);
       continue;
     }
     libraryDrift.set(entry.docId, 'pending');
