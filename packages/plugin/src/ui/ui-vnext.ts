@@ -165,6 +165,7 @@ import {
   onHistoryToggle,
   setHistoryHost,
 } from './history';
+import { DriftQueue } from './libraryPass';
 
 const refs: ShellRefs = mountShell('component');
 wireShellTheme(refs);
@@ -218,6 +219,14 @@ const currentHasDoc = (): boolean => {
 };
 const libraryDrift = new Map<string, LibraryDriftState>();
 const libraryBaseline = new Map<string, string>();
+/** The current drift pass; see libraryPass.ts. */
+const driftQueue = new DriftQueue();
+let driftPassCounter = 0;
+function newPassId(): string { return String(++driftPassCounter); }
+/** A `requestLibrary { ifChanged }` probe awaiting its reply. */
+let libraryProbeInFlight = false;
+/** Mirrors main.ts; flip both for a local timing build. */
+const DRIFT_TIMING = false;
 // docId → the EXTRACTOR_VERSION stamped on its doc link (undefined on blobs
 // written before the field existed). Checked before comparing hashes, since a
 // hash comparison against a doc built by an older extractor is meaningless.
@@ -602,7 +611,7 @@ function navigateToView(
   // operation lock but reads none of that Library state, so it is no reason
   // to skip the read: skipping it on a first visit left the Library on its
   // loading skeleton with no request in flight to ever replace it.
-  if (view === 'library' && options.refreshLibrary !== false && libraryOperation === null) refreshLibrary();
+  if (view === 'library' && options.refreshLibrary !== false && libraryOperation === null) checkLibrary();
   if (view === 'library' && !publishInfoRequested) {
     publishInfoRequested = true;
     send({ type: 'requestPublishInfo' });
@@ -951,8 +960,29 @@ function refreshLibrary(): void {
   libraryError = null;
   libraryLiveProjection.clear();
   libraryChanges.clear();
+  driftQueue.clear();
   if (view === 'library') paint();
   send({ type: 'requestLibrary' });
+}
+
+/**
+ * Coming back to the Library from another rail tab.
+ *
+ * A first visit, or one after a failed read, loads the list the way it
+ * always did. Otherwise the main thread is asked whether the document
+ * changed since its last scan, so an unchanged file sends no extraction
+ * work at all: `libraryUnchanged` resumes a pass that was paused by
+ * leaving, and `library` restarts one from the fresh scan. Refresh library
+ * never routes through here, so a forced re-check is always one click away.
+ */
+function checkLibrary(): void {
+  if (!libraryRequested || libraryError !== null) {
+    refreshLibrary();
+    return;
+  }
+  if (libraryProbeInFlight) return;
+  libraryProbeInFlight = true;
+  send({ type: 'requestLibrary', ifChanged: true });
 }
 
 function startLibraryDriftChecks(): void {
@@ -979,15 +1009,41 @@ function startLibraryDriftChecks(): void {
     libraryBaseline.set(entry.docId, entry.storedContentHash);
     libraryExtractorVersion.set(entry.docId, entry.extractorVersion);
     libraryIncludeHidden.set(entry.docId, entry.includeHidden === true);
-    // Replaced in the sequential pass; see DriftQueue.
-    send({
-      type: 'requestDrift',
-      docId: entry.docId,
-      sourceNodeId: entry.sourceNodeId,
-      passId: 'legacy',
-    });
   }
+  // Display order: the rows the user sees first settle first.
+  const order = new Map(currentLibraryModel().allRows.map((row, index) => [row.docId, index] as const));
+  const pendingIds = [...libraryDrift.entries()]
+    .filter(([, status]) => status === 'pending')
+    .map(([docId]) => docId)
+    .sort((a, b) => (order.get(a) ?? Number.MAX_SAFE_INTEGER) - (order.get(b) ?? Number.MAX_SAFE_INTEGER));
+  driftQueue.start(newPassId(), pendingIds);
   syncLibraryBadge();
+  pumpDriftQueue();
+}
+
+/**
+ * Send the next source check, if the Library is showing and none is in
+ * flight. Not sending while another view is up is the pause: the pending
+ * ids stay in the queue and checkLibrary() resumes them on return.
+ */
+function pumpDriftQueue(): void {
+  if (view !== 'library') return;
+  const docId = driftQueue.next();
+  if (docId === null) return;
+  const passId = driftQueue.id();
+  const entry = libraryEntries.find((candidate) => candidate.docId === docId);
+  if (passId === null || !entry) {
+    driftQueue.settle(docId);
+    pumpDriftQueue();
+    return;
+  }
+  send({ type: 'requestDrift', docId, sourceNodeId: entry.sourceNodeId, passId });
+}
+
+/** One check landed (a result or an error): advance the pass. */
+function settleDriftCheck(docId: string): void {
+  if (!driftQueue.settle(docId)) return;
+  pumpDriftQueue();
 }
 
 function closeLibraryMenu(restoreFocus = false): void {
@@ -1777,8 +1833,9 @@ document.addEventListener('click', (event) => {
   const rail = target.closest<HTMLButtonElement>('[data-view]');
   const railView = rail?.dataset.view;
   if (railView && isPluginView(railView)) {
-    // Re-selecting the Library re-runs no source checks: the list is what it
-    // was, and Refresh library sits beside it for when a re-check is wanted.
+    // Re-selecting the Library sends nothing. Arriving from another tab asks
+    // the main thread whether the document changed and re-checks only then;
+    // Refresh library sits beside the list for a forced re-check.
     navigateToView(railView, { refreshLibrary: railView !== view });
     return;
   }
@@ -2946,6 +3003,7 @@ window.onmessage = (event: MessageEvent): void => {
       return;
 
     case 'library':
+      libraryProbeInFlight = false;
       libraryRequested = true;
       libraryError = null;
       libraryReadIncomplete = msg.incomplete === true;
@@ -2969,7 +3027,19 @@ window.onmessage = (event: MessageEvent): void => {
       if (searchOpen) renderGlobalSearch();
       return;
 
+    case 'libraryUnchanged':
+      libraryProbeInFlight = false;
+      // Nothing to reload. A pass paused by leaving the Library picks up
+      // where it stopped, under a new pass id so the main thread's resolver
+      // memo is not one from before the pause.
+      if (!driftQueue.done()) {
+        driftQueue.resume(newPassId());
+        pumpDriftQueue();
+      }
+      return;
+
     case 'driftSource': {
+      settleDriftCheck(msg.docId);
       const baseline = libraryBaseline.get(msg.docId);
       if (baseline === undefined) return;
       // A doc from an older extractor has a different hash projection, so
@@ -2978,6 +3048,7 @@ window.onmessage = (event: MessageEvent): void => {
         libraryDrift.set(msg.docId, 'staleVersion');
       } else {
         try {
+          const started = DRIFT_TIMING ? Date.now() : 0;
           const spec = extract(msg.node, { figmaFile: msg.fileKey, ...(msg.fileName ? { figmaFileName: msg.fileName } : {}) });
           // One projection serves both the hash and the later diff, so the
           // live side of "Review detected changes" is the object that decided
@@ -2990,6 +3061,7 @@ window.onmessage = (event: MessageEvent): void => {
             msg.docId,
             contentHash(projection) === baseline ? 'inSync' : 'drifted',
           );
+          if (DRIFT_TIMING) console.log('[Spec Layer] drift hash timing', msg.docId, { ms: Date.now() - started });
         } catch {
           libraryDrift.set(msg.docId, 'unavailable');
         }
@@ -3001,6 +3073,7 @@ window.onmessage = (event: MessageEvent): void => {
     }
 
     case 'driftError':
+      settleDriftCheck(msg.docId);
       if (!libraryBaseline.has(msg.docId)) return;
       libraryDrift.set(msg.docId, 'unavailable');
       libraryRefreshing = [...libraryDrift.values()].some((value) => value === 'pending');
