@@ -128,9 +128,11 @@ export type MainToUi =
   | { type: 'docRemoved'; docId: string; groupDescriptions: Record<string, Record<string, string>> }
   /** `fileName` travels with `fileKey` here for the same reason as on
    *  `selection`: every extract() call site should be able to name the file.
-   *  Drift itself is unaffected, since specContentHash excludes the name. */
-  | { type: 'driftSource'; docId: string; node: SerializedNode; fileKey: string; fileName?: string }
-  | { type: 'driftError'; docId: string }
+   *  Drift itself is unaffected, since specContentHash excludes the name.
+   *  Both replies echo the `requestDrift` pass id, so the UI can drop one
+   *  that outlived the pass it was asked for (see ui/libraryPass.ts). */
+  | { type: 'driftSource'; docId: string; passId: string; node: SerializedNode; fileKey: string; fileName?: string }
+  | { type: 'driftError'; docId: string; passId: string }
   /** `prose` is what the doc currently says in its writing sections: the
    *  canvas read back through its editorial tags, falling back to the stored
    *  DOC_PROSE_KEY blob for anything the canvas does not show. Update builds

@@ -1,27 +1,36 @@
 /**
  * "Has the document changed since the Library last scanned it?"
  *
- * One boolean, set by any `nodechange` on the current page and cleared when
- * a scan starts. Deliberately coarse: it only ever errs toward re-checking
- * after the user edited something, which is when a check matters. The
- * plugin's own canvas writes set it too; that costs one re-check after a
- * build, which is correct.
+ * One boolean, set by any `nodechange` on the current page or any
+ * `stylechange`, and cleared when a scan starts. Deliberately coarse: it
+ * only ever errs toward re-checking after the user edited something, which
+ * is when a check matters. The plugin's own canvas writes set it too; that
+ * costs one re-check after a build, which is correct.
  *
  * Why `nodechange` and not `documentchange`: under dynamic-page access
  * `figma.on('documentchange')` needs every page loaded, and it fires for
  * every edit anywhere. `PageNode.on('nodechange')` needs no page loading and
  * is scoped to the page the user can edit. The listener is on the current
  * page only, so edits by others on any other page are not seen, whether or
- * not you visited it this session. Variable and style edits are not node
- * changes either: the Library probe's foundation fingerprint catches
- * renames, additions and deletions, and number (FLOAT) value edits, since a
- * component's layout summary carries the resolved padding, gap and radius.
- * A color, string or boolean value edit is not seen, and no component row
- * carries those values; the Foundation row that shows them keeps its last
- * result until the next change or Refresh library. The last-checked caption
- * and Refresh library are the recovery.
+ * not you visited it this session.
  *
- * Starts dirty so the first scan of a session always runs.
+ * Styles are not page nodes. `figma.on('stylechange')` is the granular
+ * event the Plugin API offers under dynamic-page access for them, and it is
+ * document-wide: a rename, an addition, a deletion, or a paint, text,
+ * effect or grid value edit sets the flag whichever page is open, so a
+ * Foundation row that shows a style re-checks after the edit.
+ *
+ * Variables have no event. The Library probe's foundation fingerprint
+ * catches renames, additions and deletions, and number (FLOAT) value edits,
+ * since a component's layout summary carries the resolved padding, gap and
+ * radius. A color, string or boolean variable value edit is not seen, and
+ * no component row carries those values; the Foundation row that shows them
+ * keeps its last result until the next change or Refresh library. The
+ * last-checked caption and Refresh library are the recovery.
+ *
+ * Starts dirty so the first scan of a session always runs. `attach` throws
+ * if either event cannot be subscribed; main.ts then treats the document as
+ * unwatched and re-checks on every visit.
  */
 export interface DirtyPageLike {
   on(event: 'nodechange', cb: () => void): void;
@@ -31,6 +40,7 @@ export interface DirtyPageLike {
 export interface DirtyFlagHost {
   currentPage(): DirtyPageLike;
   onPageChange(cb: () => void): void;
+  onStyleChange(cb: () => void): void;
 }
 
 export class DocumentDirtyFlag {
@@ -50,6 +60,7 @@ export class DocumentDirtyFlag {
   attach(host: DirtyFlagHost): void {
     this.listenTo(host.currentPage());
     host.onPageChange(() => this.listenTo(host.currentPage()));
+    host.onStyleChange(this.mark);
   }
 
   private listenTo(page: DirtyPageLike): void {

@@ -53,7 +53,7 @@ import { COMPONENT_FORMATS, isComponentFormat, type ComponentFormat } from '../c
 import { computeMenuPlacement } from './fontPicker';
 import { filterFamilies } from '../fonts';
 import { renderLicenseScreen } from './screens/license';
-import { patchLibraryCaption, patchLibraryDrift, renderLibraryScreen, revealLibraryRow, type LibraryScreenPresentation } from './screens/library';
+import { patchLibraryCheckLine, patchLibraryDrift, renderLibraryScreen, revealLibraryRow, type LibraryScreenPresentation } from './screens/library';
 import { patchInitialVersion, renderPublishScreen } from './screens/publish';
 import { renderHistoryScreen } from './screens/history';
 import { globalSearchMarkup, patchGlobalSearch, setSearchActive } from './screens/search';
@@ -70,6 +70,8 @@ import {
 import {
   buildLibraryModel,
   formatLibraryCheckedAt,
+  initialLibraryDrift,
+  libraryCheckedLabelChangesIn,
   isLibraryFilter,
   libraryBadgeVisible,
   libraryUpdateIntent,
@@ -167,6 +169,7 @@ import {
   setHistoryHost,
 } from './history';
 import { DriftQueue } from './libraryPass';
+import { BlockWatch } from '../timing';
 
 const refs: ShellRefs = mountShell('component');
 wireShellTheme(refs);
@@ -228,10 +231,21 @@ function newPassId(): string { return String(++driftPassCounter); }
 let libraryProbeInFlight = false;
 /** When the last drift pass completed, or null before the first one. */
 let libraryCheckedAt: number | null = null;
-/** Re-patches the caption once a minute while the Library list is showing. */
-let libraryCheckedTimer: ReturnType<typeof setInterval> | null = null;
-/** Mirrors main.ts; flip both for a local timing build. */
-const DRIFT_TIMING = false;
+/** Wakes when the caption's label next changes, while the Library list shows. */
+let libraryCheckedTimer: ReturnType<typeof setTimeout> | null = null;
+/** The same `DRIFT_TIMING=1` build define main.ts reads; see build.mjs. */
+declare const __DRIFT_TIMING__: boolean;
+/**
+ * `DRIFT_TIMING=1` only: every stretch over 100ms in which the iframe could
+ * not run a timer, and what ran in it (see timing.ts). Plain strings, so a
+ * copy out of Figma's console keeps every number.
+ */
+const uiBlocks = __DRIFT_TIMING__
+  ? new BlockWatch(() => Date.now(), 100, (ms, during) => {
+    console.log(`[Spec Layer] timing ui blocked ${ms}ms during ${during.join(', ')}`);
+  })
+  : null;
+if (__DRIFT_TIMING__ && uiBlocks) setInterval(() => uiBlocks.tick(50), 50);
 // docId → the EXTRACTOR_VERSION stamped on its doc link (undefined on blobs
 // written before the field existed). Checked before comparing hashes, since a
 // hash comparison against a doc built by an older extractor is meaningless.
@@ -557,6 +571,10 @@ function libraryPresentation(): LibraryScreenPresentation {
   const checkTotal = [...libraryDrift.values()].length;
   const checkDone = [...libraryDrift.values()]
     .filter((status) => status !== 'pending').length;
+  // An Update run floats its progress above the footer buttons it came
+  // from. A source check says its progress in the check line under the
+  // filters instead, the same line that says when the last one ran, so the
+  // start and the end of a check swap text in place and move no row.
   const progress = update
     ? {
         label: update.batch
@@ -565,12 +583,13 @@ function libraryPresentation(): LibraryScreenPresentation {
         current: update.completed,
         total: update.total,
       }
-    : libraryRefreshing || pendingChecks
-        ? {
-            label: libraryEntries.length === 0 ? 'Finding docs in this file' : 'Checking for source changes',
-            ...(checkTotal > 0 ? { current: checkDone, total: checkTotal } : {}),
-          }
-        : null;
+    : null;
+  const checkProgress = libraryRefreshing || pendingChecks
+    ? {
+        label: libraryEntries.length === 0 ? 'Finding docs in this file' : 'Checking for source changes',
+        ...(checkTotal > 0 ? { current: checkDone, total: checkTotal } : {}),
+      }
+    : null;
   return {
     ...model,
     menuDocId: libraryMenuDocId,
@@ -582,6 +601,7 @@ function libraryPresentation(): LibraryScreenPresentation {
     probing: libraryProbeInFlight,
     checksIncomplete: failedChecks,
     checkedLabel: formatLibraryCheckedAt(libraryCheckedAt),
+    checkProgress,
     updatingAll: Boolean(update?.batch),
     updatingDocId: update?.currentDocId ?? null,
     progress,
@@ -602,30 +622,43 @@ function paintLibraryDrift(): void {
 /** Re-say "Checked 4 min ago" in place; the rows and the footer are left alone. */
 function paintLibraryCaption(): void {
   if (view !== 'library' || libraryPane !== 'list') return;
-  patchLibraryCaption(refs, libraryPresentation());
+  patchLibraryCheckLine(refs, libraryPresentation());
 }
 
 /**
- * Keep "Checked 4 min ago" honest while the list sits on screen. Runs only
- * while the Library list is the visible pane; anything else stops it.
+ * Keep "Checked 4 min ago" honest while the list sits on screen. One timeout,
+ * set for the moment the label next reads differently and re-armed from
+ * there, so it flips on the minute of the check and stops for good once the
+ * label is a clock time. Runs only while the Library list is the visible
+ * pane; anything else stops it. Called again whenever the stamp moves.
  */
 function syncLibraryCheckedTimer(): void {
-  const wanted = view === 'library' && libraryPane === 'list';
-  if (!wanted && libraryCheckedTimer !== null) {
-    clearInterval(libraryCheckedTimer);
+  if (libraryCheckedTimer !== null) {
+    clearTimeout(libraryCheckedTimer);
     libraryCheckedTimer = null;
   }
-  if (wanted && libraryCheckedTimer === null) {
-    libraryCheckedTimer = setInterval(() => {
-      if (libraryCheckedAt !== null) paintLibraryCaption();
-    }, 60_000);
-  }
+  if (view !== 'library' || libraryPane !== 'list') return;
+  const wait = libraryCheckedLabelChangesIn(libraryCheckedAt);
+  if (wait === null) return;
+  // A little past the boundary, so the label has moved when it is read.
+  libraryCheckedTimer = setTimeout(() => {
+    libraryCheckedTimer = null;
+    paintLibraryCaption();
+    syncLibraryCheckedTimer();
+  }, wait + 50);
+}
+
+/** A pass just finished: stamp it and re-arm the caption from the new stamp. */
+function stampLibraryChecked(): void {
+  libraryCheckedAt = Date.now();
+  syncLibraryCheckedTimer();
 }
 
 function navigateToView(
   next: PluginView,
   options: { refreshLibrary?: boolean } = {},
 ): void {
+  const arrived = view !== next;
   view = next;
   closeFontMenu();
   if (view !== 'library') libraryRevealDocId = null;
@@ -646,7 +679,10 @@ function navigateToView(
   // still running) must still resume a paused pass: its rows read
   // "Checking…" and Refresh stays disabled, with nothing in flight to ever
   // finish them. pumpDriftQueue sends nothing while a check is in flight.
-  else if (view === 'library' && !driftQueue.done()) {
+  // Only on arrival: re-selecting the Library while on it paused nothing,
+  // and a new pass id there would only throw away the main thread's
+  // resolver memo halfway through the pass.
+  else if (arrived && view === 'library' && !driftQueue.done()) {
     driftQueue.resume(newPassId());
     pumpDriftQueue();
   }
@@ -658,7 +694,13 @@ function navigateToView(
     settingsFontsRequested = true;
     send({ type: 'requestFonts' });
   }
+  const paintStarted = __DRIFT_TIMING__ ? Date.now() : 0;
+  if (__DRIFT_TIMING__) uiBlocks?.doing(`ui paint ${next}`);
   paint();
+  if (__DRIFT_TIMING__) {
+    uiBlocks?.done();
+    console.log(`[Spec Layer] timing ui navigate to ${next}, paint ${Date.now() - paintStarted}ms`);
+  }
   syncLibraryCheckedTimer();
 }
 
@@ -1040,16 +1082,10 @@ function startLibraryDriftChecks(): void {
   libraryChanges.clear();
   libraryIncludeHidden.clear();
   for (const entry of libraryEntries) {
-    if (!entry.sourceExists) continue;
-    if (entry.kind === 'foundation') {
-      libraryDrift.set(
-        entry.docId,
-        entry.currentContentHash === undefined
-          ? 'unavailable'
-          : entry.currentContentHash === entry.storedContentHash
-            ? 'inSync'
-            : 'drifted',
-      );
+    const initial = initialLibraryDrift(entry, EXTRACTOR_VERSION);
+    if (initial === null) continue;
+    if (initial !== 'check') {
+      libraryDrift.set(entry.docId, initial);
       continue;
     }
     libraryDrift.set(entry.docId, 'pending');
@@ -1076,23 +1112,28 @@ function startLibraryDriftChecks(): void {
  */
 function pumpDriftQueue(): void {
   if (view !== 'library') return;
-  const docId = driftQueue.next();
-  if (docId === null) return;
-  const passId = driftQueue.id();
-  const entry = libraryEntries.find((candidate) => candidate.docId === docId);
-  if (passId === null || !entry) {
-    driftQueue.settle(docId);
+  const check = driftQueue.next();
+  if (check === null) return;
+  const entry = libraryEntries.find((candidate) => candidate.docId === check.docId);
+  if (!entry) {
+    driftQueue.settle(check.docId, check.passId);
     pumpDriftQueue();
     return;
   }
-  send({ type: 'requestDrift', docId, sourceNodeId: entry.sourceNodeId, passId });
+  send({ type: 'requestDrift', docId: check.docId, sourceNodeId: entry.sourceNodeId, passId: check.passId });
 }
 
-/** One check landed (a result or an error): advance the pass, stamp its end. */
-function settleDriftCheck(docId: string): void {
-  if (!driftQueue.settle(docId)) return;
-  if (driftQueue.done()) libraryCheckedAt = Date.now();
+/**
+ * One reply landed (a result or an error). False when it does not answer
+ * the check in flight: a reply from a pass a newer scan replaced, which the
+ * caller drops rather than letting a read from before that scan set a row.
+ * True advances the pass and stamps its end.
+ */
+function settleDriftCheck(docId: string, passId: string): boolean {
+  if (!driftQueue.settle(docId, passId)) return false;
+  if (driftQueue.done()) stampLibraryChecked();
   pumpDriftQueue();
+  return true;
 }
 
 function closeLibraryMenu(restoreFocus = false): void {
@@ -2799,7 +2840,7 @@ function applySelection(msg: SelectionMessage): void {
   );
 }
 
-window.onmessage = (event: MessageEvent): void => {
+const handleMainMessage = (event: MessageEvent): void => {
   const msg = (event.data?.pluginMessage ?? null) as MainToUi | null;
   if (!msg) return;
 
@@ -3066,7 +3107,7 @@ window.onmessage = (event: MessageEvent): void => {
       startLibraryDriftChecks();
       // A file with no component docs has no pass to wait for: this reply is
       // the check.
-      if (driftQueue.done()) libraryCheckedAt = Date.now();
+      if (driftQueue.done()) stampLibraryChecked();
       libraryRefreshing = [...libraryDrift.values()].some((value) => value === 'pending');
       syncLibraryBadge();
       // Fired from the reply rather than from navigateToView: requestLibrary
@@ -3098,7 +3139,7 @@ window.onmessage = (event: MessageEvent): void => {
       return;
 
     case 'driftSource': {
-      settleDriftCheck(msg.docId);
+      if (!settleDriftCheck(msg.docId, msg.passId)) return;
       const baseline = libraryBaseline.get(msg.docId);
       if (baseline === undefined) return;
       // A doc from an older extractor has a different hash projection, so
@@ -3107,7 +3148,7 @@ window.onmessage = (event: MessageEvent): void => {
         libraryDrift.set(msg.docId, 'staleVersion');
       } else {
         try {
-          const started = DRIFT_TIMING ? Date.now() : 0;
+          const started = __DRIFT_TIMING__ ? Date.now() : 0;
           const spec = extract(msg.node, { figmaFile: msg.fileKey, ...(msg.fileName ? { figmaFileName: msg.fileName } : {}) });
           // One projection serves both the hash and the later diff, so the
           // live side of "Review detected changes" is the object that decided
@@ -3120,7 +3161,7 @@ window.onmessage = (event: MessageEvent): void => {
             msg.docId,
             contentHash(projection) === baseline ? 'inSync' : 'drifted',
           );
-          if (DRIFT_TIMING) console.log('[Spec Layer] drift hash timing', msg.docId, { ms: Date.now() - started });
+          if (__DRIFT_TIMING__) console.log(`[Spec Layer] drift hash timing ${msg.docId} ${Date.now() - started}ms`);
         } catch {
           libraryDrift.set(msg.docId, 'unavailable');
         }
@@ -3132,7 +3173,7 @@ window.onmessage = (event: MessageEvent): void => {
     }
 
     case 'driftError':
-      settleDriftCheck(msg.docId);
+      if (!settleDriftCheck(msg.docId, msg.passId)) return;
       if (!libraryBaseline.has(msg.docId)) return;
       libraryDrift.set(msg.docId, 'unavailable');
       libraryRefreshing = [...libraryDrift.values()].some((value) => value === 'pending');
@@ -3332,6 +3373,42 @@ window.onmessage = (event: MessageEvent): void => {
     default:
       return;
   }
+};
+
+/** `DRIFT_TIMING=1` only: how long the UI held its thread for each message. */
+function timedMainMessage(event: MessageEvent): void {
+  const type = (event.data?.pluginMessage as { type?: string } | undefined)?.type ?? 'unknown';
+  const started = Date.now();
+  uiBlocks?.doing(`ui ${type}`);
+  try {
+    handleMainMessage(event);
+  } finally {
+    uiBlocks?.done();
+    const ms = Date.now() - started;
+    if (ms >= 30) console.log(`[Spec Layer] timing ui ${type} took ${ms}ms`);
+  }
+}
+
+/**
+ * The one message handler, and the only place a message is accepted.
+ *
+ * Figma delivers the main thread's messages from the frame that embeds this
+ * iframe, the same window `send()` posts to (actions.ts), so a message from
+ * any other window is not the plugin and is dropped (CodeQL
+ * js/missing-origin-check). The source, not the origin: Figma's own origin
+ * is not something this bundle should hard-code. A dropped message that
+ * looks like a plugin message is logged, so if Figma ever delivers from
+ * elsewhere it shows as a warning in the console, not as a silent plugin.
+ */
+window.onmessage = (event: MessageEvent): void => {
+  if (event.source !== window.parent) {
+    if (event.data?.pluginMessage !== undefined) {
+      console.warn('[Spec Layer] ignored a plugin message from a window other than Figma', event.origin);
+    }
+    return;
+  }
+  if (__DRIFT_TIMING__) timedMainMessage(event);
+  else handleMainMessage(event);
 };
 
 paintAllowance();

@@ -15,19 +15,33 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   goes one document at a time in the order the rows are shown, pauses when
   you leave the Library and resumes when you return, and shares one
   variable and style lookup cache across the whole pass instead of one per
-  document. A caption under the filters says when the rows were last
-  checked ("Checked just now", "Checked 4 min ago", "Checked at 10:42"),
-  and Refresh library still forces a full check. A variable or style
-  rename, addition, or deletion also counts as a change. A spacing or
-  radius (number) variable value edit also counts, since a component's
-  layout summary carries the resolved numbers. A color, string or boolean
-  value edit does not, because no component row carries those values, and
-  the Foundation row that shows them keeps its last result until the next
-  change or Refresh library. The plugin listens on the page you have open
-  only, so edits by others on any other page are not seen, visited or not.
+  document. One line under the filters shows a running check's progress
+  ("Checking for source changes", a bar, "3 of 14") and, once it
+  finishes, when the rows were last checked ("Checked just now", "Checked
+  4 min ago", "Checked at 10:42"). It keeps the same height in every
+  state, so a check starting or finishing no longer moves the list, and
+  the progress no longer floats over the last rows; Update and Update all
+  docs keep their progress above the footer. A doc built by an older
+  version of the plugin reads "Rebuild needed" as soon as the rows appear,
+  with no check to wait for, so the rebuild banner no longer drops in
+  above the list partway through, and those docs skip a source read that
+  could only ever say that. Refresh library still forces a full check. A
+  variable rename, addition, or deletion also counts as a change. A spacing or radius
+  (number) variable value edit also counts, since a component's layout
+  summary carries the resolved numbers. Any style edit counts, a paint,
+  text, effect or grid value edit included, whichever page you make it
+  on, so a Foundation row that shows a style re-checks after it. A color,
+  string or boolean variable value edit does not, because no component row
+  carries those values and Figma sends no event for variables, and the
+  Foundation row that shows them keeps its last result until the next
+  change or Refresh library. The plugin watches layer edits on the page you
+  have open only, so layer edits by others on any other page are not seen,
+  visited or not.
   While the plugin is asking whether anything changed, Update, Update all
-  docs and Refresh library are disabled for that moment. No extraction
-  output changes.
+  docs and Refresh library are disabled for that moment. A source check
+  still running when a new scan starts no longer sets a row from a read
+  taken before that scan; each reply carries the pass it was asked for. No
+  extraction output changes.
 
 - Free AI writing is now a flat 20 generations per UTC calendar month. It
   was 20 in the first 30 days after first use and then 10 a month; the
@@ -66,6 +80,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   byte for byte unchanged, and `guidelines` stays outside every hash, so no
   schema file changes. The documentation site's description of `guidelines`
   lives outside this repository and still has to be updated there.
+
+### Security
+
+- The plugin window now accepts a message only from the frame Figma embeds
+  it in, the same window it sends to. A message posted to it by any other
+  window is ignored, and one shaped like a plugin message is logged to the
+  console. CodeQL reported the message handler as having no origin check.
 
 ## [6.0.0] - 2026-09-24
 

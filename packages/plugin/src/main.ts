@@ -40,7 +40,8 @@ import {
 } from './publishPill';
 import { DocumentDirtyFlag } from './libraryDirty';
 import { DriftPassResolvers, countSerializedNodes } from './driftPass';
-import { foundationFingerprint } from './foundationFingerprint';
+import { FingerprintBaseline, foundationFingerprint } from './foundationFingerprint';
+import { BlockWatch } from './timing';
 
 declare const __PLUGIN_VERSION__: string;
 
@@ -169,24 +170,27 @@ let lastLibraryFoundation: { fileKey: string; spec: FoundationSpec } | null = nu
 
 /**
  * Whether the document changed since the Library last scanned it. Attached
- * to the current page's nodechange and re-attached on page change. `consume()`
- * runs on every scan regardless of whether the watch is live, so the flag
- * alone cannot carry "the watch failed, never trust a clean read": that is
- * `libraryDirtyWatched` below. If the runtime lacks either event, the watch
- * never starts, `libraryDirtyWatched` stays false, and every visit re-checks,
- * which is the behaviour before this flag existed.
+ * to the current page's nodechange (re-attached on page change) and to the
+ * document's stylechange. `consume()` runs on every scan regardless of
+ * whether the watch is live, so the flag alone cannot carry "the watch
+ * failed, never trust a clean read": that is `libraryDirtyWatched` below. If
+ * the runtime lacks any of these events, the watch never starts,
+ * `libraryDirtyWatched` stays false, and every visit re-checks, which is the
+ * behaviour before this flag existed.
  */
 const libraryDirty = new DocumentDirtyFlag();
 
 /** True once `libraryDirty.attach` has run without throwing. The `ifChanged`
  *  shortcut in `requestLibrary` requires this too, not just `!isDirty`,
  *  because `consume()` clears the flag on every scan whether or not anything
- *  is listening for the next edit. */
+ *  is listening for the next edit. It is also what lets the fingerprint
+ *  leave styles out: with no style watch, the shortcut is never taken. */
 let libraryDirtyWatched = false;
 try {
   libraryDirty.attach({
     currentPage: () => figma.currentPage,
     onPageChange: (cb) => figma.on('currentpagechange', cb),
+    onStyleChange: (cb) => figma.on('stylechange', cb),
   });
   libraryDirtyWatched = true;
 } catch (err) {
@@ -197,40 +201,47 @@ try {
 const driftPassResolvers = new DriftPassResolvers(resolver);
 
 /**
- * Identity of local variables and styles at the last Library scan. A rename,
- * a deletion, or a number variable's value edit can move a component's drift
- * hash without any nodechange, so the probe compares this too, for equality
- * only. Null until the first scan.
+ * Identity of local variables at the last Library scan. A rename, a
+ * deletion, or a number variable's value edit can move a component's drift
+ * hash without any nodechange, and variables have no event of their own, so
+ * the probe compares this too, for equality only. Styles are watched by
+ * stylechange instead. Set as each scan starts; see FingerprintBaseline.
  */
-let lastFoundationFingerprint: string | null = null;
+const lastFoundationFingerprint = new FingerprintBaseline();
 
 /**
- * Names for every variable and style, plus the raw per-mode values of FLOAT
- * variables (a component's layout summary carries resolved padding, gap and
- * radius numbers). One pass over the variable list, no mode resolution.
+ * Names for every variable, plus the raw per-mode values of FLOAT variables
+ * (a component's layout summary carries resolved padding, gap and radius
+ * numbers). One pass over the variable list, no mode resolution.
  */
 async function readFoundationFingerprint(): Promise<string> {
-  const [variables, paint, text, effect, grid] = await Promise.all([
-    figma.variables.getLocalVariablesAsync(),
-    figma.getLocalPaintStylesAsync(),
-    figma.getLocalTextStylesAsync(),
-    figma.getLocalEffectStylesAsync(),
-    figma.getLocalGridStylesAsync(),
-  ]);
-  return foundationFingerprint(
-    variables.map((v) => ({
-      id: v.id, name: v.name, collectionId: v.variableCollectionId,
-      ...(v.resolvedType === 'FLOAT' ? { values: v.valuesByMode } : {}),
-    })),
-    [...paint, ...text, ...effect, ...grid].map((s) => ({ id: s.id, name: s.name })),
-  );
+  const variables = await figma.variables.getLocalVariablesAsync();
+  return foundationFingerprint(variables.map((v) => ({
+    id: v.id, name: v.name, collectionId: v.variableCollectionId,
+    ...(v.resolvedType === 'FLOAT' ? { values: v.valuesByMode } : {}),
+  })));
 }
 
 /**
- * Flip to true for a local build to log per-document drift timing to the
- * Figma console. Off in every shipped build; esbuild drops the branches.
+ * True only in a `DRIFT_TIMING=1` build (see build.mjs), which logs
+ * per-document drift timing to the Figma console. Read it directly at each
+ * use: esbuild substitutes the literal there and drops the branch, which an
+ * alias const would stop it from doing.
  */
-const DRIFT_TIMING = false;
+declare const __DRIFT_TIMING__: boolean;
+
+/**
+ * `DRIFT_TIMING=1` only: every stretch over 100ms in which the main thread
+ * could not run a timer, which is time Figma could not repaint or take
+ * input, and what ran in it (see timing.ts). Plain strings, so a copy out
+ * of Figma's console keeps every number.
+ */
+const mainBlocks = __DRIFT_TIMING__
+  ? new BlockWatch(() => Date.now(), 100, (ms, during) => {
+    console.log(`[Spec Layer] timing main blocked ${ms}ms during ${during.join(', ')}`);
+  })
+  : null;
+if (__DRIFT_TIMING__ && mainBlocks) setInterval(() => mainBlocks.tick(50), 50);
 
 // ---------------------------------------------------------------------------
 // Find the relevant component in the current selection (walk up if needed)
@@ -597,7 +608,7 @@ function descriptionsForUnit(
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
-figma.ui.onmessage = async (raw: unknown) => {
+const handleUiMessage = async (raw: unknown): Promise<void> => {
   const msg = raw as UiToMain;
   switch (msg.type) {
     case 'requestSelection':
@@ -904,11 +915,12 @@ figma.ui.onmessage = async (raw: unknown) => {
     }
 
     case 'requestLibrary': {
-      // Two signals, either one runs the scan: a nodechange since the last
-      // scan, or a variable/style rename, addition, or deletion, or a number
-      // variable's value edit (none of which is known to fire a nodechange,
-      // and each can move a component's drift hash). The fingerprint
-      // read fails toward scanning: an unreadable list is not "unchanged".
+      // Two signals, either one runs the scan: the dirty flag (a nodechange
+      // on the current page or any stylechange since the last scan), or a
+      // variable rename, addition, or deletion, or a number variable's value
+      // edit (variables fire neither event, and each of those can move a
+      // component's drift hash). The fingerprint read fails toward
+      // scanning: an unreadable list is not "unchanged".
       // The shortcut also requires libraryDirtyWatched: without a live watch
       // `!libraryDirty.isDirty` would still read true after the first scan
       // (consume() runs below regardless of the watch), and nothing would
@@ -917,37 +929,35 @@ figma.ui.onmessage = async (raw: unknown) => {
       let probed = false;
       if (msg.ifChanged === true && libraryDirtyWatched && !libraryDirty.isDirty) {
         probed = true;
-        const probeStarted = DRIFT_TIMING ? Date.now() : 0;
+        const probeStarted = __DRIFT_TIMING__ ? Date.now() : 0;
         try { fingerprint = await readFoundationFingerprint(); } catch { fingerprint = null; }
-        if (DRIFT_TIMING) console.log('[Spec Layer] probe timing', { ms: Date.now() - probeStarted });
-        if (fingerprint !== null && fingerprint === lastFoundationFingerprint) {
+        if (__DRIFT_TIMING__) console.log(`[Spec Layer] probe timing ${Date.now() - probeStarted}ms, dirty ${libraryDirty.isDirty}`);
+        // isDirty again after the awaits: an edit that landed while the
+        // probe read, or while it waited on a scan's read, scans now.
+        if (await lastFoundationFingerprint.matches(fingerprint) && !libraryDirty.isDirty) {
           figma.ui.postMessage({ type: 'libraryUnchanged' } as MainToUi);
           break;
         }
       }
       // Cleared when the scan STARTS, not when it ends, so an edit made during
       // the scan or the drift pass after it marks the next visit dirty. The
-      // fingerprint is taken at the same moment for the same reason. The list
+      // fingerprint is taken at the same moment for the same reason, and not
+      // awaited here: nothing below needs it, only the next probe. The list
       // is read at most once here: when the probe above already ran, its
       // result (success or failure) is reused rather than reading again.
       libraryDirty.consume();
       driftPassResolvers.reset();
-      if (probed) {
-        lastFoundationFingerprint = fingerprint;
-      } else {
-        try {
-          lastFoundationFingerprint = await readFoundationFingerprint();
-        } catch {
-          lastFoundationFingerprint = null;
-        }
-      }
+      lastFoundationFingerprint.set(probed ? Promise.resolve(fingerprint) : readFoundationFingerprint());
       // Foundation drift needs one live extraction to answer every foundation
       // row, unlike component docs, which the UI checks one at a time via
       // requestDrift. scanLibrary calls this lazily and at most once, so a
       // file with only component docs pays nothing. Resolves null on failure
       // rather than rejecting: a foundation that cannot be read is a fact
       // about those rows (badge unavailable), not a reason to drop the list.
+      let foundationMs = 0;
       const liveFoundation = async (): Promise<FoundationSpec | null> => {
+        const foundationStarted = __DRIFT_TIMING__ ? Date.now() : 0;
+        if (__DRIFT_TIMING__) mainBlocks?.doing('requestLibrary foundation read');
         try {
           const { fileKey } = resolveFileKey(figma.fileKey, null);
           const spec = buildFoundation(await readFoundationDump(fileKey, false));
@@ -956,14 +966,24 @@ figma.ui.onmessage = async (raw: unknown) => {
         } catch (err) {
           console.error('[Spec Layer] foundation read failed during the library scan', err);
           return null;
+        } finally {
+          if (__DRIFT_TIMING__) {
+            foundationMs = Date.now() - foundationStarted;
+            mainBlocks?.doing('requestLibrary');
+          }
         }
       };
       let scan: LibraryScan;
+      const scanStarted = __DRIFT_TIMING__ ? Date.now() : 0;
       try {
         const reg = readRegistry();
         scan = await scanLibrary(reg.docIds, { getNodeByIdAsync: (id) => figma.getNodeByIdAsync(id), liveFoundation });
       } catch (err) {
         scan = { entries: [], alive: new Set<string>(), error: err instanceof Error ? err.message : String(err) };
+      }
+      if (__DRIFT_TIMING__) {
+        const ms = Date.now() - scanStarted;
+        console.log(`[Spec Layer] timing scan ${scan.entries.length} docs in ${ms}ms (foundation read ${foundationMs}ms, registry and doc frames ${ms - foundationMs}ms)`);
       }
       if (scan.error !== null) console.error('[Spec Layer] library scan failed', scan.error);
       // libraryReply is the one place that turns a scan into a reply and a
@@ -1502,7 +1522,7 @@ figma.ui.onmessage = async (raw: unknown) => {
 
     case 'requestDrift': {
       try {
-        const started = DRIFT_TIMING ? Date.now() : 0;
+        const started = __DRIFT_TIMING__ ? Date.now() : 0;
         const src = await figma.getNodeByIdAsync(msg.sourceNodeId);
         if (!src || (src.type !== 'COMPONENT' && src.type !== 'COMPONENT_SET')) {
           // Both branches of this case render the same "Check unavailable" row,
@@ -1511,25 +1531,23 @@ figma.ui.onmessage = async (raw: unknown) => {
             '[Spec Layer] drift source unresolved', msg.docId, msg.sourceNodeId,
             'resolved to', src ? src.type : 'null',
           );
-          figma.ui.postMessage({ type: 'driftError', docId: msg.docId } as MainToUi);
+          figma.ui.postMessage({ type: 'driftError', docId: msg.docId, passId: msg.passId } as MainToUi);
           break;
         }
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const node = await serializeNode(src as any, driftPassResolvers.forPass(msg.passId));
-        if (DRIFT_TIMING) {
-          console.log('[Spec Layer] drift timing', msg.docId, {
-            ms: Date.now() - started,
-            nodes: countSerializedNodes(node),
-            bytes: JSON.stringify(node).length,
-          });
+        if (__DRIFT_TIMING__) {
+          console.log(`[Spec Layer] drift timing ${msg.docId} ${Date.now() - started}ms, ${countSerializedNodes(node)} nodes, ${JSON.stringify(node).length} bytes`);
         }
         const { fileKey } = resolveFileKey(figma.fileKey, null);
-        figma.ui.postMessage({ type: 'driftSource', docId: msg.docId, node, fileKey, fileName: figma.root.name } as MainToUi);
+        figma.ui.postMessage({
+          type: 'driftSource', docId: msg.docId, passId: msg.passId, node, fileKey, fileName: figma.root.name,
+        } as MainToUi);
       } catch (err) {
         console.error(
           '[Spec Layer] drift check threw for', msg.docId, msg.sourceNodeId, err,
         );
-        figma.ui.postMessage({ type: 'driftError', docId: msg.docId } as MainToUi);
+        figma.ui.postMessage({ type: 'driftError', docId: msg.docId, passId: msg.passId } as MainToUi);
       }
       break;
     }
@@ -1781,3 +1799,24 @@ figma.ui.onmessage = async (raw: unknown) => {
     }
   }
 };
+
+/**
+ * `DRIFT_TIMING=1` only: how long each UI message's handler ran, awaits
+ * included. Beside mainBlocks this separates waiting on Figma from holding
+ * the thread: a long handler with no block was waiting.
+ */
+async function timedUiMessage(raw: unknown): Promise<void> {
+  const msg = raw as { type?: string; docId?: string };
+  const label = msg.type === 'requestDrift' ? `requestDrift ${msg.docId ?? ''}` : (msg.type ?? 'unknown');
+  const started = Date.now();
+  mainBlocks?.doing(label);
+  try {
+    await handleUiMessage(raw);
+  } finally {
+    mainBlocks?.done();
+    const ms = Date.now() - started;
+    if (ms >= 30) console.log(`[Spec Layer] timing main ${label} took ${ms}ms`);
+  }
+}
+
+figma.ui.onmessage = __DRIFT_TIMING__ ? timedUiMessage : handleUiMessage;

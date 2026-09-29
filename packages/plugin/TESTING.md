@@ -501,28 +501,32 @@ record.
     Foundations screen. Both still copy the DTCG JSON document, and the toast
     still begins "Copied." and names no format.
 16. Open Library on a file with several component docs and wait for every row
-    to settle. Note the caption under the filters reads **Checked just now**.
-    Switch to Foundations and back. Confirm no row returns to **Checking…**,
-    no progress appears in the footer, and the caption is still there. Wait
-    a minute on the Library and confirm it changes to **Checked 1 min ago**
-    without any interaction.
+    to settle. While they do, the line under the filters reads **Checking
+    for source changes** with a bar and a count, and nothing floats over the
+    last rows. When the last one lands the same line reads **Checked just
+    now**, and no row moves at either moment. Switch to Foundations and
+    back. Confirm no row returns to **Checking…**, no progress appears, and
+    the line still reads **Checked just now**. Stay on the Library and
+    confirm it changes to **Checked 1 min ago** about a minute after the
+    rows settled, without any interaction, and not up to a minute later
+    than that.
 17. Edit a documented component (move a layer or change a padding value),
     switch to another tab and back to the Library. Confirm the check runs,
     rows settle from the top of the list down, and the edited row reads
     **Update available**. Undo the edit, switch away and back: the check
     runs again and the row returns to **In sync**.
 18. On a file with at least ten component docs, open Library and switch to
-    Foundations while the footer still counts checks. Confirm the count
-    stops. Switch back: it continues from where it stopped, not from zero.
-    While a check runs, pan and zoom the canvas: Figma should stay
-    responsive, with at most brief pauses between rows.
+    Foundations while the line under the filters still counts checks.
+    Confirm the count stops. Switch back: it continues from where it
+    stopped, not from zero. While a check runs, pan and zoom the canvas:
+    Figma should stay responsive, with at most brief pauses between rows.
 19. Change a **color** variable's value that a documented Foundation uses,
     switch tabs and back. The Foundation row does **not** change on its own
     (the plugin does not see color, string or boolean value edits) and any
     component row bound to that variable stays **In sync**, as it would
     after a Refresh too. Click **Refresh library**: the Foundation row reads
     **Update available**, the component rows stay **In sync**, and the
-    caption returns to **Checked just now**.
+    line under the filters returns to **Checked just now**.
 20. Change the value of a **number** variable bound to a documented
     component's padding or gap, switch tabs and back. The check runs on its
     own and the component row reads **Update available**; **Show changes**
@@ -534,14 +538,25 @@ record.
     back, switch away and back: **In sync**. Repeat with a text style
     rename and with deleting an unused paint style: each triggers the
     check.
-22. On a file with only Foundation docs, open Library. The caption reads
-    **Checked just now** as soon as the rows appear.
+22. On a file with only Foundation docs, open Library. The line under the
+    filters reads **Checked just now** as soon as the rows appear.
 23. On a file with at least ten component docs, open Library and switch to
-    Foundations while the footer still counts checks. Open search, pick a
-    component doc, and confirm the Library opens on that row and the
-    footer count continues to the end, with every row settling. Close and
+    Foundations while the line under the filters still counts checks. Open
+    search, pick a component doc, and confirm the Library opens on that row
+    and the count continues to the end, with every row settling. Close and
     reopen the plugin and, before ever opening the Library, pick a doc from
     search on another tab: the rows still settle.
+24. Change the colour of a paint style, or the size of a text style, that a
+    documented Foundation shows, from a page other than the one the docs are
+    on. Switch tabs and back. The check runs on its own and that Foundation
+    row reads **Update available**. Set the value back, switch away and
+    back: **In sync**. (Style edits arrive as a document-wide style change;
+    only color, string and boolean variable value edits are not seen, row 19.)
+25. On a file with a doc built by 5.1.0 or earlier, open Library. That row
+    reads **Rebuild needed** and the rebuild banner is up as soon as the
+    rows appear, not partway through the check, and the list does not move
+    when the check finishes. The count under the filters leaves that doc
+    out: it has no source check to run.
 
 ## AI-writing allowance (free plan)
 

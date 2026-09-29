@@ -18,6 +18,7 @@ import { fileURLToPath } from 'node:url';
 const pluginDir = fileURLToPath(new URL('..', import.meta.url));
 const plainOut = mkdtempSync(join(tmpdir(), 'sl-ui-plain-'));
 const harnessOut = mkdtempSync(join(tmpdir(), 'sl-ui-harness-'));
+const timingOut = mkdtempSync(join(tmpdir(), 'sl-ui-timing-'));
 
 function build(outDir: string, env: NodeJS.ProcessEnv = {}): void {
   execFileSync('node', ['build.mjs'], {
@@ -28,11 +29,13 @@ function build(outDir: string, env: NodeJS.ProcessEnv = {}): void {
 beforeAll(() => {
   build(plainOut);
   build(harnessOut, { UI_HARNESS: '1' });
+  build(timingOut, { DRIFT_TIMING: '1' });
 });
 
 afterAll(() => {
   rmSync(plainOut, { recursive: true, force: true });
   rmSync(harnessOut, { recursive: true, force: true });
+  rmSync(timingOut, { recursive: true, force: true });
 });
 
 describe('dist/ui.html', () => {
@@ -196,5 +199,27 @@ describe('dist/ui-harness.html', () => {
     const manifest = readFileSync(
       fileURLToPath(new URL('../manifest.json', import.meta.url)), 'utf-8');
     expect(manifest).not.toContain('ui-harness');
+  });
+});
+
+/**
+ * The Library drift timing logs are for a local measurement build. A plain
+ * const flag left them in the minified output behind a variable, so the
+ * build defines `__DRIFT_TIMING__` and esbuild drops the branches outright.
+ */
+describe('drift timing logs', () => {
+  const read = (dir: string, file: string): string => readFileSync(join(dir, file), 'utf-8');
+
+  const mainLogs = ['drift timing', 'probe timing', 'timing scan', 'timing main blocked', 'timing main '];
+  const uiLogs = ['drift hash timing', 'timing ui blocked', 'timing ui navigate'];
+
+  it('are stripped from a normal build, main thread and UI alike', () => {
+    for (const log of mainLogs) expect(read(plainOut, 'main.js')).not.toContain(log);
+    for (const log of uiLogs) expect(read(plainOut, 'ui.html')).not.toContain(log);
+  });
+
+  it('are compiled in by DRIFT_TIMING=1', () => {
+    for (const log of mainLogs) expect(read(timingOut, 'main.js')).toContain(log);
+    for (const log of uiLogs) expect(read(timingOut, 'ui.html')).toContain(log);
   });
 });

@@ -187,6 +187,25 @@ export function formatLibraryCheckedAt(
 }
 
 /**
+ * How long until formatLibraryCheckedAt reads differently, or null when it
+ * never will again: no stamp, or an hour or more old, where the caption is
+ * a clock time. The label moves on whole minutes counted from the check, so
+ * a timer that sleeps this long flips it on time, where one ticking every
+ * minute from whenever the list opened could leave "Checked just now" up
+ * for almost two.
+ */
+export function libraryCheckedLabelChangesIn(
+  checkedAt: number | null,
+  now = Date.now(),
+): number | null {
+  if (checkedAt === null || !Number.isFinite(checkedAt) || !Number.isFinite(now)) return null;
+  const minute = 60_000;
+  const minutesShown = Math.floor(Math.max(0, now - checkedAt) / minute);
+  if (minutesShown >= 60) return null;
+  return checkedAt + (minutesShown + 1) * minute - now;
+}
+
+/**
  * Status resolution preserves the domain priority:
  * orphaned > update available > edited > in sync.
  *
@@ -233,6 +252,28 @@ export function libraryDriftForEntry(
   }
 
   return 'pending';
+}
+
+/**
+ * Where a row stands the moment a scan lands, before any source check:
+ * `'check'` when it needs one, the state it already has when it does not,
+ * or null for a doc whose source is gone (its row reads orphaned, which
+ * outranks any drift).
+ *
+ * A component doc built by another extractor is `staleVersion` right away.
+ * Its hash projection differs from this build's, so its source check could
+ * only ever answer "rebuild", and waiting for that answer put the rebuild
+ * banner up mid-pass, over rows the user was already reading. It also
+ * spares that doc's source read. A missing version (a link written before
+ * the field existed) is another extractor too.
+ */
+export function initialLibraryDrift(
+  entry: LibraryEntry,
+  extractorVersion: string,
+): LibraryDriftState | 'check' | null {
+  if (!entry.sourceExists) return null;
+  if (entry.kind === 'foundation') return libraryDriftForEntry(entry, new Map());
+  return entry.extractorVersion === extractorVersion ? 'check' : 'staleVersion';
 }
 
 export function buildLibraryRow(

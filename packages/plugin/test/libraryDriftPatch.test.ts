@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it } from 'vitest';
 import {
-  patchLibraryCaption,
+  patchLibraryCheckLine,
   patchLibraryDrift,
   renderLibraryScreen,
   type LibraryRowPresentation,
@@ -99,45 +99,62 @@ describe('patchLibraryDrift', () => {
     expect(button?.hasAttribute('disabled')).toBe(false);
   });
 
-  it('updates the last-checked caption in place', () => {
-    const refs = mount([row('a', 'pending')]);
-    const caption = refs.scroll.querySelector<HTMLElement>('[data-library-checked]')!;
-    expect(caption.hidden).toBe(true);
+  const checking = (current: number, total: number) => ({
+    checkProgress: { label: 'Checking for source changes', current, total },
+  });
+  const line = (refs: ShellRefs) => refs.scroll.querySelector<HTMLElement>('[data-library-check-line]')!;
 
-    patchLibraryDrift(refs, model([row('a', 'inSync')], { checkedLabel: 'Checked just now' }));
-    expect(caption.hidden).toBe(false);
-    expect(caption.textContent).toBe('Checked just now');
+  it('moves the check line from progress to when it ran, in place and never hidden', () => {
+    const refs = mountShell('library');
+    renderLibraryScreen(refs, model([row('a', 'pending'), row('b', 'pending')], checking(0, 2)));
+    const element = line(refs);
+    const bar = element.querySelector<HTMLElement>('.sl-progress-track > i')!;
+    expect(element.textContent).toContain('0 of 2');
 
-    patchLibraryDrift(refs, model([row('a', 'inSync')], { checkedLabel: 'Checked 1 min ago' }));
-    expect(caption.textContent).toBe('Checked 1 min ago');
+    patchLibraryDrift(refs, model([row('a', 'inSync'), row('b', 'pending')], checking(1, 2)));
+    // The bar is the same element with a new width, so its transition runs
+    // rather than the bar being redrawn from nothing on every row.
+    expect(element.querySelector('.sl-progress-track > i')).toBe(bar);
+    expect(bar.style.width).toBe('50%');
+    expect(element.querySelector('[role="progressbar"]')?.getAttribute('aria-valuenow')).toBe('1');
+    expect(element.textContent).toContain('1 of 2');
 
-    // Same element: the caption is updated in place, not rebuilt.
-    expect(refs.scroll.querySelector('[data-library-checked]')).toBe(caption);
+    patchLibraryDrift(refs, model([row('a', 'inSync'), row('b', 'inSync')], { checkedLabel: 'Checked just now' }));
+    expect(element.textContent).toBe('Checked just now');
+    expect(element.querySelector('[role="progressbar"]')).toBeNull();
+    expect(element.getAttribute('aria-live')).toBe('off');
+
+    patchLibraryDrift(refs, model([row('a', 'inSync'), row('b', 'inSync')], { checkedLabel: 'Checked 1 min ago' }));
+    expect(element.textContent).toBe('Checked 1 min ago');
+
+    // Same element throughout, and never hidden.
+    expect(line(refs)).toBe(element);
+    expect(element.hidden).toBe(false);
   });
 
-  it('patchLibraryCaption alone updates the caption and leaves the footer and rows alone', () => {
+  it('patchLibraryCheckLine alone updates the line and leaves the footer and rows alone', () => {
     const refs = mountShell('library');
     renderLibraryScreen(refs, model([row('a', 'inSync')], { checkedLabel: 'Checked just now' }));
-    const caption = refs.scroll.querySelector<HTMLElement>('[data-library-checked]')!;
+    const element = line(refs);
     const footerActions = refs.footer.querySelector('.sl-footer-actions');
     const refresh = refs.footer.querySelector('[data-library-refresh]');
     const rowElement = refs.scroll.querySelector('.sl-library-row[data-doc-id="a"]');
     const footerHtml = refs.footer.innerHTML;
 
-    patchLibraryCaption(refs, model([row('a', 'inSync')], { checkedLabel: 'Checked 1 min ago' }));
+    patchLibraryCheckLine(refs, model([row('a', 'inSync')], { checkedLabel: 'Checked 1 min ago' }));
 
-    expect(refs.scroll.querySelector('[data-library-checked]')).toBe(caption);
-    expect(caption.textContent).toBe('Checked 1 min ago');
-    expect(caption.hidden).toBe(false);
+    expect(line(refs)).toBe(element);
+    expect(element.textContent).toBe('Checked 1 min ago');
     expect(refs.footer.querySelector('.sl-footer-actions')).toBe(footerActions);
     expect(refs.footer.querySelector('[data-library-refresh]')).toBe(refresh);
     expect(refs.footer.innerHTML).toBe(footerHtml);
     expect(refs.scroll.querySelector('.sl-library-row[data-doc-id="a"]')).toBe(rowElement);
 
-    // The same hidden rule as the full paint: a check in progress hides it.
-    patchLibraryCaption(refs, model([row('a', 'inSync')], { checkedLabel: 'Checked 1 min ago', refreshing: true }));
-    expect(caption.hidden).toBe(true);
-    expect(caption.textContent).toBe('');
+    // A check starting takes over the same line; it is not hidden.
+    patchLibraryCheckLine(refs, model([row('a', 'inSync')], { checkedLabel: 'Checked 1 min ago', refreshing: true, ...checking(0, 1) }));
+    expect(element.hidden).toBe(false);
+    expect(element.textContent).toContain('Checking for source changes');
+    expect(element.getAttribute('aria-live')).toBe('polite');
   });
 
   it('redraws an open row menu when busy changes, even though that row\'s own status did not', () => {

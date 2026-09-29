@@ -24,7 +24,7 @@ describe('DocumentDirtyFlag', () => {
   it('a nodechange on the current page marks it dirty', () => {
     const flag = new DocumentDirtyFlag();
     const p = page();
-    flag.attach({ currentPage: () => p, onPageChange: () => {} });
+    flag.attach({ currentPage: () => p, onPageChange: () => {}, onStyleChange: () => {} });
     flag.consume();
     expect(flag.isDirty).toBe(false);
     p.fire();
@@ -38,7 +38,7 @@ describe('DocumentDirtyFlag', () => {
     const second = page();
     let current = first;
     let onPageChange: (() => void) | null = null;
-    flag.attach({ currentPage: () => current, onPageChange: (cb) => { onPageChange = cb; } });
+    flag.attach({ currentPage: () => current, onPageChange: (cb) => { onPageChange = cb; }, onStyleChange: () => {} });
     flag.consume();
     current = second;
     onPageChange!();
@@ -54,9 +54,35 @@ describe('DocumentDirtyFlag', () => {
     const flag = new DocumentDirtyFlag();
     const p = page();
     let onPageChange: (() => void) | null = null;
-    flag.attach({ currentPage: () => p, onPageChange: (cb) => { onPageChange = cb; } });
+    flag.attach({ currentPage: () => p, onPageChange: (cb) => { onPageChange = cb; }, onStyleChange: () => {} });
     onPageChange!();
     expect(p.on).toHaveBeenCalledTimes(1);
     expect(p.off).not.toHaveBeenCalled();
+  });
+
+  // Styles are document-wide, not page nodes: a rename, a deletion, or a
+  // paint or text value edit arrives as a stylechange, on any page, and is
+  // what lets the probe's fingerprint leave styles out.
+  it('a style change marks it dirty, whichever page is open', () => {
+    const flag = new DocumentDirtyFlag();
+    const p = page();
+    let onStyleChange: (() => void) | null = null;
+    flag.attach({ currentPage: () => p, onPageChange: () => {}, onStyleChange: (cb) => { onStyleChange = cb; } });
+    flag.consume();
+    onStyleChange!();
+    expect(flag.isDirty).toBe(true);
+  });
+
+  // main.ts reads a throwing attach as "not watched" and re-checks on every
+  // visit, so a runtime without the style event must fail the attach rather
+  // than leave style edits unwatched behind a clean flag.
+  it('attach throws when the style watch cannot start', () => {
+    const flag = new DocumentDirtyFlag();
+    const p = page();
+    expect(() => flag.attach({
+      currentPage: () => p,
+      onPageChange: () => {},
+      onStyleChange: () => { throw new Error('unsupported event'); },
+    })).toThrow('unsupported event');
   });
 });
