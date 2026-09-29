@@ -92,13 +92,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   test stub throws Figma's own error when a min or max size is set outside
   auto layout, so the suite catches this order from now on.
 
-### Security
-
-- The plugin window now accepts a message only from the frame Figma embeds
-  it in, the same window it sends to. A message posted to it by any other
-  window is ignored, and one shaped like a plugin message is logged to the
-  console. CodeQL reported the message handler as having no origin check.
-
 ## [6.0.0] - 2026-09-24
 
 Plugin 6.0.0 is a major release because every existing document asks to be
