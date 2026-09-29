@@ -377,8 +377,10 @@ function referenceChip(platform: string, identifier: string, width: number): Fra
   c.appendChild(label);
   const id = makeText(identifier, 'Medium', 11, palette.heading);
   id.textAutoResize = 'WIDTH_AND_HEIGHT';
-  id.maxWidth = Math.max(1, width - 12); // 6 + 6 chip padding
+  // Figma only accepts a max width on an auto-layout child, so the cap is set
+  // after the append. Set before it, the call throws and the build stops.
   c.appendChild(id);
+  id.maxWidth = Math.max(1, width - 12); // 6 + 6 chip padding
   return c;
 }
 
@@ -733,9 +735,10 @@ function labelledBlock(text: string, block: FrameNode): FrameNode {
   const label = makeText(text, 'Medium', 11, palette.muted);
   // The fixed labels are a word or two; a mode name is user-authored and
   // unbounded. Capped at the prose measure so a long one wraps instead of
-  // widening the group past its block and out of the card.
-  label.maxWidth = PROSE_MEASURE;
+  // widening the group past its block and out of the card. Set after the
+  // append: Figma only accepts a max width on an auto-layout child.
   group.appendChild(label);
+  label.maxWidth = PROSE_MEASURE;
   group.appendChild(block);
   return group;
 }

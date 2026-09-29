@@ -81,6 +81,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   schema file changes. The documentation site's description of `guidelines`
   lives outside this repository and still has to be updated there.
 
+### Fixed
+
+- Building a Foundation frame no longer fails with "in set_maxWidth: Can
+  only set maxWidth on auto layout nodes and their children". 6.0.0 capped
+  two text nodes before appending them to their auto-layout parent, which
+  Figma refuses: a code-syntax identifier chip, so any collection with a
+  variable that defines code syntax, and the block label on a frame that
+  holds both layouts. Both caps are now set after the append, and the
+  test stub throws Figma's own error when a min or max size is set outside
+  auto layout, so the suite catches this order from now on.
+
 ### Security
 
 - The plugin window now accepts a message only from the frame Figma embeds

@@ -25,6 +25,39 @@ export const IMAGE_H = 50;
 export interface FakeNode { type?: string; height?: number; width?: number }
 
 /**
+ * Who each fake node was appended to. Kept off the node itself so no
+ * `.parent` appears that code under test could start reading.
+ */
+const parentOf = new WeakMap<object, object>();
+
+function isAutoLayout(n: unknown): boolean {
+  return n instanceof FakeFrame && n.layoutMode !== 'NONE';
+}
+
+/**
+ * Figma refuses a min/max size on a node that is neither an auto-layout frame
+ * nor the child of one at the moment it is set, with exactly this message. A
+ * fresh text node sits on the page until it is appended, so setting its
+ * maxWidth first throws in Figma. 6.0.0 shipped that bug because this stub
+ * accepted any assignment.
+ */
+function guardSizeBounds(proto: object): void {
+  for (const key of ['minWidth', 'maxWidth', 'minHeight', 'maxHeight']) {
+    const slot = Symbol(key);
+    Object.defineProperty(proto, key, {
+      configurable: true,
+      get(this: Record<symbol, unknown>) { return this[slot] ?? null; },
+      set(this: Record<symbol, unknown>, v: unknown) {
+        if (!isAutoLayout(this) && !isAutoLayout(parentOf.get(this))) {
+          throw new Error(`in set_${key}: Can only set ${key} on auto layout nodes and their children`);
+        }
+        this[slot] = v;
+      },
+    });
+  }
+}
+
+/**
  * A minimal auto-layout frame modelling the two things the clipping bug turned
  * on: resize() fixing both axes, and layoutSizing{Horizontal,Vertical} being
  * views onto primary/counter that depend on layoutMode.
@@ -61,6 +94,7 @@ export class FakeFrame {
 
   appendChild(n: FakeNode): void {
     this.children.push(n);
+    parentOf.set(n, this);
   }
 
   /**
@@ -205,6 +239,7 @@ export class FakeSection {
 
   appendChild(n: FakeNode): void {
     this.children.push(n);
+    parentOf.set(n, this);
   }
 
   resizeWithoutConstraints(w: number, h: number): void {
@@ -292,6 +327,9 @@ export class FakeText {
 
   remove(): void {}
 }
+
+guardSizeBounds(FakeFrame.prototype);
+guardSizeBounds(FakeText.prototype);
 
 function fakeText(): FakeText {
   return new FakeText();
