@@ -283,6 +283,22 @@ describe('table cell sizing (row-clipping regression)', () => {
       expect(f.counterAxisSizingMode).toBe('FIXED');
     });
 
+    it('refuses a max width outside auto layout, as the real Figma API does', () => {
+      // 6.0.0 shipped two text nodes capped before they were appended, which
+      // Figma rejects. This pins the stub rule that now catches that order.
+      const text = figma.createText();
+      expect(() => { text.maxWidth = 100; }).toThrow(
+        'in set_maxWidth: Can only set maxWidth on auto layout nodes and their children',
+      );
+      const plain = figma.createFrame();
+      expect(() => { plain.minHeight = 10; }).toThrow('in set_minHeight');
+      const stack = hstack(0);
+      stack.maxWidth = 100;
+      stack.appendChild(text);
+      text.maxWidth = 80;
+      expect(text.maxWidth).toBe(80);
+    });
+
     it('maps layoutSizing* onto the axis the layout direction implies', () => {
       const h = hstack(0) as unknown as FakeFrame;
       h.layoutSizingVertical = 'FIXED';
