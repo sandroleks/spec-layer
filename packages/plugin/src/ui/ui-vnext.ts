@@ -3389,7 +3389,27 @@ function timedMainMessage(event: MessageEvent): void {
   }
 }
 
-window.onmessage = __DRIFT_TIMING__ ? timedMainMessage : handleMainMessage;
+/**
+ * The one message handler, and the only place a message is accepted.
+ *
+ * Figma delivers the main thread's messages from the frame that embeds this
+ * iframe, the same window `send()` posts to (actions.ts), so a message from
+ * any other window is not the plugin and is dropped (CodeQL
+ * js/missing-origin-check). The source, not the origin: Figma's own origin
+ * is not something this bundle should hard-code. A dropped message that
+ * looks like a plugin message is logged, so if Figma ever delivers from
+ * elsewhere it shows as a warning in the console, not as a silent plugin.
+ */
+window.onmessage = (event: MessageEvent): void => {
+  if (event.source !== window.parent) {
+    if (event.data?.pluginMessage !== undefined) {
+      console.warn('[Spec Layer] ignored a plugin message from a window other than Figma', event.origin);
+    }
+    return;
+  }
+  if (__DRIFT_TIMING__) timedMainMessage(event);
+  else handleMainMessage(event);
+};
 
 paintAllowance();
 paint();

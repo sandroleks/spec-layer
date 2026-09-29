@@ -81,6 +81,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   schema file changes. The documentation site's description of `guidelines`
   lives outside this repository and still has to be updated there.
 
+### Security
+
+- The plugin window now accepts a message only from the frame Figma embeds
+  it in, the same window it sends to. A message posted to it by any other
+  window is ignored, and one shaped like a plugin message is logged to the
+  console. CodeQL reported the message handler as having no origin check.
+
 ## [6.0.0] - 2026-09-24
 
 Plugin 6.0.0 is a major release because every existing document asks to be
