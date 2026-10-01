@@ -74,10 +74,13 @@ export const PLACEHOLDER_TEXT = 'To be written.';
  *  plain objects and the main thread can pass SceneNodes (cast, since the
  *  typings' overloaded generic `getStyledTextSegments` is not assignable). */
 export interface ProseNodeLike {
+  id?: string;
   type: string;
   characters?: string;
   children?: readonly ProseNodeLike[];
   getPluginData(key: string): string;
+  /** Figma's native subtree search, when the host has it. */
+  findAllWithCriteria?(criteria: { pluginData: { keys: string[] } }): readonly { id: string }[];
   getStyledTextSegments?(fields: ['fontName']):
     readonly { characters: string; fontName: { family: string; style: string } }[];
 }
@@ -408,14 +411,14 @@ export function mergeProse(stored: ProseV2 | null, canvas: CanvasProse): ProseV2
  * stored hash moves.
  */
 export function collectGeneratedText(root: ProseNodeLike): string[] {
+  const tagged = laneTaggedIds(root);
+  const excluded = (n: ProseNodeLike): boolean => (tagged && n !== root && n.id !== undefined
+    ? tagged.has(n.id)
+    : LANE_EXCLUSIONS.some((key) => n.getPluginData(key) !== ''));
   const out: string[] = [];
   const visit = (n: ProseNodeLike): void => {
     if (n.type === 'INSTANCE') return;
-    if (n.getPluginData(SLOT_KEY) !== '') return;
-    // The publish pill is a status stamp, not generated prose: a version that
-    // moves must never read as a hand edit. See publishPill.ts.
-    if (n.getPluginData(PILL_KEY) !== '') return;
-    if (n.getPluginData(PLACEHOLDER_TAG_KEY) !== '') return;
+    if (excluded(n)) return;
     if (n.type === 'TEXT') {
       out.push(n.characters ?? '');
       return;
@@ -424,4 +427,25 @@ export function collectGeneratedText(root: ProseNodeLike): string[] {
   };
   visit(root);
   return out;
+}
+
+/** The tags that take a subtree out of the generated lane. The publish pill is
+ *  a status stamp, not generated prose: a version that moves must never read
+ *  as a hand edit (see publishPill.ts). */
+const LANE_EXCLUSIONS = [SLOT_KEY, PILL_KEY, PLACEHOLDER_TAG_KEY];
+
+/**
+ * Every node under `root` carrying a lane tag, from one native search, so the
+ * walk reads no plugin data per node. Figma removes a key set to '', so "has
+ * the key" is exactly "getPluginData(key) !== ''". Null when the host has no
+ * search or it throws; the walk then reads the tags node by node. The search
+ * leaves out `root` itself, which the walk checks directly.
+ */
+function laneTaggedIds(root: ProseNodeLike): Set<string> | null {
+  if (typeof root.findAllWithCriteria !== 'function') return null;
+  try {
+    return new Set(root.findAllWithCriteria({ pluginData: { keys: LANE_EXCLUSIONS } }).map((n) => n.id));
+  } catch {
+    return null;
+  }
 }

@@ -424,6 +424,45 @@ describe('collectGeneratedText', () => {
     expect(collectGeneratedText(doc)).toEqual(['Heading', 'Cell']);
   });
 
+  it('finds tagged nodes with one native search and returns the same text', () => {
+    const doc = frame([
+      text('Heading'),
+      frame([text('editorial')], slot('semantics')),
+      frame([text('instance text')], {}, 'INSTANCE'),
+      text('v1.0.0 · Published', { data: { specLayerPill: '1' } }),
+      frame([text('Placeholder')], { [PLACEHOLDER_TAG_KEY]: '1' }),
+      text('Cell'),
+    ]);
+    const expected = collectGeneratedText(doc);
+
+    // The same tree as Figma presents it: ids, a native search, and a count of
+    // the per-node plugin-data reads the search makes unnecessary.
+    let reads = 0;
+    let next = 0;
+    const below: Array<{ id: string; original: ProseNodeLike }> = [];
+    const host = (n: ProseNodeLike, isRoot = false): ProseNodeLike => {
+      const id = `n${next++}`;
+      if (!isRoot) below.push({ id, original: n });
+      return {
+        ...n,
+        id,
+        children: n.children?.map((c) => host(c)),
+        getPluginData: (k: string) => { reads++; return n.getPluginData(k); },
+      };
+    };
+    const root: ProseNodeLike = {
+      ...host(doc, true),
+      findAllWithCriteria: ({ pluginData }) => below
+        .filter(({ original }) => pluginData.keys.some((k) => original.getPluginData(k) !== ''))
+        .map(({ id }) => ({ id })),
+    };
+    const got = collectGeneratedText(root);
+    expect(got).toEqual(expected);
+    expect(got).toEqual(['Heading', 'Cell']);
+    // Only the root is asked directly; every other node is answered by the search.
+    expect(reads).toBe(3);
+  });
+
   it('skips the Placeholder tag, so removing it after filling the box changes nothing', () => {
     const tag = () => frame([text('Placeholder', { data: { [PLACEHOLDER_TAG_KEY]: '1' } })], { [PLACEHOLDER_TAG_KEY]: '1' });
     const withTag = frame([text('Heading'), frame([tag(), frame([guidance('Say why.')], slot('pointer'))]), text('Cell')]);
