@@ -604,19 +604,19 @@ describe('library screen presentation', () => {
     const markup = libraryFooterMarkup(model({
       updatingAll: true,
       progress: {
-        label: 'Updating document 2 of 4',
+        label: 'Updating docs',
         current: 1,
         total: 4,
       },
     }));
-    expect(markup).toContain('Updating document 2 of 4');
+    expect(markup).toContain('Updating docs');
     expect(markup).toContain('1 of 4');
     expect(markup).toContain('role="progressbar"');
     expect(markup).not.toContain('sl-banner');
     expect(libraryScrollMarkup(model({
       updatingAll: true,
       progress: {
-        label: 'Updating document 2 of 4',
+        label: 'Updating docs',
         current: 1,
         total: 4,
       },

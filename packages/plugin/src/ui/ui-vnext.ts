@@ -583,9 +583,9 @@ function libraryPresentation(): LibraryScreenPresentation {
   // start and the end of a check swap text in place and move no row.
   const progress = update
     ? {
-        label: update.batch
-          ? `Updating doc ${Math.min(update.completed + 1, update.total)} of ${update.total}`
-          : 'Updating this doc',
+        // The bar's count says "0 of 3" while the first doc runs; a label
+        // saying "doc 1 of 3" beside it read as a contradiction.
+        label: update.batch ? 'Updating docs' : 'Updating this doc',
         current: update.completed,
         total: update.total,
       }
