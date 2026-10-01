@@ -2907,9 +2907,12 @@ const handleMainMessage = (event: MessageEvent): void => {
         return;
       }
       stopComponentProgress();
-      nativeNotify(msg.message, { error: true, timeout: 5000 });
+      // The failure stays on the panel until the next Create or selection
+      // replaces this state, the decision the Publish footer already took: a
+      // toast is gone before the reader looks up from the button. Controls
+      // stay enabled, so Create is the retry.
       screen = currentName()
-        ? { kind: 'ready', componentName: currentName() }
+        ? { kind: 'error', componentName: currentName(), message: msg.message }
         : { kind: 'empty' };
       paint();
       completeOperation();

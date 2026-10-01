@@ -1623,11 +1623,14 @@
   font-size: var(--sl-font-size-support);
 }
 
-.sl-publish-body.has-error {
+/* Room to scroll the last control out from under the floating footer error. */
+.sl-publish-body.has-error,
+.sl-component-controls.has-error {
   padding-bottom: 120px;
 }
 
-.sl-publish-error {
+/* The footer's error banner, shared by Publish and the component screen. */
+.sl-footer-error {
   font-size: var(--sl-font-size-support);
   line-height: var(--sl-line-height-body);
 }

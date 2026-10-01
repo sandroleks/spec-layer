@@ -291,15 +291,15 @@ describe('publish screen body', () => {
   it('shows only errors, above the footer buttons rather than below the fold', () => {
     const errored = state({ status: 'error', message: 'Could not reach the publish service.' });
     const footer = publishFooterMarkup(errored);
-    expect(footer).toContain('sl-publish-error');
+    expect(footer).toContain('sl-footer-error');
     expect(footer).toContain('role="alert"');
     expect(footer).toContain('Could not reach the publish service.');
-    expect(footer.indexOf('sl-publish-error')).toBeLessThan(footer.indexOf('sl-footer-actions'));
+    expect(footer.indexOf('sl-footer-error')).toBeLessThan(footer.indexOf('sl-footer-actions'));
     expect(proScroll(errored)).not.toContain('Could not reach the publish service.');
 
-    expect(publishFooterMarkup(PUBLISHED)).not.toContain('sl-publish-error');
+    expect(publishFooterMarkup(PUBLISHED)).not.toContain('sl-footer-error');
     expect(publishFooterMarkup(state({ status: 'done', message: 'Published.' }))).not.toContain('Published.');
-    expect(publishFooterMarkup(state())).not.toContain('sl-publish-error');
+    expect(publishFooterMarkup(state())).not.toContain('sl-footer-error');
   });
 
   it('escapes an error message rather than trusting it as markup', () => {

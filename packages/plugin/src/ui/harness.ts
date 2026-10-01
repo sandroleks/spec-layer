@@ -124,14 +124,6 @@ const COMPONENT_STATES: Record<string, ComponentScreenState> = {
   // sets one, so the harness shows what a user sees.
   building: { kind: 'building', componentName: 'buttonPrimary', action: 'create', phase: 'Composing sections' },
   success: { kind: 'success', componentName: 'buttonPrimary', replaced: false },
-  warning: {
-    kind: 'success',
-    componentName: 'buttonPrimary',
-    replaced: false,
-    message: 'Docs created. Added placeholders for When to use, Keyboard. Fill them in on the canvas. '
-      + 'AI writing failed, so sections that needed AI were added as placeholders. Try again.',
-    warning: true,
-  },
   error: {
     kind: 'error',
     componentName: 'buttonPrimary',

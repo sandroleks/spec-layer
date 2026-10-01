@@ -429,7 +429,7 @@ export function publishFooterMarkup(state: PublishState): string {
     // body they sat below the fold on any library with setup blocks.
     : state.status === 'error' && state.message
       ? '<div class="sl-footer-progress">' +
-        `<div class="sl-banner sl-publish-error" data-tone="danger" role="alert">${esc(state.message)}</div>` +
+        `<div class="sl-banner sl-footer-error" data-tone="danger" role="alert">${esc(state.message)}</div>` +
         '</div>'
       : '';
   // The primary names the version a publish would make, so the reader never

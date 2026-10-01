@@ -598,15 +598,30 @@ describe('component screen markup', () => {
   });
 
   it('keeps a successful build actionable without rendering a plugin toast', () => {
-    const state = {
-      kind: 'success',
-      componentName: 'Button',
-      replaced: false,
-      message: 'Docs created. AI did not run',
-      warning: true,
-    } as const;
+    const state = { kind: 'success', componentName: 'Button', replaced: false } as const;
     expect(componentStatusMarkup(state)).toBe('');
     expect(componentFooterMarkup(state)).toContain('id="sl-create"');
+  });
+
+  it('keeps a failed build on screen until the next action', () => {
+    // The Publish footer took this decision first: a toast is gone before
+    // the reader looks up from the button. Same slot, same banner.
+    const failed = { kind: 'error', componentName: 'Button', message: 'Couldn’t load the Inter font.' } as const;
+    const status = componentStatusMarkup(failed);
+    expect(status).toContain('sl-banner sl-footer-error');
+    expect(status).toContain('role="alert"');
+    expect(status).toContain('Couldn’t load the Inter font.');
+
+    const footer = componentFooterMarkup(failed);
+    expect(footer.indexOf('sl-footer-progress')).toBeLessThan(footer.indexOf('sl-footer-actions'));
+    // Not busy: Create is the retry, and Copy for AI still works.
+    expect(footer).toContain('id="sl-create"');
+    expect(footer).not.toContain('disabled');
+
+    const scroll = componentScrollMarkup(failed, createComponentSelection(true), NO_FACTS);
+    expect(scroll).toContain('class="sl-component-controls has-error"');
+    expect(scroll).not.toContain('aria-busy');
+    expect(componentStatusMarkup(READY)).toBe('');
   });
 
   it('reuses the original progress treatment for reading and build phases', () => {

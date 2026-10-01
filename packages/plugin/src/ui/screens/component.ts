@@ -442,7 +442,10 @@ export function componentScrollMarkup(
     .join('');
 
   return (
-    `<fieldset class="sl-component-controls"${busy ? ' disabled aria-busy="true"' : ''}>` +
+    // `has-error` adds room at the bottom so the last control can scroll out
+    // from under the floating banner, as .sl-publish-body.has-error does.
+    `<fieldset class="sl-component-controls${state.kind === 'error' ? ' has-error' : ''}"` +
+    `${busy ? ' disabled aria-busy="true"' : ''}>` +
     (facts.isAtom ? atomNoticeMarkup() : '') +
     aiControlMarkup(selection.aiEnabled, allowance) +
     hiddenElementsMarkup(selection, facts) +
@@ -500,6 +503,9 @@ export function componentFooterMarkup(state: ComponentScreenState, hasDoc = fals
 export function componentStatusMarkup(state: ComponentScreenState): string {
   switch (state.kind) {
     case 'error':
+      // Same slot and banner as the Publish footer's error: it stays until the
+      // next Create or selection replaces this state.
+      return `<div class="sl-banner sl-footer-error" data-tone="danger" role="alert">${esc(state.message)}</div>`;
     case 'success':
       return '';
     case 'reading':
