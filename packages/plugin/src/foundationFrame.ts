@@ -922,10 +922,9 @@ export async function buildFoundationFrame(
       wanted.set(`${row.metrics.fontFamily}|${row.metrics.fontStyle}`,
         { family: row.metrics.fontFamily, style: row.metrics.fontStyle });
     }
-    for (const [key, fontName] of wanted) {
-      try { await figma.loadFontAsync(fontName); }
-      catch { failedFamilies.add(key); }
-    }
+    await Promise.all([...wanted].map(([key, fontName]) => Promise.resolve()
+      .then(() => figma.loadFontAsync(fontName))
+      .catch(() => { failedFamilies.add(key); })));
   }
 
   // Derived from content, not read off `unit`: the title is rendered text, so it

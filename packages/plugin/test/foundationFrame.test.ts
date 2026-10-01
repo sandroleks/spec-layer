@@ -559,8 +559,14 @@ describe('buildFoundationFrame', () => {
   function build(opts: {
     textStyles?: boolean; effectStyles?: boolean; descriptions?: boolean; logo?: string | null;
     singleMode?: boolean; codeSyntax?: Record<string, string>; overview?: string;
+    textStyleFonts?: Array<{ family: string; style: string }>;
   } = {}) {
     const d = dump();
+    if (opts.textStyleFonts) {
+      d.textStyles = opts.textStyleFonts.map(({ family, style }, i) => ({
+        ...d.textStyles[0], name: `Style/${i}`, fontFamily: family, fontStyle: style,
+      }));
+    }
     // The first colour variable of the dump, for the one test that needs a
     // code syntax to render a chip; every other test leaves it {} as dump() did.
     if (opts.codeSyntax) d.collections[0].variables[0].codeSyntax = opts.codeSyntax;
@@ -652,6 +658,32 @@ describe('buildFoundationFrame', () => {
     expect(texts).toContain('Elevation/Low');
     expect(texts).toContain('Drop shadow');
     expect(texts).toContain('1 effect style');
+  });
+
+  it('loads every specimen font at once and still notes the one that failed', async () => {
+    let inFlight = 0;
+    let peak = 0;
+    installFakeFigma({
+      loadFontAsync: async ({ family }: { family: string }) => {
+        if (family === 'Inter') return;
+        inFlight++;
+        peak = Math.max(peak, inFlight);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        inFlight--;
+        if (family === 'Missing Sans') throw new Error('not installed');
+      },
+    });
+    const card = cardOf(await build({
+      textStyles: true,
+      textStyleFonts: [
+        { family: 'Brand Serif', style: 'Regular' },
+        { family: 'Missing Sans', style: 'Bold' },
+        { family: 'Brand Mono', style: 'Medium' },
+      ],
+    }));
+    expect(peak).toBe(3);
+    const notes = card.textChars().filter((t) => t.startsWith('Font not available'));
+    expect(notes).toHaveLength(1);
   });
 
   it('sets a text style in the pangram specimen, not the old two-letter sample', async () => {
