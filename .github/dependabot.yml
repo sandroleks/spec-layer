@@ -4,6 +4,10 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # A release is not proposed until it has been public for a week, so a
+    # compromised or yanked version has time to be caught upstream first.
+    cooldown:
+      default-days: 7
     groups:
       production-dependencies:
         dependency-type: production
@@ -13,3 +17,10 @@ updates:
     directory: /
     schedule:
       interval: monthly
+    # Workflows pin every action to a commit SHA with a version comment;
+    # Dependabot moves both together.
+    cooldown:
+      default-days: 3
+    groups:
+      github-actions:
+        patterns: ["*"]
