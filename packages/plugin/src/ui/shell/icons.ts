@@ -121,6 +121,12 @@ export const ICON_PATHS = {
   externalLink:
     '<path d="M12 6h-6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/>' +
     '<path d="M11 13l9-9"/><path d="M15 4h5v5"/>',
+  /** Detach this doc: the link to its source is cut. Tabler link-off. */
+  unlink:
+    '<path d="M9 15l3-3m2-2l1-1"/>' +
+    '<path d="M11 6l.463-.536a5 5 0 0 1 7.071 7.072L18 13"/>' +
+    '<path d="M13 18l-.397.534a5.068 5.068 0 0 1-7.127 0 4.972 4.972 0 0 1 0-7.071L6 11"/>' +
+    '<path d="M3 3l18 18"/>',
   alertCircle:
     '<circle cx="12" cy="12" r="9"/><path d="M12 8v4"/><path d="M12 16v.01"/>',
   circleCheck:
