@@ -1,5 +1,5 @@
 /// <reference types="@figma/plugin-typings" />
-import { palette, solidFill, vstack, hstack, makeText, hex, matchVariableModes, revealBooleanParts } from './frameKit';
+import { palette, solidFill, vstack, hstack, makeText, hex, radius, nodeById, createInstanceFor } from './frameKit';
 import { measureKey, type MeasureView } from './ui/docModel';
 
 // Spectral "DesignDoc" measure language: ONE unified diagram overlaid on a
@@ -86,7 +86,7 @@ function badge(text: string, color: RGB): FrameNode {
   const chip = hstack(0);
   chip.paddingTop = chip.paddingBottom = 3;
   chip.paddingLeft = chip.paddingRight = 6;
-  chip.cornerRadius = 4;
+  chip.cornerRadius = radius(4);
   chip.fills = solidFill(color);
   const t = makeText(text, 'Bold', 11, WHITE, 120);
   t.textAutoResize = 'WIDTH_AND_HEIGHT';
@@ -621,9 +621,9 @@ function buildBindingsRow(component: ComponentNode, tokens: Record<string, strin
       bindings.push({ caption: 'gap', label: measureLabel(tokens, part, ['gap'], gap) });
     }
   }
-  const radius = typeof component.cornerRadius === 'number' ? component.cornerRadius : 0;
-  if (radius > 0) {
-    bindings.push({ caption: 'border-radius', label: measureLabel(tokens, part, ['border-radius'], radius) });
+  const cornerRadius = typeof component.cornerRadius === 'number' ? component.cornerRadius : 0;
+  if (cornerRadius > 0) {
+    bindings.push({ caption: 'border-radius', label: measureLabel(tokens, part, ['border-radius'], cornerRadius) });
   }
 
   if (!bindings.length) return null;
@@ -648,6 +648,20 @@ function buildBindingsRow(component: ComponentNode, tokens: Record<string, strin
 // Main
 // ---------------------------------------------------------------------------
 
+// Remove the topmost on-canvas frame that `node` lives inside (or `node` itself)
+// so a partially built diagram/card is never left orphaned when a Figma-API call
+// throws mid-build. Walks up to just below the page, since createFrame/
+// createInstance auto-append to the page and each build frame is nested.
+function removeCanvasSubtree(node: SceneNode): void {
+  try {
+    let top: SceneNode = node;
+    while (top.parent && top.parent.type !== 'PAGE' && top.parent.type !== 'DOCUMENT') {
+      top = top.parent as SceneNode;
+    }
+    top.remove();
+  } catch { /* already gone */ }
+}
+
 /**
  * Build the token-aware measure section as ONE unified Spectral 4-rail
  * diagram: a screenshot-scale live instance with the artwork left untouched,
@@ -666,57 +680,27 @@ function buildBindingsRow(component: ComponentNode, tokens: Record<string, strin
  * Any created instance is removed before returning null so the canvas is
  * never left with an orphaned node.
  */
-// Remove the topmost on-canvas frame that `node` lives inside (or `node` itself)
-// so a partially built diagram/card is never left orphaned when a Figma-API call
-// throws mid-build. Walks up to just below the page, since createFrame/
-// createInstance auto-append to the page and each build frame is nested.
-function removeCanvasSubtree(node: SceneNode): void {
-  try {
-    let top: SceneNode = node;
-    while (top.parent && top.parent.type !== 'PAGE' && top.parent.type !== 'DOCUMENT') {
-      top = top.parent as SceneNode;
-    }
-    top.remove();
-  } catch { /* already gone */ }
-}
-
 export async function buildMeasureSection(
   block: MeasureBlockData, includeHidden = false, contentWidth = 880 - 56 * 2,
 ): Promise<{ card: FrameNode; scale: number } | null> {
-  let node: BaseNode | null;
-  try {
-    node = await figma.getNodeByIdAsync(block.componentId);
-  } catch {
-    return null;
-  }
+  // Through the per-build cache: fitFrameWidth already read this node.
+  const node = await nodeById(block.componentId);
   if (!node || node.type !== 'COMPONENT') return null;
-  const component = node;
+  const component = node as ComponentNode;
 
   const views = new Set<MeasureView>(
     block.views && block.views.length ? block.views : (['size', 'padding', 'spacing'] as MeasureView[]),
   );
   const part = block.rootPart;
 
-  let inst: InstanceNode;
-  try {
-    inst = component.createInstance();
-  } catch {
-    return null;
-  }
+  // Matched to the component's variable modes, so the instance resolves the
+  // same padding, gap and size tokens the annotations are computed from.
+  const inst = await createInstanceFor(block.componentId, includeHidden);
+  if (!inst) return null;
 
   // Everything after the instance exists is wrapped so any Figma-API throw
   // (resize/rescale/layout) cleans up the instance and falls back to the table.
   try {
-    // Match the component's variable modes so the instance resolves the SAME
-    // padding/gap/size tokens (else a differing density mode renders it
-    // narrower and the annotations, computed from the component, overhang it).
-    await matchVariableModes(inst, component);
-    // Revealing a boolean part changes the instance's own width/height and its
-    // children's positions (the source component's box no longer matches what
-    // is drawn), so the overlay below is measured from this instance instead
-    // of the frozen component whenever the reveal ran.
-    if (includeHidden) await revealBooleanParts(inst, component);
-
     // True size unless the artwork is wider than the column can hold beside
     // its left rail; never taller-than-cap shrinking, and never upscaling.
     const innerMax = contentWidth - CARD_PAD * 2 - (M_LEFT + 160);
@@ -744,7 +728,7 @@ export async function buildMeasureSection(
     const card = vstack(20);
     card.paddingTop = card.paddingBottom = card.paddingLeft = card.paddingRight = CARD_PAD;
     card.fills = solidFill(palette.paneBg);
-    card.cornerRadius = 8;
+    card.cornerRadius = radius(8);
     card.strokes = solidFill(palette.border);
     card.strokeWeight = 1;
     card.counterAxisAlignItems = 'CENTER';

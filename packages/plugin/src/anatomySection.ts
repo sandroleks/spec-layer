@@ -12,7 +12,7 @@
  * scale note the returned factor describes.
  */
 import type { AnatomyPartBlock } from './ui/docModel';
-import { palette, solidFill, vstack, hstack, makeText, matchVariableModes, radius, revealBooleanParts, font } from './frameKit';
+import { palette, solidFill, vstack, hstack, makeText, radius, font, createInstanceFor, nodeById } from './frameKit';
 import { tagSlot } from './docText';
 import { SLOT_PART_KEY } from './canvasProse';
 import { displayPartName } from './ui/displayNames';
@@ -162,30 +162,23 @@ export function buildAnatomyLegend(parts: AnatomyPartBlock[]): FrameNode {
 export async function buildAnatomyDiagram(
   componentId: string, parts: AnatomyPartBlock[], includeHidden: boolean, contentWidth: number,
 ): Promise<{ card: FrameNode; scale: number } | null> {
-  let node: BaseNode | null;
-  try { node = await figma.getNodeByIdAsync(componentId); } catch { return null; }
-  if (!node || node.type !== 'COMPONENT') return null;
-  const component = node;
-  let inst: InstanceNode;
-  try {
-    inst = component.createInstance();
-    await matchVariableModes(inst, component);
-    if (includeHidden) await revealBooleanParts(inst, component);
-  } catch { return null; }
+  const inst = await createInstanceFor(componentId, includeHidden);
+  if (!inst) return null;
   const ib = inst.absoluteBoundingBox;
   if (!ib || ib.width <= 0 || ib.height <= 0) { try { inst.remove(); } catch { /* gone */ } return null; }
 
   // Each part as the box it DRAWS, normalized to the instance. Figma's render
   // bounds are the glyphs of a text layer or the painted area of a frame; the
   // layout box of a fill-width text layer spans its container while the word
-  // sits at one end, and the old anchor at that box's centre pointed at
-  // nothing. The layout box is the fallback for a layer Figma has not
-  // rendered (render bounds null) or a host that lacks the field.
+  // sits at one end, so that box's centre can point at nothing. The layout box
+  // is the fallback for a layer Figma has not rendered (render bounds null) or
+  // a host that lacks the field.
   const pins: { n: string; x0: number; y0: number; x1: number; y1: number }[] = [];
-  for (const part of parts) {
-    if (part.depth !== 0) continue;
-    let p: BaseNode | null;
-    try { p = await figma.getNodeByIdAsync(`I${inst.id};${part.id}`); } catch { continue; }
+  const topParts = parts.filter((part) => part.depth === 0);
+  // One batch: each lookup is a round trip, and none depends on another.
+  const partNodes = await Promise.all(topParts.map((part) => nodeById(`I${inst.id};${part.id}`)));
+  for (const [i, part] of topParts.entries()) {
+    const p = partNodes[i];
     if (!p || !('absoluteBoundingBox' in p)) continue;
     const layout = (p as SceneNode).absoluteBoundingBox;
     if (!layout) continue;

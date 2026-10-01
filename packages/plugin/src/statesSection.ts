@@ -1,5 +1,5 @@
 /// <reference types="@figma/plugin-typings" />
-import { palette, solidFill, vstack, hstack, makeText, createInstanceFor, slotAround, SLOT_PAD } from './frameKit';
+import { palette, solidFill, vstack, hstack, makeText, createInstanceFor, slotAround, SLOT_PAD, radius } from './frameKit';
 
 const LABEL_W = 120;
 const CELL_MAX_W = 180;
@@ -46,7 +46,7 @@ function emptyCell(width: number): FrameNode {
   const empty = vstack(0);
   empty.resize(width, 40);
   empty.fills = solidFill(palette.paneBg);
-  empty.cornerRadius = 8;
+  empty.cornerRadius = radius(8);
   const label = makeText('No variant', 'Regular', 12, palette.muted);
   empty.appendChild(label);
   empty.primaryAxisAlignItems = 'CENTER';
