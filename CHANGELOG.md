@@ -108,9 +108,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   already does, instead of a five-second toast. This covers a failure before
   anything reaches the canvas too (no section picked). Reselecting the same
   component keeps the banner, and selecting another layer clears it. If the
-  selection changes before you could see the banner, for example during the
-  failing build, the failure arrives as a toast instead, so it is never lost
-  and never shown twice.
+  selection changes right as the build fails, for example because a layer
+  was deleted during it, the failure arrives as a toast instead.
 - The Publish screen said "Checking…" three times while it read the file's
   identity. The header pill and the footer button say it; the Version block
   waits.
