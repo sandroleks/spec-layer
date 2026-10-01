@@ -186,6 +186,11 @@ let selectionSeq = 0;
 const operation = createOperationGate();
 type SelectionMessage = Extract<MainToUi, { type: 'selection' }>;
 let deferredSelection: SelectionMessage | null = null;
+/**
+ * When the host last painted a failed build's `error` screen, for
+ * selectionOutcome's toast window. 0 until a build fails.
+ */
+let failedBuildPaintedAt = 0;
 let foundationRequested = false;
 let foundationRefreshing = false;
 let foundationAiNote = '';
@@ -857,6 +862,7 @@ function presenter(action: 'create'): BuildPresenter {
       // copyPresenter, which keeps toasting.
       stopComponentProgress();
       screen = failedBuildScreen(currentName(), message);
+      failedBuildPaintedAt = Date.now();
       paint();
     },
     info: (message) => {
@@ -2799,12 +2805,14 @@ refs.scroll.addEventListener('scroll', () => {
 function applySelection(msg: SelectionMessage): void {
   const seq = ++selectionSeq;
   const node = msg.node;
-  // A failed build's banner survives a reselection of the same component and
-  // reaches the reader as a toast when any other selection replaces it. Decided
-  // here, the one place a selection replaces the screen, so the deferred
-  // selection completeOperation applies and the one main.ts replays after a
-  // build both get it.
-  const outcome = selectionOutcome(screen.kind, state.currentNode?.id, node?.id);
+  // A failed build's banner survives a reselection of the same component, and
+  // reaches the reader as a toast when another selection replaces it before
+  // the banner could be read. Decided here, the one place a selection
+  // replaces the screen, so the deferred selection completeOperation applies
+  // and the one main.ts replays after a build both get it.
+  const outcome = selectionOutcome(
+    screen.kind, state.currentNode?.id, node?.id, Date.now() - failedBuildPaintedAt,
+  );
   if (outcome === 'toast' && screen.kind === 'error') {
     nativeNotify(screen.message, { error: true, timeout: 5000 });
   }
@@ -2935,6 +2943,7 @@ const handleMainMessage = (event: MessageEvent): void => {
       // after it, goes through applySelection, which keeps this banner for the
       // same component and toasts it for any other (see selectionOutcome).
       screen = failedBuildScreen(currentName(), msg.message);
+      failedBuildPaintedAt = Date.now();
       paint();
       completeOperation();
       // main.ts's renderDocFrame can fail after already committing the doc

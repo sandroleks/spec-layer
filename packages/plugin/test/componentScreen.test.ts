@@ -6,6 +6,7 @@ import {
   componentDocSelection,
   exhaustedAiNote,
   failedBuildScreen,
+  FAILED_BUILD_TOAST_WINDOW_MS,
   selectionOutcome,
   DEFAULT_OFF_SECTIONS,
   defaultIncludeHidden,
@@ -695,26 +696,36 @@ describe('failedBuildScreen', () => {
 });
 
 describe('selectionOutcome', () => {
-  it('keeps a build error through a reselection of the same component', () => {
-    expect(selectionOutcome('error', '1:1', '1:1')).toBe('keep');
+  it('keeps a build error through a reselection of the same component, at any elapsed time', () => {
+    for (const elapsed of [0, 1499, 1500, 60_000]) {
+      expect(selectionOutcome('error', '1:1', '1:1', elapsed)).toBe('keep');
+    }
   });
 
-  it('toasts a build error when another component replaces it', () => {
-    expect(selectionOutcome('error', '1:1', '2:2')).toBe('toast');
+  it('toasts a build error when another component replaces it inside the window', () => {
+    expect(FAILED_BUILD_TOAST_WINDOW_MS).toBe(1500);
+    expect(selectionOutcome('error', '1:1', '2:2', 0)).toBe('toast');
+    expect(selectionOutcome('error', '1:1', '2:2', 1499)).toBe('toast');
   });
 
-  it('toasts a build error when the selection empties', () => {
-    expect(selectionOutcome('error', '1:1', null)).toBe('toast');
-    expect(selectionOutcome('error', '1:1', undefined)).toBe('toast');
+  it('replaces silently once the banner has been on screen for the window', () => {
+    expect(selectionOutcome('error', '1:1', '2:2', 1500)).toBe('replace');
+    expect(selectionOutcome('error', '1:1', null, 1500)).toBe('replace');
+    expect(selectionOutcome('error', '1:1', '2:2', 60_000)).toBe('replace');
+  });
+
+  it('toasts a build error when the selection empties inside the window', () => {
+    expect(selectionOutcome('error', '1:1', null, 0)).toBe('toast');
+    expect(selectionOutcome('error', '1:1', undefined, 1499)).toBe('toast');
     // No old node either: nothing to match, so the failure still goes out.
-    expect(selectionOutcome('error', undefined, null)).toBe('toast');
+    expect(selectionOutcome('error', undefined, null, 0)).toBe('toast');
   });
 
   it('replaces every other screen as before, same component or not', () => {
     for (const kind of ['empty', 'reading', 'ready', 'building', 'success'] as const) {
-      expect(selectionOutcome(kind, '1:1', '1:1')).toBe('replace');
-      expect(selectionOutcome(kind, '1:1', '2:2')).toBe('replace');
-      expect(selectionOutcome(kind, '1:1', null)).toBe('replace');
+      expect(selectionOutcome(kind, '1:1', '1:1', 0)).toBe('replace');
+      expect(selectionOutcome(kind, '1:1', '2:2', 0)).toBe('replace');
+      expect(selectionOutcome(kind, '1:1', null, 0)).toBe('replace');
     }
   });
 });
