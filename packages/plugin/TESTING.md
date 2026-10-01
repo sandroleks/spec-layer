@@ -564,8 +564,11 @@ record.
    uses and the ring reflects the state.
 2. Confirm the allowance offers **Upgrade** and License owns activation.
 3. Exhaust the free quota or simulate it. Confirm the header reads **No free
-   uses left** and offers **Upgrade** while the ordinary **Create docs** action
-   remains available.
+   uses left** and offers **Upgrade**, and that on the component screen with
+   AI writing on, one line under the switch reads **No free AI uses left
+   until <date>. Sections marked AI will be drawn as placeholders.** with
+   **Upgrade to Pro**. The ordinary **Create docs** action remains available,
+   and turning the switch off removes the line.
 4. Click **Create docs** with AI writing selected. The build must complete with
    deterministic documentation, draw the writing sections as placeholders,
    and report the exhausted allowance ("sections that needed AI were added as

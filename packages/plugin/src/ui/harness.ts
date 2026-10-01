@@ -203,7 +203,10 @@ if (view === 'component') {
   // The harness seeds the same per-component default the real screen does, so
   // a visual check shows the switch in the state a user would actually meet.
   selection.includeHidden = defaultIncludeHidden(facts);
-  const renderComponentFixture = () => renderComponentScreen(refs, screen, selection, facts);
+  const renderComponentFixture = () => renderComponentScreen(
+    refs, screen, selection, facts, false,
+    ALLOWANCES[param('allowance', 'normal')] ?? ALLOWANCES.normal,
+  );
   const repaintComponentFixture = (selector?: string) => {
     const scrollTop = refs.scroll.scrollTop;
     renderComponentFixture();

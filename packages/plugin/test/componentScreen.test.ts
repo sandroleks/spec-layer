@@ -4,6 +4,7 @@ import {
   applyGroupBulk,
   applyVariantBulk,
   componentDocSelection,
+  exhaustedAiNote,
   DEFAULT_OFF_SECTIONS,
   defaultIncludeHidden,
   defaultSections,
@@ -25,7 +26,7 @@ import {
 } from '../src/ui/screens/component';
 import { NO_FACTS, type ComponentFacts } from '../src/ui/viewModel/componentFacts';
 import { ICON_PATHS } from '../src/ui/shell/icons';
-import type { ComponentScreenState } from '../src/ui/viewModel/contracts';
+import type { AllowanceState, ComponentScreenState } from '../src/ui/viewModel/contracts';
 
 const ALL_GROUPS = new Set(['usage', 'specs', 'a11y'] as const);
 const READY = { kind: 'ready', componentName: 'Button' } as const;
@@ -662,5 +663,43 @@ describe('createDocFrame', () => {
     const ui = fakePresenter();
     await createDocFrame(createState(), { sections: new Set(), variantIds: new Set() }, ui);
     expect(ui.clear).toHaveBeenCalled();
+  });
+});
+
+describe('exhaustedAiNote', () => {
+  const free = (remaining: number, resetsAt = '2026-10-01T00:00:00Z'): AllowanceState =>
+    ({ kind: 'free', remaining, limit: 20, resetsAt });
+
+  it('speaks only when the switch is on and the free allowance is spent', () => {
+    expect(exhaustedAiNote(true, free(0)))
+      .toBe('No free AI uses left until Oct 1. Sections marked AI will be drawn as placeholders.');
+    expect(exhaustedAiNote(false, free(0))).toBeNull();
+    expect(exhaustedAiNote(true, free(1))).toBeNull();
+    expect(exhaustedAiNote(true, { kind: 'pro' })).toBeNull();
+    expect(exhaustedAiNote(true, { kind: 'loading' })).toBeNull();
+    expect(exhaustedAiNote(true, { kind: 'unknown', message: 'Couldn\u2019t check your plan' })).toBeNull();
+  });
+
+  it('leaves the reset date out rather than guess one', () => {
+    expect(exhaustedAiNote(true, free(0, '')))
+      .toBe('No free AI uses left. Sections marked AI will be drawn as placeholders.');
+  });
+
+  it('draws the note under the switch with an upgrade action and keeps the AI badges', () => {
+    const selection = createComponentSelection(true);
+    const markup = componentScrollMarkup(READY, selection, NO_FACTS, free(0));
+    expect(markup).toContain('sl-ai-control-note');
+    expect(markup).toContain('role="status"');
+    expect(markup).toContain('No free AI uses left until Oct 1.');
+    expect(markup).toContain('data-license-open="upgrade"');
+    // The note says "sections marked AI", so the marks stay.
+    expect(markup).toContain('data-tone="accent">AI<');
+    // The note follows the switch, inside the same fieldset.
+    expect(markup.indexOf('sl-ai-control"')).toBeLessThan(markup.indexOf('sl-ai-control-note'));
+
+    expect(componentScrollMarkup(READY, selection, NO_FACTS, free(16))).not.toContain('sl-ai-control-note');
+    expect(componentScrollMarkup(READY, createComponentSelection(false), NO_FACTS, free(0))).not.toContain('sl-ai-control-note');
+    // Callers that pass no allowance (the default) draw nothing extra.
+    expect(componentScrollMarkup(READY, selection, NO_FACTS)).not.toContain('sl-ai-control-note');
   });
 });

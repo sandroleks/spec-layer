@@ -7,7 +7,8 @@
  */
 
 import { ALL_SECTIONS, GROUPS, type GroupId, type SectionId } from '../docModel';
-import type { SectionGroupView, SectionOption } from './contracts';
+import type { AllowanceState, SectionGroupView, SectionOption } from './contracts';
+import { formatResetDate } from './allowance';
 import type { ComponentFacts } from './componentFacts';
 
 /**
@@ -164,4 +165,21 @@ export function componentDocSelection(
     sections,
     variantIds: sections.has('tokens') ? new Set(variantIds) : new Set<string>(),
   };
+}
+
+/**
+ * The line under the AI writing switch when the free allowance is spent.
+ *
+ * The header already knows the count; without this the switch stays on, the
+ * badges promise prose, Create runs, and the user learns from a toast after
+ * the build that every AI section is a placeholder. Only the free tier with
+ * nothing left speaks: Pro has no monthly cap, and `loading` or `unknown`
+ * would be a claim the plugin cannot back. The reset date is the proxy's, or
+ * left out.
+ */
+export function exhaustedAiNote(aiEnabled: boolean, allowance: AllowanceState): string | null {
+  if (!aiEnabled || allowance.kind !== 'free' || allowance.remaining > 0) return null;
+  const reset = formatResetDate(allowance.resetsAt);
+  const lead = reset ? `No free AI uses left until ${reset}.` : 'No free AI uses left.';
+  return `${lead} Sections marked AI will be drawn as placeholders.`;
 }

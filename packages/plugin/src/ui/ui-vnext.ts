@@ -497,12 +497,18 @@ function stopFoundationProgress(): void {
 
 function paintAllowance(): void {
   renderAllowance(refs.header, allowanceState(state.quota, quotaFetched));
+  // The component screen draws the exhausted note from the same state, so a
+  // quota reply repaints it too. No other screen reads the allowance.
+  if (view === 'component') paint();
 }
 
 function paint(): void {
   switch (view) {
     case 'component':
-      renderComponentScreen(refs, screen, selection, facts, currentHasDoc());
+      renderComponentScreen(
+        refs, screen, selection, facts, currentHasDoc(),
+        allowanceState(state.quota, quotaFetched),
+      );
       return;
     case 'foundations':
       renderFoundationScreen(
