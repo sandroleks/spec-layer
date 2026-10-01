@@ -7,7 +7,7 @@
  */
 
 import { ALL_SECTIONS, GROUPS, type GroupId, type SectionId } from '../docModel';
-import type { AllowanceState, SectionGroupView, SectionOption } from './contracts';
+import type { AllowanceState, ComponentScreenState, SectionGroupView, SectionOption } from './contracts';
 import { formatResetDate } from './allowance';
 import type { ComponentFacts } from './componentFacts';
 
@@ -182,4 +182,45 @@ export function exhaustedAiNote(aiEnabled: boolean, allowance: AllowanceState): 
   const reset = formatResetDate(allowance.resetsAt);
   const lead = reset ? `No free AI uses left until ${reset}.` : 'No free AI uses left.';
   return `${lead} Sections marked AI will be drawn as placeholders.`;
+}
+
+/**
+ * The screen a failed component build leaves behind.
+ *
+ * Both failure routes use it: a `docFrameError` from the main thread, and a
+ * pre-render failure the Create presenter reports (no section picked, or
+ * assembly throwing before anything is sent). The failure stays on the panel
+ * as a banner until the next Create or a selection replaces it. With no
+ * component current there is no screen to hold it, so the panel goes empty.
+ */
+export function failedBuildScreen(
+  componentName: string,
+  message: string,
+): ComponentScreenState {
+  return componentName
+    ? { kind: 'error', componentName, message }
+    : { kind: 'empty' };
+}
+
+/**
+ * What a selection report does to the component screen on its way in.
+ *
+ * - `keep`: the outgoing screen is a build error and the selection is the
+ *   same component, so the banner stays. A no-op reselection (the selection
+ *   main.ts replays after a build, or clicking away and back while the build
+ *   ran) must not hide a failure the reader has not seen yet.
+ * - `toast`: the outgoing screen is a build error and the selection is a
+ *   different component or nothing. The banner cannot stay on a screen about
+ *   something else, so the failure goes out as a toast as it is replaced.
+ * - `replace`: anything else, the usual reading or empty transition.
+ */
+export type SelectionOutcome = 'keep' | 'toast' | 'replace';
+
+export function selectionOutcome(
+  outgoingKind: ComponentScreenState['kind'],
+  oldNodeId: string | null | undefined,
+  newNodeId: string | null | undefined,
+): SelectionOutcome {
+  if (outgoingKind !== 'error') return 'replace';
+  return newNodeId && newNodeId === oldNodeId ? 'keep' : 'toast';
 }

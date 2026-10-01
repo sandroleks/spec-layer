@@ -14,11 +14,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   marked AI will be drawn as placeholders, with an Upgrade to Pro action.
   Before, the header knew and the build went ahead, and the placeholders
   arrived as news in a toast afterwards.
+
 - "Detach this doc" in a Library row menu has its own glyph. It shared one
   with "View this doc on canvas".
+
 - The Library's Update all progress line reads "Updating docs" and leaves the
   number to the count beside the bar, which said "0 of 3" while the label
   said "doc 1 of 3".
+
 - Quick search no longer repeats the page name on every row when every result
   comes from the same page.
 
@@ -102,7 +105,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   Email support, opens your mail client with the subject filled in.
 - A component build that fails now stays on screen as a banner above the
   footer until the next Create docs or selection, the way a Publish error
-  already does, instead of a five-second toast.
+  already does, instead of a five-second toast. This covers a failure before
+  anything reaches the canvas too (no section picked). Reselecting the same
+  component keeps the banner; selecting another layer, including during the
+  failing build, replaces it and shows the failure as a toast instead, so it
+  is never lost.
 - The Publish screen said "Checking…" three times while it read the file's
   identity. The header pill and the footer button say it; the Version block
   waits.

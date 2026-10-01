@@ -89,12 +89,18 @@ requests carry token names and resolved values without an image.
    build. Repeat clearing your selection instead of picking a component
    partway through: the panel goes back to its empty state once the toast
    shows, rather than keeping the last component shown.
-9. Make a build fail (for example, delete the component while **Creating
-   docs…** is showing, or select a component whose fonts cannot load).
-   Confirm the failure appears as a banner above the footer buttons and stays
-   there with no toast; **Create docs** and **Copy for AI** remain enabled;
-   the banner clears on the next **Create docs** or when you select another
-   layer.
+9. Make a build fail while the selection stays on the component (for
+   example, select a component whose fonts cannot load, and leave the
+   selection alone while **Creating docs…** is showing). Confirm the failure
+   appears as a banner above the footer buttons and stays there with no
+   toast, including after the build ends and the panel settles; **Create
+   docs** and **Copy for AI** remain enabled; reselecting the same component
+   keeps the banner; the banner clears on the next **Create docs**, and
+   selecting another layer replaces it with the same message as a toast.
+   Then repeat the failing
+   build and select a different component, or clear the selection, while it
+   runs: changing the selection during a failing build still surfaces the
+   failure as a toast, and the panel shows the new selection.
 
 Also verify a nested selection resolves to its enclosing component and a
 non-component selection shows an actionable empty state with no toast. Click

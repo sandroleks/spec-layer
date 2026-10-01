@@ -5,6 +5,8 @@ import {
   applyVariantBulk,
   componentDocSelection,
   exhaustedAiNote,
+  failedBuildScreen,
+  selectionOutcome,
   DEFAULT_OFF_SECTIONS,
   defaultIncludeHidden,
   defaultSections,
@@ -678,6 +680,42 @@ describe('createDocFrame', () => {
     const ui = fakePresenter();
     await createDocFrame(createState(), { sections: new Set(), variantIds: new Set() }, ui);
     expect(ui.clear).toHaveBeenCalled();
+  });
+});
+
+describe('failedBuildScreen', () => {
+  it('holds the message on the component the build was for', () => {
+    expect(failedBuildScreen('Button', 'Font not loaded'))
+      .toEqual({ kind: 'error', componentName: 'Button', message: 'Font not loaded' });
+  });
+
+  it('goes empty when no component is current, rather than name a guess', () => {
+    expect(failedBuildScreen('', 'Font not loaded')).toEqual({ kind: 'empty' });
+  });
+});
+
+describe('selectionOutcome', () => {
+  it('keeps a build error through a reselection of the same component', () => {
+    expect(selectionOutcome('error', '1:1', '1:1')).toBe('keep');
+  });
+
+  it('toasts a build error when another component replaces it', () => {
+    expect(selectionOutcome('error', '1:1', '2:2')).toBe('toast');
+  });
+
+  it('toasts a build error when the selection empties', () => {
+    expect(selectionOutcome('error', '1:1', null)).toBe('toast');
+    expect(selectionOutcome('error', '1:1', undefined)).toBe('toast');
+    // No old node either: nothing to match, so the failure still goes out.
+    expect(selectionOutcome('error', undefined, null)).toBe('toast');
+  });
+
+  it('replaces every other screen as before, same component or not', () => {
+    for (const kind of ['empty', 'reading', 'ready', 'building', 'success'] as const) {
+      expect(selectionOutcome(kind, '1:1', '1:1')).toBe('replace');
+      expect(selectionOutcome(kind, '1:1', '2:2')).toBe('replace');
+      expect(selectionOutcome(kind, '1:1', null)).toBe('replace');
+    }
   });
 });
 

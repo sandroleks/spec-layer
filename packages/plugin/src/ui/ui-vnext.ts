@@ -62,7 +62,9 @@ import {
   applyVariantBulk,
   componentDocSelection,
   defaultIncludeHidden,
+  failedBuildScreen,
   sectionGroups,
+  selectionOutcome,
   unavailableSections,
   variantBulkState,
   variantCountLabel,
@@ -849,11 +851,12 @@ function presenter(action: 'create'): BuildPresenter {
       }
     },
     error: (message) => {
+      // A failure before anything reaches the canvas (no section picked, or
+      // assembly throwing) stays on the panel as a banner, the same as a
+      // docFrameError. Only the build uses this presenter; copies use
+      // copyPresenter, which keeps toasting.
       stopComponentProgress();
-      nativeNotify(message, { error: true, timeout: 5000 });
-      screen = currentName()
-        ? { kind: 'ready', componentName: currentName() }
-        : { kind: 'empty' };
+      screen = failedBuildScreen(currentName(), message);
       paint();
     },
     info: (message) => {
@@ -2395,7 +2398,7 @@ document.addEventListener('click', (event) => {
   }
 
   if (target.closest('#sl-copy-foundation')) {
-    void copyFoundationBrief(presenter('create'));
+    void copyFoundationBrief(copyPresenter());
     return;
   }
 
@@ -2796,6 +2799,16 @@ refs.scroll.addEventListener('scroll', () => {
 function applySelection(msg: SelectionMessage): void {
   const seq = ++selectionSeq;
   const node = msg.node;
+  // A failed build's banner survives a reselection of the same component and
+  // reaches the reader as a toast when any other selection replaces it. Decided
+  // here, the one place a selection replaces the screen, so the deferred
+  // selection completeOperation applies and the one main.ts replays after a
+  // build both get it.
+  const outcome = selectionOutcome(screen.kind, state.currentNode?.id, node?.id);
+  if (outcome === 'toast' && screen.kind === 'error') {
+    nativeNotify(screen.message, { error: true, timeout: 5000 });
+  }
+  const keepError = outcome === 'keep';
   state.currentNode = node;
   state.currentFileKey = msg.fileKey;
   // figma.root.name, readable only on the main thread, so it arrives on this
@@ -2823,7 +2836,12 @@ function applySelection(msg: SelectionMessage): void {
     paint();
     return;
   }
-  screen = { kind: 'reading', componentName: node.name };
+  // Same component: the facts are re-read below (the component may have been
+  // edited meanwhile), but the error stays on screen rather than flashing
+  // `reading` and settling on `ready`.
+  screen = keepError && screen.kind === 'error'
+    ? { ...screen, componentName: node.name }
+    : { kind: 'reading', componentName: node.name };
   paint();
   autoExtract(
     state,
@@ -2840,7 +2858,9 @@ function applySelection(msg: SelectionMessage): void {
       state.includeHidden = selection.includeHidden;
       if (facts.hasStates === true) selection.sections.add('states');
       if (facts.hasStates === false) selection.sections.delete('states');
-      screen = { kind: 'ready', componentName: node.name };
+      screen = keepError && screen.kind === 'error'
+        ? { ...screen, componentName: node.name }
+        : { kind: 'ready', componentName: node.name };
       paint();
     },
   );
@@ -2911,9 +2931,10 @@ const handleMainMessage = (event: MessageEvent): void => {
       // replaces this state, the decision the Publish footer already took: a
       // toast is gone before the reader looks up from the button. Controls
       // stay enabled, so Create is the retry.
-      screen = currentName()
-        ? { kind: 'error', componentName: currentName(), message: msg.message }
-        : { kind: 'empty' };
+      // A selection deferred during the build, or the one main.ts replays
+      // after it, goes through applySelection, which keeps this banner for the
+      // same component and toasts it for any other (see selectionOutcome).
+      screen = failedBuildScreen(currentName(), msg.message);
       paint();
       completeOperation();
       // main.ts's renderDocFrame can fail after already committing the doc
