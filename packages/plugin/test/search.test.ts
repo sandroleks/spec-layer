@@ -302,3 +302,25 @@ describe('global search presentation', () => {
     expect(resultMarkup).toContain('data-search-doc-id="&quot;&gt;&lt;script&gt;"');
   });
 });
+
+describe('source line', () => {
+  const onOnePage: SearchDocument[] = ['buttonPrimary', 'buttonText', 'inputField'].map((docId, i) => ({
+    docId, kind: 'component', label: docId, sourceLabel: 'Components', generatedAt: NOW - i * HOUR,
+  }));
+
+  it('drops the source when every result shares it', () => {
+    const markup = globalSearchMarkup(buildSearchModel(onOnePage));
+    expect(markup).not.toContain('sl-global-search-source');
+  });
+
+  it('keeps the source when results come from different places', () => {
+    const mixed = [...onOnePage.slice(0, 2), { ...onOnePage[2], sourceLabel: 'Forms' }];
+    const markup = globalSearchMarkup(buildSearchModel(mixed));
+    expect(markup.match(/sl-global-search-source/g)).toHaveLength(3);
+  });
+
+  it('keeps a lone result’s source', () => {
+    const markup = globalSearchMarkup(buildSearchModel(onOnePage.slice(0, 1)));
+    expect(markup).toContain('sl-global-search-source');
+  });
+});
