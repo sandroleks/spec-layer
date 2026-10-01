@@ -228,9 +228,10 @@ function versionBlock(state: PublishState): string {
   let body: string;
   if (!state.infoKnown) {
     // Whether this file has a library is not known yet, so neither a first
-    // version field nor a next version can be shown without guessing.
-    return `<section class="sl-publish-block sl-publish-version">${head()}${
-      note('Checking whether this file is published<span class="sl-work-dots" aria-hidden="true"><i></i><i></i><i></i></span>')}</section>`;
+    // version field nor a next version can be shown without guessing. The
+    // header pill and the disabled footer button already read "Checking…";
+    // a third copy here said the same thing a third way.
+    return '';
   }
   if (!state.libraryId) {
     // Nothing published yet, so there is nothing to diff against: the version

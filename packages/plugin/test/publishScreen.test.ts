@@ -105,15 +105,20 @@ describe('publish screen header', () => {
     expect(markup.indexOf('<h1>')).toBeLessThan(markup.indexOf('sl-badge'));
   });
 
-  it('shows a neutral pill and no version claim before the publish identity is known', () => {
+  it('shows a neutral pill and no version block before the publish identity is known', () => {
     const unknown = state({ infoKnown: false });
     expect(publishHeaderMarkup(unknown)).toContain('Checking…');
     expect(publishHeaderMarkup(unknown)).not.toContain('Not published');
     expect(publishHeaderMarkup(unknown)).not.toContain('>Published<');
     const scroll = publishScrollMarkup(unknown, FREE);
-    expect(scroll).toContain('Checking whether this file is published');
+    // The pill and the disabled primary already say "Checking…"; a third
+    // copy in the body said it again.
+    expect(scroll).not.toContain('sl-publish-version');
+    expect(scroll).not.toContain('Checking whether this file is published');
     expect(scroll).not.toContain('data-publish-initial-version');
     expect(scroll).not.toContain('The setup commands appear here');
+    expect(publishFooterMarkup(unknown)).toContain('Checking…');
+    expect(publishFooterMarkup(unknown)).toContain('disabled');
   });
 
   /**
