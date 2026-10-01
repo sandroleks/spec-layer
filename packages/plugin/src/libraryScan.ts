@@ -19,7 +19,7 @@
  * never saw the rest, and pruning on that partial set would drop live docs.
  */
 import {
-  unitContent, foundationContentHash, type FoundationSpec,
+  unitContent, foundationUnitContentHash, type FoundationSpec,
 } from '@spec-layer/extractor';
 import type { LibraryEntry, MainToUi } from './messages';
 import {
@@ -107,14 +107,13 @@ export async function scanLibrary(
         // place, and the row reads as orphaned rather than silently binding
         // to a collection that may have nothing to do with this doc.
         const scope = spec ? retargetScope(data.scope, spec.collections) : data.scope;
-        const currentContentHash = spec ? foundationContentHash(spec, scope) : undefined;
-        // A scope that no longer resolves is orphaned. unitContent returns
-        // null for a deleted collection, and foundationContentHash turns that
-        // into a stable sentinel, so compare against unitContent directly
-        // rather than re-deriving the sentinel here. When extraction failed
-        // outright, give the doc the benefit of the doubt rather than
-        // reporting it missing on no evidence.
-        const sourceExists = spec ? unitContent(spec, scope) !== null : true;
+        // A scope that no longer resolves is orphaned: unitContent returns null
+        // for a deleted collection, and the hash turns that into a stable
+        // sentinel. When extraction failed outright, give the doc the benefit
+        // of the doubt rather than reporting it missing on no evidence.
+        const content = spec ? unitContent(spec, scope) : null;
+        const currentContentHash = spec ? foundationUnitContentHash(content) : undefined;
+        const sourceExists = spec ? content !== null : true;
         entries.push({
           docId,
           kind: 'foundation',

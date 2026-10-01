@@ -13,23 +13,8 @@
  * Only the third is defined here, and the first two must not be altered to
  * serve it: every committed doc's baseline depends on their current definitions.
  *
- * WHY v5 CANONICALIZES ITS OWN JSON instead of calling `contentHash` from
- * `../hash`:
- *
- * That shared serializer sorts object keys with `a.localeCompare(b)`
- * (`hash.ts:13`), which is locale-dependent. The IDENTICAL payload hashes
- * differently under `LC_ALL=en_US` and `LC_ALL=et_EE`, and `lt_LT` reorders
- * `i`/`y`. The plugin runs in whatever locale the user's browser reports, so
- * reusing it means two designers exporting one Figma file get two different
- * content hashes -- §16 ("repeated exports MUST produce semantically identical
- * artifacts") and §21.1.12 ("repeated extraction produces the same semantic
- * content hash") both fail.
- *
- * `hash.ts` is deliberately NOT fixed instead: its `canonical` is shared with
- * `specContentHash` and `foundationContentHash`, which drive the on-canvas
- * drift badge. Changing their output would flip every committed document to
- * "update available" for a change nobody can see on canvas. So the locale bug
- * is fixed HERE, for the one hash that has no committed baselines yet.
+ * All three serialize through `canonicalJson` below, which sorts keys by code
+ * unit, so a payload hashes the same in every locale.
  */
 import { sha256 } from 'js-sha256';
 import { EXTRACTOR_VERSION } from '../version';

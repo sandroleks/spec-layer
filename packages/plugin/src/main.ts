@@ -9,7 +9,7 @@ import { serializeFoundation } from './serializeFoundation';
 import { createFoundationReader } from './foundationReader';
 import { FoundationPostGate } from './foundationPost';
 import {
-  buildFoundation, planFoundationUnits, unitContent, foundationContentHash,
+  buildFoundation, planFoundationUnits, unitContent, foundationContentHash, foundationUnitContentHash,
   foundationUnitTitle, groupRowsByFolder, colorContrast, isSemver,
   type FoundationSpec, type FoundationUnit, type FoundationUnitContent,
   type FoundationVariableRow, type SerializedFoundation,
@@ -1135,7 +1135,7 @@ const handleUiMessage = async (raw: unknown): Promise<void> => {
           const targetPage = prior ? (pageOf(prior) ?? invokedPage) : invokedPage;
           if (targetPage.id !== figma.currentPage.id) await figma.setCurrentPageAsync(targetPage);
           const publishRaw = prior ? prior.getPluginData(PUBLISH_RECORD_KEY) : '';
-          const currentHash = foundationContentHash(spec, unit.scope);
+          const currentHash = foundationUnitContentHash(content);
           const pill: PillState = pillState(parsePublishRecord(publishRaw), currentHash);
 
           // The UI sends one map for the whole build, keyed collectionId|folder
@@ -1351,7 +1351,7 @@ const handleUiMessage = async (raw: unknown): Promise<void> => {
         };
 
         const publishRaw = prior.getPluginData(PUBLISH_RECORD_KEY);
-        const currentHash = foundationContentHash(spec, scope);
+        const currentHash = foundationUnitContentHash(content);
         const pill: PillState = pillState(parsePublishRecord(publishRaw), currentHash);
 
         // Reuse the descriptions this doc was generated with. An Update is a

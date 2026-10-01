@@ -7,7 +7,7 @@
  */
 
 import {
-  extract, ProseProxyError, specContentHash, specHashProjection, buildFoundation,
+  extract, ProseProxyError, contentHash, specHashProjection, buildFoundation,
   buildFoundationArtifactV5, foundationDtcgDocument,
   buildComponentArtifactV5, componentAiContext, toYaml, componentMarkdown,
   proseToLegacy, hasProseContent,
@@ -403,12 +403,13 @@ export async function createDocFrame(
       ui.stopProgress();
       return;
     }
+    const baseline = specHashProjection(state.currentSpec!, { includeHidden: state.includeHidden });
     send({
       type: 'renderDocFrame',
       model: built.model,
       nodeId: state.currentNode!.id,
-      contentHash: specContentHash(state.currentSpec!, { includeHidden: state.includeHidden }),
-      baseline: specHashProjection(state.currentSpec!, { includeHidden: state.includeHidden }),
+      contentHash: contentHash(baseline),
+      baseline,
       extractorVersion: EXTRACTOR_VERSION,
       config: built.config,
       ...(state.generatedProse ? { prose: state.generatedProse } : {}),
@@ -583,12 +584,13 @@ export async function updateFromSource(
     // can name the sections it left out or drew as placeholders instead of
     // staying silent about them.
     state.lastOmitted = model.omitted;
+    const baseline = specHashProjection(spec, { includeHidden: src.config.includeHidden });
     send({
       type: 'renderDocFrame',
       model,
       nodeId: src.node.id,
-      contentHash: specContentHash(spec, { includeHidden: src.config.includeHidden }),
-      baseline: specHashProjection(spec, { includeHidden: src.config.includeHidden }),
+      contentHash: contentHash(baseline),
+      baseline,
       extractorVersion: EXTRACTOR_VERSION,
       config: src.config,
       ...(src.prose ? { prose: src.prose } : {}),

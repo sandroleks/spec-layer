@@ -54,7 +54,11 @@ function stripExportEnvelope(artifact: unknown): void {
   for (const field of VOLATILE_EXPORT_FIELDS) delete exported[field];
 }
 
-/** Object keys sorted by code unit at every depth, so key order cannot move the hash. */
+/**
+ * Object keys sorted by code unit at every depth, so key order cannot move the
+ * hash. Not canonicalJson: JSON.stringify writes integer-like keys first, so
+ * this output differs for them, and the proxy already stores hashes taken this way.
+ */
 function canonical(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonical);
   if (!isRecord(value)) return value;

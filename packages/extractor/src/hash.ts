@@ -2,28 +2,14 @@ import { sha256 } from 'js-sha256';
 import type { IntermediateSpec, VariantInstance } from './extract';
 import type { ComponentProp, VariantAxis } from './props';
 import { tokensFor, type GapIssue } from './tokens';
-import { unitContent, type FoundationSpec, type FoundationScope } from './foundation';
+import {
+  unitContent, type FoundationSpec, type FoundationScope, type FoundationUnitContent,
+} from './foundation';
 import { anatomyFor } from './anatomy';
-import { compareCodeUnits } from './v5/diagnostics';
+import { canonicalJson } from './v5/canonical';
 
-/** Canonical JSON: object keys sorted recursively, then SHA-256. */
-function canonical(value: unknown): string {
-  // An undefined member becomes `null`, exactly as JSON.stringify writes it;
-  // `JSON.stringify(undefined)` is undefined and would leave an empty slot.
-  if (Array.isArray(value)) return `[${value.map((v) => (v === undefined ? 'null' : canonical(v))).join(',')}]`;
-  if (value && typeof value === 'object') {
-    // Mirror JSON.stringify's own dropping of undefined-valued keys, keeping
-    // canonical output consistent regardless of whether a caller passes them.
-    const entries = Object.entries(value as Record<string, unknown>)
-      .filter(([, v]) => v !== undefined)
-      .sort(([a], [b]) => compareCodeUnits(a, b))
-      .map(([k, v]) => `${JSON.stringify(k)}:${canonical(v)}`);
-    return `{${entries.join(',')}}`;
-  }
-  return JSON.stringify(value);
-}
-
-export const contentHash = (value: unknown): string => sha256(canonical(value));
+/** SHA-256 over canonical JSON (keys sorted by code unit at every depth). */
+export const contentHash = (value: unknown): string => sha256(canonicalJson(value));
 
 /**
  * "Would hash the same": two values are equal when their canonical
@@ -32,7 +18,7 @@ export const contentHash = (value: unknown): string => sha256(canonical(value));
  * uses, so "changed" in a change list means precisely "moved the hash".
  */
 export function canonicalEqual(a: unknown, b: unknown): boolean {
-  return canonical(a) === canonical(b);
+  return canonicalJson(a) === canonicalJson(b);
 }
 
 export interface SpecHashOptions {
@@ -194,11 +180,13 @@ export function specContentHash(spec: IntermediateSpec, options: SpecHashOptions
  * throwing, so a stale link resolves to a comparable value.
  */
 export function foundationContentHash(spec: FoundationSpec, scope: FoundationScope): string {
-  const content = unitContent(spec, scope);
-  if (!content) return contentHash({ foundationUnit: null });
-  // Hash the WHOLE unitContent result, never a cherry-picked field list. Any
-  // field added to FoundationUnitContent is rendered by definition, so it must
-  // be hashed; a hand-maintained projection here would silently drop it. This
-  // is what makes the invariant structural rather than a matter of discipline.
-  return contentHash(content);
+  return foundationUnitContentHash(unitContent(spec, scope));
+}
+
+/**
+ * foundationContentHash for a caller that already holds the unit's content
+ * (null for a scope that no longer resolves), so it is not derived twice.
+ */
+export function foundationUnitContentHash(content: FoundationUnitContent | null): string {
+  return content ? contentHash(content) : contentHash({ foundationUnit: null });
 }
