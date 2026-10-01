@@ -98,8 +98,45 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   schema file changes. The documentation site's description of `guidelines`
   lives outside this repository and still has to be updated there.
 
+- **Faster builds, Updates and selections.** Clicking from layer to layer
+  inside a component set no longer reads the whole set again: a selection
+  that resolves to the component the panel already shows, unchanged, sends
+  nothing, so the panel also keeps the variants and sections you picked. It
+  reads again after a layer edit on the current page, any style edit, or a
+  variable change. Edits by others on other pages are not seen, the same
+  limit the Library's check has. The first selection reads the component and
+  the file's variables at the same time instead of one after the other.
+
+  An Update no longer re-checks every doc in the file when it finishes. The
+  docs it rebuilt are in sync, and every other row keeps the result of its
+  last check, since an Update never changes a source; "Checked ..." keeps
+  that check's time. Refresh library still checks every row. Update all now
+  rebuilds each doc without reading the whole registry for it, and shares
+  one variable lookup cache, one Foundation read and one contrast report
+  across the run.
+
+  Token chips resolve each token once per build instead of once per variant
+  card, and a token table resolves all of its tokens together. A Foundation
+  frame loads its text-style fonts at once. Telling whether a doc has hand
+  edits finds its tagged layers with one search instead of asking every
+  layer, so the Library scan and every build spend less time there. None of
+  this changes a hash or `EXTRACTOR_VERSION`.
+
+- Removed code nothing reached: the Markdown token tables left in the
+  extractor after the 1.x Markdown specification went, `narrowFoundation`
+  and the `not-in-scope` reference status only it could produce, and four
+  test-only v5 helpers. The extractor and the CLI now share one canonical
+  JSON serializer; every hash is byte for byte unchanged.
+
 ### Fixed
 
+- Clicking inside the component you just documented, then pressing Create
+  docs again, asked for a new AI draft and spent another free AI use. The
+  draft is now kept for that component as long as it reads exactly as it
+  did when the draft was written.
+- The Measurements card, its value chips, and the "No variant" cell in a
+  matrix kept rounded corners under the Sharp and Round corner styles. They
+  now follow the theme like the Anatomy card beside them.
 - "Contact support" on the License screen opened the homepage. A key the
   service has turned off now says which address to email and the button,
   Email support, opens your mail client with the subject filled in.
