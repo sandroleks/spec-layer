@@ -24,12 +24,42 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          # Full history, so the secret scan can read every commit in a pull
+          # request, not only the merge result.
+          fetch-depth: 0
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
           cache: npm
       - run: npm ci
+      # check:ci scans the tree as it would merge. This reads each pushed
+      # commit too: a key added and deleted again inside the pull request is
+      # still public on the branch and still needs rotating.
+      - name: Secret scan (pull request commits)
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/check-secrets.mjs --range "$BASE_SHA" "$HEAD_SHA"
       - run: npm run check:ci
+
+  # New or changed dependencies are checked against the advisory database
+  # and the licence allow-list before they merge. npm audit in check:ci
+  # covers the whole tree; this names what a pull request itself introduces.
+  dependency-review:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: high
+          fail-on-scopes: runtime, development
+          # Every licence the lockfile carries today. LGPL-3.0-or-later is the
+          # prebuilt libvips in sharp, reached only through wrangler (dev).
+          allow-licenses: >-
+            MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, 0BSD,
+            BlueOak-1.0.0, CC0-1.0, MPL-2.0, Python-2.0, LGPL-3.0-or-later
 
   # The delivery chain is code too: every workflow change is linted for
   # injection, excess permissions, credential persistence and unpinned

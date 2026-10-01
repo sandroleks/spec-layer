@@ -60,7 +60,7 @@ npm run build:cli
 npm run check:site-live              # live spec-layer.com schemas against the committed files
 ```
 
-`npm run check` is lint, typecheck, NUL scan, tests, plugin build, CLI build,
+`npm run check` is lint, typecheck, NUL scan, secret scan, tests, plugin build, CLI build,
 CLI bundle smoke test, sandbox scan, proxy deploy dry run.
 
 CI (`.github/workflows/ci.yml`) runs `npm run check:ci`, which adds coverage
@@ -258,10 +258,13 @@ rejected; the bet is deterministic extraction depth.
   `feat(v5): group repeated component bindings`, `fix(proxy): ...`,
   `docs: ...`, `chore(plugin): ...`. Add a body when the change needs
   explaining. Commits carry a `Co-Authored-By` trailer.
-- A pre-commit hook (`.githooks/pre-commit`) rejects known secret patterns,
-  including this product's own `sl_` pull keys. `npm ci` runs `prepare`,
-  which points `core.hooksPath` at it; `scripts/pre-commit.test.ts` pins
-  the shapes.
+- `scripts/check-secrets.mjs` holds the one list of known secret patterns,
+  including this product's own `sl_` pull keys. The pre-commit hook
+  (`.githooks/pre-commit`) runs it over staged lines, `npm run check` over
+  the tracked tree, and CI over every commit in a pull request, so
+  `--no-verify` only moves the failure to CI. `npm ci` runs `prepare`,
+  which points `core.hooksPath` at the hook; `scripts/check-secrets.test.ts`
+  and `scripts/pre-commit.test.ts` pin the shapes.
 - Update `CHANGELOG.md` alongside behavior changes and the JSON Schema
   alongside contract changes, in the same commit. `CHANGELOG.md` is the only
   place shipped work is described; do not mirror it into this file.

@@ -16,7 +16,10 @@ Build the Figma plugin with `npm run build:plugin`, then import `packages/plugin
 `npm ci` also runs the `prepare` script, which sets `core.hooksPath` to
 `.githooks` so the pre-commit hook that rejects known secret shapes runs in
 your clone. If you installed with `--ignore-scripts`, run
-`node scripts/install-hooks.mjs` once.
+`node scripts/install-hooks.mjs` once. The same patterns run in `npm run check`
+and in CI over every commit of a pull request, so skipping the hook with
+`--no-verify` only moves the failure there. A test fixture that needs a value
+of one of those shapes builds it at runtime instead of writing it literally.
 
 ## Development rules
 
