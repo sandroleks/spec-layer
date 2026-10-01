@@ -89,9 +89,8 @@ export function specHashProjection(spec: IntermediateSpec, options: SpecHashOpti
   } = spec;
   // Every IntermediateSpec field is named above, so `unrouted` is `{}`. A
   // field added to IntermediateSpec lands here and fails to compile until it
-  // is routed: excluded with a reason, or hashed. The `...rest` spread this
-  // replaces let a new field into every committed document's hash silently,
-  // which is an unplanned rebuild request (review 2026-09-23).
+  // is routed: excluded with a reason, or hashed, never into every committed
+  // document's hash by accident.
   const _everyFieldRouted: Record<string, never> = unrouted;
   void _everyFieldRouted;
   return {

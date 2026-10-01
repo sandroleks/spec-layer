@@ -384,7 +384,7 @@ export function comboKey(values: Combo): string {
  * subtrees share one cell here, and a change to either reads as a change to
  * the pair. Fixing that means adding `path` to the projection, which moves
  * specContentHash for every committed document, so it waits for the next
- * EXTRACTOR_VERSION bump (review 2026-09-23). The same applies to ruleItems
+ * EXTRACTOR_VERSION bump. The same applies to ruleItems
  * below. libraryDiff.ts, which reads the v5 artifact rather than the
  * projection, already keys on `path`.
  */

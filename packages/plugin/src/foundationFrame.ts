@@ -365,11 +365,10 @@ function referenceChip(platform: string, identifier: string, width: number): Fra
   c.cornerRadius = radius(6);
   c.fills = solidFill(palette.chipBg);
   c.counterAxisAlignItems = 'CENTER';
-  // A chip hugs its text, so a long identifier used to run past the Name
-  // column and get clipped by the table. The chip is capped at the cell width
-  // and drops the identifier under the platform label when the two no longer
-  // fit side by side; the identifier wraps inside the chip's own inset. Both
-  // bounds derive from `width`: nothing here guesses how wide a label is.
+  // Capped at the cell width so a long identifier cannot be clipped by the
+  // table: it drops under the platform label when the two no longer fit side
+  // by side, and wraps inside the chip's own inset. Both bounds derive from
+  // `width`: nothing here guesses how wide a label is.
   c.maxWidth = width;
   c.layoutWrap = 'WRAP';
   const label = makeText(PLATFORM_LABEL[platform] ?? platform, 'Regular', 10, palette.muted);
@@ -824,9 +823,8 @@ function tableRow(children: FrameNode[], divider: boolean): FrameNode {
 export function buildFooter(notes: string[]): FrameNode {
   const footer = vstack(2);
   footer.name = 'Notes';
-  // The measure the contrast notes use. A long list of omitted mode names is
-  // the one footer line that can outrun the card; it used to run past the
-  // card edge and be clipped rather than wrap.
+  // The measure the contrast notes use, so a long list of omitted mode names
+  // wraps instead of running past the card edge.
   fixWidthHugHeight(footer, PROSE_MEASURE);
   for (const n of notes) wrappingText(footer, n, 'Regular', 10, palette.muted);
   return footer;

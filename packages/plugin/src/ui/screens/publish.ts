@@ -58,9 +58,8 @@ function busyLabel(state: PublishState): string {
  * Back control, the title, and a status pill.
  *
  * The title is the act alone, "Publish", like the Library footer button that
- * opens this screen. It used to say "for developers", which named half the
- * audience: the agent prompt below is for a coding agent. The pill is the
- * status at a glance; the meta line under the header carries the date.
+ * opens this screen: the audience is developers and their coding agents. The
+ * pill is the status at a glance; the meta line under the header carries the date.
  *
  * The `<small>` eyebrow slot is deliberately unused. It means "what kind of
  * thing the h1 names" ("Selected component" above a component's name), and a

@@ -655,8 +655,7 @@ export function onDownloadSkillClick(format: ComponentFormat): void {
  * against, so it gets the fixed 1.0.0 proposal locally, with no round trip.
  * A known library gets a dry run once per session: a proposal this session
  * already holds stands until the publisher asks again (onPublishRecheck) or
- * publishes. Every open used to re-extract every component and post a dry
- * run, for a screen that had not changed.
+ * publishes, so reopening the screen re-extracts nothing.
  */
 export function onPublishOpen(): void {
   if (state.status === 'collecting' || state.status === 'uploading') return;

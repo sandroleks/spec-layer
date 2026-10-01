@@ -1,11 +1,10 @@
 /**
  * Remembers which foundation dump object the UI already holds.
  *
- * The main thread caches one SerializedFoundation per session and used to
- * attach it to every 'selection' message: 114 KB of structured clone per
- * click at 360 variables, 340 KB at 1080, and a buildFoundation() re-run in
- * the UI each time. The UI keeps the parsed spec at module scope, so it only
- * needs the dump when the object changes. Identity, not equality: a refresh
+ * The main thread caches one SerializedFoundation per session. Attached to
+ * every 'selection' message it costs 114 KB of structured clone per click at
+ * 360 variables and a buildFoundation() re-run in the UI, which keeps the
+ * parsed spec at module scope and so only needs the dump when it changes. Identity, not equality: a refresh
  * that produced an equal dump is still a new read the UI should adopt, and
  * comparing content would cost what this saves.
  *

@@ -482,16 +482,12 @@ export function componentFooterMarkup(state: ComponentScreenState, hasDoc = fals
     ? (hasDoc ? 'Replacing docs…' : 'Creating docs…')
     : (hasDoc ? 'Replace docs' : 'Create docs');
   // Both footer buttons carry a glyph, and this one keeps `filePlus` through
-  // every state. Per the icon contract in design-system/components.css: one
-  // button, one glyph. The old `fileDescription` was dropped because it drew
-  // the finished document rather than the act and duplicated the sidebar's
-  // glyph for this very screen, not because the slot should stay empty.
+  // every state: one button, one glyph (design-system/components.css).
   return (
     (progress ? `<div class="sl-footer-progress">${progress}</div>` : '') +
     '<div class="sl-footer-actions">' +
-    // The fastest path to value is component context in an agent's window,
-    // and it used to require a canvas document first. Same disabled rule as
-    // Create docs: both need the extracted spec, which reading produces.
+    // Copy needs no canvas doc, only the extracted spec, so it shares Create
+    // docs' disabled rule.
     `<button class="sl-button" data-tone="secondary" id="sl-copy-component" type="button"` +
     `${busy ? ' disabled' : ''}>${icon('copy', 15)}` +
     '<span>Copy for AI</span></button>' +

@@ -113,24 +113,11 @@ const resolver: NodeResolver = {
 };
 
 // ---------------------------------------------------------------------------
-// Foundation dump, cached for the session — the file's variables/styles feed
-// token-value resolution in the component brief on every selection, but they
-// change far less often than the selection itself, so re-serializing the
-// whole file (every collection, every variable, every text style) on each
-// click would be wasteful.
-//
-// Staleness: if a user edits a variable and then re-selects a component
-// without visiting the Foundations tab, the brief resolves token values
-// against the stale cached value. That is accepted here as a fair trade for
-// not re-walking the file on every click; a plugin has no cheap, precise "did
-// a variable value change" signal (figma.on('documentchange') fires on any
-// document edit, including irrelevant ones, so keying invalidation off it
-// would either over-invalidate — defeating the cache — or need per-change
-// filtering that is its own project). The cache lives only for the session:
-// closing and reopening the plugin always re-fetches. The Foundations tab's
-// own fetch (`requestFoundation`, below) refreshes this same cache — both the
-// tab's initial load and its "Refresh sources" button — so a user who
-// suspects staleness has one discoverable way to clear it.
+// Foundation dump, cached for the session. It feeds token values into the
+// component brief on every selection, and variables change far less often
+// than the selection. A variable edit is not seen until the Foundations tab
+// reads again (its load and "Refresh sources" both refresh this cache):
+// Figma sends no event for variables, and documentchange fires on every edit.
 // ---------------------------------------------------------------------------
 let foundationCache: { fileKey: string; dump: SerializedFoundation } | null = null;
 const foundationPosts = new FoundationPostGate();
@@ -170,14 +157,10 @@ async function foundationFor(fileKey: string): Promise<SerializedFoundation> {
 let lastLibraryFoundation: { fileKey: string; spec: FoundationSpec } | null = null;
 
 /**
- * Whether the document changed since the Library last scanned it. Attached
- * to the current page's nodechange (re-attached on page change) and to the
- * document's stylechange. `consume()` runs on every scan regardless of
- * whether the watch is live, so the flag alone cannot carry "the watch
- * failed, never trust a clean read": that is `libraryDirtyWatched` below. If
- * the runtime lacks any of these events, the watch never starts,
- * `libraryDirtyWatched` stays false, and every visit re-checks, which is the
- * behaviour before this flag existed.
+ * Whether the document changed since the Library last scanned it: the
+ * current page's nodechange (re-attached on page change) and the document's
+ * stylechange. If the watch cannot attach, `libraryDirtyWatched` stays false
+ * and every visit re-checks.
  */
 const libraryDirty = new DocumentDirtyFlag();
 
@@ -456,17 +439,10 @@ figma.on('selectionchange', () => {
   // Consume first, so a programmatic selection that lands while the gate is
   // still held cannot leave its expectation armed for the user's next click.
   if (programmaticDocSelection.consume(selected.map((node) => node.id))) return;
-  // A build switches pages to place a doc beside its predecessor and back;
-  // each switch reports the new page's selection, which is nobody's choice,
-  // and posting it would empty the component pane the moment "Updated"
-  // shows. But a real selection the user makes while the gate is held is
-  // somebody's choice, and dropping it for good would leave the panel and
-  // Copy for AI acting on a stale node once the build finishes. So this does
-  // not post it now (posting mid-build is exactly the bug above), it only
-  // notes that one was missed; each build's own `finally` block checks that
-  // note after the gate releases and replays the selection itself, through
-  // `selectionToReplay`, which is what tells a page hop's own selection
-  // apart from a genuine one worth telling the UI about.
+  // A build's page hops report each page's selection, which is nobody's
+  // choice and would empty the pane. A real click during the build is only
+  // noted here; the build's `finally` replays it once the gate releases, and
+  // `selectionToReplay` tells the two apart.
   if (canvasBuild.busy) {
     canvasBuild.noteSkipped();
     return;
@@ -493,7 +469,6 @@ function mergedProse(section: SectionNode): ProseV2 | null {
   return mergeProse(prose, readCanvasProse(section as unknown as ProseNodeLike));
 }
 
-// Read the registry off figma.root.
 /**
  * Publish identity. `figma.fileKey` is undefined for a Community plugin, so
  * the library id is kept in the document itself (root plugin data, shared by
@@ -526,6 +501,7 @@ async function readPublishInfo(): Promise<PublishInfo> {
   return { libraryId, pullKey, publishedAt, version };
 }
 
+/** The doc registry, kept in root plugin data. */
 function readRegistry() {
   return parseRegistry(figma.root.getPluginData(DOC_REGISTRY_KEY));
 }
@@ -554,23 +530,11 @@ async function liveFoundationDocLinks(): Promise<FoundationDocLink[]> {
 }
 
 /**
- * The current truth of every group description on canvas, re-derived fresh
- * rather than trusted from any earlier send/reply.
- *
- * Read after every action that can change which foundation docs exist or
- * what they carry (create, rebuild, detach, remove) so the UI's copy-time
- * cache is refreshed from what actually landed on canvas, not from what a
- * message believed it was sending. This is what closes the staleness gap: a
- * doc's stored `groupDescriptions` can be a narrower set than what was asked
- * for (`descriptionsForUnit` keeps only the folders a unit actually rendered
- * as color rows), so persisted state is the only source that can't drift out
- * of step with a bulk build's own map, or with an old browser-thread cache
- * a Copy click would otherwise read from.
- *
- * Best-effort: a scan failure here must never fail the action it rides along
- * with, so it fails to an empty map rather than throwing. That matches this
- * same fallback already accepted for the plain `requestFoundation` path
- * below, where a failed merge is likewise absorbed rather than surfaced.
+ * Every group description on canvas, read fresh after each action that can
+ * change which foundation docs exist or what they carry, so the UI's
+ * copy-time cache follows what landed rather than what was sent (a doc keeps
+ * only the folders it rendered; see descriptionsForUnit). Best-effort: a
+ * failed read is an empty map, never a failed action.
  */
 async function liveFoundationGroupDescriptions(): Promise<Record<string, Record<string, string>>> {
   try {
@@ -794,16 +758,10 @@ const handleUiMessage = async (raw: unknown): Promise<void> => {
         figma.ui.postMessage({ type: 'docFrameError', message } as MainToUi);
         break;
       }
-      // The page the user invoked this build from, and the selection there
-      // when this build took the gate. A successful build deliberately
-      // leaves the user on the new Section's page with it selected (see the
-      // cosmetic tail below), so only a failure needs to hop back to this
-      // page — done in the catch block, mirroring renderFoundation's own
-      // restore. `programmaticIds` stays null until a programmatic selection
-      // actually happens below: null (not `[]`) is what tells
-      // selectionToReplay this build has made no claim yet about what its
-      // own selection is, so a genuine mid-build deselect (`current` also
-      // `[]`) is never mistaken for it.
+      // Success leaves the user on the new Section's page with it selected;
+      // only a failure hops back here. `programmaticIds` stays null (not [])
+      // until this build selects something, so selectionToReplay never
+      // mistakes a genuine mid-build deselect for the build's own selection.
       const invokingPage = figma.currentPage;
       const atBegin = invokingPage.selection.map((node) => node.id);
       let programmaticIds: string[] | null = null;
@@ -928,14 +886,9 @@ const handleUiMessage = async (raw: unknown): Promise<void> => {
         if (section && !committed) {
           try { section.remove(); } catch { /* already gone */ }
         }
-        // A build that switched pages before failing must not strand the
-        // user there: unlike the success path above (which deliberately
-        // leaves them on the new Section's page), a failure has no section
-        // to show for it, and leaving `figma.currentPage` on the target page
-        // would also make `current` below describe a different page than
-        // `atBegin`. This is itself a fallible async Figma call, wrapped
-        // separately so its own failure can never replace the error the
-        // user needs to see.
+        // A failure has no section to show, so it must not strand the user on
+        // the target page (and `current` below must describe `atBegin`'s
+        // page). Guarded on its own so it never replaces the real error.
         try {
           if (figma.currentPage.id !== invokingPage.id) await figma.setCurrentPageAsync(invokingPage);
         } catch {
@@ -962,16 +915,10 @@ const handleUiMessage = async (raw: unknown): Promise<void> => {
     }
 
     case 'requestLibrary': {
-      // Two signals, either one runs the scan: the dirty flag (a nodechange
-      // on the current page or any stylechange since the last scan), or a
-      // variable rename, addition, or deletion, or a number variable's value
-      // edit (variables fire neither event, and each of those can move a
-      // component's drift hash). The fingerprint read fails toward
-      // scanning: an unreadable list is not "unchanged".
-      // The shortcut also requires libraryDirtyWatched: without a live watch
-      // `!libraryDirty.isDirty` would still read true after the first scan
-      // (consume() runs below regardless of the watch), and nothing would
-      // ever mark it dirty again.
+      // Either signal runs the scan: the dirty flag (layer or style edits), or
+      // a changed variable fingerprint (variables fire no event, and a rename
+      // or number edit can move a drift hash). An unreadable fingerprint, or
+      // no live watch, scans.
       let fingerprint: string | null = null;
       let probed = false;
       if (msg.ifChanged === true && libraryDirtyWatched && !libraryDirty.isDirty) {
@@ -1107,15 +1054,9 @@ const handleUiMessage = async (raw: unknown): Promise<void> => {
       // it, or, for a replacement, once the predecessor is gone (then it IS
       // the doc, and a later throw must not delete the user's only copy).
       let pending: SectionNode | null = null;
-      // The page the user invoked from. A non-replacing unit always lands
-      // here; a replacing unit switches to its predecessor's page just long
-      // enough to build and place it, then control returns here before the
-      // next unit, so this page — and the layout cursor below, which is
-      // scoped to it — never drifts partway through the loop. Declared outside
-      // the try (rather than after the re-extraction below) so the catch block
-      // can restore it too: a throw from buildFoundationFrame, writeRegistry,
-      // or prior.remove() happens only after the loop has already switched
-      // pages, and skips the loop's own restore near the bottom.
+      // New units land on this page; a replacing unit visits its predecessor's
+      // page and returns before the next one, so the layout cursor below never
+      // drifts. Outside the try so the catch can restore it after a mid-loop throw.
       const invokedPage = figma.currentPage;
       // The selection when this build took the gate; see renderDocFrame's
       // atBegin. Neither Foundation path selects anything of its own, so
@@ -1166,12 +1107,7 @@ const handleUiMessage = async (raw: unknown): Promise<void> => {
 
         for (let i = 0; i < units.length; i++) {
           const unit = units[i];
-          // Unreachable in this path: unitContent returns null for a missing
-          // collectionId or an empty named group, and every unit here came from
-          // planFoundationUnits run against this same spec, which drops
-          // collections it can't find and only names groups it found members
-          // for. Kept as a defensive guard, not a case that needs
-          // progress-count handling.
+          // Never null here: every unit came from planFoundationUnits on this spec.
           const content = unitContent(spec, unit.scope);
           if (!content) continue;
 
@@ -1452,16 +1388,8 @@ const handleUiMessage = async (raw: unknown): Promise<void> => {
         pending = null; // point of no return: the new Section is the doc
         writeRegistry(addDoc(reg, section.id));
 
-        // Stamp the docId so the reply identifies itself as this row's Update
-        // rather than the Foundations tab's bulk run, which posts the same
-        // message type without one.
-        //
-        // An Update reuses link.groupDescriptions verbatim (no regeneration,
-        // see above), but every OTHER foundation doc's descriptions on canvas
-        // are just as able to have drifted from the UI's cache since it was
-        // last populated, so this re-derives the whole-canvas truth the same
-        // way renderFoundation's reply does rather than special-casing "only
-        // this one doc changed".
+        // The docId marks this as a row's Update, not the bulk build. The map
+        // is the whole canvas, read fresh as every foundation reply does.
         const groupDescriptions = await liveFoundationGroupDescriptions();
         reply = {
           type: 'foundationDone', created: 0, replaced: 1, docId: msg.docId, groupDescriptions,
@@ -1473,17 +1401,9 @@ const handleUiMessage = async (raw: unknown): Promise<void> => {
         const message = err instanceof Error ? err.message : String(err);
         reply = { type: 'docSourceError', docId: msg.docId, message };
       } finally {
-        // Hop back to the invoking page, then reply, then release the gate,
-        // then replay, success or failure (settleBuild owns that order and
-        // its reasons). Unlike renderDocFrame there is no new page for the
-        // user to land on here, and unlike renderFoundation's per-unit loop
-        // this path never returns on its own. Left un-hopped, a page the
-        // build switched to (the prior doc's own page) leaves `current`
-        // below describing that page's remembered selection instead of
-        // this one's — replaying it as if the user chose it, or, if it's
-        // empty, resolving to node: null and emptying the pane, the
-        // original bug. The early exits above run before any page switch,
-        // so for them the hop is a no-op.
+        // Hop back, reply, release the gate, then replay (settleBuild owns the
+        // order). Without the hop, `current` below would read the prior doc's
+        // page's selection and replay it as the user's choice.
         const settled = reply;
         await settleBuild({
           restorePage: async () => {
@@ -1622,14 +1542,9 @@ const handleUiMessage = async (raw: unknown): Promise<void> => {
     }
 
     case 'requestDocBaseline': {
-      // No failure resolves to a partial answer, but the two reads fail into
-      // different fallbacks. A failure at or before the baseline read leaves
-      // `baseline: null`, which the UI reads as "never updated with this
-      // build". A failure in the live foundation read must not claim that: the
-      // doc does have a baseline, so keep it and report `live: null`, which
-      // resolves to the generic "comparison unavailable" reason instead. Same
-      // getNodeByIdAsync caveat as requestDocProse: under dynamic-page access
-      // it can reject, not just resolve null.
+      // Two reads, two fallbacks: a failed baseline read is `baseline: null`
+      // ("never updated with this build"); a failed live read keeps the
+      // baseline and reports `live: null` ("comparison unavailable").
       let baseline: DocBaseline | null = null;
       let live: FoundationUnitContent | null | undefined;
       let link: DocLinkData | null = null;

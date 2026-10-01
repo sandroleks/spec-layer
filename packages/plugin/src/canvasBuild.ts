@@ -4,9 +4,7 @@
  * buildDocFrames and buildFoundationFrame both write frameKit's module state
  * (palette, fonts, corner scale, per-build caches), so a component build and
  * a foundation build interleaving would paint one document in the other's
- * theme. main.ts used to keep one flag per family, which stopped two component
- * builds or two foundation builds from overlapping but not one of each. This
- * is the single flag.
+ * theme, so both families share this one flag.
  *
  * It also answers the selection listener. A build switches pages to place a
  * doc beside its predecessor and switches back, and each switch fires

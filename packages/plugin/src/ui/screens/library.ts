@@ -921,9 +921,8 @@ function footerControlSelector(element: Element): string | null {
  * Redraws only what one landed source check changed: the rows whose status
  * moved (or, for the row whose overflow menu is open, whose busy-driven
  * "Update this doc" item moved), the rebuild banner's disabled state, the
- * three filter counts, and the footer. Every `driftSource` reply used to
- * repaint the whole list, which for N rows is N paints of N rows and dropped
- * focus each time. A row's controls, and the footer's, are re-found by
+ * three filter counts, and the footer, so a pass of N replies does not paint
+ * N rows N times or drop focus. A row's controls, and the footer's, are re-found by
  * selector after the redraw, so focus stays on the same control, and an open
  * menu's on-screen position is recomputed after any row redraw, the way a
  * full paint already does.

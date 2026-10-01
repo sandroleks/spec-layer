@@ -2,11 +2,8 @@
 /**
  * libraryScan.ts: one Library refresh, from registry ids to LibraryEntry rows.
  *
- * This was the body of main.ts's requestLibrary handler. It moved here for
- * one reason: the handler had no try/catch and no failure reply, so any throw
- * left the UI's refreshing flag set forever (Library spinning, Refresh and
- * Update disabled). A test can reach this function with fake nodes; it cannot
- * reach main.ts, which registers Figma listeners on import.
+ * Kept out of main.ts so a test can reach it with fake nodes: main.ts
+ * registers Figma listeners on import.
  *
  * The scan never throws. It returns what it collected and, when it stopped
  * early, the error's text. It never prunes; `libraryReply` below is the one

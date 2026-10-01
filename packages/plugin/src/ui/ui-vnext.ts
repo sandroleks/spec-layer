@@ -632,10 +632,8 @@ function libraryPresentation(): LibraryScreenPresentation {
 }
 
 /**
- * Repaint after one source check landed. Only the Library list cares: a
- * reply that arrived while the Publish or History pane was up used to
- * repaint that pane and drop focus from its inputs, for a change it does
- * not show.
+ * Repaint after one source check landed. Only the Library list shows it, so
+ * the Publish and History panes keep their focus.
  */
 function paintLibraryDrift(): void {
   if (view !== 'library' || libraryPane !== 'list') return;
@@ -834,10 +832,8 @@ async function removeCurrentLicense(): Promise<void> {
 }
 
 /**
- * Check again, for a saved key whose last check could not finish. It runs the
- * same check the plugin runs on launch. It used to switch the screen to the
- * inactive state instead, which told the user the key was not connected when
- * nothing had said so.
+ * Check again, for a saved key whose last check could not finish: the same
+ * check the plugin runs on launch, never a jump to the inactive state.
  */
 async function recheckLicense(): Promise<void> {
   if (licenseRechecking) return;
@@ -2024,11 +2020,9 @@ document.addEventListener('click', (event) => {
       );
       return;
     }
-    // "Update all docs" takes both kinds of drift, the same set the Updates
-    // count and the button's enabled state already cover; it used to take
-    // only source updates, so a Library whose only drift was a stale version
-    // offered an enabled button that did nothing. The rebuild banner takes
-    // only the stale rows. dispatchNextLibraryUpdate picks each row's intent.
+    // "Update all docs" takes both kinds of drift, the set the Updates count
+    // and the button's enabled state cover; the rebuild banner takes only the
+    // stale rows. dispatchNextLibraryUpdate picks each row's intent.
     const rebuildOnly = batchButton.matches('[data-library-rebuild-all]');
     void startLibraryUpdates(
       model.allRows

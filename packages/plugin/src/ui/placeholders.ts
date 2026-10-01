@@ -1,10 +1,10 @@
 /**
  * placeholders.ts — what a writing section says when nobody has written it.
  *
- * A selected section whose whole body is prose used to be left out when there
- * was no prose (AI off, the allowance spent, or a failed request). It is now
- * drawn as a marked placeholder with guidance, in the same shape and the same
- * editorial slots the filled section uses, so someone can type over it on the
+ * A selected section whose whole body is prose, with no prose (AI off, the
+ * allowance spent, or a failed request), is drawn as a marked placeholder
+ * with guidance, in the same shape and the same editorial slots the filled
+ * section uses, so someone can type over it on the
  * canvas and an Update keeps what they wrote (see canvasProse.ts,
  * PLACEHOLDER_KEY). Guidance is never prose: it is never stored, exported or
  * hashed as editorial text.

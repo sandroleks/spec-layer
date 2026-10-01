@@ -36,11 +36,9 @@ export function isLibraryFilter(value: string): value is LibraryFilter {
  * Which `requestDocSource` intent a queued Library update carries.
  *
  * Decided when the run starts, from the drift the row had then, and stored on
- * the queue entry. It used to be read at dispatch time from `libraryDrift`,
- * which `startLibraryDriftChecks()` clears when the `library` reply to a
- * refresh lands: opening the Library mid-batch turned every
- * remaining stale-version rebuild into a plain update, and the AI top-up the
- * banner promised silently never ran.
+ * the queue entry: `libraryDrift` is cleared when a refresh's `library` reply
+ * lands, so reading it at dispatch would turn a mid-batch rebuild into a
+ * plain update and skip the AI top-up the banner promised.
  */
 export function libraryUpdateIntent(drift: LibraryDriftState | undefined): DocSourceIntent {
   return drift === 'staleVersion' ? 'rebuild' : 'update';

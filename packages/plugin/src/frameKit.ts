@@ -314,8 +314,7 @@ export function slotAround(inst: InstanceNode | null, width: number): FrameNode 
   slot.clipsContent = true;
   slot.strokes = solidFill(palette.divider);
   slot.strokeWeight = 1;
-  // resize() fixes BOTH axes, so the hug on the vertical (primary) axis has
-  // to be restored after it. The old order drew every slot as a square.
+  // resize() fixes BOTH axes, so the vertical (primary) hug is restored after it.
   slot.resize(width, SLOT_MIN_H);
   slot.primaryAxisSizingMode = 'AUTO';
   slot.minHeight = SLOT_MIN_H;

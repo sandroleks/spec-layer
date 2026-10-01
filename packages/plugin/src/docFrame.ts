@@ -366,9 +366,8 @@ async function buildSection(section: SectionBlock, includeHidden: boolean): Prom
     case 'table': fill(buildTable(section.columns, section.rows, CONTENT_WIDTH)); break;
     case 'anatomy': {
       if (section.summary) body.appendChild(buildTaggedParagraph(section.summary, 'anatomySummary'));
-      // The diagram is the only anatomy view. The old table view never ran
-      // (every doc link normalizes anatomyView to 'diagram'), so its branch is
-      // gone and `section.view` is not consulted here.
+      // The diagram is the only anatomy view: every doc link normalizes
+      // anatomyView to 'diagram'.
       const diagram = await buildAnatomyDiagram(section.componentId, section.parts, includeHidden, CONTENT_WIDTH);
       if (diagram) {
         // Hug and centre: a small component sits in a card its own size, not
