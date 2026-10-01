@@ -404,7 +404,9 @@ function aiControlMarkup(enabled: boolean, allowance: AllowanceState): string {
       'aria-label="Upgrade to Pro, opens in your browser">Upgrade to Pro</button></p>'
     : '';
   return (
-    `<div class="sl-ai-control" data-enabled="${enabled}">` +
+    // A literal, not the flag itself: `enabled` reaches here from a main-thread
+    // message, and CodeQL (js/xss) tracks any message value into innerHTML.
+    `<div class="sl-ai-control" data-enabled="${enabled ? 'true' : 'false'}">` +
     '<span class="sl-ai-control-copy">' +
     '<strong>AI writing</strong>' +
     '<span data-tooltip-trigger>' +
