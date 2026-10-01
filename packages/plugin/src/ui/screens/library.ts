@@ -217,6 +217,7 @@ interface MenuItem {
     | 'adjustments'
     | 'fileCheck'
     | 'externalLink'
+    | 'unlink'
     | 'puzzle'
     | 'download'
     | 'copy'
@@ -272,7 +273,9 @@ function menuGroups(row: LibraryRowPresentation): MenuItem[][] {
     destructive.push({
       action: 'detach',
       label: 'Detach this doc',
-      glyph: 'externalLink',
+      // Its own glyph: `externalLink` here made cutting the source link look
+      // like the "View this doc on canvas" navigation two items up.
+      glyph: 'unlink',
     });
   }
   if (row.canRemove) {

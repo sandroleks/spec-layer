@@ -228,9 +228,10 @@ function versionBlock(state: PublishState): string {
   let body: string;
   if (!state.infoKnown) {
     // Whether this file has a library is not known yet, so neither a first
-    // version field nor a next version can be shown without guessing.
-    return `<section class="sl-publish-block sl-publish-version">${head()}${
-      note('Checking whether this file is published<span class="sl-work-dots" aria-hidden="true"><i></i><i></i><i></i></span>')}</section>`;
+    // version field nor a next version can be shown without guessing. The
+    // header pill and the disabled footer button already read "Checking…";
+    // a third copy here said the same thing a third way.
+    return '';
   }
   if (!state.libraryId) {
     // Nothing published yet, so there is nothing to diff against: the version
@@ -381,7 +382,7 @@ export function publishScrollMarkup(
   } else if (state.infoKnown) {
     body = `<p class="sl-publish-intro">${BEFORE_FIRST_PUBLISH}</p>`;
   } else {
-    body = ''; // the version block above already says the identity is being read
+    body = ''; // the header pill and the footer button already say the identity is being read
   }
   // Room to scroll the last control out from under the floating error.
   const hasError = state.status === 'error' && Boolean(state.message);
@@ -429,7 +430,7 @@ export function publishFooterMarkup(state: PublishState): string {
     // body they sat below the fold on any library with setup blocks.
     : state.status === 'error' && state.message
       ? '<div class="sl-footer-progress">' +
-        `<div class="sl-banner sl-publish-error" data-tone="danger" role="alert">${esc(state.message)}</div>` +
+        `<div class="sl-banner sl-footer-error" data-tone="danger" role="alert">${esc(state.message)}</div>` +
         '</div>'
       : '';
   // The primary names the version a publish would make, so the reader never

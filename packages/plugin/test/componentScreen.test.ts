@@ -4,6 +4,10 @@ import {
   applyGroupBulk,
   applyVariantBulk,
   componentDocSelection,
+  exhaustedAiNote,
+  failedBuildScreen,
+  FAILED_BUILD_TOAST_WINDOW_MS,
+  selectionOutcome,
   DEFAULT_OFF_SECTIONS,
   defaultIncludeHidden,
   defaultSections,
@@ -25,7 +29,7 @@ import {
 } from '../src/ui/screens/component';
 import { NO_FACTS, type ComponentFacts } from '../src/ui/viewModel/componentFacts';
 import { ICON_PATHS } from '../src/ui/shell/icons';
-import type { ComponentScreenState } from '../src/ui/viewModel/contracts';
+import type { AllowanceState, ComponentScreenState } from '../src/ui/viewModel/contracts';
 
 const ALL_GROUPS = new Set(['usage', 'specs', 'a11y'] as const);
 const READY = { kind: 'ready', componentName: 'Button' } as const;
@@ -597,15 +601,30 @@ describe('component screen markup', () => {
   });
 
   it('keeps a successful build actionable without rendering a plugin toast', () => {
-    const state = {
-      kind: 'success',
-      componentName: 'Button',
-      replaced: false,
-      message: 'Docs created. AI did not run',
-      warning: true,
-    } as const;
+    const state = { kind: 'success', componentName: 'Button', replaced: false } as const;
     expect(componentStatusMarkup(state)).toBe('');
     expect(componentFooterMarkup(state)).toContain('id="sl-create"');
+  });
+
+  it('keeps a failed build on screen until the next action', () => {
+    // The Publish footer took this decision first: a toast is gone before
+    // the reader looks up from the button. Same slot, same banner.
+    const failed = { kind: 'error', componentName: 'Button', message: 'Couldn’t load the Inter font.' } as const;
+    const status = componentStatusMarkup(failed);
+    expect(status).toContain('sl-banner sl-footer-error');
+    expect(status).toContain('role="alert"');
+    expect(status).toContain('Couldn’t load the Inter font.');
+
+    const footer = componentFooterMarkup(failed);
+    expect(footer.indexOf('sl-footer-progress')).toBeLessThan(footer.indexOf('sl-footer-actions'));
+    // Not busy: Create is the retry, and Copy for AI still works.
+    expect(footer).toContain('id="sl-create"');
+    expect(footer).not.toContain('disabled');
+
+    const scroll = componentScrollMarkup(failed, createComponentSelection(true), NO_FACTS);
+    expect(scroll).toContain('class="sl-component-controls has-error"');
+    expect(scroll).not.toContain('aria-busy');
+    expect(componentStatusMarkup(READY)).toBe('');
   });
 
   it('reuses the original progress treatment for reading and build phases', () => {
@@ -662,5 +681,89 @@ describe('createDocFrame', () => {
     const ui = fakePresenter();
     await createDocFrame(createState(), { sections: new Set(), variantIds: new Set() }, ui);
     expect(ui.clear).toHaveBeenCalled();
+  });
+});
+
+describe('failedBuildScreen', () => {
+  it('holds the message on the component the build was for', () => {
+    expect(failedBuildScreen('Button', 'Font not loaded'))
+      .toEqual({ kind: 'error', componentName: 'Button', message: 'Font not loaded' });
+  });
+
+  it('goes empty when no component is current, rather than name a guess', () => {
+    expect(failedBuildScreen('', 'Font not loaded')).toEqual({ kind: 'empty' });
+  });
+});
+
+describe('selectionOutcome', () => {
+  it('keeps a build error through a reselection of the same component, at any elapsed time', () => {
+    for (const elapsed of [0, 1499, 1500, 60_000]) {
+      expect(selectionOutcome('error', '1:1', '1:1', elapsed)).toBe('keep');
+    }
+  });
+
+  it('toasts a build error when another component replaces it inside the window', () => {
+    expect(FAILED_BUILD_TOAST_WINDOW_MS).toBe(1500);
+    expect(selectionOutcome('error', '1:1', '2:2', 0)).toBe('toast');
+    expect(selectionOutcome('error', '1:1', '2:2', 1499)).toBe('toast');
+  });
+
+  it('replaces silently once the banner has been on screen for the window', () => {
+    expect(selectionOutcome('error', '1:1', '2:2', 1500)).toBe('replace');
+    expect(selectionOutcome('error', '1:1', null, 1500)).toBe('replace');
+    expect(selectionOutcome('error', '1:1', '2:2', 60_000)).toBe('replace');
+  });
+
+  it('toasts a build error when the selection empties inside the window', () => {
+    expect(selectionOutcome('error', '1:1', null, 0)).toBe('toast');
+    expect(selectionOutcome('error', '1:1', undefined, 1499)).toBe('toast');
+    // No old node either: nothing to match, so the failure still goes out.
+    expect(selectionOutcome('error', undefined, null, 0)).toBe('toast');
+  });
+
+  it('replaces every other screen as before, same component or not', () => {
+    for (const kind of ['empty', 'reading', 'ready', 'building', 'success'] as const) {
+      expect(selectionOutcome(kind, '1:1', '1:1', 0)).toBe('replace');
+      expect(selectionOutcome(kind, '1:1', '2:2', 0)).toBe('replace');
+      expect(selectionOutcome(kind, '1:1', null, 0)).toBe('replace');
+    }
+  });
+});
+
+describe('exhaustedAiNote', () => {
+  const free = (remaining: number, resetsAt = '2026-10-01T00:00:00Z'): AllowanceState =>
+    ({ kind: 'free', remaining, limit: 20, resetsAt });
+
+  it('speaks only when the switch is on and the free allowance is spent', () => {
+    expect(exhaustedAiNote(true, free(0)))
+      .toBe('No free AI uses left until Oct 1. Sections marked AI will be drawn as placeholders.');
+    expect(exhaustedAiNote(false, free(0))).toBeNull();
+    expect(exhaustedAiNote(true, free(1))).toBeNull();
+    expect(exhaustedAiNote(true, { kind: 'pro' })).toBeNull();
+    expect(exhaustedAiNote(true, { kind: 'loading' })).toBeNull();
+    expect(exhaustedAiNote(true, { kind: 'unknown', message: 'Couldn\u2019t check your plan' })).toBeNull();
+  });
+
+  it('leaves the reset date out rather than guess one', () => {
+    expect(exhaustedAiNote(true, free(0, '')))
+      .toBe('No free AI uses left. Sections marked AI will be drawn as placeholders.');
+  });
+
+  it('draws the note under the switch with an upgrade action and keeps the AI badges', () => {
+    const selection = createComponentSelection(true);
+    const markup = componentScrollMarkup(READY, selection, NO_FACTS, free(0));
+    expect(markup).toContain('sl-ai-control-note');
+    expect(markup).toContain('role="status"');
+    expect(markup).toContain('No free AI uses left until Oct 1.');
+    expect(markup).toContain('data-license-open="upgrade"');
+    // The note says "sections marked AI", so the marks stay.
+    expect(markup).toContain('data-tone="accent">AI<');
+    // The note follows the switch, inside the same fieldset.
+    expect(markup.indexOf('sl-ai-control"')).toBeLessThan(markup.indexOf('sl-ai-control-note'));
+
+    expect(componentScrollMarkup(READY, selection, NO_FACTS, free(16))).not.toContain('sl-ai-control-note');
+    expect(componentScrollMarkup(READY, createComponentSelection(false), NO_FACTS, free(0))).not.toContain('sl-ai-control-note');
+    // Callers that pass no allowance (the default) draw nothing extra.
+    expect(componentScrollMarkup(READY, selection, NO_FACTS)).not.toContain('sl-ai-control-note');
   });
 });

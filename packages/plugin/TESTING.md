@@ -89,6 +89,18 @@ requests carry token names and resolved values without an image.
    build. Repeat clearing your selection instead of picking a component
    partway through: the panel goes back to its empty state once the toast
    shows, rather than keeping the last component shown.
+9. Make a build fail while the selection stays on the component (for
+   example, select a component whose fonts cannot load, and leave the
+   selection alone while **Creating docs…** is showing). Confirm the failure
+   appears as a banner above the footer buttons and stays there with no
+   toast, including after the build ends and the panel settles; **Create
+   docs** and **Copy for AI** remain enabled; reselecting the same component
+   keeps the banner; the banner clears on the next **Create docs** or when
+   you select another layer, with no toast once you have seen it. Then
+   repeat the failing build and select a different component, or clear the
+   selection, while it runs: changing the selection during a failing build
+   still surfaces the failure as a toast, because the selection changed
+   before you could see the banner, and the panel shows the new selection.
 
 Also verify a nested selection resolves to its enclosing component and a
 non-component selection shows an actionable empty state with no toast. Click
@@ -564,8 +576,11 @@ record.
    uses and the ring reflects the state.
 2. Confirm the allowance offers **Upgrade** and License owns activation.
 3. Exhaust the free quota or simulate it. Confirm the header reads **No free
-   uses left** and offers **Upgrade** while the ordinary **Create docs** action
-   remains available.
+   uses left** and offers **Upgrade**, and that on the component screen with
+   AI writing on, one line under the switch reads **No free AI uses left
+   until <date>. Sections marked AI will be drawn as placeholders.** with
+   **Upgrade to Pro**. The ordinary **Create docs** action remains available,
+   and turning the switch off removes the line.
 4. Click **Create docs** with AI writing selected. The build must complete with
    deterministic documentation, draw the writing sections as placeholders,
    and report the exhausted allowance ("sections that needed AI were added as
@@ -586,6 +601,10 @@ record.
 5. **Manage subscription** opens the billing portal.
 6. If the proxy is unreachable, the saved key remains and the UI reports a
    temporary verification problem rather than falsely marking it expired.
+7. Force the disabled-key state (a key the proxy reports as disabled). The
+   message names the support address, and **Email support** opens your mail
+   client with the subject "Spec Layer license key". If nothing opens, the
+   address in the message must still be selectable in the panel.
 
 ## Publish and pull
 

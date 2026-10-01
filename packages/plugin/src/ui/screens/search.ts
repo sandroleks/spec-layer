@@ -22,12 +22,16 @@ function resultId(index: number): string {
 }
 
 /**
- * The source line, dropped when it only repeats the name.
+ * The source line, dropped when it adds nothing.
  *
- * A foundation doc is labelled "Foundations · Mapped Radius" over a source of
- * "Mapped Radius", so showing both prints the same words twice on one row.
+ * Two cases. A foundation doc is labelled "Foundations · Mapped Radius" over a
+ * source of "Mapped Radius", so showing both prints the same words twice on
+ * one row. And when every result on screen comes from the same place, the
+ * column is the same word down the whole list; a file that keeps its
+ * components on one page, which is most files, read "Components" six times.
  */
-function sourceDetail(result: SearchDocumentResult): string {
+function sourceDetail(result: SearchDocumentResult, sharedSource: boolean): string {
+  if (sharedSource) return '';
   const label = result.label.toLocaleLowerCase();
   const source = result.sourceLabel.trim().toLocaleLowerCase();
   if (!source || label.includes(source) || source.includes(label)) return '';
@@ -39,6 +43,7 @@ function sourceDetail(result: SearchDocumentResult): string {
 function documentResultMarkup(
   result: SearchDocumentResult,
   activeIndex: number,
+  sharedSource: boolean,
 ): string {
   const active = result.index === activeIndex;
   return (
@@ -48,9 +53,16 @@ function documentResultMarkup(
     `data-search-kind="${result.kind}" data-search-doc-id="${esc(result.docId)}">` +
     `${icon(result.kind === 'foundation' ? 'layoutGrid' : 'puzzle', 15)}` +
     `<span class="sl-global-search-label">${esc(result.label)}</span>` +
-    sourceDetail(result) +
+    sourceDetail(result, sharedSource) +
     '</button>'
   );
+}
+
+/** True when two or more results all name the same source. */
+function allShareSource(results: readonly SearchDocumentResult[]): boolean {
+  if (results.length < 2) return false;
+  const first = results[0].sourceLabel.trim();
+  return results.every((result) => result.sourceLabel.trim() === first);
 }
 
 /**
@@ -150,11 +162,12 @@ export function globalSearchResultsMarkup(
   } = {},
 ): string {
   if (model.results.length) {
+    const sharedSource = allShareSource(model.results);
     return (
       '<section aria-labelledby="sl-global-search-group">' +
       `<h2 id="sl-global-search-group">${groupTitle(model)}</h2>` +
       model.results.map((result) =>
-        documentResultMarkup(result, model.activeIndex)).join('') +
+        documentResultMarkup(result, model.activeIndex, sharedSource)).join('') +
       '</section>'
     );
   }

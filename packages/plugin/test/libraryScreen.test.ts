@@ -413,6 +413,15 @@ describe('library screen presentation', () => {
     expect(markup).toContain('aria-label="View buttonText on canvas"');
   });
 
+  it('gives detach its own glyph rather than the open-on-canvas one', () => {
+    const item = row('buttonPrimary', 'inSync');
+    const markup = libraryRowMarkup(item, item.docId, false);
+    const detach = markup.slice(markup.indexOf('data-library-action="detach"'));
+    const detachButton = detach.slice(0, detach.indexOf('</button>'));
+    expect(detachButton).toContain(ICON_PATHS.unlink);
+    expect(detachButton).not.toContain(ICON_PATHS.externalLink);
+  });
+
   it('offers Copy for AI on a component row whose source still exists', () => {
     const copyRow = row('buttonCopy', 'inSync', { canCopy: true });
     const markup = libraryScrollMarkup(model({
@@ -595,19 +604,19 @@ describe('library screen presentation', () => {
     const markup = libraryFooterMarkup(model({
       updatingAll: true,
       progress: {
-        label: 'Updating document 2 of 4',
+        label: 'Updating docs',
         current: 1,
         total: 4,
       },
     }));
-    expect(markup).toContain('Updating document 2 of 4');
+    expect(markup).toContain('Updating docs');
     expect(markup).toContain('1 of 4');
     expect(markup).toContain('role="progressbar"');
     expect(markup).not.toContain('sl-banner');
     expect(libraryScrollMarkup(model({
       updatingAll: true,
       progress: {
-        label: 'Updating document 2 of 4',
+        label: 'Updating docs',
         current: 1,
         total: 4,
       },

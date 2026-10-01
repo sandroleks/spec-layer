@@ -7,7 +7,8 @@
  */
 
 import { ALL_SECTIONS, GROUPS, type GroupId, type SectionId } from '../docModel';
-import type { SectionGroupView, SectionOption } from './contracts';
+import type { AllowanceState, ComponentScreenState, SectionGroupView, SectionOption } from './contracts';
+import { formatResetDate } from './allowance';
 import type { ComponentFacts } from './componentFacts';
 
 /**
@@ -164,4 +165,76 @@ export function componentDocSelection(
     sections,
     variantIds: sections.has('tokens') ? new Set(variantIds) : new Set<string>(),
   };
+}
+
+/**
+ * The line under the AI writing switch when the free allowance is spent.
+ *
+ * The header already knows the count; without this the switch stays on, the
+ * badges promise prose, Create runs, and the user learns from a toast after
+ * the build that every AI section is a placeholder. Only the free tier with
+ * nothing left speaks: Pro has no monthly cap, and `loading` or `unknown`
+ * would be a claim the plugin cannot back. The reset date is the proxy's, or
+ * left out.
+ */
+export function exhaustedAiNote(aiEnabled: boolean, allowance: AllowanceState): string | null {
+  if (!aiEnabled || allowance.kind !== 'free' || allowance.remaining > 0) return null;
+  const reset = formatResetDate(allowance.resetsAt);
+  const lead = reset ? `No free AI uses left until ${reset}.` : 'No free AI uses left.';
+  return `${lead} Sections marked AI will be drawn as placeholders.`;
+}
+
+/**
+ * The screen a failed component build leaves behind.
+ *
+ * Both failure routes use it: a `docFrameError` from the main thread, and a
+ * pre-render failure the Create presenter reports (no section picked, or
+ * assembly throwing before anything is sent). The failure stays on the panel
+ * as a banner until the next Create or a selection replaces it. With no
+ * component current there is no screen to hold it, so the panel goes empty.
+ */
+export function failedBuildScreen(
+  componentName: string,
+  message: string,
+): ComponentScreenState {
+  return componentName
+    ? { kind: 'error', componentName, message }
+    : { kind: 'empty' };
+}
+
+/**
+ * What a selection report does to the component screen on its way in.
+ *
+ * - `keep`: the outgoing screen is a build error and the selection is the
+ *   same component, so the banner stays. A no-op reselection (the selection
+ *   main.ts replays after a build, or clicking away and back while the build
+ *   ran) must not hide a failure the reader has not seen yet.
+ * - `toast`: the outgoing screen is a build error, the selection is a
+ *   different component or nothing, and it arrives within
+ *   `FAILED_BUILD_TOAST_WINDOW_MS` of the banner being painted. That covers
+ *   the selection deferred during the build (applied as the build completes)
+ *   and the one main.ts replays after it: the banner was gone before anyone
+ *   could read it, so the failure goes out as a toast instead.
+ * - `replace`: anything else, the usual reading or empty transition. That
+ *   includes a different selection made after the window, silently: the
+ *   banner has already been on screen, and repeating it as a toast would say
+ *   the same failure twice.
+ *
+ * `elapsedMs` is how long the error screen has been painted; the host owns the
+ * clock and passes the difference in, so this stays pure.
+ */
+export type SelectionOutcome = 'keep' | 'toast' | 'replace';
+
+/** How long after a failed build's banner a replacing selection still toasts it. */
+export const FAILED_BUILD_TOAST_WINDOW_MS = 1500;
+
+export function selectionOutcome(
+  outgoingKind: ComponentScreenState['kind'],
+  oldNodeId: string | null | undefined,
+  newNodeId: string | null | undefined,
+  elapsedMs: number,
+): SelectionOutcome {
+  if (outgoingKind !== 'error') return 'replace';
+  if (newNodeId && newNodeId === oldNodeId) return 'keep';
+  return elapsedMs < FAILED_BUILD_TOAST_WINDOW_MS ? 'toast' : 'replace';
 }

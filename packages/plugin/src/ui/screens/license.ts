@@ -10,6 +10,7 @@ import { LOW_REMAINING } from '../viewModel/allowance';
 import { icon } from '../shell/icons';
 import type { ShellRefs } from '../shell/shell';
 import { esc } from '../escape';
+import { SUPPORT_EMAIL, SUPPORT_MAILTO } from '../proxy';
 
 export interface LicenseScreenModel {
   state: LicenseState;
@@ -63,7 +64,7 @@ const STATUS_MESSAGES: Partial<Record<LicenseState, {
   disabled: {
     tone: 'danger',
     title: 'This key has been turned off',
-    detail: 'Contact support if that’s unexpected.',
+    detail: `Email ${SUPPORT_EMAIL} if that’s unexpected.`,
   },
   'device-limit': {
     tone: 'danger',
@@ -254,7 +255,10 @@ function activation(model: LicenseScreenModel): string {
       ? '<button class="sl-button" data-tone="quiet" type="button" data-license-open="manage">Manage subscription</button>'
       : '',
     model.state === 'disabled'
-      ? '<button class="sl-button" data-tone="quiet" type="button" data-license-open="support">Contact support</button>'
+      // An anchor, like the rail links and "Read the guide": mail cannot go
+      // through figma.openExternal.
+      ? `<a class="sl-button" data-tone="quiet" href="${esc(SUPPORT_MAILTO)}" target="_blank" rel="noopener">` +
+        `Email support${icon('externalLink', 14)}</a>`
       : '',
     hasStoredKey
       ? '<button class="sl-button is-danger" data-tone="quiet" type="button" data-license-remove>Remove key from this device</button>'

@@ -105,15 +105,20 @@ describe('publish screen header', () => {
     expect(markup.indexOf('<h1>')).toBeLessThan(markup.indexOf('sl-badge'));
   });
 
-  it('shows a neutral pill and no version claim before the publish identity is known', () => {
+  it('shows a neutral pill and no version block before the publish identity is known', () => {
     const unknown = state({ infoKnown: false });
     expect(publishHeaderMarkup(unknown)).toContain('Checking…');
     expect(publishHeaderMarkup(unknown)).not.toContain('Not published');
     expect(publishHeaderMarkup(unknown)).not.toContain('>Published<');
     const scroll = publishScrollMarkup(unknown, FREE);
-    expect(scroll).toContain('Checking whether this file is published');
+    // The pill and the disabled primary already say "Checking…"; a third
+    // copy in the body said it again.
+    expect(scroll).not.toContain('sl-publish-version');
+    expect(scroll).not.toContain('Checking whether this file is published');
     expect(scroll).not.toContain('data-publish-initial-version');
     expect(scroll).not.toContain('The setup commands appear here');
+    expect(publishFooterMarkup(unknown)).toContain('Checking…');
+    expect(publishFooterMarkup(unknown)).toContain('disabled');
   });
 
   /**
@@ -291,15 +296,15 @@ describe('publish screen body', () => {
   it('shows only errors, above the footer buttons rather than below the fold', () => {
     const errored = state({ status: 'error', message: 'Could not reach the publish service.' });
     const footer = publishFooterMarkup(errored);
-    expect(footer).toContain('sl-publish-error');
+    expect(footer).toContain('sl-footer-error');
     expect(footer).toContain('role="alert"');
     expect(footer).toContain('Could not reach the publish service.');
-    expect(footer.indexOf('sl-publish-error')).toBeLessThan(footer.indexOf('sl-footer-actions'));
+    expect(footer.indexOf('sl-footer-error')).toBeLessThan(footer.indexOf('sl-footer-actions'));
     expect(proScroll(errored)).not.toContain('Could not reach the publish service.');
 
-    expect(publishFooterMarkup(PUBLISHED)).not.toContain('sl-publish-error');
+    expect(publishFooterMarkup(PUBLISHED)).not.toContain('sl-footer-error');
     expect(publishFooterMarkup(state({ status: 'done', message: 'Published.' }))).not.toContain('Published.');
-    expect(publishFooterMarkup(state())).not.toContain('sl-publish-error');
+    expect(publishFooterMarkup(state())).not.toContain('sl-footer-error');
   });
 
   it('escapes an error message rather than trusting it as markup', () => {

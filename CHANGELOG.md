@@ -8,6 +8,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
+- When the free AI writing allowance is used up and AI writing is on, the
+  component screen now says so before you build: one line under the switch
+  reads that no free AI uses are left until the reset date and that sections
+  marked AI will be drawn as placeholders, with an Upgrade to Pro action.
+  Before, the header knew and the build went ahead, and the placeholders
+  arrived as news in a toast afterwards.
+
+- "Detach this doc" in a Library row menu has its own glyph. It shared one
+  with "View this doc on canvas".
+
+- The Library's Update all progress line reads "Updating docs" and leaves the
+  number to the count beside the bar, which said "0 of 3" while the label
+  said "doc 1 of 3".
+
+- Quick search no longer repeats the page name on every row when every result
+  comes from the same page.
+
 - Coming back to the Library from another tab no longer re-runs the source
   check on every visit. The plugin now watches the current page for edits
   and re-checks only when something changed since the last scan; an
@@ -83,6 +100,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- "Contact support" on the License screen opened the homepage. A key the
+  service has turned off now says which address to email and the button,
+  Email support, opens your mail client with the subject filled in.
+- A component build that fails now stays on screen as a banner above the
+  footer until the next Create docs or selection, the way a Publish error
+  already does, instead of a five-second toast. This covers a failure before
+  anything reaches the canvas too (no section picked). Reselecting the same
+  component keeps the banner, and selecting another layer clears it. If the
+  selection changes right as the build fails, for example because a layer
+  was deleted during it, the failure arrives as a toast instead.
+- The Publish screen said "Checking…" three times while it read the file's
+  identity. The header pill and the footer button say it; the Version block
+  waits.
 - Building a Foundation frame no longer fails with "in set_maxWidth: Can
   only set maxWidth on auto layout nodes and their children". 6.0.0 capped
   two text nodes before appending them to their auto-layout parent, which

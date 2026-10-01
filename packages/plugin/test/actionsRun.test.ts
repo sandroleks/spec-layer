@@ -25,6 +25,9 @@ import {
   type UiState,
 } from '../src/ui/actions';
 import { generateProse } from '../src/ui/ai';
+import { failedBuildScreen } from '../src/ui/viewModel/componentScreen';
+import { componentStatusMarkup } from '../src/ui/screens/component';
+import type { ComponentScreenState } from '../src/ui/viewModel/contracts';
 
 // --- fixtures --------------------------------------------------------------
 
@@ -178,6 +181,58 @@ describe('createDocFrame stores the validated v2 draft', () => {
     // The drop count is logged, so a prompt regression is visible.
     expect(warn).toHaveBeenCalledWith('[Spec Layer] prose items dropped by validation', { keyboard: 2 });
     warn.mockRestore();
+  });
+});
+
+/**
+ * ui-vnext.ts cannot be imported from a test, so this drives the real
+ * createDocFrame through a presenter that does exactly what the host's
+ * `presenter('create').error` does: route the message through
+ * failedBuildScreen and draw the footer status. A pre-render failure has to
+ * land on the same banner a docFrameError does, not a toast.
+ */
+describe('createDocFrame pre-render failures land on the error banner', () => {
+  function hostLikePresenter(name: string): BuildPresenter & { screen: () => ComponentScreenState } {
+    let screen: ComponentScreenState = { kind: 'building', componentName: name, action: 'create', phase: '' };
+    return {
+      screen: () => screen,
+      clear: vi.fn(),
+      error: (message: string) => { screen = failedBuildScreen(name, message); },
+      info: vi.fn(),
+      setBusy: (busy: boolean) => {
+        if (!busy && screen.kind === 'building') screen = { kind: 'ready', componentName: name };
+      },
+      startProgress: vi.fn(),
+      stopProgress: vi.fn(),
+    };
+  }
+
+  it('an empty section choice stays on screen as the footer banner', async () => {
+    const state = createState();
+    state.currentNode = buttonNode();
+    state.currentFileKey = 'FILE1';
+    const ui = hostLikePresenter('Button');
+    await createDocFrame(state, { sections: new Set(), variantIds: new Set() }, ui);
+    // setBusy(false) follows the error and must not demote it to ready.
+    expect(ui.screen()).toEqual({ kind: 'error', componentName: 'Button', message: 'Select at least one section.' });
+    expect(componentStatusMarkup(ui.screen())).toContain('sl-footer-error');
+  });
+
+  it('an assembly failure stays on screen with the reason', async () => {
+    // The dispatch itself throwing is the last step inside createDocFrame's
+    // try, so it stands in for any failure there.
+    vi.stubGlobal('parent', { postMessage: () => { throw new Error('boom'); } });
+    const state = createState();
+    state.currentNode = buttonNode();
+    state.currentFileKey = 'FILE1';
+    const ui = hostLikePresenter('Button');
+    await createDocFrame(state, { sections: new Set(['definition' as const]), variantIds: new Set() }, ui);
+    const screen = ui.screen();
+    expect(screen.kind).toBe('error');
+    if (screen.kind === 'error') {
+      expect(screen.message).toBe('Couldn’t create the docs. Nothing changed on the canvas. (boom)');
+    }
+    expect(componentStatusMarkup(screen)).toContain('role="alert"');
   });
 });
 

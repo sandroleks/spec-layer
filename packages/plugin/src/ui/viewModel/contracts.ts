@@ -29,13 +29,8 @@ export type ComponentScreenState =
   | { kind: "ready"; componentName: string }
   /** `phase` is the progress line under the button, always set by the build. */
   | { kind: "building"; componentName: string; action: "create"; phase: string }
-  | {
-      kind: "success";
-      componentName: string;
-      replaced: boolean;
-      message?: string;
-      warning?: boolean;
-    }
+  /** The outcome sentence is a native toast; this state carries no copy. */
+  | { kind: "success"; componentName: string; replaced: boolean }
   | { kind: "error"; componentName: string; message: string };
 
 export type FoundationScreenState =

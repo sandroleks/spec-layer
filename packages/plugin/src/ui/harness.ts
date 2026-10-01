@@ -9,6 +9,7 @@
  *   ui-harness.html?view=library&pane=publish&publish=published
  *   ui-harness.html?view=library&pane=publish&publish=published&format=md
  *   ui-harness.html?view=library&pane=publish&publish=proposal
+ *   ui-harness.html?view=library&pane=publish&publish=checking
  *   ui-harness.html?view=library&pane=history&history=ready
  *   ui-harness.html?view=settings&tab=about
  *   ui-harness.html?view=settings&tab=export&format=md
@@ -123,14 +124,6 @@ const COMPONENT_STATES: Record<string, ComponentScreenState> = {
   // sets one, so the harness shows what a user sees.
   building: { kind: 'building', componentName: 'buttonPrimary', action: 'create', phase: 'Composing sections' },
   success: { kind: 'success', componentName: 'buttonPrimary', replaced: false },
-  warning: {
-    kind: 'success',
-    componentName: 'buttonPrimary',
-    replaced: false,
-    message: 'Docs created. Added placeholders for When to use, Keyboard. Fill them in on the canvas. '
-      + 'AI writing failed, so sections that needed AI were added as placeholders. Try again.',
-    warning: true,
-  },
   error: {
     kind: 'error',
     componentName: 'buttonPrimary',
@@ -202,7 +195,10 @@ if (view === 'component') {
   // The harness seeds the same per-component default the real screen does, so
   // a visual check shows the switch in the state a user would actually meet.
   selection.includeHidden = defaultIncludeHidden(facts);
-  const renderComponentFixture = () => renderComponentScreen(refs, screen, selection, facts);
+  const renderComponentFixture = () => renderComponentScreen(
+    refs, screen, selection, facts, false,
+    ALLOWANCES[param('allowance', 'normal')] ?? ALLOWANCES.normal,
+  );
   const repaintComponentFixture = (selector?: string) => {
     const scrollTop = refs.scroll.scrollTop;
     renderComponentFixture();
@@ -382,6 +378,8 @@ const FOUNDATION_SPEC = {
     id: `style-${index}`,
     name: `Text style ${index + 1}`,
   })),
+  // The screen reads every source array; a fixture without one throws.
+  effectStyles: [],
 } as unknown as FoundationSpec;
 
 const FOUNDATION_SELECTION: FoundationSelection = {
@@ -567,6 +565,7 @@ if (view === 'library') {
    */
   const PUBLISHED_BASE: PublishState = {
     ...createPublishState(),
+    infoKnown: true,
     libraryId: `lib_${'a1b2c3d4'.repeat(3)}`,
     pullKey: `sl_${'0f'.repeat(24)}`,
     lastPublishedAt: '2026-09-01T09:12:00.000Z',
@@ -575,10 +574,13 @@ if (view === 'library') {
   const IDLE_BASE: PublishState = { ...createPublishState() };
 
   const PUBLISH_FIXTURES: Record<string, PublishState> = {
-    idle: { ...IDLE_BASE },
-    collecting: { ...IDLE_BASE, status: 'collecting' },
+    // Before the file's identity has arrived: pill, version block and primary
+    // all read "Checking…". The only fixture that keeps infoKnown false.
+    checking: { ...IDLE_BASE },
+    collecting: { ...IDLE_BASE, infoKnown: true, status: 'collecting' },
     uploading: {
       ...IDLE_BASE,
+      infoKnown: true,
       status: 'uploading',
       libraryId: `lib_${'a1b2c3d4'.repeat(3)}`,
       pullKey: `sl_${'0f'.repeat(24)}`,
@@ -608,6 +610,7 @@ if (view === 'library') {
     unrecorded: { ...PUBLISHED_BASE, status: 'idle', lastPublishedAt: null },
     error: {
       ...IDLE_BASE,
+      infoKnown: true,
       status: 'error',
       message: 'Couldn’t reach Spec Layer. Check your connection and try again.',
     },
@@ -635,7 +638,7 @@ if (view === 'library') {
       },
     },
     // No library id yet: the local 1.0.0 proposal, no proxy round trip.
-    firstVersion: { ...IDLE_BASE, proposal: firstPublishProposal() },
+    firstVersion: { ...IDLE_BASE, infoKnown: true, proposal: firstPublishProposal() },
     // The dry run answered, but the publisher tried to pick a bump under it.
     belowMinimum: {
       ...PUBLISHED_BASE,
@@ -737,7 +740,7 @@ if (view === 'library') {
       // source check fills the check line under the filters.
       progress: updatingAll
         ? {
-            label: 'Updating document 1 of 3',
+            label: 'Updating docs',
             current: 0,
             total: 3,
           }
@@ -1067,7 +1070,7 @@ if (view === 'license') {
     licenseKey: stored ? fixtureKey : '',
     input: fixtureKey,
     remaining: Number(param('remaining', '4')),
-    limit: Number(param('limit', '10')),
+    limit: Number(param('limit', '20')),
     resetsAt: '2026-08-01T00:00:00Z',
   };
   const renderLicenseFixture = () => {

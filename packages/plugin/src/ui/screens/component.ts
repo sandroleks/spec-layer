@@ -7,10 +7,11 @@
  */
 
 import type { SectionId, GroupId } from '../docModel';
-import type { ComponentScreenState } from '../viewModel/contracts';
+import type { AllowanceState, ComponentScreenState } from '../viewModel/contracts';
 import { assertNever } from '../viewModel/contracts';
 import {
   defaultSections,
+  exhaustedAiNote,
   includedLabel,
   sectionGroups,
   unavailableSections,
@@ -391,10 +392,21 @@ function groupMarkup(
   );
 }
 
-/** The AI writing switch and its help tooltip. */
-function aiControlMarkup(enabled: boolean): string {
+/** The AI writing switch, its help tooltip, and the note when the free allowance is spent. */
+function aiControlMarkup(enabled: boolean, allowance: AllowanceState): string {
+  const note = exhaustedAiNote(enabled, allowance);
+  // `data-license-open="upgrade"` is the route the header's Upgrade already
+  // takes: ui-vnext.ts sends it to CHECKOUT_URL through the main thread.
+  const noteMarkup = note
+    ? '<p class="sl-ai-control-note" data-tone="warning" role="status">' +
+      `${esc(note)} ` +
+      '<button class="sl-text-button" type="button" data-license-open="upgrade" ' +
+      'aria-label="Upgrade to Pro, opens in your browser">Upgrade to Pro</button></p>'
+    : '';
   return (
-    `<div class="sl-ai-control" data-enabled="${enabled}">` +
+    // A literal, not the flag itself: `enabled` reaches here from a main-thread
+    // message, and CodeQL (js/xss) tracks any message value into innerHTML.
+    `<div class="sl-ai-control" data-enabled="${enabled ? 'true' : 'false'}">` +
     '<span class="sl-ai-control-copy">' +
     '<strong>AI writing</strong>' +
     '<span data-tooltip-trigger>' +
@@ -408,7 +420,8 @@ function aiControlMarkup(enabled: boolean): string {
     `aria-label="AI writing"${enabled ? ' checked' : ''} />` +
     '<span class="sl-switch-track" aria-hidden="true"><span class="sl-switch-thumb"></span></span>' +
     '</label>' +
-    '</div>'
+    '</div>' +
+    noteMarkup
   );
 }
 
@@ -416,6 +429,7 @@ export function componentScrollMarkup(
   state: ComponentScreenState,
   selection: ComponentSelection,
   facts: ComponentFacts,
+  allowance: AllowanceState = { kind: 'loading' },
 ): string {
   if (state.kind === 'empty') return state.waiting ? waitingMarkup() : emptyMarkup();
   const busy = state.kind === 'reading' || state.kind === 'building';
@@ -430,9 +444,12 @@ export function componentScrollMarkup(
     .join('');
 
   return (
-    `<fieldset class="sl-component-controls"${busy ? ' disabled aria-busy="true"' : ''}>` +
+    // `has-error` adds room at the bottom so the last control can scroll out
+    // from under the floating banner, as .sl-publish-body.has-error does.
+    `<fieldset class="sl-component-controls${state.kind === 'error' ? ' has-error' : ''}"` +
+    `${busy ? ' disabled aria-busy="true"' : ''}>` +
     (facts.isAtom ? atomNoticeMarkup() : '') +
-    aiControlMarkup(selection.aiEnabled) +
+    aiControlMarkup(selection.aiEnabled, allowance) +
     hiddenElementsMarkup(selection, facts) +
     '<p class="sl-section-intro">Sections to include</p>' +
     groups +
@@ -488,6 +505,9 @@ export function componentFooterMarkup(state: ComponentScreenState, hasDoc = fals
 export function componentStatusMarkup(state: ComponentScreenState): string {
   switch (state.kind) {
     case 'error':
+      // Same slot and banner as the Publish footer's error: it stays until the
+      // next Create or selection replaces this state.
+      return `<div class="sl-banner sl-footer-error" data-tone="danger" role="alert">${esc(state.message)}</div>`;
     case 'success':
       return '';
     case 'reading':
@@ -514,6 +534,7 @@ export function renderComponentScreen(
   selection: ComponentSelection,
   facts: ComponentFacts,
   hasDoc = false,
+  allowance: AllowanceState = { kind: 'loading' },
 ): void {
   // Replace, never add. Every other screen assigns the full class here, and this
   // one adding to it meant the previous screen's class stayed on the element:
@@ -526,7 +547,7 @@ export function renderComponentScreen(
   refs.screen.className = 'sl-screen sl-component-screen';
   refs.pageHeader.innerHTML = componentHeaderMarkup(state);
   refs.pageHeader.hidden = state.kind === 'empty';
-  refs.scroll.innerHTML = componentScrollMarkup(state, selection, facts);
+  refs.scroll.innerHTML = componentScrollMarkup(state, selection, facts, allowance);
   for (const input of refs.scroll.querySelectorAll<HTMLInputElement>(
     '.sl-choice-input[data-mixed="true"]',
   )) {
