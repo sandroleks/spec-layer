@@ -1,16 +1,8 @@
 /**
- * An in-shell confirmation, replacing window.confirm.
- *
- * Figma's plugin iframe is sandboxed. A sandboxed iframe without
- * `allow-modals` makes confirm() return false without showing anything, which
- * turned every guarded action into a silent no-op. Native dialogs also ignore
- * the theme and cannot be focus-trapped. This renders the same .sl-overlay and
- * .sl-dialog the design system already defines.
- *
- * Text lands through textContent, never innerHTML, so a document name inside a
- * body string can never become markup. One dialog at a time, judged by whether
- * one is in the DOM: a second call while one is open resolves false at once
- * rather than stacking.
+ * An in-shell confirmation, replacing window.confirm: Figma's sandboxed iframe
+ * lacks `allow-modals`, so confirm() returns false without showing anything.
+ * Text lands through textContent, never innerHTML, so a document name can never
+ * become markup. A second call while one is open resolves false at once.
  */
 export interface ConfirmDialogOptions {
   title: string;
@@ -30,9 +22,8 @@ function button(label: string, tone: string): HTMLButtonElement {
 }
 
 export function confirmDialog(options: ConfirmDialogOptions): Promise<boolean> {
-  // One dialog at a time, judged from the DOM rather than a module flag: the
-  // dialog's own removal is what ends it, so anything that removes the host
-  // (Close, Escape, or some other means entirely) also releases the lock.
+  // Judged from the DOM, not a flag, so anything that removes the host also
+  // releases the lock.
   if (document.querySelector('[data-confirm-dialog]')) return Promise.resolve(false);
 
   const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -75,14 +66,11 @@ export function confirmDialog(options: ConfirmDialogOptions): Promise<boolean> {
       resolve(result);
     };
 
-    // Capture phase, so this runs before the shell's own keydown listener on
-    // document, and stopImmediatePropagation keeps Escape from also backing
-    // out of whatever screen sits under the overlay.
+    // Capture phase runs before the shell's keydown listener, and
+    // stopImmediatePropagation keeps Escape from backing out of the screen below.
     const onKey = (event: KeyboardEvent): void => {
       if (!host.isConnected) {
-        // The host was removed without close() running, by some means other
-        // than this module (paint() never touches document.body, so it is
-        // not the cause). Detach quietly and let the key through.
+        // Removed without close() (paint() never touches body): detach, let the key through.
         document.removeEventListener('keydown', onKey, true);
         return;
       }

@@ -1,10 +1,7 @@
 /**
- * fonts.ts — pure helpers for the theme font pickers.
- *
- * The generated frame needs Regular, Medium, and Bold faces of any family it
- * uses (see tryFamily in docFrame.ts). The pickers therefore only offer
- * families that have all three, computed here from the raw
- * figma.listAvailableFontsAsync() entries. No DOM, no Figma APIs.
+ * Pure helpers for the theme font pickers. The frame needs Regular, Medium and
+ * Bold of any family it uses (see tryFamily in frameKit.ts), so the pickers
+ * offer only families with all three. No DOM, no Figma APIs.
  */
 
 export const REQUIRED_FONT_STYLES = ['Regular', 'Medium', 'Bold'] as const;

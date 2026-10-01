@@ -2,71 +2,52 @@ import type {
   SerializedNode, SerializedFoundation, FoundationSelection, FoundationScope, ProseV2,
   SpecHashProjection, FoundationUnitContent,
 } from '@spec-layer/extractor';
-import type { FileKeySource } from './fileKey';
 import type { BrandTheme } from './brandColors';
 import type { ComponentFormat } from './componentFormat';
 import type { DocFrameModel } from './ui/docModel';
 import type { DocConfig, FoundationConfig, DocBaseline } from './docLink';
 import type { FoundationIconKind } from './foundationIcon';
 
-/** Why the UI wants a doc's source. `update` refreshes the generated lane;
- *  `rebuild` is a stale-version rebuild, where the UI may first ask the model
- *  for the sections the stored prose leaves empty. Echoed back on `docSource`. */
+/** `update` refreshes the generated lane; `rebuild` is a stale-version rebuild
+ *  that may first ask the model for empty sections. Echoed on `docSource`. */
 export type DocSourceIntent = 'update' | 'rebuild';
 
 export interface LibraryEntry {
   docId: string;
-  /** Which document type this row is. Absent on no rows: always written. */
   kind: 'component' | 'foundation';
-  /** Row label. Component: the component name. Foundation: "Foundations · Semantic". */
+  /** Component: the component name. Foundation: "Foundations · Semantic". */
   label: string;
   componentName: string;
   pageName: string;
-  /** Honest location/source copy for the compact Library identity row. */
   sourceLabel: string;
-  /** Last successful generation time, copied from the persisted doc link. */
+  /** Last successful generation time, from the doc link. */
   generatedAt: number;
   /** '' for foundation docs, which have no source node. */
   sourceNodeId: string;
   sourceExists: boolean;
   selfEdited: boolean;
   storedContentHash: string;
-  /** Component rows only: the EXTRACTOR_VERSION that produced this doc, copied
-   *  from its doc link. Absent on every blob written before the field existed,
-   *  which the UI treats as stale rather than comparing hashes against it. */
+  /** Component rows only: the EXTRACTOR_VERSION that produced this doc. Absent
+   *  on older blobs, which the UI treats as stale rather than comparing hashes. */
   extractorVersion?: string;
-  /** Component rows only: the doc's `includeHidden` config, so the drift
-   *  check hashes the same anatomy the stored baseline was computed over. A
-   *  doc that reveals hidden parts hashes them; one that does not, does not.
-   *  Absent on foundation rows and on entries an older main thread produced,
-   *  both read as false. */
+  /** Component rows only, so drift hashes the same anatomy the baseline was
+   *  computed over. Absent reads as false. */
   includeHidden?: boolean;
-  /** Foundation rows only: the live hash for this scope, for drift comparison.
-   *  Component rows resolve drift separately via requestDrift. Absent when the
-   *  live extraction failed, in which case the row must not read as drifted. */
+  /** Foundation rows only: the live hash for this scope. Absent when the live
+   *  extraction failed; the row must then not read as drifted. */
   currentContentHash?: string;
-  /** Foundation rows only: which source glyph the row gets, so a Library row
-   *  and the Foundations picker row for the same source look the same. Only the
-   *  main thread can answer it — the doc's scope lives in its pluginData — so it
-   *  travels with the entry rather than being re-derived in the UI. Absent on
-   *  component rows. */
+  /** Foundation rows only. Only main can read the doc's scope (pluginData), so
+   *  the glyph travels with the entry. */
   foundationIcon?: FoundationIconKind;
-  /** Foundation rows only: the scope this doc was generated for, already
-   *  retargeted to the live collection id the way `foundationIcon` is. Only the
-   *  main thread can read it (it lives in the section's pluginData), so it
-   *  travels with the entry rather than being re-derived in the UI.
-   *
-   *  Copy is its only consumer, and it reads only `target` and `collectionId`:
-   *  see FoundationCopyTarget for why `group` and `modeIds` are dropped there.
-   *
-   *  Absent on component rows, and on any entry an older main thread produced,
-   *  which is why Copy is withheld rather than guessed at when it is missing. */
+  /** Foundation rows only: the scope, retargeted to the live collection id.
+   *  Copy reads only `target` and `collectionId`; `group` and `modeIds` are
+   *  frame limits. Absent from older main threads, so Copy is withheld rather
+   *  than guessed. */
   foundationScope?: FoundationScope;
 }
 
-/** One documented component's live source, collected for a library publish.
- *  `name` is the live source node's name (not the doc's stored label), since
- *  publish needs the current component identity, not a possibly-stale one. */
+/** One component's live source for a publish. `name` is the live node's name,
+ *  not the doc's possibly stale label. */
 export interface PublishComponentSource {
   docId: string;
   name: string;
@@ -75,16 +56,12 @@ export interface PublishComponentSource {
 }
 
 export type MainToUi =
-  | { type: 'selection'; node: SerializedNode | null; fileKey: string; fileKeySource: FileKeySource;
-      /** The Figma file's name (`figma.root.name`), which only the main thread
-       *  can read. It rides this message so the brief can name the file it came
-       *  from instead of showing only an opaque key. Optional: a caller with no
-       *  name omits it, and the brief omits `file_name` in turn. */
+  | { type: 'selection'; node: SerializedNode | null; fileKey: string;
+      /** `figma.root.name`, which only main can read. Absent means the brief
+       *  omits `file_name`. */
       fileName?: string;
-      /** The file's variables/styles, best-effort — absent when the dump
-       *  failed to build or hasn't been fetched yet, in which case the
-       *  selection still works, and the component brief's token bindings
-       *  simply omit resolved values until a foundation dump arrives. */
+      /** Best effort: absent when the dump failed or is not fetched yet, and
+       *  the brief's bindings then omit resolved values. */
       foundation?: SerializedFoundation }
   | { type: 'licenseKey'; value: string | null; instanceId: string | null }
   | { type: 'userInfo'; userId: string | null }
@@ -97,122 +74,84 @@ export type MainToUi =
   | { type: 'logoError'; message: string }
   | { type: 'componentImage'; base64: string; mediaType: string }
   | { type: 'componentImageError'; message: string }
-  | { type: 'docFrameDone'; frameName: string; replaced: boolean }
+  /** `docId` is the Section the build placed, a new id whenever it replaced a doc. */
+  | { type: 'docFrameDone'; frameName: string; replaced: boolean; docId: string }
   | { type: 'docFrameError'; message: string }
-  /** `incomplete` is present (always `true`) only when the scan behind these
-   *  rows failed partway through: the rows collected before the failure are
-   *  real, but the list may be missing docs the scan never reached, and the
-   *  registry's self-heal prune did not run. Absent on a complete scan. */
+  /** `incomplete` (always `true`) only when the scan failed partway: the rows
+   *  are real but docs may be missing, and the self-heal prune did not run. */
   | { type: 'library'; entries: LibraryEntry[]; incomplete?: true }
-  /** Reply for `requestLibrary` when the scan produced no rows before it
-   *  failed. A scan that fails after collecting rows replies `library` with
-   *  `incomplete: true` instead. Either way the main thread always replies,
-   *  so no throw there goes unanswered. The UI does not handle this message
-   *  yet: until it does, a failure with no rows still leaves Library showing
-   *  as refreshing. */
+  /** Reply when the scan failed with no rows; with rows it replies `library`
+   *  with `incomplete`. */
   | { type: 'libraryError'; message: string }
-  /** Reply for `requestLibrary` with `ifChanged` when nothing changed since
-   *  the last scan. The UI keeps its rows and resumes a paused pass, if any. */
+  /** Reply to `ifChanged` when nothing changed. The UI keeps its rows and
+   *  resumes a paused pass. */
   | { type: 'libraryUnchanged' }
-  /** Follows a `selection`: whether Create would replace an existing doc for
-   *  that component, so the footer can say "Replace docs". Sent separately so
-   *  the selection never waits on the registry scan. */
+  /** Follows a `selection`, so the selection never waits on the registry scan. */
   | { type: 'selectionDoc'; nodeId: string; hasDoc: boolean }
-  /** `groupDescriptions` is the whole-canvas merge, re-derived AFTER the
-   *  detach/remove landed, not carried over from any earlier reply. Always
-   *  present (possibly `{}`) rather than omitted-when-empty like the
-   *  `foundation` message below: the UI must overwrite its copy-time cache
-   *  with this value even when it is empty, since "this doc's descriptions
-   *  are gone" is exactly the fact an omitted field could not carry. */
+  /** `groupDescriptions` is the whole-canvas merge re-derived after the change.
+   *  Always present, `{}` included: the UI overwrites its cache with it. */
   | { type: 'docDetached'; docId: string; groupDescriptions: Record<string, Record<string, string>> }
   | { type: 'docRemoved'; docId: string; groupDescriptions: Record<string, Record<string, string>> }
-  /** `fileName` travels with `fileKey` here for the same reason as on
-   *  `selection`: every extract() call site should be able to name the file.
-   *  Drift itself is unaffected, since specContentHash excludes the name.
-   *  Both replies echo the `requestDrift` pass id, so the UI can drop one
-   *  that outlived the pass it was asked for (see ui/libraryPass.ts). */
+  /** specContentHash excludes `fileName`, so drift is unaffected by it. Both
+   *  replies echo the pass id so the UI can drop one that outlived its pass
+   *  (ui/libraryPass.ts). */
   | { type: 'driftSource'; docId: string; passId: string; node: SerializedNode; fileKey: string; fileName?: string }
   | { type: 'driftError'; docId: string; passId: string }
-  /** `prose` is what the doc currently says in its writing sections: the
-   *  canvas read back through its editorial tags, falling back to the stored
-   *  DOC_PROSE_KEY blob for anything the canvas does not show. Update builds
-   *  from this and never regenerates. */
+  /** `prose` is the canvas read back through its editorial tags, the stored
+   *  DOC_PROSE_KEY blob filling gaps. Update builds from it, never regenerates. */
   | { type: 'docSource'; docId: string; node: SerializedNode; fileKey: string; fileName?: string; config: DocConfig; selfEdited: boolean; prose: ProseV2 | null; intent: DocSourceIntent }
   | { type: 'docSourceError'; docId: string; message: string }
-  /** `groupDescriptions` merges every foundation doc link's stored group
-   *  descriptions found on canvas, keyed by collection name then folder path.
-   *  Absent when no foundation doc carries any (including every file with no
-   *  foundation doc at all). Read by copyFoundationBrief, never generated
-   *  from this dump's tokens themselves. */
+  /** `groupDescriptions` merges every foundation doc's stored descriptions on
+   *  canvas, keyed by collection name then folder path; absent when none has
+   *  any. */
   | { type: 'foundation'; dump: SerializedFoundation; groupDescriptions?: Record<string, Record<string, string>> }
   | { type: 'foundationError'; message: string }
   | { type: 'foundationProgress'; done: number; total: number }
-  /** Reply for BOTH foundation build paths. `docId` is what tells them apart:
-   *  set only by `updateFoundationDoc` (one My Library row), absent on the
-   *  Foundations tab's bulk `renderFoundation`. The UI must branch on this and
-   *  not on its own in-flight flag, or a bulk reply arriving while a row Update
-   *  is pending gets read as that row's.
+  /** Reply for both foundation build paths: `docId` is set only by
+   *  `updateFoundationDoc`. The UI must branch on it, not its own in-flight
+   *  flag, or a bulk reply is read as a pending row's.
    *
-   *  `groupDescriptions` is the whole-canvas merge re-read after every Section
-   *  this build touched already has its final `groupDescriptions` stamped in
-   *  (a build's own send-time map can be a strict superset of what actually
-   *  got persisted per unit, so this reply is the only truthful source). The
-   *  UI must replace its copy-time cache with this value outright, even when
-   *  it is `{}` — this is what fixes generate-then-copy in the same session
-   *  without a manual "Refresh sources". */
+   *  `groupDescriptions` is re-read after every touched Section is stamped,
+   *  since the send-time map can exceed what was persisted. The UI replaces
+   *  its cache with it outright, `{}` included. */
   | { type: 'foundationDone'; created: number; replaced: number; docId?: string;
       groupDescriptions: Record<string, Record<string, string>> }
   | { type: 'foundationFrameError'; message: string; created: number }
   | { type: 'docProse'; docId: string; prose: ProseV2 | null }
-  /** Reply for `requestDocBaseline`. `baseline` is null when the Section is
-   *  gone, unlinked, has no baseline, the baseline fails to parse, or its
-   *  contentHash no longer equals the link's. For a foundation link, `live` is
-   *  present whenever a baseline was found: it is the current unitContent for
-   *  the doc's (retargeted) scope, the same object whose hash produced the
-   *  row's badge, and `live: null` means the scope no longer resolves or the
-   *  live read failed. Absent for component links: the UI already holds the
-   *  live projection from its drift check. */
+  /** `baseline` is null when the Section is gone or unlinked, or its baseline
+   *  is missing, unparsable, or no longer matches the link's contentHash.
+   *  Foundation links only: `live` is the current unitContent whose hash made
+   *  the badge, null when the scope no longer resolves or the read failed. */
   | { type: 'docBaseline'; docId: string; baseline: DocBaseline | null; live?: FoundationUnitContent | null }
-  /** Everything a library publish needs, collected in one pass: the live
-   *  foundation dump, its merged group descriptions, one entry per documented
-   *  component source (deduped so two docs for one source publish once), and
-   *  anything skipped along with why. `fileKey`/`fileName` travel with it for
-   *  the same reason as on `selection`/`driftSource`. */
+  /** Everything a publish needs, in one pass. Components are deduped so two
+   *  docs of one source publish once; `skipped` says why. */
   | { type: 'publishSources'; foundation: SerializedFoundation | null;
       groupDescriptions: Record<string, Record<string, string>>;
       components: PublishComponentSource[];
       skipped: Array<{ name: string; reason: string }>;
       fileKey: string; fileName: string;
-      /** The file's persisted publish identity, read in the same round trip
-       *  as the sources so a publish can never outrun the `publishInfo`
-       *  reply and mint a duplicate library. */
+      /** Read in the same round trip, so a publish can never outrun the
+       *  `publishInfo` reply and mint a duplicate library. */
       publishInfo: PublishInfo }
   | { type: 'publishSourcesError'; message: string }
-  /** Reply for `requestPublishInfo`: the library id stored in this file and,
-   *  when this device holds it, the pull key. Nulls when the file has never
-   *  been published, or the key when only the id is known. */
+  /** Nulls when the file was never published; `pullKey` null when this device
+   *  lacks it. */
   | ({ type: 'publishInfo' } & PublishInfo);
 
-/** What identifies a published library: the id lives in the file (root plugin
- *  data, shared by every editor) and the pull key lives per user in
- *  clientStorage, since it is a secret and the file is not. `publishedAt` is
- *  the ISO time of the last publish the plugin recorded, stored in the file
- *  beside the id because it is a fact about the library, not a secret; null
- *  when the file was published by a build that did not record it. */
+/** The id lives in the file (root plugin data); the pull key is a secret, so
+ *  it lives per user in clientStorage. `publishedAt` is ISO, null when the
+ *  publishing build did not record it. */
 export interface PublishInfo {
   libraryId: string | null;
   pullKey: string | null;
   publishedAt: string | null;
-  /** The library's current semantic version as the proxy last reported it,
-   *  stored in the file beside the id. Null before the first versioned
-   *  publish, and for a file published by a build that did not record it. */
+  /** Semver as the proxy last reported it. Null before the first versioned
+   *  publish, or when the publishing build did not record it. */
   version: string | null;
 }
 
-/** One published component's drift hashes, both ways a doc can be configured
- *  to render it, so the main thread can pick the one each doc's `includeHidden`
- *  calls for. Keyed by source node, because two docs of one source publish
- *  once but both get stamped. */
+/** Both drift hashes, so main picks the one each doc's `includeHidden` needs.
+ *  Keyed by source node: two docs of one source are both stamped. */
 export interface PublishStampComponent {
   sourceNodeId: string;
   hashes: { visible: string; hidden: string };
@@ -230,61 +169,46 @@ export type UiToMain =
   | { type: 'captureLogo' }
   | { type: 'clearLogo' }
   | { type: 'requestComponentImage'; nodeId: string }
-  /** `extractorVersion` is the EXTRACTOR_VERSION that produced `contentHash`,
-   *  stamped onto the persisted doc link so a later drift check can tell
-   *  "content changed" apart from "extractor changed". Always sent: every UI
-   *  build knows its own EXTRACTOR_VERSION. */
-  /** `prose` is the generated guidelines this build used, stored beside the doc
-   *  link so a later Copy can include them without paying to regenerate. Absent
-   *  when the build ran without AI. */
-  /** `baseline` is the projection `contentHash` was computed over, stored on
-   *  the Section under DOC_BASELINE_KEY so the Library can later diff it
-   *  against the live projection. Same object, same function: main wraps it
-   *  with `kind` and `contentHash` and never recomputes it. */
-  | { type: 'renderDocFrame'; model: DocFrameModel; nodeId: string; contentHash: string; extractorVersion: string; config: DocConfig; prose?: ProseV2; baseline: SpecHashProjection }
+  /** `extractorVersion` produced `contentHash`, so drift can tell "content
+   *  changed" from "extractor changed". `prose` is stored so Copy need not
+   *  regenerate; absent without AI. `baseline` is the projection `contentHash`
+   *  hashed, stored under DOC_BASELINE_KEY for the Library diff; main never
+   *  recomputes it. `docId` names the doc an Update replaces; Create omits it. */
+  | { type: 'renderDocFrame'; model: DocFrameModel; nodeId: string; contentHash: string; extractorVersion: string; config: DocConfig; prose?: ProseV2; baseline: SpecHashProjection; docId?: string }
   | { type: 'requestDocProse'; docId: string }
-  /** Lazy: sent only when a drifted row is expanded. Nothing new rides the
-   *  `library` message, which is the hot path. */
+  /** Lazy, sent only when a drifted row expands, to keep `library` lean. */
   | { type: 'requestDocBaseline'; docId: string }
-  /** `ifChanged` asks the main thread to scan only if the document changed
-   *  since its last scan (any `nodechange` on a visited page). When it has
-   *  not, the reply is `libraryUnchanged` and no read happens. Absent, the
-   *  scan always runs: Refresh library and the first load send it that way. */
+  /** `ifChanged`: scan only if a `nodechange` arrived since the last scan,
+   *  else reply `libraryUnchanged`. Absent, the scan always runs. */
   | { type: 'requestLibrary'; ifChanged?: true }
   | { type: 'focusNode'; nodeId: string }
   | { type: 'detachDoc'; docId: string }
   | { type: 'removeDoc'; docId: string }
-  /** `passId` groups one Library check: the main thread keeps one resolver
-   *  memo per pass, so every doc in the pass shares variable and style
-   *  lookups. The UI starts a new id per scan and per resume. */
+  /** Main keeps one resolver memo per `passId`, shared by every doc in a
+   *  Library check. The UI starts a new id per scan and per resume. */
   | { type: 'requestDrift'; docId: string; sourceNodeId: string; passId: string }
-  | { type: 'requestDocSource'; docId: string; intent: DocSourceIntent }
+  /** As `passId`, for an update run: one resolver memo, and one Foundation read
+   *  and contrast report. */
+  | { type: 'requestDocSource'; docId: string; intent: DocSourceIntent; batchId?: string }
   | { type: 'requestFoundation' }
-  /** `groupDescriptions` is keyed `collectionId|folder`, because two collections
-   *  in one build can hold a folder of the same name. The main thread filters
-   *  each unit's own keys out of it and stores them on that doc. */
+  /** `groupDescriptions` is keyed `collectionId|folder`, since two collections
+   *  can share a folder name. Main stores each unit's own keys on its doc. */
   | { type: 'renderFoundation'; selection: FoundationSelection; config: FoundationConfig;
       groupDescriptions?: Record<string, string>;
-      /** One paragraph per collection in the build, keyed by collection id.
-       *  Each collection-scoped doc stores its own as `collectionOverview`. */
+      /** Keyed by collection id; each collection doc stores its own as
+       *  `collectionOverview`. */
       collectionOverviews?: Record<string, string> }
-  | { type: 'updateFoundationDoc'; docId: string }
+  | { type: 'updateFoundationDoc'; docId: string; batchId?: string }
   | { type: 'requestPublishSources' }
   | { type: 'requestPublishInfo' }
   | { type: 'setPublishInfo'; libraryId: string; pullKey: string }
-  /** Record when this file's library was last published. Ignored by the main
-   *  thread when `libraryId` is not the id the file holds, so a slow reply for
-   *  a library the file has since dropped cannot label the new one. */
+  /** Ignored when `libraryId` is not the file's, so a slow reply for a dropped
+   *  library cannot label the new one. */
   | { type: 'setPublishedAt'; libraryId: string; publishedAt: string }
-  /** After a successful versioned publish: record the version and date in the
-   *  file, write a publish record on every doc the publish covered, and repaint
-   *  each doc's pill to Published. `foundation` is the Foundation dump the
-   *  bundle was built from, so foundation docs are stamped with the hash of
-   *  exactly the published content; null when the bundle carried no
-   *  Foundation. Ignored when `libraryId` is not the id the file holds, like
-   *  `setPublishedAt`. */
+  /** After a versioned publish: record version and date, stamp every covered
+   *  doc and repaint its pill. `foundation` is the published dump, null when
+   *  the bundle had none. Ignored like `setPublishedAt`. */
   | { type: 'stampPublished'; libraryId: string; version: string; publishedAt: string;
       components: PublishStampComponent[]; foundation: SerializedFoundation | null }
-  /** Drop the file's stored library id after the server said it is gone or
-   *  belongs to another license, so the next publish creates a new one. */
+  /** After the server says the library is gone, so the next publish creates. */
   | { type: 'clearPublishInfo' };

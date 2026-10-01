@@ -18,66 +18,40 @@ import {
 } from './foundationPrompt';
 
 /**
- * Bumped whenever the prompt, system prompt, or few-shot changes the produced
- * voice. Part of the cache key, so an old-voice draft is never served after a
- * prompt change. v1 to v8 were the markdown contract; v9 is the structured
- * ProseV2 contract: one call, one exemplar behind a prompt-cache breakpoint,
- * the model assigned by the proxy from the proved tier.
+ * Bump whenever the prompt, system prompt, or few-shot changes the produced
+ * voice: part of the cache key, so an old-voice draft is never served. v9 is
+ * the structured ProseV2 contract.
  */
 export const PROSE_PROMPT_VERSION = 'v9';
 
-/** Which model writes is the proxy's decision, from the tier it proves. The
- *  client only names the tier in the cache key so a Haiku draft is never
- *  served to a Pro user, and the proxy rejects a key whose tier disagrees. */
+/** The proxy picks the model from the tier it proves. The client names the tier
+ *  in the cache key only, and the proxy rejects a key whose tier disagrees. */
 export type ProseTier = 'pro' | 'free';
 
 /**
- * The part of a spec a prose draft actually depends on: the prompt itself.
+ * Hashes the rendered prompt, so the key moves on EXACTLY what the model sees.
+ * The proxy meters generations per unknown key, so any hashed field that does
+ * not reach the prompt is a billed regeneration of identical prose.
  *
- * This hashes the rendered prompt rather than a projection of the spec, which
- * makes the key sensitive to EXACTLY what the model sees, by construction. A
- * field that does not reach buildProsePrompt cannot move the key, and a field
- * that does cannot fail to, without anyone maintaining a list.
- *
- * The shape matters because `draftProse` sends this key to the proxy, which
- * reserves quota against it: a known key returns the stored body free, while
- * an unknown key calls Anthropic and commits a metered generation. Any field in
- * the hash that does not reach the prompt is a billed regeneration for
- * byte-identical prose. A deny-list over IntermediateSpec cannot hold that
- * line, since every new field is billable by default: the file name, the file
- * key, node ids, variant instances, gaps, and path identities all leaked in
- * that way.
- *
- * Deliberately NOT specContentHash: that projection flattens anatomy to its
- * depth-0 legacy shape, and nested anatomy parts DO reach the prompt, so reusing
- * it would serve a stale draft after a real change to the component. The two
- * hashes answer different questions and must not be merged.
+ * NOT specContentHash: that flattens anatomy to depth 0, but nested parts reach
+ * the prompt, so it would serve a stale draft. Do not merge the two.
  */
 function proseInputHash(spec: IntermediateSpec, requested?: ReadonlySet<ProseV2Key>): string {
   return contentHash(buildProsePrompt(spec, requested));
 }
 
 /**
- * The cache key for a prose draft. Centralised so the writer (`draftProse`) and
- * every reader (e.g. the detail page's pristine-draft check) stay in lockstep —
- * a key built two different ways is a silent cache miss.
- *
- * The tier sits right after the version because the proxy caches the generated
- * answer under this key and the two tiers are written by different models: a
- * shared key would replay a Haiku draft to a Pro user. The proxy rejects a key
- * whose tier segment disagrees with the tier it proved.
+ * The cache key for a prose draft, shared by writer and readers so it is never
+ * built two ways. The tier follows the version because the tiers are written by
+ * different models: a shared key would replay a Haiku draft to a Pro user.
  */
 export function proseCacheKey(
   spec: IntermediateSpec,
   opts: { tier: ProseTier; image?: boolean; keys?: readonly ProseV2Key[] },
 ): string {
-  // Sort so the signature is order-independent: {overview, keyboard} and
-  // {keyboard, overview} are the same request and share one entry.
+  // Sorted, so key order does not split one request into two entries.
   const keySig = opts.keys && opts.keys.length ? `:keys=${[...opts.keys].sort().join(',')}` : '';
-  // The requested set is threaded into the hash as well as being spelled out in
-  // keySig: buildProsePrompt varies with it, so the hash has to see it or two
-  // different requests would collide. keySig stays because it makes a key
-  // readable in a log without reversing a hash.
+  // Hashed because the prompt varies with it; keySig only keeps logs readable.
   const requested = opts.keys && opts.keys.length ? new Set(opts.keys) : undefined;
   return `prose:${PROSE_PROMPT_VERSION}:${opts.tier}:${proseInputHash(spec, requested)}${opts.image ? ':img' : ''}${keySig}`;
 }
@@ -93,7 +67,7 @@ export interface ProxyQuota {
   limit: number | null;
   remaining: number | null;
   resetsAt: string;
-  /** Why a stored key is not granting pro; only present on license identities. */
+  /** Why a stored key is not granting pro; license identities only. */
   licenseReason?: 'invalid' | 'expired' | 'inactive' | 'unreachable';
   /** Library publish allowance, same shape. Absent from proxies that predate it. */
   publish?: { tier: 'free' | 'pro'; used: number; limit: number | null; remaining: number | null; resetsAt: string };
@@ -103,7 +77,7 @@ export type ProseProxyErrorCode =
   | 'quota_exhausted' | 'rate_limited' | 'generation_pending'
   | 'license_not_active' | 'bad_request' | 'upstream';
 
-/** Typed proxy failure — the plugin branches on `code` (402 → upsell, etc.). */
+/** The plugin branches on `code` (402 → upsell, etc.). */
 export class ProseProxyError extends Error {
   constructor(public code: ProseProxyErrorCode, public resetsAt?: string, public reason?: string) {
     super(code);
@@ -116,12 +90,8 @@ const PROXY_ERROR_BY_STATUS: Record<number, ProseProxyErrorCode> = {
   409: 'generation_pending', 429: 'rate_limited',
 };
 
-/**
- * The `X-Tier` / `X-Quota-*` headers as a snapshot, or null when the response
- * carried none. Exported because publish responses carry the same headers for
- * the publish allowance, and the plugin reads them there to refresh its
- * updates meter without a second round trip.
- */
+/** The `X-Tier` / `X-Quota-*` headers, or null when absent. Publish responses
+ *  carry them too, for the publish allowance. */
 export function parseQuotaHeaders(headers: Headers): ProxyQuota | null {
   const tier = headers.get('X-Tier');
   if (tier !== 'free' && tier !== 'pro') return null;
@@ -140,29 +110,17 @@ export interface DraftOptions {
   apiKey: string | null;
   fetcher: typeof fetch;
   cacheStore: CacheStore;
-  /**
-   * Optional rendered component image (e.g. a Figma PNG URL). When provided, it
-   * is attached as an image content block so the model can see the component,
-   * not just its structured summary. Absent → text-only request (unchanged).
-   */
+  /** A rendered component image URL, attached as an image block; absent sends text only. */
   imageUrl?: string | null;
-  /** Base64-encoded component image (plugin path). Mutually exclusive with imageUrl in practice. */
+  /** Base64 component image (plugin path); in practice exclusive with imageUrl. */
   imageBase64?: string | null;
   imageMediaType?: string; // e.g. 'image/png'
-  /**
-   * Which prose keys to generate. Omit to request the full set. Threaded into
-   * the prompt and the cache key so different selections never collide.
-   */
+  /** Omit to request the full set. */
   requested?: ReadonlySet<ProseV2Key>;
-  /** Every component name in the Figma file, when the caller has it; feeds the
-   *  whenNotToUse alternatives rule in `validateProseV2`. */
+  /** Every component name in the file, for the whenNotToUse rule in `validateProseV2`. */
   fileComponents?: readonly string[];
-  /**
-   * When set, the request goes through the Spec Layer proxy instead of the
-   * Anthropic API directly; `apiKey` is ignored. licenseKey (pro) wins over
-   * figmaUserId (free). onQuota fires with the server's quota headers on
-   * every successful response.
-   */
+  /** Routes through the Spec Layer proxy and ignores `apiKey`. licenseKey (pro)
+   *  wins over figmaUserId (free). onQuota fires on every successful response. */
   proxy?: {
     url: string;
     licenseKey?: string | null;
@@ -173,14 +131,9 @@ export interface DraftOptions {
 }
 
 /**
- * Send one completion request and return the model's text.
- *
- * The transport half of a prose call: proxy versus direct key, the bearer/free
- * identity split, quota headers, and the status-to-code error mapping. Extracted
- * so a second prompt (foundation group descriptions) reuses it rather than
- * carrying a second copy of the auth and error handling, which is exactly the
- * kind of duplication that drifts once and then bills or fails differently in
- * one of the two paths.
+ * The transport half of every prose call (proxy or direct key, auth, quota
+ * headers, error mapping), shared so the two prompts never bill or fail
+ * differently.
  */
 async function postCompletion(
   requestBody: unknown,
@@ -237,16 +190,8 @@ async function postCompletion(
 }
 
 /**
- * The model's answer: the text of the first `text` block in `content`.
- *
- * Not `content[0]`: Sonnet 5 thinks before it answers unless told not to, and
- * its thinking arrives as a leading `{ type: 'thinking' }` block (a `thinking`
- * string plus a signature, no `text`) ahead of the text block. Reading the
- * first block therefore threw "Unexpected Claude API response shape" on every
- * Pro generation the day the proxy started assigning Sonnet 5. Haiku 4.5
- * answers with a text block first, so the shipped free path never met this.
- * A block is the answer when it carries a string `text`; thinking, redacted
- * thinking and tool blocks never do.
+ * The text of the first block carrying a string `text`. Not `content[0]`:
+ * Sonnet 5 can lead with a `thinking` block, which has no `text`.
  */
 function answerText(data: { content?: Array<{ type?: unknown; text?: unknown }> } | null | undefined): string {
   const blocks = Array.isArray(data?.content) ? data.content : [];
@@ -258,11 +203,8 @@ function answerText(data: { content?: Array<{ type?: unknown; text?: unknown }> 
 
 export interface ProseRequest { max_tokens: number; system: string; messages: ProseRequestMessage[] }
 
-/**
- * The exact model-agnostic request the plugin posts. Exported so the proxy's
- * validator can be run against it in a test: the contract lives on the server
- * and a stubbed fetch cannot enforce it.
- */
+/** The exact model-agnostic request the plugin posts, exported so a test can
+ *  run the proxy's validator against it. */
 export function proseRequest(
   spec: IntermediateSpec,
   opts: { requested?: ReadonlySet<ProseV2Key>; imageBase64?: string | null; imageMediaType?: string; imageUrl?: string | null } = {},
@@ -281,16 +223,13 @@ export function proseRequest(
   };
 }
 
-/** Free is the direct-API model too: a caller with its own key has no proxy
- *  to assign one, and Haiku is the shape the tests exercise. */
+/** A caller with its own key has no proxy to assign a model. */
 const DIRECT_MODEL = 'claude-haiku-4-5';
 
 export async function draftProse(spec: IntermediateSpec, opts: DraftOptions): Promise<ProseValidation | null> {
   if (!opts.apiKey && !opts.proxy) return null;
   const tier: ProseTier = opts.proxy?.licenseKey ? 'pro' : 'free';
-  // Vision and text-only runs produce different output, so they must not share a
-  // cache entry. Key on the (stable) content hash plus a vision marker — NOT the
-  // image URL, which is a signed URL that rotates hourly for an unchanged render.
+  // A vision marker, NOT the image URL: that is signed and rotates hourly.
   const key = proseCacheKey(spec, {
     tier,
     image: Boolean(opts.imageUrl || opts.imageBase64),
@@ -305,11 +244,8 @@ export async function draftProse(spec: IntermediateSpec, opts: DraftOptions): Pr
   const request = proseRequest(spec, opts);
   const body = opts.proxy ? request : { model: DIRECT_MODEL, ...request };
   const raw = await postCompletion(body, key, opts);
-  // Parse first, then cache, and cache the raw answer rather than the parsed
-  // object: a later parser or validator fix still applies to an existing entry
-  // instead of being stuck behind it, while an answer that never parsed once
-  // (a response truncated at the token cap, say) is not stored for every retry
-  // in the session to re-throw from.
+  // Parse before caching, so an unparseable answer is never stored; cache the
+  // raw text, so a later parser fix reaches an existing entry.
   const result = validate(raw);
   await opts.cacheStore.set(key, raw);
   return result;
@@ -319,41 +255,21 @@ export async function draftProse(spec: IntermediateSpec, opts: DraftOptions): Pr
 // Foundation group descriptions
 // ---------------------------------------------------------------------------
 
-/**
- * Bumped when the foundation prompt or its system prompt changes the produced
- * voice, so old-voice descriptions are never served from cache afterwards.
- * v3: one block and one overview per collection (Docs 2.0 Plan 3).
- */
+/** Bump when the foundation prompt changes the produced voice. v3: one block
+ *  and one overview per collection (Docs 2.0 Plan 3). */
 export const GROUP_PROMPT_VERSION = 'v3';
 
 /**
- * Cap on the group call. The proxy checks equality, not a ceiling, so this and
- * the proxy's copy move together and a deploy has to follow a change here.
- *
- * Raised from 1600 with the v3 prompt, because truncation here is all or
- * nothing rather than a short last description: a cut-off answer has no closing
- * brace, `parseGroupDraft` finds no JSON object and returns an empty draft, and
- * the whole build loses every description AND every overview at once, reported
- * only as "AI descriptions came back empty". The worst case this prompt can ask
- * for is around 3,300 tokens (four collections of twelve groups: 48
- * descriptions under 220 characters plus four overviews under 400), so 4000
- * clears it. `max_tokens` is a ceiling, not a charge, so an ordinary build that
- * answers in 600 tokens costs exactly what it did before.
+ * The proxy checks equality, not a ceiling, so a change here needs a proxy
+ * deploy. Truncation is all or nothing (no closing brace, empty draft), and the
+ * worst case is about 3,300 tokens (48 descriptions plus four overviews).
  */
 export const GROUP_MAX_TOKENS = 4000;
 
 /**
- * The cache key for a group-description request.
- *
- * The `prose:v<n>:` prefix is not decoration: the proxy REJECTS any cacheKey that
- * does not match `/^prose:v\d+:/`, so it is a deployed server contract, not a
- * local convention. Sending a bare hash returns 400 and the whole feature reads
- * as "the AI did not run". The `groups:` segment keeps these keys out of the
- * component prose namespace, so the server's cache can never answer one with the
- * other.
- *
- * Centralised for the same reason `proseCacheKey` is: a key built two ways is a
- * silent cache miss, and here it is also a hard rejection.
+ * The `prose:v<n>:` prefix is a deployed server contract: the proxy rejects a
+ * key not matching `/^prose:v\d+:/` with a 400. `groups:` keeps these keys out
+ * of the component prose namespace.
  */
 export function groupCacheKey(input: GroupDraftInput, tier: ProseTier): string {
   return `prose:${GROUP_PROMPT_VERSION}:groups:${tier}:${contentHash({
@@ -373,13 +289,8 @@ export function groupCacheKey(input: GroupDraftInput, tier: ProseTier): string {
   })}`;
 }
 
-/**
- * The exact `{cacheKey, request}` payload posted for group descriptions.
- *
- * Exported so the proxy's own validator can be run against it in a test. The bug
- * this shape once had (an unprefixed cacheKey) was invisible to any test that
- * stubbed fetch, because the rule being broken lived on the server.
- */
+/** The exact `{cacheKey, request}` payload, exported so a test can run the
+ *  proxy's validator against it; a stubbed fetch cannot. */
 export function groupProseRequest(input: GroupDraftInput, tier: ProseTier): {
   cacheKey: string;
   request: { max_tokens: number; system: string; messages: unknown[] };
@@ -397,12 +308,8 @@ export function groupProseRequest(input: GroupDraftInput, tier: ProseTier): {
   };
 }
 
-/**
- * One request covering every collection in a build, so a build over four
- * collections with six groups each costs one generation rather than 24. A
- * collection with no groups is still worth asking about: its overview is the
- * only prose its document gets.
- */
+/** One request (one generation) per build, covering every collection; a
+ *  collection with no groups still gets its overview. */
 export async function draftGroupDescriptions(
   input: GroupDraftInput,
   opts: Pick<DraftOptions, 'apiKey' | 'fetcher' | 'cacheStore' | 'proxy'>,
@@ -414,8 +321,6 @@ export async function draftGroupDescriptions(
   const folders = input.collections.flatMap((c) => c.groups.map((g) => g.folder));
   const collectionIds = input.collections.map((c) => c.collectionId);
   const tier: ProseTier = opts.proxy?.licenseKey ? 'pro' : 'free';
-  // Keyed on everything the prompt is built from, so editing a token name or
-  // adding a group is a fresh request rather than a stale hit.
   const { cacheKey, request } = groupProseRequest(input, tier);
 
   const hit = await opts.cacheStore.get(cacheKey);
@@ -423,11 +328,7 @@ export async function draftGroupDescriptions(
 
   const raw = await postCompletion(opts.proxy ? request : { model: DIRECT_MODEL, ...request }, cacheKey, opts);
 
-  // Parsed before it is cached, like the component path. `parseGroupDraft`
-  // answers unusable output with an empty draft rather than throwing, so this
-  // ordering costs nothing here; it is the same ordering so the two paths
-  // cannot drift into explaining a bad answer differently. The raw text is
-  // what is stored, so a later parser fix reaches an existing entry.
+  // Same parse-then-cache-raw ordering as draftProse.
   const parsed = parseGroupDraft(raw, folders, collectionIds);
   await opts.cacheStore.set(cacheKey, raw);
   return parsed;

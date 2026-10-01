@@ -1,24 +1,15 @@
-/**
- * componentFacts.ts — what the screen needs to know about the selection.
- *
- * `ComponentScreenState` carries the component's name and where the build got
- * to. Three parts of the screen need more than that: the atom notice, the
- * States row, and the variant picker all read the extracted spec. Deriving
- * them once here keeps the screen a function of its inputs and keeps this
- * logic testable without a DOM.
- */
+/** What the Component screen derives from the extracted spec, computed once outside the DOM. */
 
 import { detectStateMatrix, type IntermediateSpec } from '@spec-layer/extractor';
 import { isAtomComponentName } from '../../collectComponents';
 import { defaultVariantId } from '../docModel';
 
 export interface VariantChip {
-  /** What the chip reads. */
   text: string;
-  /** The axis name, shown as a muted prefix. Absent on flag and muted chips. */
+  /** Shown as a muted prefix. Absent on flag and muted chips. */
   axis?: string;
   tone: 'value' | 'flag' | 'muted';
-  /** The full axis and value, for the chip's tooltip. */
+  /** The full axis and value, for the tooltip. */
   title: string;
 }
 
@@ -33,8 +24,7 @@ export interface ComponentFacts {
   hasStates: boolean | null;
   variants: VariantRowView[];
   defaultVariantIds: Set<string>;
-  /** True when any anatomy part is hidden by default and shown by a boolean
-   *  property. Decides whether the "Document hidden elements" option appears. */
+  /** Any anatomy part hidden by default; shows the "Document hidden elements" option. */
   hasHiddenParts: boolean;
 }
 
@@ -48,18 +38,10 @@ export const NO_FACTS: ComponentFacts = {
 };
 
 /**
- * One variant's chips.
- *
- * An enum value keeps its axis so "Default" stays attributed to the property it
- * came from. A true boolean renders as a flag named after the axis, since the
- * value is implied. A false boolean is dropped as noise, which can empty a row,
- * so a row with nothing left says "All off" rather than rendering blank.
- *
- * Not "Default": a row whose booleans are all false is not necessarily the
- * default variant, so the chip says what it knows. Its title names the axes
- * that are off, the way every other chip's title names axis and value, and
- * since the row checkbox's accessible name is built from the titles, a screen
- * reader hears which properties are off rather than a bare "All off".
+ * An enum value keeps its axis, a true boolean is a flag, a false one is
+ * dropped. An emptied row says "All off" (it need not be the default variant),
+ * titled with the axes that are off: the row checkbox's accessible name is
+ * built from the titles.
  */
 function chipsFor(values: Record<string, string>): VariantChip[] {
   const chips: VariantChip[] = [];

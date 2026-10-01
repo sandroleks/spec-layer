@@ -1,23 +1,16 @@
 export const MONTHLY_LIMIT = 20;
 export const PRO_SOFT_THRESHOLD = 1000;
 export const RATE_LIMIT_PER_MIN = 10;
-/** Longer than `UPSTREAM_TIMEOUT_MS` in handlers.ts, so a reservation never lapses while its generation is still running. */
+/** Longer than `UPSTREAM_TIMEOUT_MS` (handlers.ts), so a reservation never lapses mid-generation. */
 export const RESERVATION_TTL_MS = 180_000;
 export const RESPONSE_TTL_MS = 24 * 3600_000;
 /**
- * How long a committed library head is held against stale reads. It covers a
- * publish that read the head before another writer committed (seconds) and a
- * KV read that has not caught up with that commit (about a minute), with
- * margin. Past it the head is forgotten, so a head recorded out of order (a
- * publish that outlived its lock) can refuse writers for this long at most.
+ * How long a committed library head guards against stale reads: a racing read
+ * (seconds) and KV lag (about a minute), with margin. Also bounds how long an
+ * out-of-order head (a publish that outlived its lock) can refuse writers.
  */
 export const HEAD_TTL_MS = 10 * 60_000;
-/**
- * How many committed responses one identity keeps for replay. Each body has
- * its own storage key (`resp:<cacheKey>`, see quotaStore.ts); this bounds the
- * index inside the engine record and the storage the identity holds. The
- * oldest fall out first, before their 24 h would have expired them.
- */
+/** Replayable responses per identity, bounding the index and `resp:` keys; oldest go first. */
 export const MAX_RETAINED_RESPONSES = 500;
 
 export const PUBLISH_MONTHLY_LIMIT = 10;
@@ -28,20 +21,13 @@ export interface QuotaLimits {
 
 export type QuotaProfile = 'ai' | 'publish';
 
-/**
- * Two things the engine counts, each a flat number per UTC calendar month.
- * They are counted separately, so writing prose never spends a publish.
- */
+/** Each a flat count per UTC calendar month, kept apart so prose never spends a publish. */
 export const QUOTA_PROFILES: Record<QuotaProfile, QuotaLimits> = {
   ai: { monthlyLimit: MONTHLY_LIMIT },
   publish: { monthlyLimit: PUBLISH_MONTHLY_LIMIT },
 };
 
-/**
- * One Durable Object per identity and profile. The AI profile keeps the bare
- * identity as its name so every existing object's state stays reachable; other
- * profiles are prefixed so their counts never share storage with it.
- */
+/** AI keeps the bare identity so existing objects stay reachable; other profiles are prefixed. */
 export function quotaObjectName(identityId: string, profile: QuotaProfile): string {
   return profile === 'ai' ? identityId : `${profile}:${identityId}`;
 }
@@ -66,7 +52,7 @@ export function quotaHeaders(s: QuotaSnapshot): Record<string, string> {
   };
 }
 
-/** What the engine alone can say. A cached answer's body lives outside the counter; the store fills it in. */
+/** The engine's verdict; a cached answer's body lives outside it, filled in by the store. */
 export type EngineReserveResult =
   | { kind: 'proceed'; flagged?: boolean }
   | { kind: 'cached' }
@@ -75,31 +61,24 @@ export type EngineReserveResult =
   | { kind: 'rate_limited'; retryAfterMs: number }
   | { kind: 'library_limit'; limit: number; owned: number };
 
-/** What a QuotaClient answers: the engine's verdict with the cached body attached. */
 export type ReserveResult = Exclude<EngineReserveResult, { kind: 'cached' }> | { kind: 'cached'; body: string };
 
 export interface ReserveOptions {
   /**
-   * A name several cache keys answer to. While a live reservation holds it
-   * under another key, this reserve is `pending`: two changed publishes to
-   * one library cannot both proceed. Publish passes `publish:<libraryId>`.
+   * A name several cache keys share; held live under another key, this
+   * reserve is `pending`, so two publishes to one library cannot both proceed.
+   * Publish passes `publish:<libraryId>`.
    */
   lock?: string;
   /**
-   * With `lock`: the library head the caller read before deciding what to
-   * write, as epoch ms (publish passes its meta's `publishedAt`). When a
-   * commit under this lock has recorded a newer head, the read was stale and
-   * this reserve is `pending`. No recorded head (a library this object has
-   * not committed yet, or one past HEAD_TTL_MS) accepts any base. A base newer
-   * than the recorded head is accepted: another identity wrote since, and
-   * this read has seen it.
+   * With `lock`: the head the caller read, epoch ms. A newer recorded head
+   * means a stale read, so `pending`. No recorded head (or past HEAD_TTL_MS)
+   * accepts any base, as does a newer base (another identity wrote; this saw it).
    */
   base?: number;
   /**
-   * This reservation creates a library. Refused with `library_limit` once
-   * the object's committed creates or the caller's listing (whichever knows
-   * more), plus the creates still in flight, reach `limit`. The listing
-   * covers libraries that predate this counter; the counter covers what an
+   * `library_limit` once max(committed creates, listing) plus in-flight creates
+   * reach `limit`: the listing knows older libraries, the counter what the
    * eventually consistent listing has not caught up with.
    */
   create?: { limit: number; listed: number };
@@ -107,33 +86,28 @@ export interface ReserveOptions {
 
 export interface CommitOptions {
   /**
-   * This commit finishes a create: count one library. The marker, not the
-   * reservation's create slot, is what counts, because a write that outlives
-   * `RESERVATION_TTL_MS` finds its slot already pruned. Counted once per
-   * cache key, so a replayed commit never counts a second library.
+   * Counts one library, once per cache key. The marker counts, not the create
+   * slot, which a write outliving `RESERVATION_TTL_MS` finds pruned.
    */
   create?: boolean;
   /**
-   * The head this commit leaves behind under a lock, as epoch ms (publish
-   * passes the `publishedAt` it just wrote). Named explicitly rather than read
-   * from the lock, because a write that outlived its lock no longer holds it.
+   * The head this commit leaves under a lock, as epoch ms (the `publishedAt`
+   * just written). Explicit, because a write that outlived its lock no longer holds it.
    */
   head?: { lock: string; at: number };
 }
 
 export interface ReleaseOptions {
   /**
-   * A head to record while freeing the reservation, exactly as `commit` would.
-   * Publish passes it when its meta write landed and something after it threw:
-   * the new head is in KV, and freeing the lock without recording it would let
-   * a publish that read the older head proceed and fork the version. Nothing
-   * is counted.
+   * A head to record while freeing, as `commit` would, counting nothing.
+   * Publish passes it when its meta write landed and a later step threw;
+   * without it a publish that read the older head could fork the version.
    */
   head?: { lock: string; at: number };
 }
 
 interface ResponseEntry { at: number }
-/** A response entry as a blob written before the split stored it: body inline. */
+/** A pre-split blob's entry, with the body inline. */
 interface LegacyResponseEntry extends ResponseEntry { body?: string }
 export interface LegacyBody { cacheKey: string; body: string; at: number }
 
@@ -167,13 +141,11 @@ export class QuotaEngine {
 
   constructor(json?: string, private limits: QuotaLimits = QUOTA_PROFILES.ai) {
     this.s = json ? { ...fresh(), ...(JSON.parse(json) as State) } : fresh();
-    // A blob written while AI writing had a first-sight boost window carries
-    // its two fields. Nothing reads them now, so they are dropped on load.
+    // Retired boost-window fields, dropped on load.
     const retired = this.s as State & { firstSeen?: unknown; boostUsed?: unknown };
     delete retired.firstSeen;
     delete retired.boostUsed;
-    // A blob written before the split carries each body inline. Lift them out
-    // so the counter stays small; the store writes them under their own keys.
+    // Lift inline bodies out so the counter stays small; the store rewrites them.
     for (const [cacheKey, entry] of Object.entries(this.s.responses as Record<string, LegacyResponseEntry>)) {
       if (typeof entry.body === 'string') {
         this.legacy.push({ cacheKey, body: entry.body, at: entry.at });
@@ -181,9 +153,8 @@ export class QuotaEngine {
       }
     }
     if (this.legacy.length > 0) {
-      // Hold the retention cap from the migration on, so it never writes more
-      // than MAX_RETAINED_RESPONSES bodies. A lifted body the cap drops was
-      // never written under its own key, so it is not handed on for deletion.
+      // Cap the migration too. A lifted body the cap drops was never written
+      // under its own key, so it is not handed on for deletion.
       this.capResponses();
       const dropped = new Set(this.legacy.map((l) => l.cacheKey).filter((k) => this.s.responses[k] === undefined));
       this.legacy = this.legacy.filter((l) => !dropped.has(l.cacheKey));
@@ -200,7 +171,7 @@ export class QuotaEngine {
     return out;
   }
 
-  /** Cache keys whose index entry was dropped since the last call; their bodies are the store's to delete. */
+  /** Keys dropped since the last call; the store deletes their bodies. */
   takeEvicted(): string[] {
     const out = this.evicted;
     this.evicted = [];
@@ -229,7 +200,6 @@ export class QuotaEngine {
     };
   }
 
-  /** Drop expired responses and stale reservations so serialized state stays bounded. */
   private prune(now: number): void {
     for (const [k, v] of Object.entries(this.s.responses)) {
       if (now - v.at >= RESPONSE_TTL_MS) this.forgetResponse(k);
@@ -268,8 +238,7 @@ export class QuotaEngine {
     if (opts.lock !== undefined) {
       const held = this.s.locks[opts.lock];
       if (held && held.cacheKey !== cacheKey && now - held.at < RESERVATION_TTL_MS) return { kind: 'pending' };
-      // A writer committed after this caller read the head: what it decided
-      // to write is based on a state that is gone.
+      // A writer committed after this caller read the head: its read is stale.
       const head = this.s.heads[opts.lock];
       if (opts.base !== undefined && head !== undefined && opts.base < head.at) return { kind: 'pending' };
     }
@@ -292,7 +261,7 @@ export class QuotaEngine {
     return { kind: 'proceed' };
   }
 
-  /** Frees the reservation and every lock and create slot it holds. Counting a create is `commit`'s, from its marker. */
+  /** Frees the reservation and its locks and create slot; counting a create is `commit`'s. */
   private settle(cacheKey: string): void {
     delete this.s.reservations[cacheKey];
     for (const [name, held] of Object.entries(this.s.locks)) {

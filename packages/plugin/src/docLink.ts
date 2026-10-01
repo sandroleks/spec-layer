@@ -1,11 +1,6 @@
 /**
- * docLink.ts — the pure, Figma-free data model for source-linked docs.
- *
- * Owns the per-Section pluginData blob (DocLinkData), the document-root
- * registry (DocRegistry), text-content hashing for hand-edit detection, and
- * status resolution. No Figma globals: the main thread reads/writes nodes and
- * calls into these helpers, keeping the logic unit-testable (mirrors the
- * extractor-purity boundary).
+ * The pure, Figma-free data model for source-linked docs: the per-Section link
+ * blob, the root registry, hand-edit text hashing and status resolution.
  */
 import {
   contentHash, upgradeProseV1, isProseV2, hasProseContent, normalizeAuthored,
@@ -18,43 +13,23 @@ export const DOC_LINK_KEY = 'specLayerDoc';
 /** pluginData key on figma.root holding the registry index. */
 export const DOC_REGISTRY_KEY = 'specLayerDocs';
 
-/**
- * Generated guidelines for a component doc, stored beside its link rather than
- * inside it.
- *
- * The library scan parses every documented Section's DOC_LINK_KEY on every
- * refresh. Prose is kilobytes of text that no library row displays, so putting
- * it in that blob would make a hot path pay for data it never reads. A separate
- * key is read only when Copy actually needs it.
- */
+/** A component doc's generated guidelines, under their own key: the Library
+ *  scan parses every link on every refresh and never reads prose. */
 export const DOC_PROSE_KEY = 'specLayerProse';
 
-/**
- * Ceiling on a serialized prose blob. Figma caps plugin data at 100 kB per
- * entry (plugin id, key and value together), so this sits well below it.
- * A payload over budget is dropped whole: half a guideline set presented as
- * complete is worse than none, and the brief already states when guidelines
- * are absent.
- */
+/** Ceiling on a serialized prose blob, well under Figma's 100 kB per-entry
+ *  plugin data cap. Over budget is dropped whole, never half-presented. */
 export const PROSE_BUDGET_BYTES = 64 * 1024;
 
 /**
  * The drift baseline for "Review detected changes": the exact object the doc's
- * content hash was computed over, stored beside the link so a later refresh can
- * diff it against the live projection. A hash alone cannot be diffed.
- *
- * Its own key rather than a field on the link, for the same reason as prose:
- * the library scan parses every link on every refresh and never needs this.
- * Figma's 100 kB cap is per entry, so a separate key gets its own budget and
- * cannot crowd out the link or the prose.
+ * content hash was computed over, since a hash alone cannot be diffed. Its own
+ * key, like prose, so it gets its own 100 kB budget and the scan skips it.
  */
 export const DOC_BASELINE_KEY = 'specLayerBaseline';
 
-/**
- * Ceiling on a serialized baseline. Over budget is dropped whole, never
- * truncated: half a baseline presented as complete would make the diff report
- * every missing item as "removed", which is fabrication.
- */
+/** Ceiling on a serialized baseline. Over budget is dropped whole: a truncated
+ *  one would report every missing item as "removed", which is fabrication. */
 export const BASELINE_BUDGET_BYTES = 90 * 1024;
 
 export interface ComponentDocBaseline {
@@ -75,20 +50,9 @@ export interface FoundationDocBaseline {
 export type DocBaseline = ComponentDocBaseline | FoundationDocBaseline;
 
 /**
- * UTF-8 byte length of a string, computed without `TextEncoder`.
- *
- * `TextEncoder` is a browser/Node global. The plugin's MAIN THREAD runs in
- * Figma's sandbox, a bare JS realm carrying the `figma` API and the ECMAScript
- * built-ins and nothing else, so `new TextEncoder()` throws there. This module
- * is imported by main.ts, so everything in it has to hold to that floor.
- *
- * Node does provide `TextEncoder`, which is why the original version passed
- * every test and still failed the moment it ran in Figma. The tests now delete
- * the global to reproduce the sandbox.
- *
- * Counting rules are UTF-8's own: 1 byte below U+0080, 2 below U+0800, 4 for a
- * well-formed surrogate pair, otherwise 3. A lone surrogate is counted as 3
- * because an encoder replaces it with U+FFFD, which is itself 3 bytes.
+ * UTF-8 byte length without `TextEncoder`, which Figma's main-thread sandbox
+ * lacks (Node has it, so tests delete the global to reproduce the sandbox). A
+ * lone surrogate counts 3 bytes, like the U+FFFD an encoder replaces it with.
  */
 function utf8ByteLength(s: string): number {
   let bytes = 0;
@@ -118,8 +82,7 @@ export function serializeProse(p: ProseV2): string {
   // Figma stores plugin data as UTF-8; measure encoded length, not UTF-16 units.
   const bytes = utf8ByteLength(out);
   if (bytes > PROSE_BUDGET_BYTES) {
-    // Dropped whole, not truncated: half a guideline set presented as complete
-    // is worse than none. Logging is the only record that this happened.
+    // Dropped whole; the log is the only record.
     console.warn(`[Spec Layer] prose dropped: ${bytes} bytes exceeds the ${PROSE_BUDGET_BYTES}-byte budget`);
     return '';
   }
@@ -146,8 +109,7 @@ function readProseV2(o: Record<string, unknown>): ProseV2 | null {
   for (const k of V2_ARRAY_KEYS) {
     if (Array.isArray(o[k])) (out as unknown as Record<string, unknown>)[k] = o[k];
   }
-  // Which keys a person typed on the canvas. Known keys only, once each;
-  // omitted when empty so a blob without it reads exactly as before.
+  // Keys a person typed on canvas; omitted when empty.
   const authored = normalizeAuthored(o.authored);
   if (authored.length) out.authored = authored;
   return hasProseContent(out) ? out : null;
@@ -164,9 +126,7 @@ function readProseV1(o: Record<string, unknown>): ProseV2 | null {
     dos: strings(o.dos),
     donts: strings(o.donts),
   };
-  // `designConsiderations` is deliberately absent here: no section ever
-  // rendered it, and Docs 2.0 retires it, so a stored v1 blob carrying it
-  // reads as prose with everything else intact and that field gone.
+  // `designConsiderations` is dropped: no section ever rendered it.
   for (const k of ['interactions', 'variantsSummary', 'anatomySummary', 'contentConsiderations'] as const) {
     if (typeof o[k] === 'string') v1[k] = o[k] as string;
   }
@@ -175,12 +135,8 @@ function readProseV1(o: Record<string, unknown>): ProseV2 | null {
   return hasProseContent(upgraded) ? upgraded : null;
 }
 
-/**
- * Parse stored prose. A v2 blob reads as is; a v1 blob (written by any build
- * before Docs 2.0) is upgraded on read, so the canvas always holds v2 and no
- * consumer branches on the version. Null for nothing, garbage, an unknown
- * version, or a shape with no content at all.
- */
+/** Parse stored prose. A v1 blob is upgraded on read, so no consumer branches
+ *  on the version. Null for nothing, garbage, an unknown version or no content. */
 export function parseProse(raw: string): ProseV2 | null {
   if (!raw) return null;
   let j: unknown;
@@ -196,20 +152,17 @@ export function serializeBaseline(baseline: DocBaseline): string {
   const out = JSON.stringify(baseline);
   const bytes = utf8ByteLength(out);
   if (bytes > BASELINE_BUDGET_BYTES) {
-    // Same rule as prose: dropped whole, and logged, because a silent drop
-    // leaves the Library saying "Update this doc once" after an Update that
-    // did run. The log is the only record of why.
+    // Dropped whole and logged: the Library then asks for an Update that
+    // already ran, and the log is the only record of why.
     console.warn(`[Spec Layer] baseline dropped: ${bytes} bytes exceeds the ${BASELINE_BUDGET_BYTES}-byte budget`);
     return '';
   }
   return out;
 }
 
-/**
- * Defensive parse: null on empty, malformed, wrong `v`, wrong `kind`, or a
- * projection that is not an object. The projection's interior is deliberately
- * not validated; the diff treats unknown shapes as absent lists.
- */
+/** Defensive parse: null on empty, malformed, wrong `v` or `kind`, or a
+ *  non-object projection. The interior is not validated; the diff treats
+ *  unknown shapes as absent lists. */
 export function parseBaseline(raw: string): DocBaseline | null {
   if (!raw) return null;
   let j: unknown;
@@ -223,13 +176,8 @@ export function parseBaseline(raw: string): DocBaseline | null {
   return o as unknown as DocBaseline;
 }
 
-/**
- * The one main-thread entry point: parse, then accept only a baseline whose
- * kind matches the link's and whose contentHash equals the link's. A stale
- * baseline (an older Update that stored a link but whose baseline write was
- * dropped) or a foreign one is rejected here, in a pure function, rather than
- * in main.ts.
- */
+/** Parse, then accept only a baseline whose kind and contentHash match the
+ *  link's; a stale or foreign one is rejected. */
 export function baselineFor(link: DocLinkData, raw: string): DocBaseline | null {
   const baseline = parseBaseline(raw);
   if (!baseline) return null;
@@ -246,12 +194,9 @@ export interface DocConfig {
   anatomyView: 'diagram';
   measureViews: MeasureView[];
   /**
-   * Draw the parts a boolean component property hides by default, and set
-   * those properties to true on every placed instance. Defaults to FALSE on
-   * any link written before this existed, which keeps an existing doc's
-   * rendered output and its drift hash identical after an upgrade. Unlike
-   * measureViews, this one DOES move specContentHash when on, because the
-   * revealed parts are then rendered (see SpecHashOptions in the extractor).
+   * Draw the parts a boolean component property hides by default. FALSE on
+   * older links, so their output and drift hash are unchanged. Unlike
+   * measureViews, this DOES move specContentHash when on (see SpecHashOptions).
    */
   includeHidden: boolean;
 }
@@ -263,38 +208,28 @@ export interface ComponentDocLink {
   kind?: 'component';
   sourceNodeId: string;
   contentHash: string;   // specContentHash of the source at generation (drift baseline)
-  /** Hash of the built Section's GENERATED text (hand-edit baseline). Text
-   *  inside editorial slots is excluded: an Update reads those back and keeps
-   *  them, so only an edit outside them is something Update would destroy.
-   *  Docs rendered before slot tagging have no slots, so their hash covers
-   *  all text, which is exactly what their stored value was computed over. */
+  /** Hash of the Section's GENERATED text (hand-edit baseline). Editorial
+   *  slots are excluded, since an Update keeps them; a doc without slots
+   *  hashes all its text, which is what its stored value covered. */
   selfHash: string;
   config: DocConfig;
   generatedAt: number;
   pluginVersion: string;
-  /** `EXTRACTOR_VERSION` that produced this doc. Absent on every blob written
-   *  before it existed; treated as stale so the doc is rebuilt once. */
+  /** `EXTRACTOR_VERSION` that produced this doc, so a drift check can tell an
+   *  extractor change from a content change. Absent means stale: rebuilt once. */
   extractorVersion?: string;
-  /** Legacy name for the same idea, written while the Markdown `SPEC_VERSION`
-   *  was still the version authority. Read so old docs parse; never written.
-   *  Its values ('0.1'/'0.2') never equal an EXTRACTOR_VERSION, so any doc
-   *  carrying only this reads as rebuild-required, which is correct: it was
-   *  built by an extractor predating the current one. */
+  /** Legacy name for extractorVersion: read, never written. Its values
+   *  ('0.1'/'0.2') never equal an EXTRACTOR_VERSION, so such a doc reads as
+   *  rebuild-required. */
   specVersion?: string;
 }
 
 export interface FoundationConfig {
   includeDescriptions: boolean;
   aiNotes: boolean;
-  /**
-   * Render the colour contrast matrix. Defaults to FALSE on any link written
-   * before this existed, which is what keeps an existing doc's rendered output
-   * identical after an upgrade.
-   *
-   * The matrix is derived from colours already hashed via
-   * FoundationUnitContent.rows, so toggling it changes what renders without
-   * moving foundationContentHash, exactly as includeDescriptions does.
-   */
+  /** Render the colour contrast matrix. FALSE on older links. Derived from
+   *  colours already hashed via FoundationUnitContent.rows, so toggling it
+   *  moves no foundationContentHash, as with includeDescriptions. */
   includeContrast: boolean;
 }
 
@@ -308,19 +243,13 @@ export interface FoundationDocLink {
   selfHash: string;
   config: FoundationConfig;
   /**
-   * AI-written group descriptions, keyed by folder path, for the groups THIS doc
-   * renders. Stored rather than passed at render time for two reasons: an Update
-   * rebuilds a doc from its stored link with no UI round trip, so descriptions
-   * that lived only in the render call would be silently deleted by the first
-   * Update (the same way part numbers once were), and regenerating them would
-   * spend another AI generation from the user's quota every time.
-   *
-   * Absent on any doc generated without AI descriptions, including every doc
-   * written before they existed.
+   * AI-written descriptions for the groups THIS doc renders, keyed by folder
+   * path. Stored because an Update rebuilds from the link alone, and
+   * regenerating would spend the user's AI quota. Absent when never generated.
    */
   groupDescriptions?: Record<string, string>;
-  /** AI-written paragraph about the whole collection. Stored for the same
-   *  reasons as `groupDescriptions`; absent on docs generated without it. */
+  /** AI-written paragraph about the whole collection, stored for the same
+   *  reasons; absent when never generated. */
   collectionOverview?: string;
   generatedAt: number;
   pluginVersion: string;
@@ -334,20 +263,11 @@ export function isFoundationLink(d: DocLinkData): d is FoundationDocLink {
 }
 
 /**
- * Merge every foundation doc link's stored group descriptions into one map
- * for the Foundation copy and download (`foundationDtcgJson` in
- * `ui/actions.ts`), keyed by collection name then folder path.
- *
- * Nested rather than flat: two collections can each hold a folder of the
- * same name (e.g. two "color" folders in two different collections), and a
- * flat map would silently collapse them into one entry.
- *
- * A `textStyles`-target link has no collection name and is skipped rather
- * than inventing a key. A link with no descriptions, or an empty map,
- * contributes nothing. When two links somehow name the same collection, their
- * folders are merged (later links win on a folder-name collision), which can
- * only happen for genuinely different groups of the same collection since a
- * doc's own groups never repeat within itself.
+ * Every foundation link's group descriptions in one map for the Foundation
+ * copy and download (`foundationDtcgJson`), keyed by collection name then
+ * folder, since two collections can share a folder name. A styles link has no
+ * collection name and is skipped, never given an invented key. When two links
+ * name one collection, later links win on a folder collision.
  */
 export function mergeFoundationGroupDescriptions(
   links: readonly FoundationDocLink[],
@@ -363,9 +283,7 @@ export function mergeFoundationGroupDescriptions(
   return merged;
 }
 
-/** The key by which a foundation Section is matched to its predecessor on
- *  regenerate: two sections cover the same doc when they target the same
- *  collection and group, or both cover text styles with the same group. */
+/** The key that matches a foundation Section to its predecessor on regenerate. */
 export function foundationScopeKey(s: FoundationScope): string {
   if (s.target === 'textStyles') return `text:${s.group ?? ''}`;
   if (s.target === 'effectStyles') return `effect:${s.group ?? ''}`;
@@ -373,28 +291,17 @@ export function foundationScopeKey(s: FoundationScope): string {
 }
 
 /**
- * Re-point a stored foundation scope at a live collection when its recorded id
- * no longer exists.
- *
- * A renamed or re-created collection keeps its name but gets a fresh id, and
- * retargeting by name is what lets such a doc read as "Update available"
- * instead of "Source missing". But Figma allows two collections to share a
- * name, so a name match is only evidence when there is exactly ONE of them:
- * with several, the doc could just as easily belong to a collection that was
- * deleted, and guessing would rebuild it from unrelated variables and stamp the
- * wrong id in. Ambiguous means unresolved, so the scope comes back untouched
- * and the caller's existing "this doc can no longer be rebuilt" path handles it.
- *
- * Returns the scope unchanged when it targets text styles, when its id still
- * resolves, or when the name match is anything other than a single hit.
+ * Re-point a scope whose collection id no longer exists at the ONE live
+ * collection with its name (a re-created collection gets a fresh id). Figma
+ * allows duplicate names, so with several matches the scope comes back
+ * untouched: guessing would rebuild the doc from unrelated variables.
  */
 export function retargetScope(
   scope: FoundationScope,
   collections: readonly { id: string; name: string }[],
 ): FoundationScope {
   if (scope.target !== 'collection') return scope;
-  // Bind to a const so the 'collection' narrowing survives into the closures
-  // below: narrowing does not carry into a callback for a mutable binding.
+  // A const, so the narrowing survives into the closures below.
   const s = scope;
   if (collections.some((c) => c.id === s.collectionId)) return s;
   const byName = collections.filter((c) => c.name === s.collectionName);
@@ -417,9 +324,7 @@ export function serializeDocLink(d: DocLinkData): string {
   return JSON.stringify(d);
 }
 
-/** Defensive parse: returns null on empty/garbage/wrong-shape (never throws).
- *  Branches on `kind` FIRST so a blob without one takes the original
- *  component path unchanged. */
+/** Defensive parse, never throws. A blob without `kind` is a component link. */
 export function parseDocLink(raw: string): DocLinkData | null {
   if (!raw) return null;
   let j: Record<string, unknown>;
@@ -437,12 +342,8 @@ function commonValid(j: { contentHash?: unknown; selfHash?: unknown; generatedAt
     && typeof j.pluginVersion === 'string';
 }
 
-/** Legacy ids expand to their successors first: a stored legacy id must always
- *  converge on the new vocabulary rather than surviving unmapped. Every
- *  successor (`properties`, `pointer`, `keyboard`) is itself in ALL_SECTIONS,
- *  so `KNOWN_SECTION_IDS` alone covers the pass-through case. Anything else
- *  known passes through; anything unrecognized drops. Order is preserved and
- *  no id appears twice. */
+/** Legacy ids expand to their successors, known ids pass through, anything
+ *  else drops. Order is preserved, with no duplicates. */
 function migrateSectionIds(raw: unknown[]): SectionId[] {
   const out: SectionId[] = [];
   for (const x of raw) {
@@ -465,18 +366,14 @@ function parseComponentLink(j: Partial<ComponentDocLink>): ComponentDocLink | nu
     sections: migrateSectionIds(c.sections ?? []),
     variantIds: Array.isArray(c.variantIds) ? c.variantIds.filter((x): x is string => typeof x === 'string') : [],
     aiEnabled: c.aiEnabled === true,
-    // Anatomy is intentionally diagram-only. Normalize old table/both links so
-    // every update converges on the current output contract.
+    // Diagram-only: old table/both links converge on the current output.
     anatomyView: 'diagram',
     measureViews: Array.isArray(c.measureViews)
       ? c.measureViews.filter((x): x is MeasureView => x === 'size' || x === 'padding' || x === 'spacing')
       : [],
     includeHidden: c.includeHidden === true,
   };
-  // Normalize the legacy `specVersion` forward so every consumer reads one
-  // field. A pre-rename doc carries '0.1'/'0.2', which never equals an
-  // EXTRACTOR_VERSION, so it correctly reads as rebuild-required rather than
-  // being compared by hash against output a different extractor produced.
+  // Normalize `specVersion` forward, so consumers read one field.
   const extractorVersion = j.extractorVersion ?? j.specVersion;
   return {
     ...(j as ComponentDocLink),
@@ -532,8 +429,7 @@ function parseFoundationLink(j: Partial<FoundationDocLink>): FoundationDocLink |
       aiNotes: c.aiNotes === true,
       includeContrast: c.includeContrast === true,
     },
-    // Omitted rather than set to {} when there are none, so a doc written before
-    // descriptions existed still serializes byte-identically.
+    // Omitted, not {}, so an older doc still serializes byte-identically.
     ...(descriptions ? { groupDescriptions: descriptions } : {}),
     ...(typeof j.collectionOverview === 'string' && j.collectionOverview.trim()
       ? { collectionOverview: j.collectionOverview } : {}),
@@ -542,11 +438,8 @@ function parseFoundationLink(j: Partial<FoundationDocLink>): FoundationDocLink |
   };
 }
 
-/**
- * Validate a stored description map, dropping anything that is not a
- * string-to-string entry. Returns null when there is nothing usable, so the
- * caller can omit the field entirely.
- */
+/** Only non-empty string entries survive; null when none do, so the caller
+ *  omits the field. */
 function parseGroupDescriptions(raw: unknown): Record<string, string> | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const out: Record<string, string> = {};
@@ -585,8 +478,7 @@ export function pruneRegistry(r: DocRegistry, keep: Set<string>): DocRegistry {
   return { v: 1, docIds: r.docIds.filter((id) => keep.has(id)) };
 }
 
-/** Hash of a Section's text runs, in document order. Reuses the extractor's
- *  canonical hash so behavior matches the rest of the codebase. */
+/** Hash of a Section's text runs, in document order (the extractor's hash). */
 export function textContentHash(texts: string[]): string {
   return contentHash(texts);
 }

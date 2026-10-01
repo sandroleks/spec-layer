@@ -5,17 +5,14 @@ import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 /**
  * A visible directory is one the team sees and commits (tokens/,
- * component-specs/), as opposed to the swapped record under outDir. The CLI
- * owns exactly the files in it that begin with the directory's marker: it
- * replaces or removes those and never touches anything else. Spec:
+ * component-specs/), unlike the swapped record under outDir. The CLI owns only
+ * the files in it that begin with the directory's marker. Spec:
  * docs/superpowers/specs/2026-09-09-css-token-directory-design.md, section 5.
  */
 
 /**
- * Whether `child` is `parent` itself or sits under it. Only `..` and a path
- * that starts with `../` leave the parent; a sibling whose name merely begins
- * with two dots (`..cache`) is inside it. `startsWith('..')` alone refused
- * those names as parents.
+ * Whether `child` is `parent` or under it. Only `..` and `../` leave the parent;
+ * a name that merely begins with two dots (`..cache`) is inside.
  */
 export function pathInside(parent: string, child: string): boolean {
   const rel = relative(parent, child);
@@ -30,12 +27,9 @@ export type Markers = string | readonly string[];
 const markerList = (marker: Markers): readonly string[] => (typeof marker === 'string' ? [marker] : marker);
 
 /**
- * Whether the file at `abs` begins with any of `marker`. Reads only enough
- * bytes for the longest marker, plus one byte per `\n` it contains, so a CRLF
- * checkout of a marker that spans lines (a Git for Windows repository with
- * core.autocrlf=true) still reads the whole prefix. `\r\n` is then folded
- * back to `\n` before the comparison, so the check does not care which line
- * ending the file on disk uses. An empty list owns nothing.
+ * Whether the file at `abs` begins with any marker. Reads the longest marker
+ * plus one byte per `\n`, so a CRLF checkout (core.autocrlf) still yields the
+ * whole prefix, then folds `\r\n` to `\n`. An empty list owns nothing.
  */
 export function carriesMarker(abs: string, marker: Markers): boolean {
   const markers = markerList(marker);
@@ -54,9 +48,7 @@ export function carriesMarker(abs: string, marker: Markers): boolean {
 
 /**
  * Why `dir` cannot be written as a visible directory, or null when it can.
- * `others` are the other visible directories of this pull. `configKey` names
- * the speclayer.json field that controls this path, so the refusal tells the
- * reader exactly what to edit.
+ * `configKey` names the speclayer.json field, so the refusal says what to edit.
  */
 export function visibleDirProblem(
   cwd: string, outDir: string, dir: string, marker: Markers, others: string[], configKey: string,
@@ -99,8 +91,7 @@ function writeAtomically(abs: string, text: string): void {
 /**
  * Writes `files` into `dir`, `last` after the others (index.css, so an import
  * never names a missing file), then removes every marked non-dot file this
- * write did not produce. Returns the names written, in write order. Assumes
- * visibleDirProblem returned null for this directory.
+ * write did not produce. Assumes visibleDirProblem returned null.
  */
 export function writeVisibleDir(cwd: string, dir: string, marker: Markers, files: Record<string, string>, last?: string): string[] {
   const abs = resolve(cwd, dir);

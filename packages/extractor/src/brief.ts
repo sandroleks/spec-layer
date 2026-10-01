@@ -2,16 +2,13 @@
  * brief.ts: the component YAML brief projection.
  *
  * Component Context v5 (`v5/componentContext.ts`) takes `component`, `api` and
- * `unbound` from `componentBrief` and builds the rest of its artifact itself.
- * This is deliberately a PROJECTION of the internal types rather than a dump
- * of them: internal ids stay inside, minimized token conditions and rendering
- * concerns stay inside, and the shape stays stable while the extractor's
- * internals change. The foundation half of this file (the v4 foundation
- * brief) was removed on 2026-09-23; a Foundation exports as a DTCG resolver
- * document from the Foundation Context v5 artifact.
+ * `unbound` from `componentBrief`. A PROJECTION, not a dump: internal ids,
+ * minimized conditions and rendering concerns stay inside, so the shape stays
+ * stable while the internals change.
  */
 
 import type { EffectLayer } from './effects';
+import { knownFileKey } from './fileKey';
 import { EXTRACTOR_VERSION } from './version';
 import type { YamlValue } from './yaml';
 import type { IntermediateSpec } from './extract';
@@ -24,39 +21,14 @@ import { validate } from './validate';
 import { resolutionOf } from './resolution';
 
 /**
- * Brief schema version. Bumped when the brief's shape or field meanings change,
- * independently of EXTRACTOR_VERSION.
+ * Brief schema version, bumped when the brief's shape or field meanings change.
+ * 2: split `source` and `api`, condition-based `bindings`, `validation`.
+ * 3: foundation `contrast` removed; contrast lives on the canvas frame.
+ * 4: `tokens.used` is a list carrying `kind` and `resolution`; `text-style`
+ *    kind; `effects`, `effects_inline`, `scope`; absent, not empty.
  *
- * 2: the v2 brief. `source` split into
- * file_key/file_name/node_id/node_name/component_key,
- * with an unavailable key now absent rather than the string 'unknown'; `api`
- * split into variants/states/booleans/slots; `tokens` restructured into `used`
- * plus condition-based `bindings` instead of a per-variant expansion;
- * `typography` carrying structured metrics instead of a display string; a
- * `validation` block added; and the component-level `contrast` block removed.
- *
- * 3: the foundation brief's `contrast` block removed too. A WCAG check is
- * measured over the colour variables, so its failure list grew with the file
- * and dominated a payload whose whole job is to hand an agent a token
- * vocabulary. Contrast is a thing to LOOK at, so it lives on the foundation
- * frame (`includeContrast`), which still draws its matrices; nothing about it
- * reaches the clipboard.
- *
- * 4: reference identity reaches the payload. Every entry in `tokens.used`
- * carries a `kind`, and one that cannot be resolved carries a `resolution`
- * with one of six statuses instead of a bare `{}`. `used` is a LIST, because a
- * map keyed by name cannot hold a variable and an effect style that share one.
- * `kind: 'typography'` became `kind: 'text-style'`, so the style kinds share a
- * vocabulary. New blocks: `effects` (effect style definitions, beside
- * `typography`), `effects_inline` (node-level effect layers with their
- * per-field bindings), `effect_styles` on the foundation brief, and `scope` on
- * a narrowed copy. A foundation brief's external aliases name their target
- * collection; colour alpha rounds to four decimals; `source`, `text_styles`
- * and `effect_styles` are absent rather than empty.
- *
- * Distinct from the doc drift baseline: nothing keys "rebuild needed" on this
- * number (that reads EXTRACTOR_VERSION), so bumping it does not restate every
- * committed doc.
+ * Nothing keys "rebuild needed" on this (that reads EXTRACTOR_VERSION), so a
+ * bump does not restate every committed doc.
  */
 export const BRIEF_VERSION = 4;
 
@@ -64,41 +36,18 @@ function envelope(kind: 'component', generatedAt: string): YamlValue {
   return { kind, version: BRIEF_VERSION, extractor: EXTRACTOR_VERSION, generated: generatedAt };
 }
 
-/**
- * The `file_key` entry for a source block, or nothing at all.
- *
- * `resolveFileKey` (plugin `fileKey.ts`) returns the literal string 'unknown'
- * when Figma exposes no file key and the user set no override. A consumer
- * cannot tell that apart from a real key, so an unavailable key is emitted as
- * an ABSENT key rather than as a placeholder value.
- */
+/** The `file_key` entry for a source block, or nothing when there is no real key. */
 function fileKeyOf(fileKey: string): { file_key?: string } {
-  return fileKey && fileKey !== 'unknown' ? { file_key: fileKey } : {};
+  const key = knownFileKey(fileKey);
+  return key ? { file_key: key } : {};
 }
 
 /**
- * Effect layers, projected for emission: every field-level binding becomes
- * its token NAME instead of the `RefIdentity` Figma gave it. `RefIdentity.id`
- * (tree.ts) is explicit that the legacy component-v4 brief keeps internal ids
- * inside, and `remote`/`collectionId` are provenance a consumer acting on that
- * brief has no use for -- so a `bindings.<field>` entry projects down to a bare
- * string, matching this block's own design-spec example.
- *
- * A bare name, not `{ token, kind }` the way `tokens.bindings` (see
- * `tokensOf`) does it. `tokens.bindings` carries `kind` alongside `token`
- * because its `token` field can name a variable OR a style, and two
- * references that share a name are only safely joined back to `tokens.used`
- * by pairing name with kind. An effect field's binding has no such
- * ambiguity: `EffectField` (effects.ts) is defined as exactly
- * `VariableBindableEffectField`, and every caller that builds `bindings`
- * (`serialize.ts`) resolves each id through `resolver.variable` alone -- a
- * `bindings.<field>` entry is always a variable and never a style. Restating
- * `kind: 'variable'` on every single entry here would be constant noise, not
- * information a consumer can act on.
- *
- * Every non-binding field -- geometry, colour, `visible`, `blendMode`,
- * `figma_type` on an unknown layer -- passes through untouched; only the
- * `bindings` key, when present, is rewritten.
+ * Effect layers with each field binding projected to its token NAME; the
+ * RefIdentity's id, `remote` and `collectionId` stay inside. A bare name, not
+ * `{ token, kind }` as in `tokens.bindings`, because an effect field binding is
+ * always a variable (`EffectField` is `VariableBindableEffectField`). Every
+ * other field passes through untouched.
  */
 function projectEffectLayers(layers: EffectLayer[]): YamlValue {
   return layers.map((layer) => {
@@ -117,11 +66,7 @@ export interface ComponentBriefOptions {
   prose?: ProseDrafts | null;
 }
 
-/** One node of the anatomy tree while it is still being built: `children`
- *  always exists (possibly empty) so the stack-building loop below never has
- *  to special-case "does this node have a children array yet". `stripEmpty`
- *  turns it into the public shape, where an empty `children` becomes an
- *  absent key rather than `[]`. */
+/** An anatomy node under construction: `children` always exists, and `stripEmptyChildren` drops an empty one. */
 interface AnatomyBuildNode {
   part: string;
   type: string;
@@ -142,21 +87,10 @@ function stripEmptyChildren(n: AnatomyBuildNode): YamlValue {
 }
 
 /**
- * Rebuild the depth-encoded flat anatomy list (see AnatomyPart.depth) as a
- * tree: a part at depth N+1 becomes a child of the most recently seen part at
- * depth N. A straightforward single-pass build with an explicit ancestor
- * stack, rather than the non-enumerable-property sketch this replaced — a
- * stack keyed on each frame's own depth (not the stack's length) is what
- * makes depth jumps, a non-zero first depth, and same-depth siblings all fall
- * out correctly without special-casing any of them:
- * - Popping while the top frame's depth >= the incoming depth handles both a
- *   same-depth sibling (pop the previous sibling, attach to its parent) and a
- *   multi-level jump back (pop every frame deeper than or equal to the new
- *   depth in one pass).
- * - A first part whose depth isn't 0 simply starts with an empty stack, so it
- *   becomes a root like any part with no valid ancestor on the stack.
- * - A childless node's `children` array stays empty and is stripped by
- *   stripEmptyChildren, so it never emits a `children: []` key.
+ * Rebuild the depth-encoded flat anatomy list as a tree: a part at depth N+1
+ * becomes a child of the latest part at depth N. The stack is keyed on each
+ * frame's own depth, so popping while top depth >= incoming depth handles
+ * siblings and multi-level jumps alike, and a non-zero first depth is a root.
  */
 function nestAnatomy(parts: AnatomyPart[]): YamlValue[] {
   const roots: AnatomyBuildNode[] = [];
@@ -174,34 +108,17 @@ function nestAnatomy(parts: AnatomyPart[]): YamlValue[] {
 }
 
 /**
- * Guidelines read from storage, passed through verbatim. Renamed to the
- * brief's snake_case convention; nothing here is written by this function.
+ * Guidelines from storage, passed through verbatim in snake_case.
  *
- * `origin` leads the block. The prose in here is the only content in the
- * brief that was not extracted, so one marked block is the whole boundary a
- * consumer has to find. It reads `'generated'` (written by AI) unless a
- * person typed every present field on the Figma canvas, when it reads
- * `'authored'`. When a person wrote only some fields, `origin: 'generated'`
- * is followed by `authored`, the names of the fields they wrote, in this
- * block's field order. With nothing authored the block is byte-identical to
- * what it was before authorship was recorded.
+ * `origin` leads the block: this prose is the only content not extracted, so
+ * one marked block is the whole boundary. It reads 'authored' when a person
+ * typed every present field on the canvas, else 'generated', followed by
+ * `authored` (the person-written fields, in block order) when only some were.
+ * With nothing authored the block is byte-identical to before authorship existed.
  *
- * Every field applies the same empty-string-means-absent guard (`|| undefined`
- * for strings, a length check for the two string arrays) so a field that
- * `parseProseResponse` resolved to `''` (permitted for any non-required key,
- * see prose/prompt.ts) reads as missing rather than as a present-but-blank
- * value.
- *
- * Absence of the whole block is decided on the BUILT RESULT, not on whether
- * `prose` itself is truthy: a stored ProseDrafts can be a real object with
- * every field empty (parseProseResponse returns exactly that shape when only
- * optional sections were requested and the model omitted them), and that
- * object is truthy. Deciding on the result means such a case collapses to no
- * `guidelines` key at all, matching every other optional block in this brief,
- * rather than leaking a `guidelines: {}` line. `origin` and `authored` are
- * excluded from that decision for exactly the same reason: counting either
- * would make a brief with no prose at all emit a guidelines block holding
- * nothing but the marker.
+ * An empty string or array reads as absent. Whether the block exists is decided
+ * on the built fields, excluding `origin` and `authored`, because a stored
+ * ProseDrafts can be a truthy object with every field empty.
  */
 function guidelinesOf(prose: ProseDrafts | null | undefined): YamlValue | undefined {
   if (!prose) return undefined;
@@ -225,18 +142,10 @@ function guidelinesOf(prose: ProseDrafts | null | undefined): YamlValue | undefi
   return { origin: 'generated', authored, ...fields };
 }
 
-// ---------------------------------------------------------------------------
-// Token bindings — definitions once, bindings by condition
-// ---------------------------------------------------------------------------
-
 /**
- * Identity of a RULE, not of a resolved binding: two rules differing only in
- * `conditions` are two real rules and must both survive. Conditions are
- * canonicalized through JSON.stringify over sorted axis names, so key order in
- * the object cannot make one rule look like two.
- *
- * The separator is a space. An earlier version of this file used a NUL byte,
- * which is invisible in a diff and evades every check in the repo.
+ * Identity of a RULE, not a resolved binding: rules differing only in
+ * `conditions` both survive. Conditions are canonicalized over sorted axis
+ * names. The separator is a space, never a NUL byte, which no check can see.
  */
 function ruleKey(t: TokenRule): string {
   const axes = Object.keys(t.conditions).sort();
@@ -245,29 +154,11 @@ function ruleKey(t: TokenRule): string {
 }
 
 /**
- * Token definitions once, bindings by condition.
- *
- * v1 resolved every rule against every variant instance and factored the
- * result into `base` plus a `by_variant` entry per variant. The argument was
- * that a consuming model should never have to evaluate a condition; the cost
- * was that a 36-variant component repeated its geometry and colour bindings
- * 36 times, which made `tokens` roughly 2,400 of a 2,700-line brief.
- *
- * `conditions` is already minimal: the minimizer in tokens.ts collapsed each
- * rule to the smallest set of axes it actually depends on. Emitting that is
- * not asking the reader to evaluate a boolean expression, because it is not
- * one: it is a map from axis name to the values the binding holds for. An
- * absent `when` means every variant.
- *
- * `when` is built with a conditional spread rather than `when: cond ??
- * undefined` so an unconditioned rule's binding has no `when` KEY at all
- * (not merely an undefined-valued one) — the two differ for a caller that
- * inspects the raw object with `'when' in binding` instead of going through
- * the YAML round trip.
+ * Token definitions once, bindings by condition. `conditions` is already
+ * minimal (the minimizer in tokens.ts): a map from axis name to the values the
+ * binding holds for. An absent `when` means every variant.
  */
-/** (name, kind) is the join identity between `used` and `bindings`. Two
- *  references sharing a name are two entries; the same reference bound in five
- *  places is one. */
+/** (name, kind) joins `used` and `bindings`: two references sharing a name are two entries. */
 const usedKey = (r: TokenRule): string => JSON.stringify([r.kind, r.name]);
 
 function tokensOf(spec: IntermediateSpec): YamlValue {
@@ -280,11 +171,8 @@ function tokensOf(spec: IntermediateSpec): YamlValue {
     rules.push(t);
   }
 
-  // A LIST, not a map. A map keyed by name cannot hold a variable and an effect
-  // style that share one, and a conditional key that only qualifies on collision
-  // is the kind of thing that bites later.
-  //
-  // First-use order, so reading top to bottom introduces a reference before the
+  // A LIST, not a map: a map keyed by name cannot hold a variable and an effect
+  // style that share one. First-use order introduces a reference before the
   // bindings that name it.
   const used: YamlValue[] = [];
   const usedSeen = new Set<string>();
@@ -293,10 +181,8 @@ function tokensOf(spec: IntermediateSpec): YamlValue {
     if (usedSeen.has(key)) continue;
     usedSeen.add(key);
 
-    // No definition is looked up here: the brief has no foundation to read,
-    // so every entry states why it carries none. `no-foundation` for a local
-    // reference, `external` for a library one, `not-extracted` for a paint
-    // style (resolution.ts decides, from recorded facts only). Component
+    // The brief has no foundation to read, so every entry states why it carries
+    // no definition (resolution.ts, from recorded facts only). Component
     // Context v5 carries the resolved values in `references`.
     used.push({ token: r.name, kind: r.kind, resolution: resolutionOf(undefined, r) as unknown as YamlValue });
   }
@@ -307,8 +193,7 @@ function tokensOf(spec: IntermediateSpec): YamlValue {
       path: r.path,
       property: r.property,
       token: r.name,
-      // Carried so a binding joins to `used` on (token, kind) rather than on a
-      // name that two references can share.
+      // Joins to `used` on (token, kind), not on a name two references can share.
       kind: r.kind,
       ...(Object.keys(r.conditions).length > 0 ? { when: r.conditions } : {}),
     })),
@@ -316,29 +201,11 @@ function tokensOf(spec: IntermediateSpec): YamlValue {
 }
 
 /**
- * The component's API, with configurable variants separated from interaction
- * states, boolean content toggles, and content/icon slots.
- *
- * v1 emitted this three times over: `api` as a flat prop list, `axes` as the
- * same props again, and `states` as a third view. Worse, `axes` listed each
- * boolean state prop as an independent axis, so a Button with three types,
- * two sizes and five state flags advertised 3 x 2^5 = 384 combinations
- * against 36 real variants.
- *
- * The split is not a judgement call: `stateAxisProps` already computes
- * exactly which variant props the States matrix consumes, and the canvas
- * frames have relied on it for both the Variants and the States sections.
- * Every prop lands in exactly one of the four groups below: a variant axis is
- * either a state flag (→ `states`, via `stateAxisProps`) or a configurable
- * variant (→ `variants`); a boolean prop is a state flag only when it is
- * ALSO a variant axis that `stateAxisProps` claimed, otherwise it is a
- * genuine content toggle (→ `booleans`); everything else -- `text` and
- * `instanceSwap` today -- is a content/icon slot (→ `slots`).
- *
- * `slots` is defined by exclusion (neither `variant` nor `boolean`), not by
- * naming `text`/`instanceSwap` explicitly. Naming them would silently drop any
- * fifth `PropKind` from the brief; defining the group by exclusion surfaces it
- * here instead.
+ * The component's API: configurable variants, interaction states, boolean
+ * toggles, and slots; every prop lands in exactly one. `stateAxisProps` (shared
+ * with the canvas Variants and States sections) decides states, and a boolean
+ * is a state only when it is also a claimed variant axis. `slots` is defined by
+ * exclusion, so a new `PropKind` surfaces here instead of vanishing.
  */
 function apiOf(spec: IntermediateSpec): YamlValue | undefined {
   const stateProps = stateAxisProps(spec.variants);
@@ -359,31 +226,20 @@ function apiOf(spec: IntermediateSpec): YamlValue | undefined {
     if (p.kind === 'boolean') {
       booleans[p.name] = { default: p.default };
     } else {
-      // Everything that isn't a variant or a boolean -- by exclusion, not by
-      // naming 'text'/'instanceSwap' -- is a content/icon slot.
       slots[p.name] = { type: p.kind, default: p.default, options: p.options };
     }
   }
 
-  // Under the flags encoding, 'Default' is a column detectStateMatrix
-  // SYNTHESIZES as a baseline to compare the flags against (statesMatrix.ts:
-  // `{ label: 'Default', override: {} }`) -- the component declares no such
-  // state, so it must not be listed. Under the enum encoding there is no
-  // synthesized column: every label is a value the axis's own Figma
-  // definition declared, and 'Default' can be one of them for real (e.g.
-  // chip.json's States axis literally declares 'Default' alongside 'Hover',
-  // 'Focus', 'Press') -- dropping it there would delete a state the
-  // component genuinely has, and could even contradict a token binding that
-  // conditions on `States: ['Default']` elsewhere in the same brief.
+  // Under the flags encoding 'Default' is a baseline column detectStateMatrix
+  // synthesizes, not a declared state, so it is dropped. Under the enum
+  // encoding every label is declared, and 'Default' can be a real state.
   const states = (matrix?.columns ?? [])
     .map((c) => c.label)
     .filter((label) => matrix?.encoding !== 'flags' || label.toLowerCase() !== 'default');
 
-  // Built by conditionally adding keys, not by assigning `undefined` to them:
-  // an object literal like `{ states: undefined }` still has a `states` key
-  // (`'states' in obj` is true even though the value is undefined), and the
-  // callers of this function check presence directly rather than only after
-  // a YAML round trip (which does drop undefined-valued keys).
+  // Keys are added conditionally, never set to `undefined`, here and in every
+  // optional block below: `'states' in obj` is true for an undefined value, and
+  // callers check presence before the YAML round trip would drop it.
   const result: Record<string, YamlValue> = {};
   if (Object.keys(variants).length > 0) result.variants = variants;
   if (states.length > 0) result.states = states;
@@ -393,13 +249,9 @@ function apiOf(spec: IntermediateSpec): YamlValue | undefined {
 }
 
 /**
- * Every text style this component binds, each with the resolution that says
- * why this brief carries no definition for it: the brief has no foundation to
- * read, and Component Context v5 carries style definitions in
- * `references.foundation.styles`. The block still exists so the set of bound
- * styles is stated rather than implied by `tokens.used`. `source_name` and
- * the metrics this block once resolved were reachable only through an option
- * no shipping path passed; they went with it on 2026-09-23.
+ * Every text style this component binds, each with the resolution saying why no
+ * definition follows: the brief has no foundation, and Component Context v5
+ * carries definitions in `references.foundation.styles`.
  */
 function typographyOf(spec: IntermediateSpec): YamlValue | undefined {
   const names = new Set(
@@ -416,12 +268,7 @@ function typographyOf(spec: IntermediateSpec): YamlValue | undefined {
   return out;
 }
 
-/**
- * Every effect style this component binds, beside `typography:` and for the
- * same reason: the set of bound styles is stated, and each entry says why no
- * definition follows. Node-level effect layers, which need no style
- * definition, are in `effects_inline`.
- */
+/** Every effect style this component binds, as `typography` does. Node-level layers are in `effects_inline`. */
 function effectsOf(spec: IntermediateSpec): YamlValue | undefined {
   const names = new Set(
     spec.tokens.filter((t) => t.kind === 'effect-style').map((t) => t.name));
@@ -435,45 +282,22 @@ function effectsOf(spec: IntermediateSpec): YamlValue | undefined {
   return out;
 }
 
-/**
- * The public component brief: everything about one component, including its
- * token bindings. `spec` is the extractor's internal IntermediateSpec; this
- * is a PROJECTION of it, not a dump — see the file header.
- */
+/** The public component brief, a projection of the internal IntermediateSpec (see the file header). */
 export function componentBrief(rawSpec: IntermediateSpec, opts: ComponentBriefOptions): YamlValue {
-  // Rules for a part hidden by default are dropped from this contract, not
-  // because they are uninteresting but because there is nowhere here to say a
-  // rule is conditional on one. A v5 token rule's `conditions` cover variant
-  // axes only, so emitting one would present a rule that needs
-  // "Icon left = true" as one that always holds. Anatomy parts DO export with
-  // `shown_by`, so the part itself is still visible to a reader; carrying the
-  // same field onto token rules is a schema 5.3.0 change.
-  //
-  // Keeping this filter here rather than at each read also keeps every
-  // existing component's artifact, and its semanticContentHash, byte-identical.
+  // Rules for a part hidden by default are dropped: v5 `conditions` cover
+  // variant axes only, so such a rule would read as always holding. Anatomy
+  // parts export with `shown_by`; carrying it onto rules is a schema 5.3.0
+  // change. Filtering here keeps every existing artifact and its
+  // semanticContentHash byte-identical.
   const spec: IntermediateSpec = {
     ...rawSpec,
     tokens: tokensFor(rawSpec.tokens, { includeHidden: false }),
   };
-  // Same reasoning as inside apiOf: only spread the key in when there is an
-  // api block, rather than assigning `api: undefined`, so a component with
-  // no props has no `api` key at all on the raw object, not merely one with
-  // an undefined value.
   const api = apiOf(spec);
-  // A gap and a binding can name the same path and property: gap detection
-  // walks hidden subtrees that token extraction prunes, and a part can be
-  // hardcoded in one variant while bound in another. Emitting both makes the
-  // brief contradict itself, which is exactly what v1 did when `unbound`
-  // reported ButtonLabel as having a hardcoded colour while `tokens` showed
-  // the token bound on the same node. A binding is the stronger evidence, so
-  // it wins.
-  //
-  // Computed over the UNFILTERED rules on purpose. Gap detection reaches
-  // hidden subtrees, and now so does token extraction, so a hidden layer whose
-  // fill is bound would otherwise be reported here as having no token binding:
-  // a false diagnostic this join exists precisely to prevent. Suppressing a
-  // gap adds nothing to the file and states nothing new, so it does not need
-  // the schema field the rules themselves are waiting on.
+  // A gap and a binding can name the same path and property (a part can be
+  // hardcoded in one variant and bound in another); the binding is the
+  // stronger evidence, so it wins. Computed over the UNFILTERED rules, or a
+  // hidden bound layer would be falsely reported as having no binding.
   const bound = new Set(rawSpec.tokens.map((t) => `${t.path} ${t.property}`));
   const unbound = spec.gaps
     .filter((g) => !bound.has(`${g.path} ${g.property}`))
@@ -483,28 +307,16 @@ export function componentBrief(rawSpec: IntermediateSpec, opts: ComponentBriefOp
     }));
   const typography = typographyOf(spec);
   const effects = effectsOf(spec);
-  // Joined to `unbound` and `bindings` on (path, property), never on path alone:
-  // one node routinely has several rows -- fill, border, effects, spacing -- at
-  // the same path.
+  // Joined to `unbound` and `bindings` on (path, property): one node has several rows.
   const effectsInline = spec.nodeEffects.map((n) => ({
     path: n.path,
-    // Inline here, unlike the style entries above, because a node-level effect
-    // has no style name to point at. Projected, not cast straight through:
-    // a bound field carries a full RefIdentity (id, name, kind, remote,
-    // collectionId) and only `name` is fit to leave the file -- see
-    // projectEffectLayers.
+    // Inline, since a node-level effect has no style name; see projectEffectLayers.
     layers: projectEffectLayers(n.effects),
   }));
   const guidelines = guidelinesOf(opts.prose);
-  // No resolved numbers: the brief has no foundation to read them from, so
-  // validate's geometry-token-mismatch rule cannot fire here. validate.ts
-  // keeps the rule for a caller that can supply them.
-  // Projected into fresh literal objects rather than embedding `Finding[]`
-  // directly: `Finding` is a declared interface, and TypeScript will not
-  // assign a declared (non-literal) type to YamlValue's index-signature
-  // branch even when every field is structurally a YamlValue -- the same
-  // reason every other block in this file is built as a fresh object/array
-  // literal rather than a typed internal shape passed through as-is.
+  // No resolved numbers here, so validate's geometry-token-mismatch rule cannot
+  // fire. Fresh literals, not `Finding[]`: TypeScript will not assign a declared
+  // interface to YamlValue's index-signature branch.
   const validation = validate(spec, new Map<string, number>()).map((f) => ({
     id: f.id,
     severity: f.severity,
@@ -516,12 +328,7 @@ export function componentBrief(rawSpec: IntermediateSpec, opts: ComponentBriefOp
   return {
     spec_layer: envelope('component', opts.generatedAt),
     source: {
-      // A file KEY no longer
-      // sits under a field named `file`, and an unavailable key is omitted
-      // rather than emitted as the literal string 'unknown'. Conditional
-      // spreads, not `key: undefined`: the YAML emitter drops undefined-valued
-      // keys, but `{ file_key: undefined }` still leaves `'file_key' in source`
-      // true for any consumer reading the object before it is serialized.
+      // An unavailable key is omitted, never the string 'unknown'.
       ...fileKeyOf(spec.figmaFile),
       ...(spec.figmaFileName ? { file_name: spec.figmaFileName } : {}),
       node_id: spec.figmaNode,
@@ -536,26 +343,16 @@ export function componentBrief(rawSpec: IntermediateSpec, opts: ComponentBriefOp
     ...(api !== undefined ? { api } : {}),
     anatomy: nestAnatomy(spec.anatomy),
     layout: spec.layout.length > 0
-      // `path`, not `part`. Every other block that names a node uses the path
-      // identity (bindings, unbound, validation), and `part` for the root is
-      // the raw variant name ("type=Primary, size=Large, hover=False, ..."),
-      // so a reader could not match a layout row to the `Container` its
-      // bindings talk about. Joinability is the whole point of the identity.
+      // `path`, not `part`: every other block names nodes by path, and the
+      // root's `part` is the raw variant name, which joins to nothing.
       ? spec.layout.map((l) => ({ path: l.path, summary: l.summary }))
       : undefined,
     tokens: tokensOf(spec),
     ...(effectsInline.length > 0 ? { effects_inline: effectsInline } : {}),
-    // Same reasoning as `api` above: spread the key in only when a gap
-    // survived reconciliation, rather than assigning `unbound: undefined` —
-    // `{ key: undefined }` still leaves `'unbound' in brief` true.
     ...(unbound.length > 0 ? { unbound } : {}),
     ...(typography !== undefined ? { typography } : {}),
     ...(effects !== undefined ? { effects } : {}),
     ...(validation.length > 0 ? { validation } : {}),
-    // Conditional spread for the same reason as every optional block above:
-    // guidelinesOf returns undefined when there is no prose, and
-    // `{ guidelines: undefined }` still leaves `'guidelines' in brief` true for
-    // a consumer reading the object before it is serialized.
     ...(guidelines !== undefined ? { guidelines } : {}),
   };
 }

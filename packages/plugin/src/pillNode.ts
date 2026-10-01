@@ -1,14 +1,8 @@
 /// <reference types="@figma/plugin-typings" />
 /**
- * pillNode.ts: draws and repaints the publish pill on a header band.
- *
- * Figma-facing counterpart of publishPill.ts. Colours are the header band's
- * own roles, because the pill sits on the band: `onHeader` is the ink the
- * title already uses there, so it is readable on every brand header colour
- * the user can pick, and `accent` is the brand accent the eyebrow rule uses.
- *
- * Repainting finds pills by plugin data, never by name or position, so a
- * header the user moved keeps its pill where they put it.
+ * Draws and repaints the publish pill (publishPill.ts) on a header band, in
+ * the band's own colour roles so it reads on any brand header. Repainting
+ * finds pills by plugin data, never by name or position.
  */
 import { palette, solidFill, makeText, hstack } from './frameKit';
 import { PILL_KEY, PILL_NODE_NAME, pillLabel, type PillState } from './publishPill';
@@ -61,18 +55,13 @@ export function buildPillNode(state: PillState): FrameNode {
   return pill;
 }
 
-/** The subset of SectionNode (and FrameNode) that repainting needs; a test can fake it. */
+/** What repainting needs from a Section or Frame; a test can fake it. */
 export type PillHost = Pick<ChildrenMixin, 'findAllWithCriteria'>;
 
 /**
- * Restyle every pill under `host` to `state`, in place. Loads the label's own
- * font first, because repainting happens outside a build and frameKit's fonts
- * may not be loaded. Returns how many pills were repainted; 0 on a doc that
- * predates pills, which is not an error.
- *
- * findAllWithCriteria is evaluated by Figma, not by a predicate called once
- * per node across the bridge, and the pluginData filter returns only frames
- * that carry the key at all; the value check below is the last word.
+ * Restyle every pill under `host` in place and return the count (0 is not an
+ * error). Loads the label's font first: outside a build frameKit's fonts may
+ * not be loaded. findAllWithCriteria runs natively; the value check is final.
  */
 export async function repaintPills(host: PillHost, state: PillState): Promise<number> {
   const pills = host

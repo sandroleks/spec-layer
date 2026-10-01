@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  diagnostic, sortDiagnostics, promoteToErrors, hasErrors,
+  diagnostic, sortDiagnostics,
   DEFAULT_SEVERITY, compareCodeUnits,
 } from '../../src/v5/diagnostics';
 
@@ -72,20 +72,5 @@ describe('diagnostics', () => {
     const c = diagnostic('PATH_COLLISION', { entity_id: 'V:1', message: 'm', details: { n: 2 } });
     const d = diagnostic('PATH_COLLISION', { entity_id: 'V:1', message: 'm', details: { n: 1 } });
     expect(sortDiagnostics([c, d])).toEqual(sortDiagnostics([d, c]));
-  });
-
-  it('reports whether any error is present, for §14.2 exit behaviour', () => {
-    expect(hasErrors([diagnostic('CONFUSABLE_NAME', { entity_id: 'V:1', message: 'm' })])).toBe(false);
-    expect(hasErrors([diagnostic('ALIAS_CYCLE', { entity_id: 'V:1', message: 'm' })])).toBe(true);
-  });
-
-  it('promotes only the named codes in strict mode', () => {
-    const given = [
-      diagnostic('CONFUSABLE_NAME', { entity_id: 'V:1', message: 'm' }),
-      diagnostic('MODE_VALUES_IDENTICAL', { entity_id: 'V:2', message: 'm' }),
-    ];
-    const strict = promoteToErrors(given, ['CONFUSABLE_NAME']);
-    expect(strict[0].severity).toBe('error');
-    expect(strict[1].severity).toBe('info');
   });
 });

@@ -4,23 +4,16 @@ import { cleanPartName, walkParts } from './naming';
 
 export interface LayoutValues { radius?: number; gap?: number }
 /**
- * `part` is the leaf layer name, `path` the full identity from the component
- * root down. Both are kept, and they are deliberately NOT the same string:
- *
- *  - `path` exists so a finding can join a layout entry to the TokenRule bound
- *    on the SAME node. `part` cannot do that job, because it is unique only
- *    among siblings (see the grouping comment in tokens.ts): two nodes named
- *    `Icon` in different subtrees share one flat `part` key.
- *  - `part` keeps the raw `n.name` it has always carried rather than being
- *    recomputed through walkParts, because specContentHash hashes it. Swapping
- *    it for walkParts' sibling-disambiguated name would move the content_hash
- *    of every committed doc for a change that alters no rendered output.
+ * `part` is the raw leaf layer name, `path` the full identity from the root.
+ * `path` joins a layout entry to the TokenRule on the SAME node (`part` is
+ * unique only among siblings). `part` stays the raw `n.name` because
+ * specContentHash hashes it; walkParts' disambiguated name would move every
+ * committed doc's hash.
  */
 export interface LayoutSummary { part: string; path: string; summary: string; values: LayoutValues }
 
-/** The numbers `fmt()` renders into its sentence, kept alongside it so the
- *  prose and the structured numbers a finding can compare against a token's
- *  resolved value are built from the same LayoutInfo and can never disagree. */
+/** The numbers `fmt()` renders, built from the same LayoutInfo so the prose
+ *  and the structured values a finding compares cannot disagree. */
 function valuesOf(l: LayoutInfo): LayoutValues {
   return {
     ...(l.cornerRadius !== undefined ? { radius: l.cornerRadius } : {}),
@@ -39,25 +32,17 @@ function fmt(l: LayoutInfo): string {
 }
 
 /**
- * Layout summaries for the default variant's parts. Feeds the prose prompt and
- * the geometry finding, not the rendered spec.
- *
- * The walk is walkParts, the same one extractTokens and extractGaps use, so
- * `path` here is byte-identical to the `path` on a TokenRule for the same node.
- * A second walk would be a second path vocabulary, and validate.ts's join
- * would then match nothing and drop the geometry rule silently.
+ * Layout summaries for the default variant's parts, for the prose prompt and
+ * the geometry finding. Uses walkParts like extractTokens, so `path` matches a
+ * TokenRule's byte for byte; a second walk would make validate.ts's join
+ * silently match nothing.
  */
 export function extractLayout(root: SerializedNode): LayoutSummary[] {
   const out: LayoutSummary[] = [];
-  // Read from the ORIGINAL root, before defaultVariant unwraps it: after
-  // unwrapping, a set's default variant is a COMPONENT just like a standalone
-  // component, so testing the unwrapped node would name the root after a
-  // variant ("Style=Filled, State=Enabled") and every path here would miss the
-  // rules it has to join against.
+  // Test the ORIGINAL root: the unwrapped default variant is a COMPONENT, so
+  // the root would be named after a variant and every path would miss its join.
   const isInSet = root.type === 'COMPONENT_SET';
-  // skipInvisible stays false: this list also feeds the prose prompt, whose
-  // current output includes a hidden node's layout, and changing which parts
-  // appear at all is not part of a join fix.
+  // skipInvisible stays false: the prose prompt includes a hidden node's layout.
   walkParts(defaultVariant(root), isInSet ? 'Container' : cleanPartName(root.name), (n, _part, path) => {
     if (!n.layout) return;
     const summary = fmt(n.layout);

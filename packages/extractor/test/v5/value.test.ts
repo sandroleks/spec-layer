@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  isLiteral, isAlias, isMissing, resolvedValueOf,
+  isAlias, resolvedValueOf,
   SUPPORTED_UNITS, SUPPORTED_TOKEN_TYPES,
 } from '../../src/v5/value';
 import type { CanonicalValue } from '../../src/v5/value';
@@ -41,11 +41,10 @@ const UNRESOLVED_ALIAS: CanonicalValue = {
 const MISSING: CanonicalValue = { kind: 'missing', reason: 'no_value_for_mode' };
 
 describe('canonical value', () => {
-  it('discriminates the three kinds', () => {
-    expect(isLiteral(LITERAL)).toBe(true);
+  it('recognises an alias', () => {
     expect(isAlias(RESOLVED_ALIAS)).toBe(true);
-    expect(isMissing(MISSING)).toBe(true);
-    expect(isLiteral(RESOLVED_ALIAS)).toBe(false);
+    expect(isAlias(LITERAL)).toBe(false);
+    expect(isAlias(MISSING)).toBe(false);
   });
 
   it('reads through a resolved alias to its typed value', () => {

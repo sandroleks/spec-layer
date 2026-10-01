@@ -12,50 +12,37 @@ export function parseVariantName(name: string): Record<string, string> | null {
   return out;
 }
 
-/** One character's worth of `\s`. Tested a character at a time, never against
- *  a run, so no amount of input makes the test itself do more work. */
+/** Tested one character at a time, never against a run, so it stays linear. */
 const WHITESPACE = /\s/;
 
 /**
- * Layer names carry Figma prop-binding artifacts like "icon-primary#" — strip
- * them, along with any whitespace trailing the hashes, then trim.
+ * Strip Figma prop-binding artifacts like "icon-primary#" (trailing hashes and
+ * any whitespace after them), then trim.
  *
- * A reverse scan, not `replace(/#+\s*$/, '')`. That regex is quadratic on a
- * name that is a long run of `#` not followed by the anchor: the engine retries
- * `#+` from every start position, and 40k hashes measured 6.7 seconds. Layer
- * names are not adversarial in the usual sense, but nothing bounds them either,
- * and this runs once per node on every extraction.
- *
- * The scan reproduces the regex exactly, which matters because part names are
- * identity here: they feed anatomy, token paths and `specContentHash`. Read it
- * as the pattern read, right to left: `$`, then `\s*`, then `#+`, and the
- * replacement happens only when that `+` saw at least one hash.
+ * A reverse scan, because `replace(/#+\s*$/, '')` is quadratic on a long run
+ * of `#`. It must reproduce that regex exactly: part names feed anatomy, token
+ * paths and `specContentHash`. Read it right to left as `$`, `\s*`, `#+`.
  */
 export function cleanPartName(name: string): string {
   let end = name.length;
   while (end > 0 && WHITESPACE.test(name[end - 1])) end--;
   const afterHashes = end;
   while (end > 0 && name[end - 1] === '#') end--;
-  // No hash means the regex found nothing to replace, so the whole name (still
-  // trimmed, as the original's trailing `.trim()` did) is the answer.
+  // No hash: the regex would replace nothing, so only trim.
   return afterHashes === end ? name.trim() : name.slice(0, end).trim();
 }
 
 /**
- * Component PROPERTY names carry a "#nodeId:n" suffix ("Label#123:4"); take the
- * part before the first hash.
- *
- * Deliberately different from cleanPartName, which strips only a TRAILING hash
- * from LAYER names. They handle different Figma artifacts and merging them
- * would mangle a layer legitimately called "icon#2".
+ * Component PROPERTY names carry a "#nodeId:n" suffix ("Label#123:4"). Not
+ * cleanPartName, which strips only TRAILING hashes so a layer called "icon#2"
+ * survives.
  */
 export const cleanPropName = (raw: string) => raw.split('#')[0];
 
 /**
- * Assign each child a part name unique among its SIBLINGS: the first keeps the
- * clean name, later same-named siblings get " (2)", " (3)". Numbering runs over
- * ALL children including hidden ones, so a part keeps the same name in a variant
- * where a same-named sibling happens to be hidden.
+ * A part name unique among SIBLINGS: later same-named siblings get " (2)",
+ * " (3)". Numbering counts hidden children too, so a part keeps its name in a
+ * variant where a same-named sibling is hidden.
  */
 export function siblingPartNames(children: SerializedNode[]): Map<SerializedNode, string> {
   const counts = new Map<string, number>();
@@ -70,13 +57,8 @@ export function siblingPartNames(children: SerializedNode[]): Map<SerializedNode
 }
 
 /**
- * Join a parent path and a child part name into a path identity.
- *
- * A layer name can itself contain a slash, which would make a joined path
- * ambiguous: "Container/icon/left" could be a layer called "icon/left" inside
- * Container, or a layer "left" inside a layer "icon". Escaping the literal at
- * construction keeps the identity a single readable string, which it has to be if
- * a reader is to match a token binding against an anatomy entry by eye.
+ * Join a parent path and a child part name. A slash inside a layer name is
+ * escaped so the path stays unambiguous and still readable by eye.
  */
 export function joinPath(parentPath: string, part: string): string {
   const escaped = part.replace(/\//g, '\\/');
@@ -84,16 +66,12 @@ export function joinPath(parentPath: string, part: string): string {
 }
 
 /**
- * Depth-first walk that hands each node its disambiguated part name and its
- * path identity: the sibling-disambiguated names from the component root down
- * to this node, joined with `/`. Replaces per-call `cleanPartName(n.name)`,
- * which merged same-named siblings into one part.
+ * Depth-first walk handing each node its sibling-disambiguated part name and
+ * its path identity from the component root, joined with `/`.
  *
- * `skipInvisible` prunes hidden subtrees (token extraction wants that so
- * presence-driven conditioning works; gap detection does not). Pass a
- * PREDICATE instead of `true` to prune something narrower: token extraction
- * passes `hiddenPartRules().prune`, which keeps a layer a boolean component
- * property can reveal, because a doc can be asked to document exactly those.
+ * `skipInvisible` prunes hidden subtrees; a PREDICATE prunes something
+ * narrower (token extraction passes `hiddenPartRules().prune`, which keeps a
+ * layer a boolean property can reveal).
  */
 export function walkParts(
   root: SerializedNode,

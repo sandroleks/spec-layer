@@ -1,19 +1,11 @@
 import type { NodeResolver } from './serialize';
 
 /**
- * One answer per id for the life of one serialization pass.
- *
- * serializeNode awaits resolver.variable(id) for every binding on every node
- * in every variant, so a component set that binds the same few dozen
- * variables across forty variants makes hundreds of Figma round trips for a
- * few dozen distinct ids. Caching the PROMISE (not the value) means the
- * second request for an id joins the first in flight instead of starting
- * another. Null is cached too: the base resolver already turns failures into
- * null, and a pass must see one answer per id, not a retry.
- *
- * mainComponent is keyed by a node object, not an id, so it passes through.
- * The cache dies with the wrapper; create one per pass, never one per session,
- * or a rename between two selections would serve the old name.
+ * One answer per id for one serialization pass. Caches the promise, so a
+ * second request joins the first in flight; null is cached too, since a pass
+ * must see one answer per id. mainComponent is keyed by node, so it passes
+ * through. Create one per pass, never per session, or a rename serves the old
+ * name.
  */
 export function memoizedResolver(base: NodeResolver): NodeResolver {
   const variables = new Map<string, ReturnType<NodeResolver['variable']>>();

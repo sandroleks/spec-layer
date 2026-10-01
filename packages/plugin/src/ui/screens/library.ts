@@ -1,9 +1,7 @@
 /**
- * library.ts — connected documentation maintenance.
- *
- * This module is presentation only. The host owns refreshes, source checks,
- * updates, destructive confirmations, and focus changes. Capability flags on
- * each row are the only authority for which overflow actions are shown.
+ * Library screen markup, presentation only: the host owns refreshes, checks,
+ * updates, confirmations and focus. Each row's capability flags alone decide
+ * which overflow actions show.
  */
 
 import { FOUNDATION_ICON, icon, type IconName } from '../shell/icons';
@@ -31,10 +29,6 @@ export interface LibraryChangeGroupPresentation {
   items: readonly LibraryChangeItemPresentation[];
 }
 
-/**
- * Structural on purpose: viewModel/library.ts can remain the domain owner and
- * pass its richer rows here without this presentation layer importing it.
- */
 export interface LibraryRowPresentation
   extends Omit<LibraryRowModel, 'changeGroups'> {
   changeGroups: readonly LibraryChangeGroupPresentation[] | null;
@@ -48,11 +42,9 @@ export interface LibraryScreenPresentation
   loading?: boolean;
   refreshing?: boolean;
   /**
-   * A "has anything changed?" probe is out. Its reply may start a new pass,
-   * so Update, Update all and Refresh are disabled until it lands. Nothing
-   * else reads it: the probe is usually answered at once with no work, so
-   * the labels and the check line keep following `refreshing` and do not
-   * flash.
+   * A "has anything changed?" probe is out; its reply may start a new pass, so
+   * Update, Update all and Refresh are disabled. Nothing else reads it, so the
+   * labels and check line follow `refreshing` and do not flash.
    */
   probing?: boolean;
   /** At least one source check failed, so a batch would silently miss work. */
@@ -68,26 +60,18 @@ export interface LibraryScreenPresentation
   /** An Update or Update all run. The footer card floats this above the
    * buttons it came from; a source check goes in the check line instead. */
   progress?: ProgressPresentation | null;
-  /**
-   * The row the global search palette just opened, if any. It is marked and
-   * scrolled to, which is how a palette that lists documents hands the user
-   * off to a list of many rows without losing the one they picked. The host
-   * clears it on the next refresh, filter change, or screen change.
-   */
+  /** The row the search palette just opened, marked and scrolled to until the host clears it. */
   revealedDocId?: string | null;
   /**
-   * The main thread could not read this file's docs (a `libraryError` reply).
-   * With no rows it replaces the empty state, because "No docs yet" would
-   * claim a fact the read never established; with rows from an earlier read
-   * it sits above them and says they may be out of date.
+   * The docs could not be read (`libraryError`). With no rows it replaces the
+   * empty state, since "No docs yet" would claim an unestablished fact; with
+   * earlier rows it sits above them and says they may be out of date.
    */
   error?: string | null;
   /**
-   * The scan behind the current rows stopped partway (a `library` reply with
-   * `incomplete: true`): the rows shown are real, but the scan may never have
-   * reached every doc. A plain note says so and offers Refresh; nothing here
-   * claims the library is up to date or fully in sync until a complete read
-   * clears this flag.
+   * The scan behind the rows stopped partway (`incomplete: true`): the rows are
+   * real but may not be all, so nothing claims the library is complete or in
+   * sync until a complete read clears this.
    */
   readIncomplete?: boolean;
 }
@@ -107,14 +91,10 @@ const STATUS_COPY: Record<LibraryRowStatus, string> = {
 };
 
 /**
- * The rebuild banner, said once for the whole Library above the filters
- * rather than under every stale row. A title and a button, nothing more: the
- * rows already say "Rebuild needed", and the button carries no count, like
- * "Update all docs", because the Updates filter shows it and a label that
- * changes width makes the button jump. A rebuild keeps the editorial slots
- * and rewrites Keyboard, because the old prompt's bullets upgrade to the table
- * lossily (see missingProseKeys in actions.ts); that caveat rides the
- * button's tooltip.
+ * The rebuild banner, said once above the filters rather than under each stale
+ * row. Its button carries no count, like "Update all docs", so its width holds.
+ * A rebuild rewrites Keyboard because the old bullets upgrade to the table
+ * lossily (see missingProseKeys in actions.ts); that caveat is the tooltip.
  */
 export const REBUILD_TITLE = 'Some docs are from an older plugin version';
 export const REBUILD_KEYBOARD_NOTE =
@@ -156,9 +136,8 @@ function changeGroupMarkup(group: LibraryChangeGroupPresentation): string {
 }
 
 /**
- * The second line under "Source changed" when no list can be shown. Placed in
- * HTML directly, not through esc(), so it must stay free of markup characters;
- * the typographic apostrophe needs no escape.
+ * The second line under "Source changed" when no list can be shown. Inserted
+ * without esc(), so it must stay free of markup characters.
  */
 const CHANGE_UNAVAILABLE_COPY: Record<LibraryChangeUnavailableReason, string> = {
   noBaseline: 'Update this doc once to enable change lists.',
@@ -238,9 +217,7 @@ function menuGroups(row: LibraryRowPresentation): MenuItem[][] {
     maintenance.push({
       action: 'update',
       label: 'Update this doc',
-      // Same glyph as the footer's "Update all docs": one act, one glyph,
-      // whether it runs on this row or on every drifted doc. It wore `refresh`
-      // here, which is the re-check that writes nothing.
+      // Matches "Update all docs"; `refresh` means the re-check, which writes nothing.
       glyph: 'fileCheck',
     });
   }
@@ -273,8 +250,7 @@ function menuGroups(row: LibraryRowPresentation): MenuItem[][] {
     destructive.push({
       action: 'detach',
       label: 'Detach this doc',
-      // Its own glyph: `externalLink` here made cutting the source link look
-      // like the "View this doc on canvas" navigation two items up.
+      // Not `externalLink`, which would read as "View this doc on canvas".
       glyph: 'unlink',
     });
   }
@@ -323,12 +299,9 @@ function menuMarkup(
 }
 
 /**
- * A foundation row wears the same glyph the Foundations picker gave the source
- * it was generated from — a swatch for a color collection, a ruler for a
- * dimension one, `typography` for text styles — so the two lists describe the
- * same thing the same way. One shared `layoutGrid` for all of them said only
- * "not a component", which the Library's own grouping already says. `puzzle`
- * keeps its existing "this is a component" meaning.
+ * A foundation row wears the glyph the Foundations picker gave its source (a
+ * swatch for color, a ruler for dimension, `typography` for text styles), so
+ * both lists describe it the same way.
  */
 function rowIcon(row: LibraryRowPresentation): IconName {
   if (row.kind !== 'foundation') return 'puzzle';
@@ -338,13 +311,9 @@ function rowIcon(row: LibraryRowPresentation): IconName {
 const FOUNDATION_TITLE_PREFIX = 'Foundations · ';
 
 /**
- * The main thread always prefixes a foundation row's label with
- * "Foundations · " (see messages.ts) so it reads unambiguously wherever it
- * appears alone — the global search results, for one. Inside this list the
- * new foundation icon already says that, so repeating it in the row's own
- * bold title is pure noise stacked on an already-long name. The full label
- * stays intact everywhere else (aria-label, search) — only the visible title
- * here is shortened, and it remains a substring of those, per WCAG 2.5.3.
+ * Drops the "Foundations · " prefix main adds (messages.ts) from the visible
+ * title, where the icon already says it. The full label stays in aria-label and
+ * search, and the title remains a substring of it, per WCAG 2.5.3.
  */
 function rowTitle(row: LibraryRowPresentation): string {
   return row.kind === 'foundation' && row.label.startsWith(FOUNDATION_TITLE_PREFIX)
@@ -405,10 +374,7 @@ export function libraryRowMarkup(
   );
 }
 
-/**
- * A doc sheet drops into a folder and is marked in sync: what the Library does
- * with every doc once one exists. Decorative, so hidden from assistive tech.
- */
+/** A doc sheet drops into a folder and is marked in sync. Decorative, so aria-hidden. */
 const EMPTY_ILLUSTRATION =
   '<svg class="sl-empty-illustration sl-lib-illustration" viewBox="0 0 160 112" width="160" height="112" ' +
   'fill="none" aria-hidden="true" focusable="false">' +
@@ -429,9 +395,8 @@ const EMPTY_ILLUSTRATION =
   '</svg>';
 
 /**
- * The read failed and nothing is on screen to keep. Names the failure and
- * offers the same Refresh the footer has; nothing here claims the file has
- * or lacks docs. `role="alert"` so a screen reader hears it once, on arrival.
+ * The read failed with nothing on screen: names the failure and offers Refresh,
+ * never claiming the file has or lacks docs. `role="alert"` announces it once.
  */
 function errorMarkup(message: string): string {
   return (
@@ -445,10 +410,8 @@ function errorMarkup(message: string): string {
 }
 
 /**
- * The read failed but the last successful read's rows are still listed.
- * `message` is a caught error's own text: technical detail, so it goes last,
- * in parentheses, without a trailing period of its own, and a blank one adds
- * nothing rather than a bare "()".
+ * The read failed but earlier rows remain. `message` is technical detail, so it
+ * goes last in parentheses without its own period; a blank one adds nothing.
  */
 function errorBannerMarkup(message: string): string {
   const detail = message.trim().replace(/\.$/, '');
@@ -461,11 +424,8 @@ function errorBannerMarkup(message: string): string {
 }
 
 /**
- * The scan behind the rows below stopped partway. Unlike errorBannerMarkup
- * this is not a failed re-read of an existing list: it is the current read
- * itself, incomplete, so it carries its own Refresh rather than pointing at
- * a re-read that has not happened yet. `role="status"` because nothing here
- * is as urgent as a read failure; it is a caveat on the rows underneath.
+ * The current read itself stopped partway, so it carries its own Refresh.
+ * `role="status"`: a caveat on the rows, less urgent than a read failure.
  */
 function incompleteNoteMarkup(): string {
   return (
@@ -479,12 +439,9 @@ function incompleteNoteMarkup(): string {
 }
 
 /**
- * The scan stopped before it collected a single row, and no earlier read left
- * anything to fall back on either. Distinct from errorMarkup: nothing failed,
- * so this never says the read "couldn't" happen, but it is just as wrong to
- * show the illustrated "No docs yet" — that claims a fact an incomplete scan
- * never established. `role="status"`, matching incompleteNoteMarkup's tone:
- * this is a caveat on an in-progress read, not an alert.
+ * The scan stopped before finding any row, with no earlier read to fall back
+ * on. Nothing failed, but "No docs yet" would claim a fact the scan never
+ * established. `role="status"`, like incompleteNoteMarkup.
  */
 function incompleteEmptyMarkup(): string {
   return (
@@ -498,11 +455,8 @@ function incompleteEmptyMarkup(): string {
 }
 
 /**
- * `incomplete` is true when a failed re-read or a partial scan means the
- * current filter's empty subset cannot be trusted as a complete count (the
- * banner above already says so; this keeps the claim below it honest too).
- * Shared between the two filters: "None found" is the whole claim either can
- * still honestly make, so there is no reason to say it two different ways.
+ * `incomplete`: a failed re-read or partial scan means the filter's empty subset
+ * is not a complete count, so "None found" is all either filter can claim.
  */
 function emptyMarkup(filter: LibraryFilter, hasRows: boolean, incomplete: boolean): string {
   if (!hasRows) {
@@ -550,10 +504,8 @@ export function libraryHeaderMarkup(): string {
 }
 
 /**
- * The three filters' ids and labels, shared between the full paint (which
- * builds the whole button) and patchLibraryDrift (which only rewrites a
- * drawn button's count), so the two cannot drift apart on which id maps to
- * which count.
+ * The filters' ids and labels, shared by the full paint and patchLibraryDrift
+ * so the two cannot disagree on which id maps to which count.
  */
 const LIBRARY_FILTERS: ReadonlyArray<{ id: LibraryFilter; label: string }> = [
   { id: 'all', label: 'All' },
@@ -570,19 +522,10 @@ function libraryFilterCount(model: LibraryScreenPresentation, id: LibraryFilter)
 }
 
 /**
- * The check line under the filters: one line that says what the source
- * check is doing. While a check runs it carries that check's progress; once
- * none is running, when the rows were last checked; before either, nothing.
- *
- * Always drawn, at a fixed height (patterns.css), whenever the filter group
- * is. The caption this replaced was `hidden` during a check and shown after
- * it, with the check's progress in the footer card, so the start and the
- * end of every check moved the whole list. Measured at 15px each way.
- *
- * The one place the rule lives, shared by the full paint and
- * patchLibraryCheckLine. With no rows there is no filter group and no line
- * either; the drift patch already falls back to a full paint when there is
- * no `.sl-library-list`, so that case never needs an in-place update.
+ * The check line under the filters: a running check's progress, else when the
+ * rows were last checked, else nothing. Always drawn at a fixed height
+ * (patterns.css) with the filter group, so a check's start and end move no row.
+ * The one place the rule lives, shared by the full paint and patchLibraryCheckLine.
  */
 /** `live` is true for a check running now, false for the stamp of one past. */
 type CheckLineState =
@@ -619,11 +562,7 @@ function checkLineContent(state: CheckLineState): string {
   );
 }
 
-/**
- * Polite while a check runs, so its progress is announced; off otherwise,
- * so the stamp moving from "Checked 3 min ago" to "4 min ago" is not read
- * out every minute.
- */
+/** Polite while a check runs; off otherwise, so the minute-by-minute stamp is not read out. */
 function checkLineLive(state: CheckLineState): 'polite' | 'off' {
   return state.mode === 'progress' || (state.mode === 'text' && state.live) ? 'polite' : 'off';
 }
@@ -701,33 +640,19 @@ export function libraryFooterMarkup(model: LibraryScreenPresentation): string {
   );
   const refreshLabel = model.refreshing ? 'Refreshing…' : 'Refresh library';
   /**
-   * Label only. The glyph is fixed at `fileCheck` and does not vary with
-   * state: one slot must not show an action, then a warning, then a status.
-   * Circular arrows mean "re-reads, writes nothing" and belong to "Refresh
-   * library" beside it; failed checks are already visible per row as
-   * "Couldn’t check". See the icon contract in design-system/components.css.
-   *
-   * "Update all docs", not "Update all 3": see docs/plugin-voice-and-copy.md
-   * ("Footer actions"). It names the same object the create buttons do, and
-   * "all" is what separates it from a row's own "Update this doc" — the
-   * count is already on the Updates filter beside it, and a label that changes
-   * width as rows drift in and out made the button jump.
+   * Only the label varies; the glyph stays `fileCheck`, since one slot must not
+   * show an action, then a warning, then a status. See the icon contract in
+   * design-system/components.css. "Update all docs", not "Update all 3": see
+   * docs/plugin-voice-and-copy.md ("Footer actions"); the count is on the
+   * Updates filter, and a label that changes width makes the button jump.
    */
-  // One shared boolean for the label and the disabled attribute below, so
-  // they cannot drift apart: a batch over rows a read couldn't vouch for is
-  // never claimed safe in one and refused in the other. `error` belongs here
-  // alongside `checksIncomplete`/`readIncomplete` for the same reason it
-  // already gates the rebuild banner — stale rows behind a failed re-read
-  // cannot be trusted to have the real update count either.
+  // One boolean for the label and the disabled attribute, so they cannot
+  // disagree; `error` counts because stale rows behind a failed re-read cannot
+  // be trusted for the update count either.
   const batchUnreliable = Boolean(model.checksIncomplete) || Boolean(model.readIncomplete) || Boolean(model.error);
-  // "Up to date" is a completeness claim: every source check has landed,
-  // none failed, and every source still exists. `model.refreshing` already
-  // covers both an explicit refresh and rows still `pending` a check (see
-  // ui-vnext.ts), so while it is true a check is genuinely in flight and
-  // "Checking…" is the true label, ahead of "Refresh to retry" — a re-check
-  // already started is not the same as one that still needs asking for. A
-  // Library with an orphaned row has nothing left to update but is not up to
-  // date either, so it gets its own honest label instead of either claim.
+  // "Up to date" is a completeness claim: every check landed, none failed, every
+  // source exists. While `refreshing` a check is in flight, so "Checking…" wins
+  // over "Refresh to retry". An orphaned row gets its own honest label.
   const sourceMissing = model.allRows.some((row) => row.status === 'orphaned');
   const batchLabel = model.updatingAll
     ? 'Updating…'
@@ -746,12 +671,8 @@ export function libraryFooterMarkup(model: LibraryScreenPresentation): string {
   return (
     progress +
     '<div class="sl-footer-actions">' +
-    /*
-     * Never disabled, unlike the two beside it. It navigates: it opens the
-     * Publish screen and starts nothing, so a refresh or a
-     * batch update in flight is no reason to withhold it, and the publish
-     * screen's own primary is what disables itself while publishing.
-     */
+    // Never disabled: it only opens the Publish screen, whose own primary
+    // disables itself while publishing.
     '<button class="sl-button sl-library-publish" data-tone="secondary" ' +
     'type="button" data-publish-open>' +
     `${icon('upload', 15)}<span>Publish</span></button>` +
@@ -784,17 +705,12 @@ export interface RowMenuMetrics {
   height: number;
 }
 
-/**
- * Row-relative `top` for an open row menu, or null to keep the CSS default.
- *
- * Pure so the clamping can be tested without a layout engine; see
- * placeOpenRowMenu for why this is needed at all.
- */
+/** Row-relative `top` for an open row menu, or null for the CSS default; see placeOpenRowMenu. */
 export function rowMenuTop(metrics: RowMenuMetrics): number | null {
   const { rowTop, viewTop, viewBottom, height } = metrics;
   // Every bound is row-relative, matching the `top` this returns.
   const lowest = viewBottom - MENU_EDGE_GAP - height - rowTop;
-  if (MENU_BELOW_TOP <= lowest) return null; // Fits below, so don't intervene.
+  if (MENU_BELOW_TOP <= lowest) return null;
 
   const highest = viewTop + MENU_EDGE_GAP - rowTop;
   const above = MENU_ABOVE_BOTTOM - height;
@@ -804,21 +720,11 @@ export function rowMenuTop(metrics: RowMenuMetrics): number | null {
 }
 
 /**
- * Keeps an open row menu inside the scroll viewport.
- *
- * The menu is absolutely positioned inside `.sl-screen-scroll`, which is an
- * `overflow-y: auto` clipping context with the sticky footer sitting opaque
- * just below it. Opening downward at a fixed offset is therefore fine for most
- * rows and clipped mid-menu further down the list — the taller the row's menu,
- * the higher up that starts, and the last row loses its destructive actions
- * entirely.
- *
- * So this measures once and flips the menu above the row when it does not fit
- * below. Measuring once is enough: the host closes the menu on scroll, so an
- * open menu never has to track anything. Row index cannot stand in for the
- * measurement — whether there is room below depends on scroll position and on
- * how many actions the row's capability flags produced, and a short list has
- * room under its last row.
+ * Keeps an open row menu inside the scroll viewport, which clips it above the
+ * opaque sticky footer: measures once and flips the menu above the row when it
+ * does not fit below. Once is enough because the host closes the menu on
+ * scroll; row index cannot stand in, since room depends on scroll position and
+ * on how many actions the row has.
  */
 function placeOpenRowMenu(refs: ShellRefs): void {
   const menu = refs.scroll.querySelector<HTMLElement>('.sl-library-overflow-menu');
@@ -836,7 +742,6 @@ function placeOpenRowMenu(refs: ShellRefs): void {
 }
 
 export interface RevealMetrics {
-  /** The scroll container's current offset. */
   scrollTop: number;
   /** Viewport y of the row being revealed, and of the container itself. */
   rowTop: number;
@@ -847,11 +752,7 @@ export interface RevealMetrics {
   scrollHeight: number;
 }
 
-/**
- * Scroll offset that brings a revealed row into view, centred vertically and
- * clamped to the scrollable range. Pure so the arithmetic can be tested
- * without a layout engine; see revealLibraryRow for the caller.
- */
+/** Scroll offset that centres a revealed row, clamped to the scrollable range. */
 export function revealScrollTop(metrics: RevealMetrics): number {
   const { scrollTop, rowTop, viewTop, viewHeight, rowHeight } = metrics;
   const centred = scrollTop + (rowTop - viewTop)
@@ -866,14 +767,9 @@ function cssString(value: string): string {
 }
 
 /**
- * Brings one Library row into view and puts focus on it.
- *
- * Called once, right after the paint that first marks the row, rather than
- * from renderLibraryScreen: source checks repaint this screen several times
- * while a reveal is still marked, and a renderer that scrolled on every paint
- * would drag the list back under the user each time one landed. The
- * `is-revealed` mark is what survives those repaints; this is the one-time
- * move.
+ * Brings one Library row into view and focuses it, once, right after the paint
+ * that first marks it: source checks repaint while the mark stays, and
+ * scrolling on every paint would drag the list from under the user.
  */
 export function revealLibraryRow(refs: ShellRefs, docId: string): void {
   const selector = `.sl-library-row[data-doc-id="${cssString(docId)}"]`;
@@ -887,9 +783,8 @@ export function revealLibraryRow(refs: ShellRefs, docId: string): void {
     rowHeight: row.offsetHeight,
     scrollHeight: refs.scroll.scrollHeight,
   });
-  // Explicit order, not one selector list: a row without an openable frame
-  // renders its identity as a static div, which querySelector would return
-  // first and focus() would then do nothing with.
+  // Explicit order: a row with no openable frame draws its identity as a static
+  // div, which one selector list would return first.
   const target = row.querySelector<HTMLElement>('button.sl-library-jump')
     ?? row.querySelector<HTMLElement>('[data-library-disclosure]')
     ?? row.querySelector<HTMLElement>('[data-library-menu]');
@@ -918,22 +813,14 @@ function footerControlSelector(element: Element): string | null {
 }
 
 /**
- * Redraws only what one landed source check changed: the rows whose status
- * moved (or, for the row whose overflow menu is open, whose busy-driven
- * "Update this doc" item moved), the rebuild banner's disabled state, the
- * three filter counts, and the footer. Every `driftSource` reply used to
- * repaint the whole list, which for N rows is N paints of N rows and dropped
- * focus each time. A row's controls, and the footer's, are re-found by
- * selector after the redraw, so focus stays on the same control, and an open
- * menu's on-screen position is recomputed after any row redraw, the way a
- * full paint already does.
+ * Redraws only what one landed source check changed (moved rows, an open
+ * menu's busy-driven item, the rebuild button, filter counts, the check line,
+ * the footer), keeping focus on the same control, so a pass of N replies does
+ * not paint N rows N times.
  *
- * Returns false when only a full paint is correct: the Library list is not on
- * screen, it is loading, a filter other than All is on (a row's status
- * decides whether it is listed at all), the drawn rows are not the model's
- * rows, or the count of rows behind the rebuild banner changed (that needs
- * the banner's own markup rebuilt, not just its disabled state, and is left
- * to a full paint).
+ * False when only a full paint is correct: the list is not on screen or is
+ * loading, a filter other than All is on, the drawn rows differ from the
+ * model's, or the rebuild count changed.
  */
 export function patchLibraryDrift(refs: ShellRefs, model: LibraryScreenPresentation): boolean {
   if (!refs.screen.classList.contains('sl-library-screen')) return false;
@@ -951,12 +838,8 @@ export function patchLibraryDrift(refs: ShellRefs, model: LibraryScreenPresentat
   if (drawn.size !== model.rows.length || model.rows.some((row) => !drawn.has(row.docId))) return false;
 
   const busy = Boolean(model.refreshing || model.probing || model.updatingAll || model.updatingDocId);
-  // menuMarkup's overflow items are only rendered while the menu is open, and
-  // only the "Update this doc" item there depends on `busy`. A row whose own
-  // status did not move is otherwise left untouched, so if busy changed while
-  // its menu happens to be open, that row needs redrawing too, or the open
-  // menu keeps showing a disabled action a full paint would have re-enabled
-  // (or the reverse).
+  // Only an open menu's "Update this doc" item depends on `busy`, so a row
+  // whose status held still is redrawn when busy changes under its open menu.
   const busyChanged = list.dataset.busy !== String(busy);
   let redrewAny = false;
   for (const row of model.rows) {
@@ -991,30 +874,23 @@ export function patchLibraryDrift(refs: ShellRefs, model: LibraryScreenPresentat
 
   patchLibraryCheckLine(refs, model);
 
-  // The footer is replaced wholesale, so a focused footer control is re-found
-  // by selector afterwards, the way a redrawn row's control is above. A
-  // control the new footer disables cannot take focus back, which is also
-  // what a full paint would do.
+  // A focused footer control is re-found by selector; one the new footer
+  // disables cannot take focus back, as with a full paint.
   const activeElement = document.activeElement;
   const footerFocus = activeElement && refs.footer.contains(activeElement)
     ? footerControlSelector(activeElement)
     : null;
   refs.footer.innerHTML = libraryFooterMarkup(model);
   if (footerFocus) refs.footer.querySelector<HTMLElement>(footerFocus)?.focus({ preventScroll: true });
-  // A redrawn row's menu, if open, loses the inline `top` placeOpenRowMenu
-  // set on the one it replaced; recompute it the way renderLibraryScreen
-  // already does after every full paint.
+  // A redrawn row's open menu loses its inline `top`; recompute it.
   if (redrewAny) placeOpenRowMenu(refs);
   return true;
 }
 
 /**
- * Rewrites only the check line, in place. The caption timer calls this
- * alone, so keeping "Checked 4 min ago" current never touches the rows or
- * the footer. From one progress state to the next it moves the existing bar
- * rather than redrawing it, so the bar's width transition runs instead of
- * restarting from nothing on every row that lands. A Library with no drawn
- * line (no rows) has nothing to patch.
+ * Rewrites only the check line, so the caption timer never touches the rows or
+ * footer. Between progress states it moves the existing bar, so its width
+ * transition runs instead of restarting.
  */
 export function patchLibraryCheckLine(refs: ShellRefs, model: LibraryScreenPresentation): void {
   const line = refs.scroll.querySelector<HTMLElement>('[data-library-check-line]');
@@ -1052,8 +928,6 @@ export function renderLibraryScreen(
   refs.scroll.scrollTop = scrollTop;
   refs.footer.innerHTML = libraryFooterMarkup(model);
   refs.footer.hidden = false;
-  // After the scroll restore above: the menu's room depends on where the row
-  // actually sits, and both entry points render through here, so the dev
-  // harness cannot drift from the plugin on this.
+  // After the scroll restore: the menu's room depends on where the row sits.
   placeOpenRowMenu(refs);
 }

@@ -1,22 +1,14 @@
 /**
- * One canvas build at a time, whichever frame family it draws.
+ * One canvas build at a time, whichever frame family it draws: buildDocFrames
+ * and buildFoundationFrame share frameKit's module state (palette, fonts,
+ * corner scale, per-build caches), so interleaving would paint one document in
+ * the other's theme.
  *
- * buildDocFrames and buildFoundationFrame both write frameKit's module state
- * (palette, fonts, corner scale, per-build caches), so a component build and
- * a foundation build interleaving would paint one document in the other's
- * theme. main.ts used to keep one flag per family, which stopped two component
- * builds or two foundation builds from overlapping but not one of each. This
- * is the single flag.
- *
- * It also answers the selection listener. A build switches pages to place a
- * doc beside its predecessor and switches back, and each switch fires
- * `selectionchange` with that page's selection, which is nobody's choice;
- * posting it would empty the component pane the moment "Updated" shows. But a
- * *real* selection the user makes while the gate is held is not nobody's
- * choice, and must not be dropped for good just because it arrived at a bad
- * time: the listener calls `noteSkipped()` instead of posting, and the
- * build's own `finally` block replays the selection once, after `end()`,
- * through `selectionToReplay` below.
+ * It also answers the selection listener. A build's page switches fire
+ * `selectionchange` with a selection nobody chose, and posting it would empty
+ * the component pane, so the listener calls `noteSkipped()` instead. A real
+ * selection made meanwhile is not lost: the build's `finally` replays it once,
+ * after `end()`, via `selectionToReplay`.
  */
 export class CanvasBuildGate {
   private building = false;
@@ -28,10 +20,8 @@ export class CanvasBuildGate {
   }
 
   /**
-   * True when a `selectionchange` fired while the gate was held and was
-   * swallowed rather than posted. Reset by `begin()`. Stays readable after
-   * `end()`, so a build's `finally` block can ask "did I owe anyone a
-   * replay" once the gate no longer says `busy`.
+   * A `selectionchange` was swallowed while the gate was held. Reset by
+   * `begin()`; still readable after `end()`, when `busy` is already false.
    */
   get skippedSelection(): boolean {
     return this.skipped;
@@ -45,11 +35,7 @@ export class CanvasBuildGate {
     return true;
   }
 
-  /**
-   * Record that a `selectionchange` event was swallowed while the gate was
-   * held. `busy` alone cannot answer this after the fact: it is already
-   * `false` by the time a `finally` block gets to ask.
-   */
+  /** Record a `selectionchange` swallowed while the gate was held. */
   noteSkipped(): void {
     this.skipped = true;
   }
@@ -60,29 +46,14 @@ export class CanvasBuildGate {
 }
 
 /**
- * Whether a build's `finally` block should replay the current selection to
- * the UI once the gate has released it.
+ * Whether a build's `finally` should replay the current selection once the gate
+ * is released: only when an event was skipped and the selection differs from
+ * both the build's start and its own programmatic selection (renderDocFrame's
+ * Section), which would post `node: null` and empty the pane.
  *
- * Only a genuine, still-current user choice replays:
- * - nothing replays when no event was skipped (there is nothing to replay);
- * - nothing replays when the current selection is exactly what it was when
- *   the build began (nothing actually changed, even though an event fired,
- *   e.g. the user reselected the same node);
- * - nothing replays when the current selection is exactly the build's own
- *   programmatic selection (renderDocFrame's generated Section on success).
- *   Posting that would resolve to `node: null` and empty the pane, the
- *   original bug this whole gate exists to fix.
- *
- * `programmatic` is `null`, not `[]`, for a build that never selects
- * anything of its own (both Foundation paths): an empty array would mean
- * "this build's own selection was empty", which is a claim those two paths
- * have no basis to make, and would wrongly swallow a genuine mid-build
- * deselect (the user clearing their selection, so `current` is also `[]`).
- * `null` says there is no programmatic selection to compare against at all,
- * so that case falls through to the atBegin comparison alone.
- *
- * Only a selection that differs from both atBegin and (when there is one)
- * programmatic counts as something to tell the UI about.
+ * `programmatic` is `null`, not `[]`, for a build that selects nothing itself
+ * (both Foundation paths): `[]` would claim an empty own selection and swallow
+ * a genuine mid-build deselect.
  */
 export function selectionToReplay(input: {
   skipped: boolean;
@@ -98,21 +69,14 @@ export function selectionToReplay(input: {
 
 /**
  * The tail of a build that may have left the invoking page: return to it,
- * reply to the UI, release the gate, replay the selection, in that order.
+ * reply, release the gate, replay the selection, in that order.
  *
- * The reply must not go out while the build still has work that can yield.
- * A reply can make the UI send the next request at once (Update all sends the
- * next row's Update on the previous row's reply), and the message handler is
- * re-entrant: a page switch awaited after the reply lets that request reach a
- * gate that is still held, and "Another build is still running" aborts the
- * whole batch. So the only await here is the page return, before the reply,
- * and `reply`, `release` and `replay` then run back to back with no yield,
- * which is what lets the next request find the gate open.
- *
- * `restorePage` is best effort: a rejected page switch is swallowed so it can
- * never skip the reply or leave the gate held. Returning first also keeps the
- * return's own `selectionchange` inside the gate, where it is noted rather
- * than posted, and makes `replay` read the invoking page's selection.
+ * The reply must follow every yield: the UI may send the next request at once
+ * (Update all chains rows on replies), and the handler is re-entrant, so an
+ * await after the reply would meet a held gate and abort the batch. The page
+ * return is the only await, and best effort, so it never skips the reply or
+ * holds the gate. Returning first also keeps its `selectionchange` inside the
+ * gate and makes `replay` read the invoking page's selection.
  */
 export async function settleBuild(steps: {
   restorePage: () => Promise<void>;

@@ -10,21 +10,19 @@ export * from './extract';
 export * from './foundation';
 export * from './foundationOverview';
 export * from './hash';
+export * from './fileKey';
 export * from './diff';
 export * from './version';
 export * from './resolve';
 export * from './statesMatrix';
 export * from './contrast';
 export * from './displayNames';
-// The property categories the Tokens-used pivot and the Measurements table
-// share, so the two cannot disagree about what counts as a measurement.
+// Shared by the Tokens-used pivot and the Measurements table.
 export { categorize, type PropertyCategory } from './pivot';
 export {
   colorRole, barsCleared, colorContrast, CONTRAST_AXIS_CAP,
-  // The classifier's vocabulary, so a consumer telling a user how to name their
-  // tokens can derive that guidance from the real sets instead of restating them.
-  // A hand-kept second copy is exactly how the foundation frame's guidance copy
-  // went stale. ReadonlySet at the source, so a consumer cannot mutate it.
+  // The classifier's vocabulary, so naming guidance derives from the real sets
+  // instead of a hand-kept copy that goes stale.
   FOREGROUND_WORDS, BACKGROUND_WORDS,
   type ColorRole, type ContrastBar, type ContrastCell, type ContrastMatrix,
   type ContrastFailure, type ColorContrastReport,

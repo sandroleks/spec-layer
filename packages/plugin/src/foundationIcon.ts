@@ -1,18 +1,8 @@
 /**
- * foundationIcon.ts — which glyph a foundation source is entitled to, decided
- * in exactly one place.
- *
- * Two lists show the same foundation sources: the Foundations tab's picker rows
- * and My Library's foundation rows. They are resolved on opposite sides of the
- * plugin boundary — the picker reads the live spec in the UI, while a Library
- * row's source is a stored scope only the main thread can read — so without a
- * shared derivation the same collection ends up with two different icons, which
- * is exactly the drift this module exists to prevent.
- *
- * `color`/`dimension` are only claimed when every variable in scope agrees. A
- * mixed bag, an empty one, or a source that could not be read falls back to
- * `mixed` rather than guessing from a majority, so the glyph never asserts a
- * uniformity the source doesn't have.
+ * Which glyph a foundation source gets, decided in one place so the Foundations
+ * picker (UI) and My Library rows (main thread) agree. `color` and `dimension`
+ * are claimed only when every variable in scope agrees; anything else,
+ * including an unreadable source, is `mixed`, never a majority guess.
  */
 
 import type {
@@ -42,16 +32,8 @@ export function collectionIconKind(
   return variablesIconKind(collection.variables);
 }
 
-/**
- * The kind for one generated document's stored scope.
- *
- * Group-scoped docs (a large collection split by top-level group) are read from
- * their own rows, mirroring unitContent's filter, so a split doc describes what
- * it actually renders rather than what its whole collection contains.
- *
- * `spec` is nullable because live extraction can fail: with nothing to read,
- * `mixed` says the least.
- */
+/** The kind for one doc's stored scope. A group-scoped doc is read from its own
+ *  rows, as unitContent filters them. A null `spec` (failed extraction) is `mixed`. */
 export function scopeIconKind(
   spec: FoundationSpec | null,
   scope: FoundationScope,

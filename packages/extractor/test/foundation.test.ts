@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   buildFoundation, groupOf, groupRowsByFolder, type SerializedFoundation,
   planFoundationUnits, unitContent, SPLIT_THRESHOLD, MAX_MODE_COLUMNS,
-  foundationUnitTitle, groupTitle, groupTitles, narrowFoundation,
+  foundationUnitTitle, groupTitle, groupTitles,
   glyphForScopes,
   type FoundationSelection,
 } from '../src/foundation';
@@ -1022,10 +1022,6 @@ describe('groupTitle / groupTitles', () => {
 describe('effect styles', () => {
   const withEffects = (): SerializedFoundation => ({
     fileKey: 'FILE1', extractedAt: 'T', externals: [], collections: [],
-    // Non-empty, deliberately: narrowFoundation's 'textStyles' branch returns
-    // null when there are no text styles left, which would make the narrowing
-    // test below vacuous (asserting on a null spec's optional-chained field)
-    // rather than exercising the drop this test is named for.
     textStyles: [{
       name: 'Body/M', description: '', fontFamily: 'Inter', fontStyle: 'Regular',
       fontSize: 16, lineHeight: { unit: 'AUTO' }, letterSpacing: { unit: 'PIXELS', value: 0 },
@@ -1046,14 +1042,6 @@ describe('effect styles', () => {
     const spec = buildFoundation(withEffects());
     expect(spec.effectStyles[0].group).toBe('Focused');
     expect(spec.effectStyles[0].effects[0].type).toBe('drop-shadow');
-  });
-
-  it('narrows effect styles away exactly as it narrows text styles', () => {
-    const spec = buildFoundation(withEffects());
-    // A text-styles copy covers the file's text styles, not its effect styles.
-    // Carrying them along would make a scoped copy quietly wider than its scope.
-    const narrowed = narrowFoundation(spec, { target: 'textStyles' });
-    expect(narrowed?.effectStyles).toEqual([]);
   });
 });
 

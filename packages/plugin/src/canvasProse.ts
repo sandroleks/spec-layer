@@ -1,18 +1,12 @@
 /**
- * canvasProse.ts — read the editorial lane of a component doc back off the
- * canvas.
+ * Reads the editorial lane of a component doc back off the canvas. The
+ * generated lane (tables, matrices, chrome) is always rebuilt; the editorial
+ * lane (writing sections) is authored, so the canvas is its source of truth.
+ * docFrame.ts tags editorial nodes with pluginData; this turns the tags back
+ * into a ProseV2 overlay so an Update keeps every word anyone wrote.
  *
- * A doc has two lanes. The generated lane (tables, matrices, chrome) is
- * derived from the component and is always rebuilt. The editorial lane (the
- * writing sections) is authored, first by the AI or a placeholder and then by
- * whoever edits the canvas, so the canvas is its source of truth. docFrame.ts
- * tags editorial nodes with pluginData at render time; this module turns
- * those tags back into a ProseV2 overlay so an Update can rebuild the
- * generated lane without losing a word anyone wrote.
- *
- * No Figma globals. The main thread passes real nodes; tests pass plain
- * objects. This module is imported by main.ts, which runs in Figma's bare
- * sandbox realm, so it may use only ECMAScript built-ins.
+ * Imported by main.ts, which runs in Figma's bare sandbox realm, so only
+ * ECMAScript built-ins: no Figma globals. Tests pass plain objects.
  */
 import {
   hasProseContent, normalizeKey, normalizeAuthored, PROSE_V2_KEYS,
@@ -57,36 +51,32 @@ export type ProseSlot =
 
 export type LineKind = 'paragraph' | 'heading' | 'bullet' | 'placeholder' | 'label';
 
-/** The label at the top of a Do or Don't card, exactly as docBlocks draws it.
- *  Current builds tag the label node with LINE_KEY `'label'`; docs already on
- *  canvas carry it untagged, so the read-back also recognises these exact
- *  characters as a leading label. */
+/** The Do/Don't card label as docBlocks draws it. Older docs carry it without
+ *  LINE_KEY `'label'`, so these exact characters also read as a label. */
 export const GUIDELINE_LABEL = { do: 'DO', dont: 'DON’T' } as const;
 const LABEL_TEXTS: ReadonlySet<string> = new Set([GUIDELINE_LABEL.do, GUIDELINE_LABEL.dont]);
 
-/** The placeholder earlier builds wrote (`_To be written._`, emphasis markers
- *  stripped by the renderer). Current builds stamp guidance with
- *  PLACEHOLDER_KEY instead, but documents already on canvas still carry this
- *  line, so the read-back keeps recognising it as "nobody wrote this". */
+/** The placeholder older docs carry (`_To be written._`, emphasis stripped)
+ *  instead of a PLACEHOLDER_KEY stamp; it still reads as "nobody wrote this". */
 export const PLACEHOLDER_TEXT = 'To be written.';
 
-/** The slice of a Figma node this module reads. Structural so tests can pass
- *  plain objects and the main thread can pass SceneNodes (cast, since the
- *  typings' overloaded generic `getStyledTextSegments` is not assignable). */
+/** The slice of a Figma node this module reads. SceneNodes need a cast: the
+ *  typings' overloaded generic `getStyledTextSegments` is not assignable. */
 export interface ProseNodeLike {
+  id?: string;
   type: string;
   characters?: string;
   children?: readonly ProseNodeLike[];
   getPluginData(key: string): string;
+  /** Figma's native subtree search, when the host has it. */
+  findAllWithCriteria?(criteria: { pluginData: { keys: string[] } }): readonly { id: string }[];
   getStyledTextSegments?(fields: ['fontName']):
     readonly { characters: string; fontName: { family: string; style: string } }[];
 }
 
 /** Every field optional: absent means the canvas does not show that slot.
- *  `overview` is further split into its own two optional halves: the header
- *  lead and the definition body are two separate tagged slots, so a doc with
- *  only one of them tagged must report only that half, never a fabricated
- *  empty string or empty array for the other. */
+ *  `overview`'s lede and body are separate slots, so a doc reports only the
+ *  half it shows, never a fabricated empty other half. */
 export type CanvasProse = Partial<Omit<ProseV2, 'v' | 'overview' | 'authored'>> & {
   overview?: { lede?: string; body?: string[] };
   /** The prose keys that took content from a placeholder someone typed
@@ -95,10 +85,9 @@ export type CanvasProse = Partial<Omit<ProseV2, 'v' | 'overview' | 'authored'>> 
 };
 
 /**
- * A text node's characters as markdown. Bold segments become **bold**, Medium
- * segments become `code`: body text is Regular and lead-ins are Bold, so
- * Medium can only mean a code span (see docText.applyRuns). A whitespace-only
- * styled segment is left plain.
+ * A text node's characters as markdown: Bold becomes **bold** and Medium
+ * becomes `code`, since body text is Regular and only a code span is Medium
+ * (see docText.applyRuns). Whitespace-only segments stay plain.
  */
 export function textToMarkdown(node: ProseNodeLike): string {
   const chars = node.characters ?? '';
@@ -147,9 +136,8 @@ function readLines(container: ProseNodeLike, typed: () => void = () => {}): stri
   return lines;
 }
 
-/** One item per bullet row of a list block: the last text node is the
- *  content. `typed` is called when an item came from a placeholder someone
- *  typed over. */
+/** One item per bullet row, read from its last text node. `typed` is called
+ *  for an item from a placeholder someone typed over. */
 function readBullets(container: ProseNodeLike, typed: () => void = () => {}): string[] {
   const items: string[] = [];
   for (const row of container.children ?? []) {
@@ -166,12 +154,10 @@ function readBullets(container: ProseNodeLike, typed: () => void = () => {}): st
 }
 
 /**
- * The keys typed into a placeholder keyboard row. Alternatives are split on
- * " or ", a comma, or a slash; inside one alternative the spaces around a `+`
- * close up, so "Shift + Tab" is one combination, not two keys. A spelling in
- * the keyboard vocabulary takes its canonical name; anything else is kept as
- * typed. Whitespace runs are collapsed first so the split pattern is a fixed
- * string and cannot backtrack on user-edited text.
+ * The keys typed into a placeholder keyboard row: alternatives split on " or ",
+ * a comma or a slash; spaces around `+` close up ("Shift + Tab" is one combo);
+ * vocabulary spellings take their canonical name. Whitespace collapses first so
+ * the split cannot backtrack on user-edited text.
  */
 function typedKeys(text: string): string[] {
   const keys: string[] = [];
@@ -190,13 +176,10 @@ const SHOWN_WHEN_LEAD = '  ·  Shown when ';
 const SHOWN_WHEN_TAIL = ' is true';
 
 /**
- * Drop the trailing "  ·  Shown when <prop> is true" note the anatomy legend
- * appends, so it never reads back as part of an authored role.
- *
- * indexOf on the writer's own separator rather than
- * `/\s+·\s+Shown when .+ is true$/`: that pattern's unanchored leading `\s+`
- * backtracks quadratically over a whitespace run, and this runs on
- * user-editable canvas text on the main thread.
+ * Drops the anatomy legend's trailing "  ·  Shown when <prop> is true" note so
+ * it never reads back as an authored role. indexOf on the writer's separator,
+ * not a regex whose leading `\s+` backtracks quadratically on user-editable
+ * text on the main thread.
  */
 function stripShownWhenNote(role: string): string {
   if (!role.endsWith(SHOWN_WHEN_TAIL)) return role;
@@ -217,9 +200,8 @@ export function readCanvasProse(root: ProseNodeLike): CanvasProse {
   let parts: { name: string; role: string }[] | undefined;
   let properties: { name: string; description: string }[] | undefined;
   let keyboard: { keys: string[]; action: string }[] | undefined;
-  // Every pair with its index. A duplicated row carries its original's index,
-  // so a map keyed by index would keep only the last; a stable sort keeps
-  // both, in canvas order.
+  // A duplicated row carries its original's index, so pairs are a list sorted
+  // stably, not a map by index that would keep only the last.
   const pairs: { index: number; pair: GuidelinePair }[] = [];
   const authored = new Set<ProseV2Key>();
 
@@ -229,15 +211,12 @@ export function readCanvasProse(root: ProseNodeLike): CanvasProse {
     return unlessGuidance(texts[texts.length - 1], (n) => textToMarkdown(n).trim());
   };
   const card = (node: ProseNodeLike): GuidelineCard | null => {
-    // The DO/DON'T label is never content: a tagged label is dropped, and on a
-    // card drawn before labels were tagged, so is a leading node that reads
-    // exactly like one. What remains is the rule, then the reason, so a card
-    // missing a node reads as less than it said, never as a label promoted to
-    // a rule or a rule demoted to a reason. The rule node is read as plain
-    // characters, not through textToMarkdown: the renderer draws the whole
-    // rule in the Bold face as card styling, not as a bold markdown run, so
-    // converting it would stamp every stored rule with `**...**`. Unfilled
-    // guidance on either line reads as empty.
+    // The DO/DON'T label is never content: a tagged label is dropped, as is an
+    // untagged leading node that reads exactly like one. Then rule, then
+    // reason, so a missing node never promotes or demotes a line. The rule is
+    // read as plain characters: it is drawn Bold as card styling, and
+    // textToMarkdown would wrap every rule in `**...**`. Unfilled guidance
+    // reads as empty.
     const all = allTexts(node);
     const texts = all.filter((t) => t.getPluginData(LINE_KEY) !== 'label');
     if (texts.length === all.length && texts.length && LABEL_TEXTS.has(texts[0].characters ?? '')) texts.shift();
@@ -275,12 +254,10 @@ export function readCanvasProse(root: ProseNodeLike): CanvasProse {
         if (!parts) parts = [];
         if (!key) return;
         const chars = allTexts(node).length ? (allTexts(node).slice(-1)[0].characters ?? '') : '';
-        // The legend prints the DISPLAY name (see anatomySection.ts), while the
-        // tag keeps the RAW key, so both spellings of "no role" (and both
-        // lead-ins) must be checked before falling through to the loose
-        // ": "-search below — otherwise a nested part named in camelCase/
-        // snake_case/kebab-case whose component note itself contains ": "
-        // (e.g. "Icon leading  ·  Icon: 24") is misread as an authored role.
+        // The legend prints the display name and the tag keeps the raw key, so
+        // both spellings of "no role" and both lead-ins are checked before the
+        // loose ": " search, which would misread a nested part's component note
+        // ("Icon leading  ·  Icon: 24") as a role.
         const shown = displayPartName(key);
         let role: string | undefined;
         if (chars === key || chars === shown || chars.startsWith(`${key}  ·  `) || chars.startsWith(`${shown}  ·  `)) role = undefined;
@@ -294,11 +271,9 @@ export function readCanvasProse(root: ProseNodeLike): CanvasProse {
       }
       case 'propertyDescription': { if (!key) return; const d = lastText(node); if (d) properties = push(properties, { name: key, description: d }); return; }
       case 'keyboardRow': {
-        // A keyed row's tag holds its keys joined with " + " (spaces
-        // included) by docBlocks, so that "Shift+Tab" survives as one key. A
-        // placeholder row has no key tag: its keys are whatever was typed
-        // into its first cell, and only while that cell is still there. With
-        // one text node left it is the action, and the row has no keys.
+        // A keyed row's tag holds its keys joined with " + " by docBlocks, so
+        // "Shift+Tab" stays one key. A placeholder row has no key tag: its keys
+        // are what was typed into its first cell, while that cell exists.
         const action = lastText(node);
         const texts = allTexts(node);
         const keys = key
@@ -330,8 +305,7 @@ export function readCanvasProse(root: ProseNodeLike): CanvasProse {
   visit(root);
 
   const out: CanvasProse = {};
-  // Set only the half actually seen: a doc with just the header lead tagged
-  // must not report a fabricated empty body, and vice versa.
+  // Only the half actually seen (see CanvasProse).
   if (lead !== undefined || definitionLines.length) {
     out.overview = {};
     if (lead !== undefined) out.overview.lede = lead;
@@ -358,26 +332,20 @@ const _HANDLED_PROSE_KEYS = [
   'pointer', 'semantics', 'content', 'guidelines',
 ] as const;
 
-// Compile-time guard: a future field added to ProseV2 must be added to
-// _HANDLED_PROSE_KEYS above, or readCanvasProse would silently never fill it.
-// This fails to compile when ProseV2 gains a field this list does not name.
-// `authored` is metadata about the keys below, not a slot, so it is excluded
-// alongside `v`.
+// Compile-time guard: a ProseV2 field missing from _HANDLED_PROSE_KEYS fails
+// to compile instead of never being read. `authored` is metadata, not a slot,
+// so it is excluded with `v`.
 type UncoveredProseKey = Exclude<Exclude<keyof ProseV2, 'v' | 'authored'>, (typeof _HANDLED_PROSE_KEYS)[number]>;
 const _everyProseKeyHasASlot: UncoveredProseKey extends never ? true : never = true;
 
 /**
- * Canvas wins per field; stored fills whatever the canvas does not show.
- * `overview` merges sub-field-wise rather than wholesale, since the canvas
- * can show only the lede or only the body: each half falls back to the
- * stored half independently, and the merged overview is included only when
- * at least one half exists, never fabricated as `{ lede: '', body: [] }`.
+ * Canvas wins per field; stored fills what the canvas does not show.
+ * `overview` merges per half, since the canvas may show only one, and exists
+ * only when a half does, never as a fabricated `{ lede: '', body: [] }`.
  *
- * `authored` is the union of both sides, kept only for keys the merged prose
- * still has content for, in PROSE_V2_KEYS order. The union is what carries
- * authorship past the first Update: a filled placeholder is rebuilt as an
- * ordinary section, so the canvas stops saying who wrote it and the stored
- * blob keeps saying it.
+ * `authored` is the union of both sides, for keys that still have content, in
+ * PROSE_V2_KEYS order. The union carries authorship past the first Update,
+ * which rebuilds a filled placeholder as an ordinary section.
  */
 export function mergeProse(stored: ProseV2 | null, canvas: CanvasProse): ProseV2 | null {
   const { overview: canvasOverview, authored: canvasAuthored, ...restCanvas } = canvas;
@@ -394,28 +362,25 @@ export function mergeProse(stored: ProseV2 | null, canvas: CanvasProse): ProseV2
 }
 
 /**
- * The generated lane's text, in document order: every text node that is not
- * inside an editorial slot or a component instance. This is what selfHash
- * covers, so an edit here means "Update will replace this" and an edit in a
- * slot means nothing, because Update keeps it. A doc rendered before tagging
- * has no slots, so this returns all its text, matching its stored hash.
+ * The generated lane's text in document order: every text node outside an
+ * editorial slot or a component instance. This is what selfHash covers, so an
+ * edit here means "Update will replace this" and one in a slot means nothing.
+ * A doc rendered before tagging has no slots, so all its text is returned,
+ * matching its stored hash.
  *
- * The publish pill is skipped by `PILL_KEY` for the same reason slots are:
- * Update repaints it, so an edit there is not something Update would destroy.
- * The Placeholder tag is skipped by `PLACEHOLDER_TAG_KEY` for the same
- * reason: deleting it after filling the box is the natural thing to do, and
- * Update redraws or drops it anyway. No shipped doc carries the tag, so no
- * stored hash moves.
+ * The publish pill and the Placeholder tag are skipped like slots: Update
+ * redraws both, so editing or deleting them destroys nothing. No shipped doc
+ * carries the tag, so no stored hash moves.
  */
 export function collectGeneratedText(root: ProseNodeLike): string[] {
+  const tagged = laneTaggedIds(root);
+  const excluded = (n: ProseNodeLike): boolean => (tagged && n !== root && n.id !== undefined
+    ? tagged.has(n.id)
+    : LANE_EXCLUSIONS.some((key) => n.getPluginData(key) !== ''));
   const out: string[] = [];
   const visit = (n: ProseNodeLike): void => {
     if (n.type === 'INSTANCE') return;
-    if (n.getPluginData(SLOT_KEY) !== '') return;
-    // The publish pill is a status stamp, not generated prose: a version that
-    // moves must never read as a hand edit. See publishPill.ts.
-    if (n.getPluginData(PILL_KEY) !== '') return;
-    if (n.getPluginData(PLACEHOLDER_TAG_KEY) !== '') return;
+    if (excluded(n)) return;
     if (n.type === 'TEXT') {
       out.push(n.characters ?? '');
       return;
@@ -424,4 +389,23 @@ export function collectGeneratedText(root: ProseNodeLike): string[] {
   };
   visit(root);
   return out;
+}
+
+/** Tags that take a subtree out of the generated lane. A pill version that
+ *  moves must never read as a hand edit (see publishPill.ts). */
+const LANE_EXCLUSIONS = [SLOT_KEY, PILL_KEY, PLACEHOLDER_TAG_KEY];
+
+/**
+ * Every lane-tagged node under `root` from one native search, so the walk reads
+ * no plugin data per node. Figma removes a key set to '', so "has the key" is
+ * "getPluginData(key) !== ''". Null when the search is missing or throws; the
+ * walk then reads tags per node. `root` itself is checked by the walk.
+ */
+function laneTaggedIds(root: ProseNodeLike): Set<string> | null {
+  if (typeof root.findAllWithCriteria !== 'function') return null;
+  try {
+    return new Set(root.findAllWithCriteria({ pluginData: { keys: LANE_EXCLUSIONS } }).map((n) => n.id));
+  } catch {
+    return null;
+  }
 }

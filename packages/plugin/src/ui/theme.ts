@@ -1,16 +1,10 @@
 /**
- * theme.ts — light/dark theming for the plugin UI.
- *
- * Two modes, light ↔ dark, toggled by the header button. The initial mode is
- * detected automatically from Figma's host theme at boot (synchronously, so the
- * first paint is already correct — no flash-then-flip), and the toggle then
- * overrides it for the session. There is no persisted preference: deriving from
- * Figma every load is the "automatic" behaviour we want, and an async
- * clientStorage read here would reintroduce the flash.
- *
- * applyThemeMode() always sets body[data-theme] (our published palette in
- * design-system/tokens.css) rather than relying on Figma's injected :root vars — that way the
- * forced palette is deterministic regardless of how/when Figma injects.
+ * Light and dark theming for the plugin UI. The initial mode is read from
+ * Figma's host theme synchronously at boot, so the first paint is right, and
+ * the header toggle overrides it for the session. Nothing is persisted: an
+ * async clientStorage read would bring back a flash. applyThemeMode always sets
+ * body[data-theme] (design-system/tokens.css), so the palette does not depend
+ * on when Figma injects its :root vars.
  */
 
 export type ThemeMode = 'light' | 'dark';
@@ -20,9 +14,8 @@ export function toggleThemeMode(mode: ThemeMode): ThemeMode {
 }
 
 /**
- * Read Figma's current theme synchronously. Figma adds a `figma-dark` /
- * `figma-light` class to <html> when themeColors is on; we fall back to the
- * luminance of the injected --figma-color-bg, then to light.
+ * Read Figma's theme synchronously: the `figma-dark` / `figma-light` class on
+ * <html> (with themeColors on), else the luminance of --figma-color-bg, else light.
  */
 export function detectFigmaTheme(): ThemeMode {
   const cls = document.documentElement.className;

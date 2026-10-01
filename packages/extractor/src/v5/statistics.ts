@@ -1,9 +1,6 @@
 /**
- * Foundation Context v5 statistics — spec §15.
- *
- * Derived from finished artifact sections only. No extraction-time counters
- * enter this function, so every reported number can be independently rebuilt
- * from the artifact a consumer received.
+ * Foundation Context v5 statistics (spec §15), derived from finished artifact
+ * sections only, so a consumer can rebuild every number from the artifact.
  */
 import type { Diagnostic } from './diagnostics';
 import type { CollectionV5, TokenV5 } from './entities';
@@ -26,8 +23,7 @@ export function computeFoundationStatistics(input: {
 
   const lifecycle = { active: 0, deprecated: 0, archived: 0 };
   for (const token of tokens) {
-    // Absence is unknown, not active. A missing lifecycle record therefore
-    // contributes to none of the three buckets.
+    // Absence is unknown, not active: it counts in no bucket.
     if (token.lifecycle !== undefined) lifecycle[token.lifecycle.status] += 1;
   }
 

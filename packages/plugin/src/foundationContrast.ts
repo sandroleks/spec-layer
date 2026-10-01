@@ -1,17 +1,9 @@
 /// <reference types="@figma/plugin-typings" />
 /**
- * foundationContrast.ts: the contrast block a foundation frame draws under its
- * colours.
- *
- * Split in two on purpose. `contrastBlockModel` decides WHAT to draw and says
- * why in plain words, touching no Figma API, so every one of those decisions is
- * unit-testable. `matrixFrame` turns one matrix into frames, and is pinned
- * against the same fake Figma stub the rest of the frame suites use.
- *
- * Layout primitives come from frameKit rather than from foundationFrame, even
- * where foundationFrame has a private helper doing the same three lines:
- * foundationFrame imports this module, so importing back would make the pair a
- * cycle for the sake of those three lines.
+ * The contrast block a foundation frame draws under its colours.
+ * `contrastBlockModel` decides WHAT to draw with no Figma API; `matrixFrame`
+ * draws one matrix. Primitives come from frameKit, not foundationFrame, which
+ * imports this module.
  */
 import type { ColorContrastReport, ContrastMatrix } from '@spec-layer/extractor';
 import { BACKGROUND_WORDS, FOREGROUND_WORDS, CONTRAST_AXIS_CAP } from '@spec-layer/extractor';
@@ -32,55 +24,37 @@ function orList(words: Iterable<string>): string {
   return `${all.slice(0, -1).join(', ')} or ${all[all.length - 1]}`;
 }
 
-/**
- * How a name earns a place on the grid.
- *
- * Read out of the classifier's own exported vocabulary rather than restated
- * here, because a hand-written second copy is exactly what went stale the first
- * time: it named five of the seven foreground words, so a reader who renamed a
- * token to `foreground` after reading it would have concluded that the word was
- * unsupported. This string is the only place a user is told how to make their
- * names work, so it has to be the truth about the classifier.
- */
+/** How a name earns a place on the grid, read from the classifier's own
+ *  vocabulary: this is the only place a user learns it, so it must never be a
+ *  hand-written copy that can go stale. */
 function pairingHint(): string {
   return `Names containing ${orList(FOREGROUND_WORDS)} pair with names containing `
     + `${orList(BACKGROUND_WORDS)}.`;
 }
 
-/** "1 color" or "4 colors". A count of one is not rare here. US spelling,
- *  matching the frame's "Colors" heading. */
+/** "1 color" or "4 colors", in US spelling like the frame's "Colors" heading. */
 function colourCount(n: number): string {
   return n === 1 ? '1 color' : `${n} colors`;
 }
 
 /**
- * What the contrast block should draw for one collection.
- *
- * An empty grid and "no matrix could be built" look IDENTICAL on a frame and
- * mean opposite things: a reader who sees a blank grid concludes the colours are
- * fine. So the empty case carries its reason instead, and the cap's `omitted`
- * count is named rather than hidden, because a bounded grid presented as a
- * complete one is worse than no grid at all.
+ * What the contrast block draws for one collection. A blank grid reads as "the
+ * colours are fine", so the empty case carries its reason, and the cap's
+ * `omitted` count is named: a bounded grid shown as complete is worse than none.
  */
 export function contrastBlockModel(
   report: ColorContrastReport,
   collectionName: string,
 ): ContrastBlockModel {
-  // Filtered, never taken whole: `report` covers the whole foundation while a
-  // frame draws one collection, so an unfiltered list would put the Primitives
-  // grid on the Semantic frame.
+  // Filtered: `report` covers the whole foundation, a frame one collection.
   const matrices = report.matrices.filter((m) => m.collection === collectionName);
-  // The text-styles unit has no collection name. The caller skips this block for
-  // it, so this is a floor that keeps the sentence from opening on a space.
+  // A floor only: the caller skips styles units, which have no collection name.
   const who = collectionName || 'This collection';
 
   if (matrices.length === 0) {
-    // No matrix means no per-collection carrier for the counts either:
-    // report.unclassified and report.omitted are foundation-wide totals, and
-    // printing one here would tell the reader that THIS collection dropped
-    // colours it may never have held. Twelve unclassified palette colours in
-    // Primitives say nothing about Semantic. So the reason states what is
-    // missing and how to fix it, and asserts no number it cannot source.
+    // report.unclassified and report.omitted are foundation-wide, so printing
+    // one here would claim THIS collection dropped colours it may never have
+    // held. State what is missing and how to fix it, and no number.
     return {
       kind: 'none',
       reason: `${who} has no color pairs to measure. Contrast needs two colors in the `
@@ -89,22 +63,17 @@ export function contrastBlockModel(
     };
   }
 
-  // Per-collection counts, read off the matrix and not off the report. Every
-  // mode of one collection carries the same pair of numbers by construction:
-  // they are counted before the mode loop opens, so the first matrix speaks for
-  // all of them.
+  // Per-collection counts from the matrix. Every mode carries the same pair,
+  // so the first matrix speaks for all.
   const { unclassified, omitted } = matrices[0];
   const sentences: string[] = [];
   if (omitted > 0) {
-    // The cap is the extractor's own constant, not a restated 24, so the number
-    // printed is the one colorContrast enforced.
+    // The extractor's own cap, so the number printed is the one enforced.
     sentences.push(`The grid shows at most ${CONTRAST_AXIS_CAP} rows and ${CONTRAST_AXIS_CAP} `
       + `columns, so it leaves out ${colourCount(omitted)}.`);
   }
   if (unclassified > 0) {
-    // Carried here too, not only in the no-matrix case. A colour missing from a
-    // drawn grid is invisible to the reader, which is the same problem `omitted`
-    // has, so it gets the same treatment.
+    // A colour missing from a drawn grid is invisible too, so name it like `omitted`.
     const lead = omitted > 0 ? 'It also leaves out' : 'The grid leaves out';
     sentences.push(`${lead} ${colourCount(unclassified)}, because a name has to say which `
       + `side of a pair the color sits on. ${pairingHint()}`);
@@ -113,17 +82,9 @@ export function contrastBlockModel(
 }
 
 /**
- * How each bar reads in a cell.
- *
- * Not `bar.toUpperCase()`, which is where this started. `aa-large` would render
- * as "AA-LARGE", which shouts (the voice guide is sentence case) and, worse,
- * understates the bar: 3:1 is the SC 1.4.3 bar for large text AND the SC 1.4.11
- * bar for user interface components and graphical objects, so a bare "AA-LARGE"
- * beside an icon or border colour reads as "only large text passes here". The
- * label names both halves instead, and still fits a 92px column on two lines.
- *
- * "AA" stays short even though 4.5:1 is also AAA for large text: the cell has
- * room for one verdict, and AA is the one that applies to body text.
+ * How each bar reads in a cell. 3:1 is the SC 1.4.3 bar for large text AND the
+ * SC 1.4.11 bar for UI components, so the label names both; "AA-LARGE" would
+ * understate it. "AA" stays short: it is the verdict for body text.
  */
 const BAR_LABELS: Record<string, string> = {
   'aa-large': 'AA large text and UI',
@@ -133,13 +94,11 @@ const BAR_LABELS: Record<string, string> = {
 
 /** A cell reads as its ratio plus the strongest bar it clears. */
 export function cellLabel(cell: { ratio: number; clears: readonly string[] } | null): string {
-  // Not blank and not "fails": a pair that could not be measured is a different
-  // fact from a pair that was measured and failed.
+  // Unmeasured is a different fact from measured and failed.
   if (!cell) return 'Not measured';
   const strongest = cell.clears[cell.clears.length - 1];
-  // The ratio prints exactly as the extractor floored it, so 21 stays "21"
-  // rather than becoming "21.00". Uppercasing an unmapped bar is a floor, not a
-  // path: every ContrastBar is named above.
+  // The ratio prints as the extractor floored it. Uppercasing an unmapped bar
+  // is only a floor: every ContrastBar is named above.
   if (!strongest) return `${cell.ratio}:1 fails`;
   return `${cell.ratio}:1 ${BAR_LABELS[strongest] ?? strongest.toUpperCase()}`;
 }
@@ -148,20 +107,15 @@ export function cellLabel(cell: { ratio: number; clears: readonly string[] } | n
 // The node builder
 // ---------------------------------------------------------------------------
 
-// Column metrics. CELL_W holds "2.23:1 fails" on one line at 11px and keeps a
-// grid at the extractor's 24 column cap under 2400px, which the card is widened
-// to hold rather than clipping.
+// CELL_W holds "2.23:1 fails" on one line at 11px, and keeps a 24 column grid
+// under 2400px, which the card widens to hold.
 const CELL_W = 92;
 const LABEL_W = 190;
 const CELL_PAD_X = 8;
 const CELL_PAD_Y = 6;
 
-/**
- * Failing ink and its tint. Local constants rather than palette entries, the
- * same call measureSection.ts makes for its overlay colours: a failure has to
- * read as a failure whatever the user's brand theme recolours, and this is the
- * one thing on a foundation frame that is a verdict rather than content.
- */
+/** Failing ink and tint, fixed rather than themed: a failure must read as one
+ *  whatever the brand theme recolours. */
 const FAIL_INK = hex('#b42318');
 const FAIL_TINT = hex('#fef3f2');
 
@@ -170,13 +124,8 @@ export function gridWidth(backgroundCount: number): number {
   return LABEL_W + backgroundCount * CELL_W;
 }
 
-/**
- * Width the widest grid in a block needs.
- *
- * Exported because the card is sized before its contents are built and the card
- * clips: a 24 column grid is wider than anything the table or the swatch list
- * asks for, so the width has to know about it.
- */
+/** Width the widest grid in a block needs. The card is sized before its
+ *  contents are built, and it clips. */
 export function contrastBlockWidth(matrices: readonly ContrastMatrix[]): number {
   let widest = 0;
   for (const m of matrices) widest = Math.max(widest, gridWidth(m.backgrounds.length));
@@ -189,11 +138,8 @@ function leaf(token: string): string {
   return parts[parts.length - 1] || token;
 }
 
-/**
- * A cell's tone. `blank` and `fail` are deliberately different in ink AND fill,
- * not only in wording: side by side on a frame, "not measured" and "fails" must
- * not read as the same verdict.
- */
+/** A cell's tone. `blank` and `fail` differ in ink AND fill, so "not measured"
+ *  never reads as "fails". */
 type CellTone = 'head' | 'pass' | 'fail' | 'blank';
 
 function toneOf(cell: { clears: readonly string[] } | null): CellTone {
@@ -214,9 +160,7 @@ function gridCell(label: string, width: number, tone: CellTone): FrameNode {
   cell.paddingRight = CELL_PAD_X;
   cell.paddingTop = CELL_PAD_Y;
   cell.paddingBottom = CELL_PAD_Y;
-  // FIXED width before the text is appended, so the text can FILL it: a token
-  // path or a two word verdict wraps inside its column instead of drawing over
-  // the next one.
+  // FIXED before the text is appended, so the text can FILL it and wrap.
   cell.layoutSizingHorizontal = 'FIXED';
   cell.resize(width, cell.height);
   cell.layoutSizingVertical = 'HUG';
@@ -235,8 +179,7 @@ function gridRow(cells: FrameNode[], width: number): FrameNode {
   row.layoutSizingHorizontal = 'FIXED';
   row.resize(width, row.height);
   row.layoutSizingVertical = 'HUG';
-  // First lines align across the row. A cell that wraps to two lines beside
-  // one-line cells reads as a table only when their tops agree.
+  // Top-aligned, so wrapped cells line up with one-line cells.
   row.counterAxisAlignItems = 'MIN';
   for (const c of cells) row.appendChild(c);
   return row;
@@ -255,8 +198,7 @@ export function matrixFrame(m: ContrastMatrix): FrameNode {
   wrap.cornerRadius = radius(8);
   wrap.clipsContent = true;
 
-  // The corner cell is empty: the row and column headings name both axes
-  // already, and a word there would only compete with them.
+  // The corner cell stays empty; the headings name both axes.
   wrap.appendChild(gridRow([
     gridCell('', LABEL_W, 'head'),
     ...m.backgrounds.map((bg) => gridCell(leaf(bg), CELL_W, 'head')),
@@ -266,8 +208,7 @@ export function matrixFrame(m: ContrastMatrix): FrameNode {
     const row = m.cells[i] ?? [];
     wrap.appendChild(gridRow([
       gridCell(leaf(fg), LABEL_W, 'head'),
-      // Indexed by background rather than walked, so a short row reads as
-      // unmeasured cells instead of a grid one column narrower than its heading.
+      // Indexed by background, so a short row shows unmeasured cells.
       ...m.backgrounds.map((_, j) => {
         const cell = row[j] ?? null;
         return gridCell(cellLabel(cell), CELL_W, toneOf(cell));

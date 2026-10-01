@@ -14,33 +14,19 @@ import type { HandlerDeps } from './handlers';
 import { readBodyCapped } from './body';
 import type { Tier } from './quota';
 
-/** UTF-8 bytes of the request body. Every size check here uses the same unit. */
+/** UTF-8 bytes of the request body, the unit every size check here uses. */
 export const MAX_BUNDLE_BYTES = 5_000_000;
-/** How many libraries one identity may own, per tier. */
 export const LIBRARY_LIMITS: Record<Tier, number> = { free: 1, pro: 10 };
 export const LIBRARY_ID_RE = /^lib_[0-9a-f]{24}$/;
 export const PULL_KEY_RE = /^sl_[0-9a-f]{48}$/;
-/** Code units of `fileName` kept in the meta and echoed in `library_limit`. The stored bundle is never cut. */
+/** Code units of `fileName` kept in the meta and `library_limit`; the stored bundle is never cut. */
 export const MAX_FILE_NAME_LENGTH = 256;
 
 /**
- * `value` cut to at most `maxUnits` UTF-16 code units, counted by iterating
- * whole code points rather than by `slice`. A `for...of` string iterator (like
- * spread or `Array.from`) always yields a full code point, high and low
- * surrogate together, so this can never stop in the middle of a pair and
- * leave a lone surrogate behind: the one way a cut could turn well-formed
- * UTF-16 into ill-formed UTF-16 (a lone surrogate has no valid UTF-8
- * encoding, so it would corrupt the bytes this ends up stored as). A value at
- * or below `maxUnits` is returned unchanged, matching `String.prototype.length`
- * exactly, which is what the interface's "code units" cap means and what a
- * caller measures.
- *
- * This does not keep a combining mark attached to its base character: each is
- * its own code point, so a cut can still land between them. That drops a
- * diacritic at the boundary, but never produces an invalid string the way a
- * split surrogate pair would, so it is left as ordinary truncation behaviour
- * rather than the heavier grapheme-cluster segmentation (`Intl.Segmenter`)
- * that would be needed to also guarantee that.
+ * `value` cut to at most `maxUnits` UTF-16 code units (`String.length`),
+ * iterating whole code points so a surrogate pair is never split: a lone
+ * surrogate has no valid UTF-8 encoding. A combining mark can still be cut
+ * from its base, which drops a diacritic but never yields an invalid string.
  */
 export function truncateUtf16(value: string, maxUnits: number): string {
   if (value.length <= maxUnits) return value;
@@ -53,45 +39,30 @@ export function truncateUtf16(value: string, maxUnits: number): string {
 }
 
 export interface LibraryMeta {
-  /** Legacy only: libraries published before `lib:<id>:key` existed carry the
-   *  digest here. New writes never set it; pull falls back to it. */
+  /** Legacy key digest from before `lib:<id>:key`; never written now, pull falls back to it. */
   keyHash?: string;
   licenseId: string;
   publishedAt: string;
   /** sha256 of the stored bytes. The pull `ETag`, and nothing else. */
   bundleHash: string;
-  /**
-   * `libraryBundleContentHash` of the stored bundle: what a developer pulls,
-   * with the per-export envelope removed, so a rebuild of unchanged sources
-   * matches. Absent on libraries published before it existed, and a missing
-   * value can never equal a computed one, so those read as changed.
-   */
+  /** `libraryBundleContentHash`, envelope removed; absent on older libraries, which read as changed. */
   contentHash?: string;
   size: number;
   fileName: string | null;
   /**
-   * The `free:<figmaHash>` identity present when this library was created (or
-   * last written by its owner), if any, kept alongside `licenseId` rather than
-   * instead of it. For a Pro-owned library it is a second, independent proof
-   * of ownership: the license key is the only other one, and it lives in
-   * per-device storage that "Remove license" (or a fresh device) can make
-   * disappear for good, with no way back in. Absent on libraries written
-   * before this field existed, or ones never published from a signed-in
-   * Figma session; `ownedMeta` backfills it opportunistically.
+   * The `free:<figmaHash>` identity present at create (or the owner's last
+   * write), kept beside `licenseId`. For a Pro library it is a second proof of
+   * ownership, because the license key lives in per-device storage that
+   * "Remove license" or a fresh device can lose for good. Absent when no Figma
+   * identity was ever present; publish backfills it.
    */
   figmaOwnerHash?: string;
-  /**
-   * The library's current semantic version, a cache of the newest record in
-   * `lib:<id>:versions`. Publish reads the log, not this field, so a write
-   * that stopped between the log and the meta cannot fork the version. Absent
-   * on libraries published before versioning; pull then omits the header.
-   */
+  /** Cache of the newest log record (publish reads the log); absent before versioning, so no header. */
   version?: string;
 }
 
 /**
- * KV layout. The three records a publish writes never share a field with the
- * one a rotate writes, so the two can overlap without clobbering each other:
+ * KV layout. Publish and rotate write disjoint records, so they can overlap:
  *   lib:<id>:bundle             the bundle JSON, verbatim
  *   lib:<id>:meta               LibraryMeta (no key digest)
  *   lib:<id>:key                sha256 of the current pull key
@@ -104,7 +75,7 @@ const bundleKey = (id: string) => `lib:${id}:bundle`;
 const metaKey = (id: string) => `lib:${id}:meta`;
 const keyRecord = (id: string) => `lib:${id}:key`;
 const ownerPrefix = (licenseId: string) => `libowner:${licenseId}:`;
-/** Pre-hardening layout: one JSON array per license. Migrated on first sight. */
+/** Legacy layout, one JSON array per license; migrated on first sight. */
 const legacyOwnerKey = (licenseId: string) => `libowner:${licenseId}`;
 
 const json = (status: number, body: unknown, headers: Record<string, string> = {}) =>
@@ -125,21 +96,17 @@ interface Caller {
   tierIdentity: string;
   /** Every identity the request proved. Any of them may own a library. */
   owners: string[];
-  /** The reason checkLicense gave when a bearer was present and not active, else null. */
+  /** Why a present bearer is not active, else null. */
   licenseReason: LicenseReason | null;
-  /** The free:<figmaHash> identity when a Figma proof was present, else null. */
+  /** `free:<figmaHash>` when a Figma proof was present, else null. */
   figmaIdentity: string | null;
 }
 
 /**
  * Who is calling and what they can prove. A bearer proves the license identity
- * whether or not the license is active, because possession of the key is the
- * proof of ownership; only the tier depends on the license being active.
- *
- * This never 401s on tier alone: a caller with any proof gets a Caller back,
- * with `licenseReason` set when a bearer was present and not active. Callers
- * that need a tier (publish) gate on that field themselves; callers that only
- * need ownership (rotate) do not.
+ * even when inactive, since possession is the proof; only the tier needs it
+ * active. Never 401s on tier alone: publish gates on `licenseReason`, rotate
+ * does not.
  */
 async function resolveCaller(req: Request, deps: HandlerDeps): Promise<Caller | Response> {
   const proofs = callerProofs(req.headers, deps.salt);
@@ -163,7 +130,7 @@ async function resolveCaller(req: Request, deps: HandlerDeps): Promise<Caller | 
   return { tier, tierIdentity, owners, licenseReason, figmaIdentity: figmaId };
 }
 
-/** The `X-Pull-Key` header, else null. Writes to a free-plan library must carry it. */
+/** Writes to a free-plan library must carry `X-Pull-Key`. */
 const pullKeyOf = (req: Request): string | null => (req.headers.get('X-Pull-Key') ?? '').trim() || null;
 
 /** True when `pullKey` hashes to this library's current (or legacy) key record. */
@@ -174,18 +141,11 @@ async function pullKeyMatches(store: LibraryStore, libraryId: string, meta: Libr
 }
 
 /**
- * The library's meta when the caller owns it, else the error Response.
- *
- * A license bearer is a secret, so possession proves ownership on its own. A
- * Figma identity is a client-asserted header that anyone who knows the user id
- * can send, so on its own it proves nothing: paired with the pull key — which
- * only the publish that created the library (or the last rotate) ever handed
- * out — it proves exactly as much as the license bearer does, and is checked
- * the same way regardless of which identity originally created the library.
- * That fallback matters most for a library created under a license key: the
- * key is this library's *only* other proof of ownership, and it lives in
- * per-device storage that "Remove license" (or a fresh device) can make
- * disappear for good, with no way back in without it.
+ * The meta when the caller owns it, else the error Response. A license bearer
+ * is a secret, so it proves ownership alone. A Figma identity is a
+ * client-asserted header, so it proves ownership only with the pull key, which
+ * only the creating publish or the last rotate handed out. That fallback keeps
+ * a license-created library reachable once its key is lost (see figmaOwnerHash).
  */
 async function ownedMeta(
   store: LibraryStore, libraryId: string, owners: string[], pullKey: string | null,
@@ -206,9 +166,8 @@ async function ownedMeta(
 }
 
 /**
- * Ids owned by any of the caller's proved identities. A legacy array is
- * expanded into per-library records first and then deleted, so a concurrent
- * create in the same window can only over-count, never lose an id.
+ * Ids owned by any proved identity. A legacy array is expanded into records
+ * before it is deleted, so a concurrent create can over-count, never lose an id.
  */
 async function ownedLibraryIds(store: LibraryStore, owners: string[]): Promise<string[]> {
   const all: string[] = [];
@@ -227,11 +186,9 @@ async function ownedLibraryIds(store: LibraryStore, owners: string[]): Promise<s
 }
 
 /**
- * The version record for this publish and the ordered writes that store it.
- * Order: the current bundle, the per-version bundle, the log, then the meta
- * (written by the caller). KV is not atomic, so a stop after the log leaves a
- * record the meta does not know about; publish reads the log, so that is
- * safe, and the meta is repaired on the next publish.
+ * Writes in order: current bundle, per-version bundle, log, then the caller
+ * writes the meta. KV is not atomic; a stop after the log is safe because
+ * publish reads the log, and the next publish repairs the meta.
  */
 async function writeVersion(
   store: LibraryStore,
@@ -267,22 +224,14 @@ function versionRecord(input: {
   };
 }
 
-/** Epoch ms of the log's newest record, or NaN when the log is empty or that time does not parse. */
+/** Epoch ms of the newest record, or NaN when empty or unparseable. */
 const logHeadAt = (log: VersionLog): number => Date.parse(log.records[0]?.publishedAt ?? '');
 
 /**
- * The head an update tells the reserve it read: the stalest of the reads that
- * decided the write. KV caches every key on its own at each colo, so a fresh
- * meta can sit beside a log cached before the last publish. Checking the meta
- * alone would pass that publish, which would then assign a version from the
- * old log and write it over the newer record. The older of the two times is
- * refused whenever either read is behind a committed head.
- *
- * A log ahead of its meta is a legitimate state: a writer that stopped between
- * the log and the meta writes. That writer never committed, so it recorded no
- * head, and the minimum here is the meta's time, which is the head the last
- * commit recorded, so the publish still passes. An empty log, or a record
- * whose time does not parse, falls back to the meta alone.
+ * The head an update tells the reserve it read: the older of the meta's and
+ * the log's times. KV caches each key separately per colo, so a fresh meta can
+ * sit beside a stale log. A log ahead of its meta (a writer stopped between
+ * them) recorded no head, so the meta's time passes. Empty log: the meta alone.
  */
 function headBase(meta: LibraryMeta, log: VersionLog): number {
   const metaAt = Date.parse(meta.publishedAt);
@@ -290,18 +239,16 @@ function headBase(meta: LibraryMeta, log: VersionLog): number {
   return Number.isNaN(logAt) ? metaAt : Math.min(metaAt, logAt);
 }
 
-/** `now`, moved past the meta's and the log head's times when either is at or ahead of it. A time that does not parse is ignored. */
+/** `now`, or 1 ms past the meta's or log head's time when later; unparseable times are ignored. */
 function nextHeadAt(now: number, meta: LibraryMeta, log: VersionLog): number {
   const after = [Date.parse(meta.publishedAt) + 1, logHeadAt(log) + 1].filter((at) => !Number.isNaN(at));
   return Math.max(now, ...after);
 }
 
 /**
- * The 403 for a library ceiling, from the KV pre-check or from the Durable
- * Object's create count. Free callers get `existing`, the first library the
- * listing names, so the plugin can say which file already publishes; when the
- * counter knows a library the eventually consistent listing has not surfaced
- * yet, `existing` is null rather than a guess.
+ * The 403 for a library ceiling. Free callers get `existing`, the first listed
+ * library, so the plugin can name the file; null, never a guess, when only the
+ * counter knows a library the listing has not surfaced.
  */
 async function libraryLimitResponse(
   store: LibraryStore, tier: Tier, limit: number, owned: number, ids: string[],
@@ -317,10 +264,8 @@ async function libraryLimitResponse(
 export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Response> {
   const ip = req.headers.get('CF-Connecting-IP') ?? 'unknown';
 
-  // Every request spends one token from the shared request budget before
-  // the Worker reads a byte of body, so a client that sends nothing but
-  // malformed or oversized bodies is throttled like any other caller. The
-  // publish budget below is charged only once the body says which it is.
+  // Charged before reading any body, so malformed or oversized bodies are
+  // throttled too. The publish budget is charged once the body says which.
   if (!deps.requestLimiter.allow(`libreq:${ip}`, deps.now())) return json(429, { error: 'rate_limited' });
 
   const read = await readBodyCapped(req, MAX_BUNDLE_BYTES);
@@ -332,23 +277,18 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
   let body: { libraryId?: unknown; bundle?: unknown; dryRun?: unknown; bump?: unknown; note?: unknown; initialVersion?: unknown };
   try { body = JSON.parse(new TextDecoder().decode(read.bytes)) as typeof body; } catch { return json(400, { error: 'invalid json' }); }
 
-  // A dry run opens the Publish screen every time it is shown, not just when
-  // the publisher commits, so it must not spend the same 20/min publish
-  // budget a real publish does. It shares the pull/versions request budget
-  // instead, so a dry run spends two requestLimiter tokens in total (the
-  // `libreq:` charge above plus this `libdry:` one): fine at 60/min, and
-  // simpler than exempting the second charge for one caller.
+  // A dry run runs every time the Publish screen shows, so it spends the
+  // request budget (two tokens with `libreq:`, fine at 60/min), not the 20/min
+  // publish budget.
   const limiter = body.dryRun === true ? deps.requestLimiter : deps.licenseLimiter;
   const limiterKey = body.dryRun === true ? `libdry:${ip}` : `libpub:${ip}`;
   if (!limiter.allow(limiterKey, deps.now())) return json(429, { error: 'rate_limited' });
 
   const caller = await resolveCaller(req, deps);
   if (caller instanceof Response) return caller;
-  // A legacy plugin build that sends only a lapsed bearer gets the answer it
-  // always got: publish needs a tier, rotate does not. An `unreachable`
-  // verdict is not a tier either: the license may well be active, so
-  // publishing it as free would meter, cap, and own the library under the
-  // wrong identity. Refuse without writing and let the client retry.
+  // Publish needs a tier: a lapsed bearer with no Figma identity is refused.
+  // So is `unreachable`: the license may be active, and publishing as free
+  // would meter, cap, and own the library under the wrong identity.
   if (caller.tier === 'free' && caller.licenseReason
     && (!caller.figmaIdentity || caller.licenseReason === 'unreachable')) {
     return json(401, { error: 'license_not_active', reason: caller.licenseReason });
@@ -369,10 +309,8 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
   const stored = JSON.stringify(bundle);
   const fileName = typeof bundle.fileName === 'string' ? truncateUtf16(bundle.fileName, MAX_FILE_NAME_LENGTH) : null;
   const bundleHash = sha256(stored);
-  // Two hashes, two questions. The byte hash is the pull ETag. The content
-  // hash is "did this change what developers pull", which the byte hash cannot
-  // answer: the plugin stamps a fresh generatedAt into every artifact's export
-  // envelope, so the bytes differ on every click of Publish.
+  // The byte hash is the pull ETag. The content hash answers "did this change
+  // what developers pull": the bytes differ on every Publish (fresh generatedAt).
   const contentHash = libraryBundleContentHash(bundle);
   const store = deps.libraryStore;
 
@@ -382,7 +320,7 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
 
   let libraryId: string | null = null;
   let meta: LibraryMeta | null = null;
-  /** Libraries the KV listing attributes to the caller. Only read for a create. */
+  /** The KV listing's libraries for the caller; read only for a create. */
   let listed: string[] = [];
   if (body.libraryId !== undefined) {
     if (typeof body.libraryId !== 'string' || !LIBRARY_ID_RE.test(body.libraryId)) {
@@ -394,28 +332,22 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
     meta = owned;
   } else {
     // The listing is the fast path and names `existing`. It is eventually
-    // consistent, so the reservation below also asks the identity's Durable
-    // Object, which counts creates atomically, before anything is written.
-    // Usually one id on free, but a lapsed Pro license still owns every
-    // library it created, so `owned` says how many and names the first.
+    // consistent, so the reservation also asks the Durable Object, which
+    // counts creates atomically. A lapsed Pro license still owns every library
+    // it created, so `owned` may exceed one on free.
     listed = await ownedLibraryIds(store, caller.owners);
     const limit = LIBRARY_LIMITS[caller.tier];
     if (listed.length >= limit) return libraryLimitResponse(store, caller.tier, limit, listed.length, listed);
   }
 
-  // The same content already published to this exact target: no write, no quota
-  // spent. Checked against the target's own stored hash rather than the quota
-  // cache, so it can never be confused with a different library that happens
-  // to share a content hash. `meta.contentHash` is undefined on libraries
-  // published before it was stored, which never equals a computed hash, so
-  // those republish once and gain one.
-  // The stored version comes from the log. The meta's copy is a cache.
+  // Same content already on this target: no write, no quota. Checked against
+  // the target's stored hash, not the quota cache, so another library sharing
+  // a content hash never matches. The stored version comes from the log.
   const log: VersionLog = libraryId ? await readVersionLog(store, libraryId) : { v: 1, records: [] };
   const storedVersion = currentVersion(log);
   const unchanged = Boolean(libraryId && meta && meta.contentHash === contentHash);
 
-  // The diff against what is stored, recomputed here on every publish and on
-  // every dry run. The client's own dry-run result is never trusted.
+  // Recomputed on every publish and dry run; the client's dry run is never trusted.
   let diff: LibraryDiff | null = null;
   if (libraryId && meta && !unchanged) {
     const storedRaw = await store.get(bundleKey(libraryId));
@@ -423,8 +355,7 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
       try {
         diff = libraryDiff(parseLibraryBundle(storedRaw), parsed);
       } catch {
-        // A stored bundle this reader cannot parse has no baseline; the
-        // publish still proceeds and the minimum is a patch.
+        // An unparseable stored bundle has no baseline; the minimum is a patch.
         diff = null;
       }
     }
@@ -453,46 +384,29 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
   const resolution = resolveBump({ storedVersion, minimumBump: diff?.minimumBump ?? null, bump: body.bump, initialVersion: body.initialVersion });
   if (!resolution.ok) return json(resolution.status, resolution.body);
 
-  // The head this write leaves, taken after the meta and log reads, never
-  // before them. Taken earlier, another publish could commit a newer head in
-  // between, this one would read that newer meta, pass the reserve, and then
-  // write an older time behind it: the head would go backwards and a reader
-  // still holding the newer meta would pass the check and fork the version.
-  // For the same reason an update lands at least one millisecond after both
-  // the meta and the log head it read, however far this Worker's clock is
-  // behind the one that wrote them. A create has nothing to follow.
+  // Taken after the meta and log reads, never before: otherwise a publish
+  // committed in between could leave this one writing an older time behind
+  // it, moving the head backwards and letting a stale reader fork the
+  // version. For the same reason an update lands at least 1 ms after both
+  // times it read, whatever this Worker's clock says.
   const publishedAt = new Date(meta ? nextHeadAt(deps.now(), meta, log) : deps.now()).toISOString();
 
-  // A create is a new library by definition, so its reservation must never
-  // replay an earlier one: the id is generated up front and folded into the
-  // cache key itself, so two creates from identical bundles can never collide.
-  // The `unchanged` case for an *existing* library is handled by the
-  // stored-hash comparison above, not by this cache.
-  //
-  // An update is keyed by the stored state it replaces, not by its
-  // destination. Keyed by destination alone, publish A, then B, then A again
-  // would replay A's committed reservation inside the 24-hour response TTL
-  // and answer `unchanged` while KV still held B; keyed by the content
-  // transition, A, B, A, B would do the same on the fourth publish. Every
-  // committed write moves `publishedAt`, so no two writes share a key, and a
-  // retry that arrives after the commit is answered by the stored-hash check
-  // above, not by this cache. Only a retry racing the write itself is
-  // replayed, which is what the reservation is for.
+  // A create folds its fresh id into the key, so it never replays an earlier
+  // create. An update is keyed by the stored state it replaces: keyed by
+  // destination, A, B, A would replay A's commit within the 24 h TTL and
+  // answer `unchanged` while KV held B (by content transition, so would
+  // A, B, A, B). Every commit moves `publishedAt`, so only a retry racing the
+  // write itself is replayed; a later retry hits the stored-hash check.
   const newId = libraryId ? null : newLibraryId();
   const cacheKey = libraryId
     ? `publish:${libraryId}:${meta?.publishedAt ?? 'none'}->${contentHash}`
     : `publish:new:${newId}`;
-  // An update also takes the library's lock, so a second changed publish to
-  // the same library while this one is writing answers 409 instead of
-  // assigning the same version. The lock remembers which cache key holds it
-  // and never refuses that key, so a retry of this same publish meets only
-  // its own reservation, as before. Everything above was decided from the
-  // head this handler read (the meta, the log, the diff), so the reserve
-  // also carries that head, the older of the meta's and the log's times
-  // (`headBase`): when a writer has committed a newer one since,
-  // this publish is stale and answers 409 too, instead of forking the version
-  // and dropping that writer's log record. A create takes a slot in the
-  // identity's library count, which the Durable Object settles atomically.
+  // An update takes the library's lock, so a concurrent changed publish
+  // answers 409 instead of assigning the same version; the lock never refuses
+  // its own cache key, so a retry meets only its own reservation. The reserve
+  // also carries the head this handler read (`headBase`): a newer committed
+  // head makes this publish stale, so 409 rather than a forked version. A
+  // create takes a slot in the identity's atomic library count.
   const lock = libraryId ? `publish:${libraryId}` : null;
   const reserved = await quota.reserve(caller.tier, cacheKey, lock !== null && meta
     ? { lock, base: headBase(meta, log) }
@@ -509,10 +423,8 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
     case 'rate_limited':
       return respond(429, { error: 'rate_limited', retryAfterMs: reserved.retryAfterMs });
     case 'library_limit':
-      // `owned` counts committed and listed libraries only. Below the limit,
-      // the ceiling is full of creates still in flight, any of which may yet
-      // fail: saying "already publishes" would claim a library that may never
-      // exist, so answer what is true, a publish in progress.
+      // Below the limit, in-flight creates fill the ceiling and may yet fail,
+      // so claim a publish in progress, not a library that may never exist.
       if (reserved.owned < reserved.limit) return respond(409, { error: 'publish_pending' });
       return libraryLimitResponse(store, caller.tier, reserved.limit, reserved.owned, listed);
     case 'proceed':
@@ -520,7 +432,7 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
     default:
       return json(500, { error: 'internal' });
   }
-  /** Set once this publish's meta is in KV: the head it now has to record, by commit or by release. */
+  /** Set once the meta is in KV: the head to record, by commit or release. */
   let headWritten: { lock: string; at: number } | null = null;
   try {
     // Inside the try: a logger that throws must still release the reservation.
@@ -534,13 +446,10 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
       });
       const next: LibraryMeta = {
         ...meta, publishedAt, bundleHash, contentHash, size: bodyBytes, fileName, version: record.version,
-        // Plants the Figma-identity fallback on a library that predates it,
-        // the next time its real owner (who still holds whatever proved
-        // ownership just now) publishes with a Figma identity present.
+        // Backfill the Figma-identity fallback when the proven owner has one.
         ...(meta.figmaOwnerHash === undefined && caller.figmaIdentity ? { figmaOwnerHash: caller.figmaIdentity } : {}),
       };
-      // Bundles, then the log, then the meta: the meta must never describe a
-      // bundle or a version that is not there yet.
+      // The meta must never describe a bundle or version not yet written.
       const written = await writeVersion(store, libraryId, stored, log, record);
       await store.put(metaKey(libraryId), JSON.stringify(next));
       headWritten = { lock, at: Date.parse(publishedAt) };
@@ -570,8 +479,7 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
       store.put(keyRecord(id), sha256(pullKey)),
       store.put(`${ownerPrefix(caller.tierIdentity)}${id}`, publishedAt),
     ]);
-    // A create records its head too, so the new library's first update is
-    // checked like every later one instead of accepting any base.
+    // A create records its head too, so the first update is checked like the rest.
     headWritten = { lock: `publish:${id}`, at: Date.parse(publishedAt) };
     // The replay body never carries the pull key: it is handed out exactly once.
     const snap = await quota.commit(caller.tier, cacheKey, JSON.stringify({ libraryId: id, publishedAt, version: record.version }), {
@@ -582,12 +490,10 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
       libraryId: id, pullKey, publishedAt, version: record.version, bump: record.bump, minimumBump: record.minimumBump,
     }, { ...quotaHeaders(snap), 'X-Library-Version': record.version });
   } catch (err) {
-    // A throw after the meta write (a failed prune, or a commit the Durable
-    // Object never finished) leaves a new head in KV that nothing recorded.
-    // Freeing the lock without it would let a publish that still reads the
-    // older meta proceed and fork the version, so the release records it,
-    // uncounted. If the release fails too, an update's lock stays held for the
-    // rest of its three minutes, which outlasts the KV cache of about a minute.
+    // A throw after the meta write leaves an unrecorded head in KV; freeing
+    // the lock without it would let a stale reader fork the version, so the
+    // release records it, uncounted. If the release fails too, the lock holds
+    // for its three minutes, outlasting the roughly one-minute KV cache.
     await quota.release(cacheKey, headWritten ? { head: headWritten } : undefined);
     throw err;
   }
@@ -608,10 +514,9 @@ export async function handleRotate(req: Request, deps: HandlerDeps, libraryId: s
 }
 
 /**
- * True when any entity tag in an `If-None-Match` header names `etag`. Tags are
- * comma-separated; a weak tag (`W/"..."`) is compared by its value, because
- * the hash covers the stored bytes and nothing else; `*` matches whatever is
- * current. An unquoted token is not an entity tag and never matches.
+ * True when any comma-separated `If-None-Match` tag names `etag`. A weak tag
+ * compares by value (the hash covers only the stored bytes); `*` matches; an
+ * unquoted token never matches.
  */
 export function ifNoneMatchMatches(header: string | null, etag: string): boolean {
   if (header === null) return false;
@@ -625,13 +530,13 @@ export function ifNoneMatchMatches(header: string | null, etag: string): boolean
 /** Pull answers are per-key private data; nothing between the CLI and the Worker may keep a copy. */
 const NO_STORE = 'private, no-store';
 
-/** `res` with `Cache-Control: private, no-store`, so an error from a keyed route is not kept either. */
+/** Applied to errors from keyed routes too. */
 function noStore(res: Response): Response {
   res.headers.set('Cache-Control', NO_STORE);
   return res;
 }
 
-/** The meta when the bearer is this library's current pull key, else the error Response. Shared by pull and versions. */
+/** The meta when the bearer is this library's current pull key, else the error Response. */
 async function pullAuthorized(req: Request, deps: HandlerDeps, libraryId: string): Promise<LibraryMeta | Response> {
   const auth = req.headers.get('Authorization') ?? '';
   const key = auth.startsWith('Bearer ') ? auth.slice(7).trim() : '';
@@ -640,8 +545,7 @@ async function pullAuthorized(req: Request, deps: HandlerDeps, libraryId: string
   if (metaRaw === null) return json(404, { error: 'not_found' });
   const meta = JSON.parse(metaRaw) as LibraryMeta;
   const keyHash = (await deps.libraryStore.get(keyRecord(libraryId))) ?? meta.keyHash ?? null;
-  // Digest-vs-digest comparison: timing over two fixed-length hashes reveals
-  // nothing about the key itself, so plain equality is safe here.
+  // Digest vs digest: timing over fixed-length hashes reveals nothing about the key.
   if (keyHash === null || sha256(key) !== keyHash) return json(401, { error: 'invalid_key' });
   return meta;
 }

@@ -4,20 +4,15 @@ import type { ProseProxyErrorCode, ProxyQuota } from '@spec-layer/extractor';
 export const PROXY_URL = 'https://api.spec-layer.com';
 export const CHECKOUT_URL = 'https://speclayer-docs.lemonsqueezy.com/checkout/buy/077cd029-d066-4d03-9e12-4ec25a114ba6';
 export const MANAGE_SUB_URL = 'https://app.lemonsqueezy.com/my-orders';
-// Marketing / author links surfaced as icons in the tab bar.
 export const SITE_URL = 'https://spec-layer.com/';
 /**
- * Where "Email support" goes. A placeholder until the owner confirms the
- * address (spec 2026-10-01); one constant so the swap is one line. Mail is an
- * anchor, not an openBrowser message, because figma.openExternal accepts http
- * and https only.
+ * A placeholder until the owner confirms the address (spec 2026-10-01). Mail is
+ * an anchor, not openBrowser: figma.openExternal accepts http and https only.
  */
 export const SUPPORT_EMAIL = 'hello@spec-layer.com';
 export const SUPPORT_MAILTO =
   `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent('Spec Layer license key')}`;
-// The documentation index, linked from Settings > About.
 export const DOCS_URL = 'https://spec-layer.com/docs/';
-// The publish and pull workflow, linked from the Publish screen's footer.
 export const PUBLISH_DOCS_URL = 'https://spec-layer.com/docs/quickstart/#publish-pull';
 export const LINKEDIN_URL = 'https://www.linkedin.com/in/alexkurchev/';
 
@@ -35,14 +30,9 @@ export function licenseExternalUrl(action: string): string | null {
 }
 
 /**
- * A library id, exactly as the proxy defines it (`proxy/src/libraries.ts`).
- *
- * Every caller that interpolates an id into a request path validates it first.
- * The id lands in the URL while the pull key travels in the Authorization
- * header, so a value carrying a slash or a scheme would address a different
- * host and hand that key to whoever answers. The stored id has always come
- * from a publish response, so this is a guard rather than a known hole, and it
- * is cheap enough to keep the class of bug closed.
+ * A library id as the proxy defines it (`proxy/src/libraries.ts`). Validate
+ * before putting one in a request path: the key rides in a header, so an id
+ * with a slash or scheme could hand that key to another host.
  */
 export const LIBRARY_ID_RE = /^lib_[0-9a-f]{24}$/;
 
@@ -56,12 +46,8 @@ export interface ProxyAuth {
   figmaUserId: string | null;
 }
 
-/**
- * Both proofs travel together. The proxy meters AI writing against the license
- * when one is present, and library ownership is proved by whichever identity
- * created the library, so sending both costs nothing and lets a plan change
- * hands without a migration.
- */
+/** Both proofs travel together: AI is metered against the license when present,
+ *  and ownership is whichever identity created the library. */
 export function authHeaders(auth: ProxyAuth): Record<string, string> | null {
   const headers: Record<string, string> = {};
   if (auth.licenseKey) {
@@ -72,11 +58,8 @@ export function authHeaders(auth: ProxyAuth): Record<string, string> | null {
   return Object.keys(headers).length ? headers : null;
 }
 
-/**
- * The identity for publish and rotate. Unlike effectiveAuth, a key known to be
- * inactive is still sent: it no longer buys Pro, but it proves ownership of
- * the libraries it published, and the Figma header carries the free tier.
- */
+/** For publish and rotate. Unlike effectiveAuth, an inactive key is still sent:
+ *  it proves ownership of the libraries it published. */
 export function publishAuth(
   licenseKey: string | null,
   licenseInstanceId: string | null,
@@ -85,12 +68,8 @@ export function publishAuth(
   return { licenseKey, licenseInstanceId: licenseKey ? licenseInstanceId : null, figmaUserId };
 }
 
-/**
- * The identity to authenticate with. The license key wins, UNLESS we've learned
- * it isn't granting Pro (`licenseActive === false`) — then we drop back to the
- * free Figma identity so AI keeps working within free limits instead of 401ing.
- * `null` (unknown, not yet probed) still uses the key so the probe can run.
- */
+/** The key wins unless known inactive (`false`), which drops to the free Figma
+ *  identity instead of 401ing. `null` (not probed) still sends the key. */
 export function effectiveAuth(
   licenseKey: string | null,
   licenseInstanceId: string | null,
@@ -101,32 +80,21 @@ export function effectiveAuth(
   return { licenseKey: useKey, licenseInstanceId: useKey ? licenseInstanceId : null, figmaUserId };
 }
 
-/**
- * What a failed AI request cost, per kind of build. Every AI note, from a spent
- * allowance to an unreachable Spec Layer, names one of these.
- */
+/** What a failed AI request cost, per kind of build. Every AI note names one. */
 export const AI_CONSEQUENCE = {
-  // Only the writing sections become placeholders; AI text inside sections
-  // built from the spec (anatomy roles, property descriptions) is simply
-  // absent, so the note names the sections that needed AI, not "the AI sections".
+  // Only writing sections become placeholders; AI text inside spec sections
+  // (anatomy roles, property descriptions) is simply absent.
   component: 'sections that needed AI were added as placeholders',
-  // A rebuild keeps the prose the document already had, so only what was
-  // still empty is a placeholder; "added" would say the stored prose went.
+  // A rebuild keeps stored prose; "added" would say it went.
   rebuild: 'sections that needed AI were left as placeholders',
-  // A foundation frame has no AI sections, only group descriptions and
-  // collection overviews on top of a frame that renders either way.
+  // A foundation frame renders either way; only descriptions are AI.
   foundation: 'the AI descriptions were left out',
 } as const;
 
 export type AiBuildKind = keyof typeof AI_CONSEQUENCE;
 
-/**
- * One failure note: the cause and what it cost, then the fix.
- *
- * A rebuild ends at the cost. It is a Library update's one-time AI top-up for
- * a doc from an older extractor, and the rebuilt doc is no longer stale, so
- * updating it again never asks AI again. "Try again" would be false there.
- */
+/** Cause, cost, then fix. A rebuild ends at the cost: its top-up is one-time,
+ *  so "Try again" would be false. */
 export function aiNote(cause: string, kind: AiBuildKind, retry: string): string {
   const note = `${cause}, so ${AI_CONSEQUENCE[kind]}.`;
   return kind === 'rebuild' ? note : `${note} ${retry}`;
@@ -154,15 +122,9 @@ export function unreachableCopy(kind: AiBuildKind = 'component'): string {
   return aiNote('Couldn’t reach Spec Layer', kind, 'Check your connection and try again.');
 }
 
-/**
- * Whether a thrown error is fetch failing to reach the network.
- *
- * fetch rejects with a TypeError whose message names the fetch ("Failed to
- * fetch", "fetch failed", "Load failed", "NetworkError when attempting to
- * fetch resource"). A TypeError from a bug in the code is not a network
- * failure, and telling the user to check their connection for it would be
- * false, so the message has to agree as well as the type.
- */
+/** fetch rejects with a TypeError naming the fetch ("Failed to fetch", "Load
+ *  failed", ...). A TypeError from a code bug is not a network failure, so the
+ *  message must agree as well as the type. */
 export function isNetworkFailure(err: unknown): boolean {
   return err instanceof TypeError && /fetch|network|load failed/i.test(err.message);
 }
@@ -184,13 +146,8 @@ export async function fetchQuota(
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-/**
- * The device name a new activation registers: "Figma plugin, added Sep 23,
- * 2026". It is what Manage subscription lists for each device, so a user
- * freeing a slot can tell one activation from another. The user's local date,
- * because that is the day they activated; a fixed month table rather than
- * Intl, so the name does not change with the machine's locale.
- */
+/** "Figma plugin, added Sep 23, 2026", as Manage subscription lists it. Local
+ *  date; a fixed month table so the name does not vary with locale. */
 export function activationInstanceName(now: Date): string {
   return `Figma plugin, added ${MONTHS[now.getMonth()]} ${now.getDate()}, ${now.getFullYear()}`;
 }
@@ -232,11 +189,7 @@ export async function deactivateLicense(
   }
 }
 
-/**
- * Whether a fetched quota means the free AI allowance is used up. Pro is never
- * exhausted; a null quota (offline / not yet probed) tells us nothing, so it is
- * not treated as exhausted.
- */
+/** Pro is never exhausted; a null quota tells us nothing, so it is not. */
 export function isQuotaExhausted(q: ProxyQuota | null): boolean {
   if (!q || q.tier === 'pro') return false;
   const remaining = q.remaining ?? Math.max(0, (q.limit ?? 0) - q.used);

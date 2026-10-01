@@ -1,21 +1,12 @@
 /**
- * foundationPrompt.ts — the prompt for one-paragraph descriptions of a token
- * group ("Surface", "Blue"), shown under the group's heading in a foundation
- * frame.
- *
- * Separate from prompt.ts because the input and the output contract are
- * different: that one describes a component from its extracted structure, this
- * one describes a set of tokens from their names and resolved values. They share
- * the transport and the house voice, nothing else.
- *
- * The model sees names and values, so those are the only things it may describe.
- * Everything about this prompt is aimed at that: a design system's docs are worth
- * less than nothing if they confidently state a usage rule nobody chose.
+ * The prompt for short descriptions of a token group ("Surface", "Blue") and a
+ * per-collection overview in a foundation frame. The model sees only names and
+ * values, so those are the only things it may describe: an invented usage rule
+ * is worse than no docs.
  */
 import type { FoundationVariableType } from '../foundation';
 import type { AliasCount } from '../foundationOverview';
 
-/** What the model is told about one collection: its facts and its colour groups. */
 export interface FoundationCollectionBrief {
   collectionId: string;
   collectionName: string;
@@ -24,35 +15,27 @@ export interface FoundationCollectionBrief {
   groups: FoundationGroupBrief[];
 }
 
-/** Every collection in one build, which is one prompt and one generation. */
+/** Every collection in one build: one prompt, one generation. */
 export interface GroupDraftInput { collections: FoundationCollectionBrief[] }
 
 /**
- * The JSON key an overview is returned under.
- *
- * This CAN collide with a real folder key. A group key is `<collection id>|<folder>`,
- * and a colour variable named `overview/something` in collection `c1` gives the folder
- * `overview` and therefore the group key `c1|overview`. `parseGroupDraft` resolves the
- * collision in the group's favour: a key that was asked for as a group is a group, and
- * the collection simply gets no overview from that answer. That way a rare token name
- * costs a paragraph nobody asked for, instead of silently eating a description out of
- * the user's document.
+ * The JSON key an overview is returned under. It CAN collide with a group key
+ * (a folder named `overview` gives `c1|overview`); `parseGroupDraft` resolves
+ * that in the group's favour, losing the overview rather than a description.
  */
 export function overviewKey(collectionId: string): string {
   return `${collectionId}|overview`;
 }
 
-/** What the model is told about one group. */
 export interface FoundationGroupBrief {
-  /** Stable key, the folder path. Returned as-is so callers can match it back. */
+  /** Stable key, the folder path, returned as-is for matching back. */
   folder: string;
   /** The heading the frame shows, e.g. "Surface". */
   title: string;
-  /** Token names in the group, already capped by the caller. */
   tokenNames: string[];
   /** One representative resolved value per token, in the same order. */
   sampleValues: string[];
-  /** What kind of variable the group holds, so a colour is not described as a size. */
+  /** So a colour is not described as a size. */
   resolvedType: FoundationVariableType;
 }
 
@@ -86,21 +69,15 @@ export const FOUNDATION_SYSTEM_PROMPT = [
   'No prose outside the JSON, no code fence.',
 ].join('\n');
 
-/** Cap on how many tokens of a group are shown, to bound prompt size. */
+/** Tokens shown per group, to bound prompt size. */
 export const GROUP_SAMPLE_LIMIT = 12;
-/** Cap on an accepted description, past which it is dropped rather than trimmed. */
+/** Longer answers are dropped, not trimmed. */
 const MAX_DESCRIPTION = 400;
-/** Cap on an accepted overview, past which it is dropped rather than trimmed. */
 export const MAX_OVERVIEW = 400;
 
 /**
- * One block per collection, so a build over several collections is still one
- * call and each collection's overview is written against its own facts rather
- * than a merged list nobody could attribute.
- *
- * A collection with no colour groups still gets a block: its names, modes and
- * alias counts are all an overview needs, and leaving it out would be the only
- * reason a spacing-only document has no paragraph.
+ * One block per collection, so each overview is written against its own facts.
+ * A collection with no colour groups still gets a block for its overview.
  */
 export function buildGroupPrompt(input: GroupDraftInput): string {
   const blocks = input.collections.map((collection) => {
@@ -134,21 +111,14 @@ export function buildGroupPrompt(input: GroupDraftInput): string {
 
 export interface GroupDraft { descriptions: Record<string, string>; overviews: Record<string, string> }
 
-/** One character's worth of `\s`. A per-character test cannot backtrack. */
+/** A per-character test cannot backtrack. */
 const WHITESPACE = /\s/;
 
 /**
- * Replace every em or en dash, together with any whitespace hugging it, with
- * `, `. This is exactly what a global replace of `\s*[—–]\s*` with `, ` did: the
- * greedy `\s*` on each side always took the whole whitespace run, and a match
- * never reached back past the end of the previous one. That regex is quadratic
- * on a run of whitespace that never reaches a dash, because every position in
- * the run retries the whole run, and it runs over model output, whose length
- * nobody in this repository controls. `MAX_DESCRIPTION` and `MAX_OVERVIEW`
- * bound what is kept, not what is scanned. One pass, pinned against the regex
- * in `redos.test.ts`. Different from `normalizeDashes` in `v2.ts` on purpose:
- * that rule keeps line breaks and demands spaces around an en dash; this one
- * never did.
+ * Replace every em or en dash and the whitespace hugging it with `, `, enforcing
+ * the voice rule on model output. One linear pass equal to the quadratic global
+ * regex it replaces, pinned in `redos.test.ts`; model output is unbounded.
+ * Unlike `normalizeDashes` in `v2.ts`, it does not keep line breaks.
  */
 export function collapseDashes(value: string): string {
   let out = '';
@@ -173,22 +143,10 @@ export function collapseDashes(value: string): string {
 const normalise = (s: string): string => collapseDashes(s.trim());
 
 /**
- * Parse the model's JSON into the group descriptions and the per-collection
- * overviews. An overview is keyed by its collection id (`<id>|overview`) and is
- * kept only for a collection that was actually asked about, as a non-empty
- * string under `MAX_OVERVIEW` characters. A bare `overview` key is not special
- * any more: it belongs to no collection, so it is ignored like any other key
- * that was never requested.
- *
- * A requested folder is tested FIRST, because `<id>|overview` is a reachable
- * group key (see `overviewKey`). Reading it as an overview would drop a block's
- * description from the rendered document, which is the worse of the two losses.
- *
- * Only the folders that were asked for survive. The model's output is
- * untrusted input: an unexpected key would otherwise be rendered into the
- * user's document, and a key it invented has no block to sit under anyway.
- * Entries that are not usable strings are dropped rather than defaulted, so
- * unusable output costs the prose, never the frame.
+ * Parse the model's JSON. Model output is untrusted: only requested folders and
+ * overviews (`<id>|overview`) survive, and unusable entries are dropped, never
+ * defaulted, so bad output costs the prose, never the frame. A requested folder
+ * is tested FIRST (see `overviewKey`).
  */
 export function parseGroupDraft(text: string, folders: string[], collectionIds: string[]): GroupDraft {
   const wantedFolders = new Set(folders);
@@ -217,8 +175,6 @@ export function parseGroupDraft(text: string, folders: string[], collectionIds: 
       continue;
     }
     if (!trimmed || trimmed.length > MAX_DESCRIPTION) continue;
-    // The voice rule is enforced here as well as asked for in the prompt: a
-    // model slip should not put an em dash into the user's document.
     out.descriptions[key] = trimmed;
   }
   return out;

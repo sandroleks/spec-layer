@@ -2,12 +2,11 @@
  * CSS custom properties from a DTCG export. Spec:
  * docs/superpowers/specs/2026-09-08-repository-delivery-design.md, section 5.
  *
- * A projection of a projection: it reads the DtcgExport and never the
- * artifact, so v5 keeps one reader. It feeds no hash. Anything CSS cannot
- * state is omitted and reported, never approximated. Sets and every
- * modifier's default context land at the root selector; every other context
- * lands in a block under a declared selector template. Nothing about a
- * mode's name chooses a media query.
+ * A projection of a projection: it reads the DtcgExport, never the artifact,
+ * and feeds no hash. What CSS cannot state is omitted and reported, never
+ * approximated. Sets and each modifier's default context land at the root
+ * selector, other contexts under a selector template; a mode's name never
+ * chooses a media query.
  */
 import { dtcgSlug, type DtcgExport, type DtcgJson, type DtcgTree } from '../dtcg';
 import { compareCodeUnits } from '../diagnostics';
@@ -119,11 +118,10 @@ const modeSlug = (file: string): string => file.replace(/\.json$/, '').split('.'
 const collectionSlug = (file: string): string => file.split('.')[0];
 
 /**
- * The CSS file each DTCG source file writes. A set (one mode by construction)
- * is named by its resolver label alone; a modifier context appends the mode
- * slug the DTCG projection chose for its file. index.css is reserved; a taken
- * name gets -2, -3, ... in source order, the same rule fileNameFor applies
- * to the JSON record. Spec section 3.
+ * The CSS file each DTCG source file writes: a set by its resolver label, a
+ * modifier context with the DTCG file's mode slug appended. index.css is
+ * reserved; a taken name gets -2, -3, ... in source order, as fileNameFor does.
+ * Spec section 3.
  */
 export function cssFileNames(sources: CssSource[]): Map<string, string> {
   const taken = new Set<string>([CSS_INDEX_FILE]);
@@ -148,19 +146,15 @@ export function cssFileNames(sources: CssSource[]): Map<string, string> {
 // ---------------------------------------------------------------------------
 
 /**
- * `names` is the permanent, never-shrinking assignment from `resolveNames`
- * (a path missing here collided and was already reported); `alive` is the
- * current fixed-point pass's set of paths that actually got a declaration,
- * and is what a reference is checked against. Every non-collided leaf is
- * still attempted every pass regardless of whether its own path is in
- * `alive`, so its own omission is freshly reported in whichever pass turns
- * out to be the stable one.
+ * `names` is the permanent assignment from `resolveNames` (a missing path
+ * collided and was reported); `alive` is this fixed-point pass's declared
+ * paths, which references are checked against. Every non-collided leaf is
+ * attempted every pass, so the stable pass reports each omission afresh.
  */
 interface Ctx {
   names: Map<string, string>; alive: Set<string>; report: OutputReportEntry[]; path: string; mode?: string;
-  /** Whether this path's own Figma scopes state it is a unitless number
-   *  (`OPACITY`, `FONT_WEIGHT`). A DTCG leaf cannot say this about itself, and
-   *  the remedy for a bare number depends entirely on the answer. */
+  /** Whether the path's own Figma scopes state a unitless number (`OPACITY`,
+   *  `FONT_WEIGHT`); a DTCG leaf cannot say, and the remedy depends on it. */
   statesNumber: boolean;
 }
 
@@ -215,30 +209,18 @@ function cssValue(ctx: Ctx, type: string, value: DtcgJson, property?: string): s
       break;
     case 'number':
       if (typeof value === 'number') {
-        // CSS reads a bare number as a number, not a length: `height: 36` is
-        // invalid and dropped. A typography style's own `lineHeight` member
-        // is the one call site where this branch already knows better: Figma
-        // carries a style's line-height unit per style, not per variable (a
-        // PIXELS line-height arrives as a `dimension` and never reaches this
-        // branch), so a bare number here is a real, valid CSS multiplier, not
-        // a token whose unit went missing. Every other `number` -- including
-        // a top-level LINE_HEIGHT-scoped variable, which carries no
-        // `property` and so cannot make this call site's exception -- states
-        // no unit because the file states none, and this generator does not
-        // invent one; the value is still emitted regardless of whether it is
-        // reported.
+        // CSS reads a bare number as a number, not a length (`height: 36` is
+        // dropped). A typography style's `lineHeight` member is the exception:
+        // its unit is per style (PIXELS arrives as a `dimension`), so a bare
+        // number is a valid CSS multiplier. Every other number, including a
+        // top-level LINE_HEIGHT-scoped variable, has no unit because the file
+        // states none; it is emitted and reported, never given a unit.
         //
-        // Two messages, because two different things are true, and the file
-        // header points the reader straight at this entry. A token whose own
-        // scopes state nothing is missing a unit, and narrowing its scopes in
-        // Figma is the fix: the same remedy, in the same words, the header
-        // carries, so a reader sent here by the header does not meet a third
-        // story. An `OPACITY`- or `FONT_WEIGHT`-scoped token is missing
-        // nothing; Figma states it has no unit, the header count already
-        // excludes it, and telling its owner to narrow scopes they have
-        // already narrowed would be false. It is still reported, because a
-        // bare number is still not a length and a reader that feeds one to
-        // `height` loses the declaration either way.
+        // Two messages: a token whose scopes state nothing is missing a unit
+        // (narrowing scopes is the fix, worded as in the file header); an
+        // `OPACITY`/`FONT_WEIGHT` token states it has none, so telling its
+        // owner to narrow scopes would be false. Both are reported, since
+        // neither is a length.
         if (property !== 'lineHeight') {
           report(ctx, {
             code: 'unitless_number', severity: 'warning',
@@ -294,16 +276,11 @@ const TEXT_MEMBERS: ReadonlyArray<readonly [key: string, extKey: string, table: 
   ['textDecoration', 'textDecoration', TEXT_DECORATION],
 ];
 /**
- * The DTCG path segments one typography leaf registers a name under: one per
- * member it will actually emit, given its own `$value` and `$extensions` --
- * the same conditions `typographyDecls` checks per member, gathered once so a
- * path is only ever registered for a member the style would emit. These are
- * ordinary paths as far as `resolveNames` is concerned: a member path that
- * collides with a token path omits both and reports `name_collision`, exactly
- * like two tokens would. The style's own path is never registered; nothing is
- * ever emitted under it. A key absent here is never emitted, so reserving a
- * name for it anyway would only ever waste a name or, worse, collide with an
- * unrelated token that could otherwise have used it.
+ * The member keys one typography leaf registers names under: one per member it
+ * will emit, by the conditions `typographyDecls` checks. A member path that
+ * collides with a token path omits both, like two tokens. The style's own path
+ * is never registered, and an absent member reserves no name, which could only
+ * waste one or collide with a token that needed it.
  */
 function typographyMemberKeys(value: DtcgTree, ext: DtcgTree): string[] {
   const keys: string[] = [];
@@ -344,10 +321,9 @@ function extensionDimension(
 }
 
 /**
- * Declarations for one typography leaf's members, plus the member paths that
- * actually got one. `names` is keyed by `${leaf.path}.${memberKey}`; a member
- * with no name (collided, or already pruned in a later fixed-point pass) is
- * skipped without a fresh report, since resolveNames already reported it.
+ * Declarations for one typography leaf's members, plus the member paths
+ * declared. `names` is keyed by `${leaf.path}.${memberKey}`; a member with no
+ * name (collided or pruned) is skipped, since resolveNames reported it.
  */
 function typographyDecls(
   ctx: Ctx, leaf: Leaf, names: Map<string, string>,
@@ -432,43 +408,23 @@ function shadowDecl(ctx: Ctx, leaf: Leaf, name: string): string | null {
 // The file
 // ---------------------------------------------------------------------------
 
-// Text that may sit inside a CSS block comment. Figma collection and mode
-// names are free text, so a name holding the comment terminator (asterisk,
-// slash) would close the comment and turn the rest of the name into a live
-// rule; a line break would split it.
+// Collection and mode names are free text: a comment terminator in one would
+// turn the rest of the name into a live rule, and a line break would split it.
 const commentSafe = (text: string): string => text.replace(/\*\//g, '* /').replace(/[\r\n]+/g, ' ');
 
 /**
- * `unitlessCount` is the number of distinct token paths declared in this
- * particular file that `cssValue` reported as `unitless_number`; a file that
- * declares none keeps the original two-line header byte-for-byte.
+ * `unitlessCount`: distinct token paths in this file reported `unitless_number`;
+ * a file with none keeps the two-line header byte for byte. Each is a token
+ * whose Figma variable states no unit (OPACITY and FONT_WEIGHT scopes are
+ * excluded upstream), so narrowing scopes is the right remedy for every one.
+ * The report path follows the CLI's `outputId` (`packages/cli/src/outputs.ts`)
+ * and is stated relative to the pull's output directory, which this layer does
+ * not know.
  *
- * The report file name follows the CLI's own `outputId` convention
- * (`packages/cli/src/outputs.ts`): `outputs/<platform>-<format>.report.json`.
- * The `outputs/` folder is fixed and not configurable, so the note states it;
- * the directory it sits under is the pull's own (`--out`, or `outDir` in
- * speclayer.json), which this layer does not know, so the note says where the
- * file lives relative to that rather than guessing a path that could be wrong.
- *
- * The remedy named is the one that is right for EVERY token that can reach
- * this note. A counted token is one whose Figma variable states no unit at
- * all: a variable scoped OPACITY or FONT_WEIGHT states "unitless number" and
- * is excluded upstream, so the reader is never told to narrow scopes they
- * have already narrowed, and is never told to declare a length for a token
- * that must not have one.
- *
- * `derivedCount` is the other half of the same disclosure: the properties in
- * this file whose own Figma variable states no unit and whose unit was taken
- * from the library's stated usage instead. A file that says which of its
- * values have no unit and says nothing about which were inferred discloses the
- * smaller half of the truth.
- *
- * The line says "its own Figma variable does not state", not "no Figma scope
- * states", because a scope is exactly what states it for half of this
- * population: `via: 'alias-scope'` evidence is a scope a designer set on a
- * token that aliases this one, and the report entry the line points at names
- * that scope. What is true of every derivation, both `alias-scope` and
- * `binding`, is that the token's OWN variable states nothing.
+ * `derivedCount`: properties whose unit came from the library's stated usage;
+ * naming the unitless ones but not the inferred ones would tell half the truth.
+ * The line says "its own Figma variable does not state" because alias-scope
+ * evidence is a scope, set on a token that aliases this one.
  */
 function headerText(
   header: OutputHeader, nameCase: NameCase, unitlessCount = 0, derivedCount = 0,
@@ -511,18 +467,15 @@ interface EmitResult {
   declared: Set<string>;
   /** The DTCG source file that first declared each path, in source order. */
   firstFile: Map<string, string>;
-  /** DTCG source file -> distinct token paths declared in it that `cssValue`
-   *  reported `unitless_number` for, minus those whose own Figma scopes state
-   *  a unitless number and so are not missing anything. */
+  /** DTCG source file -> token paths reported `unitless_number`, minus those
+   *  whose own scopes state a unitless number. */
   unitlessByFile: Map<string, Set<string>>;
-  /** DTCG source file -> distinct token paths declared in it whose unit the
-   *  projection derived from the library's stated usage. */
+  /** DTCG source file -> token paths whose unit was derived from usage. */
   derivedByFile: Map<string, Set<string>>;
 }
 
-/** What the projection already knows about a path, which `cssValue` cannot see:
- *  a DTCG leaf carries no scopes, and a `number` leaf alone cannot say whether
- *  its token is missing a unit or stating that it has none. */
+/** What `cssValue` cannot see: a DTCG leaf carries no scopes, so a `number`
+ *  leaf cannot say whether it lacks a unit or states it has none. */
 interface PathFacts {
   /** Paths whose Figma scopes state a unitless number (OPACITY, FONT_WEIGHT). */
   statesNumber: Set<string>;
@@ -530,12 +483,7 @@ interface PathFacts {
   derived: Set<string>;
 }
 
-/**
- * One attempt at writing every block. `names` (permanent) and `alive`
- * (this pass's fixed-point guess) are closed over by the caller, along with
- * everything else `cssOutput` needs (sources, leaves, selectors), so a
- * fixed-point retry is just another call with a smaller `alive`.
- */
+/** One attempt at every block; a fixed-point retry calls it with a smaller `alive`. */
 function emitPass(
   sources: Source[], leavesByFile: Map<string, Leaf[]>, names: Map<string, string>, alive: Set<string>,
   root: string, template: string, modes: Record<string, string> | undefined, facts: PathFacts,
@@ -611,12 +559,8 @@ export function cssOutput(exp: DtcgExport, header: OutputHeader, options: CssOut
     }
   }
 
-  // A typography leaf never registers its own path (nothing is emitted
-  // under it); it registers one path per member it will actually emit
-  // instead, so a member name that collides with a token's name is caught by
-  // resolveNames like any other collision, and an absent member never
-  // reserves (or contests) a name it was never going to use. A shadow leaf,
-  // like a plain token, registers its path.
+  // A typography leaf registers one path per emitted member, never its own (see
+  // typographyMemberKeys); a shadow leaf, like a token, registers its path.
   const candidatePaths = new Set<string>();
   for (const leaves of leavesByFile.values()) {
     for (const leaf of leaves) {
@@ -635,9 +579,7 @@ export function cssOutput(exp: DtcgExport, header: OutputHeader, options: CssOut
   });
   const names = resolved.names; // permanent: a path missing here collided, and is done
 
-  // Two things the DTCG leaves cannot state about themselves, read from the
-  // record that can: which tokens state that they are unitless numbers, and
-  // which had a unit derived for them.
+  // What the DTCG leaves cannot state, read from the record that can.
   const facts: PathFacts = {
     statesNumber: new Set(Object.entries(exp.meta)
       .filter(([, entry]) => scopesStateNumber(entry.scopes))
@@ -649,19 +591,12 @@ export function cssOutput(exp: DtcgExport, header: OutputHeader, options: CssOut
   const emit = (alive: Set<string>) =>
     emitPass(sources, leavesByFile, names, alive, root, template, options.modes, facts);
 
-  // Fixed point on which names a reference may resolve through. A name
-  // stops being a valid reference target the moment nothing actually
-  // declares it under it; that can in turn strand whatever referenced it, so
-  // shrink `alive` to exactly what got declared and try again. Every
-  // non-collided leaf is attempted every pass regardless of whether its own
-  // path is currently in `alive` (only *other* leaves' references check
-  // that), so the pass where `alive` finally stops shrinking still carries a
-  // fresh, complete set of omission reports: nothing needs to be carried
-  // over from an earlier pass.
-  // Pruning `alive` to a fixed point is what guarantees every var() this file
-  // emits has a declaration somewhere in the file; it says nothing about
-  // which selector block that declaration lands in, so a reference across
-  // blocks (root reading a mode, or the reverse) is still valid CSS.
+  // Fixed point on which names a reference may resolve through: a name nothing
+  // declares strands whatever references it, so shrink `alive` to what got
+  // declared and retry. Each pass attempts every non-collided leaf, so the
+  // stable pass carries a complete set of omission reports. Every var() then
+  // has a declaration somewhere in the file, though not necessarily in its own
+  // block, and a reference across selector blocks is still valid CSS.
   let alive = new Set(names.keys());
   let pass = emit(alive);
   for (;;) {
@@ -704,8 +639,7 @@ export function cssOutput(exp: DtcgExport, header: OutputHeader, options: CssOut
     files[name] = `${head}\n\n${block.selector} {\n  ${block.comment}\n${block.decls.map((d) => `  ${d}`).join('\n')}\n}\n`;
     imports.push(block.comment, `@import "./${name}";`);
   }
-  // index.css only imports; it never declares a property itself, so it never
-  // carries the unitless note.
+  // index.css only imports, so it never carries the unitless note.
   if (imports.length > 0) files[CSS_INDEX_FILE] = `${headerText(header, nameCase)}\n\n${imports.join('\n')}\n`;
   return { files, map, report: sortReport(entries) };
 }

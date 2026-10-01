@@ -1,20 +1,18 @@
 /** Distinct keys one surface may hold before the limiter fails closed for new ones. */
 export const MAX_KEYS_PER_SURFACE = 10_000;
 /**
- * `requestLimiter` is shared by five key prefixes (prose:, quota:, libreq:,
- * libdry:, libpull:) and `licenseLimiter` by three (the bare IP on the license
- * routes, libpub:, librot:). Each map is sized at one surface's worth of keys
- * per prefix, so ordinary traffic on the busiest route no longer uses up the
- * room the others need. The map is still shared: enough distinct addresses in
- * one window on one surface can still fill it.
+ * One surface's worth of keys per prefix sharing the map: `requestLimiter` has
+ * five (prose:, quota:, libreq:, libdry:, libpull:), `licenseLimiter` three
+ * (bare IP on license routes, libpub:, librot:). The map is still shared, so
+ * enough distinct addresses on one surface in one window can fill it.
  */
 export const REQUEST_LIMITER_MAX_KEYS = 5 * MAX_KEYS_PER_SURFACE;
 export const LICENSE_LIMITER_MAX_KEYS = 3 * MAX_KEYS_PER_SURFACE;
 
 /**
  * Per-isolate sliding-window limiter. Best-effort: state resets when the
- * isolate recycles and is not shared across colos — good enough to blunt
- * naive enumeration; a Cloudflare WAF rate rule is the real backstop (README).
+ * isolate recycles and is not shared across colos, enough to blunt naive
+ * enumeration; a Cloudflare WAF rate rule is the real backstop (README).
  */
 export class SlidingWindowLimiter {
   private hits = new Map<string, number[]>();
@@ -39,8 +37,7 @@ export class SlidingWindowLimiter {
     if (this.calls % 256 === 0 || (!this.hits.has(key) && this.hits.size >= this.maxKeys)) {
       this.prune(now);
     }
-    // Random, attacker-controlled identity/IP strings must not grow an
-    // isolate's memory without bound.
+    // Attacker-controlled keys must not grow isolate memory without bound.
     if (!this.hits.has(key) && this.hits.size >= this.maxKeys) return false;
 
     const recent = (this.hits.get(key) ?? []).filter((t) => now - t < this.windowMs);

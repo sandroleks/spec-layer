@@ -2,11 +2,9 @@ import type { BundleV1 } from './bundle';
 import { slugify } from './files';
 
 /**
- * Which bundle entries a pull writes. A component becomes one `components/` YAML file;
- * the Foundation becomes the `tokens/` DTCG directory. The unit is a whole entry
- * (the Foundation, or one component): the CLI copies entries verbatim and
- * never slices below one, since anything narrower would need the extractor's
- * alias-closure logic and become a second interpretation of v5.
+ * Which bundle entries a pull writes. The unit is a whole entry (the Foundation,
+ * or one component): anything narrower would need the extractor's alias-closure
+ * logic and become a second interpretation of v5.
  */
 export interface Selection {
   /** Write the tokens/ directory when the bundle has a Foundation. */
@@ -19,11 +17,7 @@ export const DEFAULT_SELECTION: Selection = { foundation: true, components: null
 
 export interface SelectionFlags { only?: string; component?: string[] }
 
-/**
- * The selection the command line asks for, or null when no selection flag was
- * given so the config (or the default) decides. Throws a plain usage error on
- * contradictory or unknown flags.
- */
+/** The selection the flags ask for, or null when none was given. Throws on contradictory or unknown flags. */
 export function selectionFromFlags(flags: SelectionFlags): Selection | null {
   const named = flags.component !== undefined && flags.component.length > 0 ? flags.component : null;
   if (flags.only === undefined) return named ? { foundation: true, components: named } : null;
@@ -44,9 +38,8 @@ export function resolveSelection(flags: SelectionFlags, config: { include?: Sele
 export const matchesName = (input: string, name: string): boolean => slugify(input) === slugify(name);
 
 /**
- * One flag per bundle component, in bundle order. A requested name that
- * matches nothing is an error listing what the bundle holds: a filter that
- * silently matched nothing would let pull report success for nothing.
+ * One flag per bundle component, in bundle order. A name matching nothing is
+ * an error, so pull never reports success for nothing.
  */
 export function selectComponents(bundle: BundleV1, selection: Selection): boolean[] {
   const wanted = selection.components;

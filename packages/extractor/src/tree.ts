@@ -6,35 +6,29 @@ export interface SerializedNode {
   name: string;
   type: string; // COMPONENT_SET | COMPONENT | INSTANCE | FRAME | TEXT | ...
   visible: boolean;
-  /** Raw key (with its `#id` suffix) of the component property Figma binds to
-   *  this node's visibility, from `componentPropertyReferences.visible`.
-   *  Present only when the reference exists. The raw key is kept so the main
-   *  thread can address the property exactly when it configures an instance;
-   *  extractor code cleans it with `cleanPropName` before showing it. */
+  /** Raw key (with `#id` suffix) from `componentPropertyReferences.visible`,
+   *  so the main thread can address the property exactly when configuring an
+   *  instance; clean it with `cleanPropName` before showing it. */
   visibleProperty?: string;
   children?: SerializedNode[];
   /** Present on COMPONENT_SET (or standalone COMPONENT). */
   propertyDefinitions?: Record<string, PropertyDefinition>;
-  /** Variable and style bindings with the identity Figma stated for each:
-   *  e.g. { property: "fills", id: "VariableID:7", name: "md.sys.color.primary",
+  /** e.g. { property: "fills", id: "VariableID:7", name: "md.sys.color.primary",
    *  kind: "variable", remote: false }. */
   bindings?: TokenRef[];
-  /** True when a paint is hardcoded (no variable/style) — feeds the gaps report. */
+  /** A paint is hardcoded (no variable/style); feeds the gaps report. */
   hasUnboundPaint?: boolean;
   /** `#rrggbb` of the first hardcoded SOLID fill (set only when hasUnboundPaint). */
   unboundFill?: string;
-  /** True when a stroke paint is hardcoded (no variable/style). */
   hasUnboundStroke?: boolean;
   /** `#rrggbb` of the first hardcoded SOLID stroke (set only when hasUnboundStroke). */
   unboundStroke?: string;
-  /** True when a GRADIENT_* or IMAGE fill carries no style. */
+  /** A GRADIENT_* or IMAGE fill carries no style. */
   hasUnboundGradient?: boolean;
-  /** True when the node has effects but no effect style and no bound effect. */
+  /** Effects with no effect style and no bound effect. */
   hasUnboundEffect?: boolean;
-  /** The node's own effect layers, present when the node has effects and no
-   *  effect style. `hasUnboundEffect` still reports the gap; this reports what
-   *  the gap is made of. Additive: excluded from specContentHash, same contract
-   *  as rawValues. */
+  /** What an unbound-effect gap is made of. Excluded from specContentHash,
+   *  same contract as rawValues. */
   effects?: EffectLayer[];
   /** Node opacity when it is not 1 (hand-set or bound). */
   opacity?: number;
@@ -42,17 +36,14 @@ export interface SerializedNode {
   mainComponent?: { name: string; key: string };
   /** Stable component key (COMPONENT/COMPONENT_SET only). */
   key?: string;
-  /** The component's Figma description (COMPONENT or COMPONENT_SET root
-   *  only). Written by a designer, so it is the one human-authored signal in
-   *  the file; rendered on canvas and therefore hashed. Absent when empty. */
+  /** COMPONENT or COMPONENT_SET root only. Rendered on canvas, so hashed.
+   *  Absent when empty. */
   description?: string;
-  /** The documentation link URLs a designer attached in Figma. Absent when
-   *  there are none. */
+  /** Absent when there are none. */
   documentationLinks?: string[];
-  /** Auto-layout/shape values for this node, when present. */
   layout?: LayoutInfo;
-  /** TEXT nodes only: font size/weight, kept for a future WCAG contrast
-   *  threshold lookup (see contrast.ts's requiredRatio). No current reader. */
+  /** TEXT nodes only, for a future WCAG threshold lookup (contrast.ts's
+   *  requiredRatio). No current reader. */
   text?: { fontSize?: number; fontWeight?: number };
 }
 
@@ -62,36 +53,29 @@ export interface PropertyDefinition {
   variantOptions?: string[];
 }
 
-/** What kind of Figma resource a binding names. A closed set: `getStyleByIdAsync`
- *  can also return a GRID style, but no node property this file reads produces a
- *  grid binding, so a grid style never becomes a TokenRef. */
+/** A closed set: `getStyleByIdAsync` can return a GRID style, but no property
+ *  read here produces a grid binding. */
 export type RefKind = 'variable' | 'paint-style' | 'text-style' | 'effect-style';
 
-/**
- * A resolved reference to one Figma resource, with everything Figma stated
- * about it. Shared by node bindings (TokenRef), minimized rules (TokenRule) and
- * per-field effect bindings, so all three answer the same questions the same way.
- */
+/** A resolved reference to one Figma resource, shared by TokenRef, TokenRule
+ *  and per-field effect bindings. */
 export interface RefIdentity {
-  /** Figma id. Drives resolution. Never emitted by the legacy component-v4
-   *  brief; Foundation v5 has a separate stable-identity export contract. */
+  /** Figma id; drives resolution. Never emitted by the legacy component-v4 brief. */
   id: string;
-  /** Display and join identity, as `token` was. */
+  /** Display and join identity. */
   name: string;
   kind: RefKind;
-  /** Figma's own answer (Variable.remote / PublishableMixin.remote), not
-   *  inferred from a failed lookup. */
+  /** Figma's own answer (`remote`), never inferred from a failed lookup. */
   remote: boolean;
   /** Variables only. */
   collectionId?: string;
 }
 
-/** A binding on one node: an identity plus the property it is bound to. */
 export interface TokenRef extends RefIdentity {
   property: string; // fills | strokes | itemSpacing | cornerRadius | ...
 }
 
-/** Auto-layout and shape values captured from the Figma node (only values > 0 are present). */
+/** Only values > 0 are present. */
 export interface LayoutInfo {
   mode?: 'HORIZONTAL' | 'VERTICAL';
   paddingTop?: number;

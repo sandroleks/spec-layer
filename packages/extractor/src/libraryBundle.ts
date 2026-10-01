@@ -1,19 +1,14 @@
 /**
  * The library bundle the plugin publishes, the proxy stores, and the CLI
- * pulls, defined once so the three cannot drift apart.
- *
- * This is an envelope contract, not a v5 contract: it checks that each entry
- * carries a name, its AI YAML, and an artifact with a content hash, and leaves
- * the artifacts themselves to the v5 validators. It is Figma-free and
- * dependency-free so the CLI can inline it at build time.
+ * pulls, defined once. An envelope contract only: the artifacts are left to
+ * the v5 validators. Dependency-free so the CLI can inline it at build time.
  */
 
 export const LIBRARY_BUNDLE_SCHEMA = 'spec-layer-library-bundle';
 export const LIBRARY_BUNDLE_VERSION = '1.0.0';
 
 export interface LibraryBundleArtifact { spec_layer: { export: { content_hash: string } } }
-/** One variant instance of a component set: its Figma name and its axis values. A lone
- *  component is one variant with no values. The diff expands token bindings over these. */
+/** One variant of a component set; a lone component is one variant with no values. */
 export interface LibraryBundleVariant { name: string; values: Record<string, string> }
 export interface LibraryBundleComponent {
   name: string;
@@ -53,9 +48,8 @@ function hasContentHash(artifact: unknown): artifact is LibraryBundleArtifact {
   return isRecord(exp) && typeof exp.content_hash === 'string';
 }
 
-/** The variants list when every item is well formed, else undefined: an
- *  unreadable list is dropped rather than failing the whole bundle, since
- *  nothing but the diff's per-variant path needs it. */
+/** An unreadable variants list is dropped rather than failing the bundle:
+ *  only the diff's per-variant path needs it. */
 function readVariants(value: unknown): LibraryBundleVariant[] | undefined {
   if (!Array.isArray(value)) return undefined;
   const out: LibraryBundleVariant[] = [];
@@ -79,16 +73,12 @@ function entry(v: unknown, where: string): LibraryBundleComponent {
   return { name: v.name, ai: v.ai, artifact: v.artifact, ...(variants ? { variants } : {}) };
 }
 
-/** Major version 1 is the only one this code reads. */
 function supportedVersion(version: unknown): version is string {
   return typeof version === 'string' && /^1\.\d+\.\d+$/.test(version);
 }
 
-/**
- * Parse a bundle from its JSON text or an already-parsed value. Throws a
- * LibraryBundleError whose `code` tells the caller which plain message to
- * print; the message itself is already plain enough to show as is.
- */
+/** Parse a bundle from JSON text or a parsed value. Throws a LibraryBundleError
+ *  whose message is plain enough to show as is. */
 export function parseLibraryBundle(input: unknown): LibraryBundleV1 {
   let parsed: unknown = input;
   if (typeof input === 'string') {

@@ -1,15 +1,8 @@
 /**
- * icons.ts — the shell's icon set as inner SVG markup.
- *
- * Hand-authored in the same 24-viewBox stroked style the plugin already uses
- * (theme.ts) rather than pulled from an icon package: the UI ships as one
- * embedded HTML file and takes no runtime dependencies. `sun` and `moon` are
- * existing paths from theme.ts. `brandLinkedin` is intentionally a stroked
- * badge rather than a solid logo, because a solid fill cannot survive the
- * shared `fill="none"` stroke wrapper.
- *
- * Values are inner markup only. `icon()` owns the wrapper so every glyph gets
- * the same sizing, stroke, and aria treatment.
+ * The shell's icon set as inner SVG markup, hand-authored in the plugin's
+ * 24-viewBox stroked style because the UI ships as one embedded HTML file with
+ * no runtime dependencies. `brandLinkedin` is stroked because a solid fill
+ * cannot survive the shared `fill="none"` wrapper, which `icon()` owns.
  */
 
 import type { FoundationIconKind } from '../../foundationIcon';
@@ -65,11 +58,7 @@ export const ICON_PATHS = {
   download:
     '<path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>' +
     '<path d="M7 11l5 5l5-5"/><path d="M12 4l0 12"/>',
-  /**
-   * Publishing: the mirror of `download`, sharing its tray so the pair reads
-   * as one axis. Arrow out of the tray is "sends this away", which is exactly
-   * what a publish does and what `download` does not.
-   */
+  /** Publishing: the mirror of `download`, its arrow leaving the shared tray. */
   upload:
     '<path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>' +
     '<path d="M7 9l5-5l5 5"/><path d="M12 4l0 12"/>',
@@ -78,8 +67,7 @@ export const ICON_PATHS = {
   /** Foundation row: a collection whose variables are all COLOR. */
   swatch:
     '<circle cx="9" cy="9" r="5"/><circle cx="15" cy="9" r="5"/><circle cx="12" cy="15" r="5"/>',
-  /** Foundation row: a collection whose variables are all FLOAT (spacing,
-   *  radius, density — a measured scale, not a single number). */
+  /** Foundation row: a collection whose variables are all FLOAT (a measured scale). */
   ruler:
     '<g transform="rotate(45 12 12)">' +
     '<rect x="4" y="9" width="16" height="6" rx="1"/>' +
@@ -97,16 +85,9 @@ export const ICON_PATHS = {
     '<path d="M10 14h4v4h-4z"/><path d="M12 4v10"/><path d="M12 18v2"/>' +
     '<path d="M16 5h4v4h-4z"/><path d="M18 4v1"/><path d="M18 9v11"/>',
   /**
-   * The footer primaries, as a pair. Both are the same page outline as
-   * `fileDescription` so "make docs" and "bring docs up to date" read as one
-   * family of action on one object, and neither borrows the circular arrows
-   * that mean "re-read, writes nothing" (see the icon contract in
-   * design-system/components.css).
-   *
-   * `fileDescription` itself is not reusable here: it draws the finished
-   * document rather than the act, and it is the sidebar's glyph for the
-   * component screen, so a footer wearing it repeated the tab the user is
-   * already looking at. The plus and the check are what make these acts.
+   * The footer primaries: the page outline of `fileDescription`, so make and
+   * update read as one family, without the circular arrows that mean "re-read,
+   * writes nothing" (see the icon contract in design-system/components.css).
    */
   filePlus:
     '<path d="M14 3v4a1 1 0 0 0 1 1h4"/>' +
@@ -148,12 +129,9 @@ export const ICON_PATHS = {
 export type IconName = keyof typeof ICON_PATHS;
 
 /**
- * The glyph for a foundation source, shared by every list that shows one: the
- * Foundations tab's picker and My Library's foundation rows. One map, so a
- * collection of colors is a swatch in both places and the user learns it once.
- *
- * `box` reads as "a bundle of tokens" without borrowing `puzzle`, which the
- * Library list already owns as "this is a component."
+ * The glyph for a foundation source, shared by the Foundations picker and the
+ * Library's foundation rows. `box` reads as a bundle of tokens without
+ * borrowing `puzzle`, the Library's component glyph.
  */
 export const FOUNDATION_ICON: Record<FoundationIconKind, IconName> = {
   color: 'swatch',

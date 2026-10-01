@@ -1,15 +1,14 @@
 /**
- * versions.ts: the version log a published library carries, and the pure
- * rules that turn a diff and a client request into the next version.
+ * A published library's version log, and the pure rules that turn a diff and
+ * a client request into the next version.
  *
  * KV layout, beside the keys libraries.ts owns:
  *   lib:<id>:versions           VersionLog JSON, newest record first
  *   lib:<id>:bundle:<version>   the bundle bytes for that version, last ten kept
  *
- * The log, not the meta, is the source of truth for the current version. KV
+ * The log, not the meta, is the source of truth for the current version: KV
  * writes are not atomic, and publish writes bundles, then the log, then the
- * meta; a failure between the last two leaves a log record the meta does not
- * know about, so the next publish reads the log and the meta is a cache.
+ * meta, so a failure before the meta write leaves a record only the log knows.
  */
 import {
   compareBump, isSemver, nextVersion,
@@ -17,16 +16,13 @@ import {
 } from '@spec-layer/extractor';
 import type { KVLike } from './license';
 
-// The record and log shapes are the extractor's (libraryDiff.ts), so the
-// plugin's history pane and the CLI read the same declaration this writes.
+// The extractor's shapes, so the plugin and the CLI read what this writes.
 export type { VersionLog, VersionRecord };
 
 export const MAX_CHANGES_BYTES = 65_536;
 export const RETAINED_BUNDLES = 10;
 export const MAX_NOTE_LENGTH = 500;
-/** How many of the newest log records keep their full change list. Older
- *  records are compacted (see `compactLog`) so the log itself cannot grow
- *  without bound across a library's lifetime. */
+/** Newest records that keep their change list; older ones are compacted (`compactLog`). */
 export const DETAILED_RECORDS = 50;
 
 export const versionsKey = (libraryId: string): string => `lib:${libraryId}:versions`;
@@ -35,11 +31,7 @@ export const versionBundleKey = (libraryId: string, version: string): string => 
 const BUMPS: ReadonlySet<string> = new Set(['major', 'minor', 'patch']);
 const isBump = (value: unknown): value is Bump => typeof value === 'string' && BUMPS.has(value);
 
-/**
- * Cut the sorted change list after the last change that fits in `maxBytes`
- * of UTF-8 bytes. Bytes are measured with TextEncoder, including the JSON
- * structure (brackets, commas, quotes).
- */
+/** Cut the sorted list after the last change whose JSON fits in `maxBytes` UTF-8 bytes. */
 export function truncateChanges(
   changes: LibraryChange[],
   maxBytes: number = MAX_CHANGES_BYTES,
@@ -78,9 +70,8 @@ export type BumpResolution =
   };
 
 /**
- * The version a changed publish gets. Content that changed with no property
- * changes (a description edit, say) is at least a patch. A client may raise
- * the bump and never lower it. Nothing here trusts a client's dry-run result.
+ * The version a changed publish gets: at least a patch, raised but never
+ * lowered by the client, and never trusting a client's dry-run result.
  */
 export function resolveBump(input: {
   storedVersion: string | null;
@@ -119,11 +110,9 @@ export function readNote(value: unknown): string | null | undefined {
 }
 
 /**
- * The dry-run body for a changed bundle. `diff` is null when there is no
- * stored bundle to compare against, or when the stored one could not be
- * parsed. `initialVersion` mirrors what a real first publish would assign
- * when it is a valid semver; this function never rejects it (it returns a
- * proposal, not a response) — the caller validates before calling in.
+ * The dry-run body for a changed bundle. `diff` is null with no stored bundle
+ * or an unparseable one. An invalid `initialVersion` is never rejected here;
+ * the caller validates it first.
  */
 export function proposalFor(storedVersion: string | null, diff: LibraryDiff | null, initialVersion: unknown = undefined): {
   currentVersion: string | null;
@@ -162,24 +151,18 @@ export function proposalFor(storedVersion: string | null, diff: LibraryDiff | nu
 }
 
 /**
- * The one version whose per-version bundle should be deleted after this
- * publish: the record that just fell past the newest RETAINED_BUNDLES. Each
- * publish pushes exactly one record onto the log, so at most one bundle ever
- * falls out of the window; deleting every record past the window (as this
- * once did) means one subrequest per publish forever, which crosses the
- * Worker's subrequest limit by roughly the thousandth publish.
+ * The one bundle to delete after this publish: the record that just fell past
+ * RETAINED_BUNDLES. Deleting every record past the window would grow by one
+ * subrequest per publish until it crosses the Worker's subrequest limit.
  */
 export function bundlesToPrune(log: VersionLog): string[] {
   return log.records.slice(RETAINED_BUNDLES, RETAINED_BUNDLES + 1).map((record) => record.version);
 }
 
 /**
- * Caps the log's stored detail: the newest `DETAILED_RECORDS` keep their
- * change list untouched; every older record with a non-empty `changes` has it
- * replaced with `[]` and gains `changesTruncated: true`. `counts`, `note`,
- * `version` and the dates are never touched, so the summary a library's
- * history keeps forever stays intact even once the change list is gone. Pure
- * and idempotent: compacting an already-compacted log changes nothing.
+ * Older records past `DETAILED_RECORDS` lose their change list (`[]` plus
+ * `changesTruncated: true`), so the log cannot grow without bound. `counts`,
+ * `note`, `version` and dates are kept. Idempotent.
  */
 export function compactLog(log: VersionLog): VersionLog {
   return {

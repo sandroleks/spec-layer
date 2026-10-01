@@ -11,11 +11,8 @@ export function hex(value: string): RGB {
   };
 }
 
-/**
- * The doc-frame palette. headerBg/accent (and later body/tableHeadBg) are
- * mutable: buildDocFrame() sets them from the user's theme before layout. The
- * build runs one frame at a time, so module-level state is safe here.
- */
+/** The frame palette. applyThemeToKit sets the themed fields per build; builds
+ *  run one at a time, so module state is safe. */
 export const palette = {
   headerBg: hex(DEFAULT_HEADER_BG), // navy header band
   accent: hex(DEFAULT_ACCENT), // teal eyebrow rule / number
@@ -31,10 +28,8 @@ export const palette = {
   tableHeadBg: hex('#f8fafc'), // table header tint
   chipBg: hex('#eef1f5'), // token chip background
   paneBg: hex('#fbfcfd'), // variant card left-pane tint
-  // Semantic inks for the Do and Don't cards. Fixed, like the measurement
-  // diagram's size, padding and gap colours: they carry meaning, not brand,
-  // so applyThemeToKit never touches them. A faint tint, a light border, and
-  // a dark label ink that clears 5:1 on its tint.
+  // Do and Don't inks carry meaning, not brand, so applyThemeToKit never
+  // touches them. Each label ink clears 5:1 on its tint.
   doTint: hex('#f0fdf4'),
   doBorder: hex('#bbf7d0'),
   doInk: hex('#15803d'),
@@ -58,8 +53,7 @@ export function setFontFamilies(heading: string, body: string): void {
   bodyFamily = body;
 }
 
-// Mutable like the font families so the theme can swap corner styles.
-// buildDocFrames sets it every build; 'soft' (scale 1) is the default look.
+// Set every build by applyThemeToKit; 'soft' (scale 1) is the default.
 let cornerScale = 1;
 
 export function setCornerStyle(style: CornerStyle): void {
@@ -71,8 +65,7 @@ export function radius(base: number): number {
   return Math.round(base * cornerScale);
 }
 
-/** Body-font face. Heading text nodes are still created via makeText with the
- *  body family; buildDocFrame applies the heading family where it differs. */
+/** Body-font face. makeText always uses it; headings switch to headingFont after. */
 export function font(style: FontStyle): FontName {
   return { family: bodyFamily, style };
 }
@@ -86,28 +79,11 @@ export function headingFont(style: FontStyle): FontName {
 // ---------------------------------------------------------------------------
 
 /**
- * Reads a build repeats: the same collection once per instance it draws, and
- * the same node once when fitFrameWidth measures it and again when a matrix
- * or the anatomy instances it. Each is one bridge round trip, so a 40-cell
- * matrix over three collections was ~160 sequential calls for ~43 answers.
- *
- * Reset by applyThemeToKit, which every build calls before drawing, and
- * whenever the `figma` host changes identity (the test suite installs a fresh
- * stub per test; a cache that outlived one would answer the next test's ids
- * with this one's nodes). A node proxy is valid for the life of the plugin
- * run, and no build edits the variables it reads, so nothing here can go
- * stale within a build.
- *
- * A read that throws is cached as null too, so a failing id is not retried
- * within the build: a width probe that fails on a deleted node, or a
- * detached collection, fails for the same reason every later call in this
- * build would hit, so a retry would only spend another round trip to reach
- * the same null. The cost is that call sites which used to fail
- * independently now share one outcome per id: if fitFrameWidth's width
- * probe misses a node, createInstanceFor's later instancing read of that
- * same id gets the cached null too, and one failed collection read is
- * unavailable to every remaining instance in the build, not just the one
- * that first hit it.
+ * Reads a build repeats (a collection per instance, a node per width probe and
+ * again per instancing), each one bridge round trip. Reset by applyThemeToKit
+ * and whenever the `figma` host changes identity (tests install a fresh stub).
+ * No build edits what it reads, so nothing goes stale within one. A throwing
+ * read is cached as null too, so every caller in the build shares that outcome.
  */
 let cacheHost: unknown = null;
 let collectionCache = new Map<string, Promise<VariableCollection | null>>();
@@ -151,24 +127,16 @@ export function nodeById(id: string): Promise<BaseNode | null> {
 }
 
 /**
- * Force a fresh instance to resolve variables in the SAME modes as its source
- * component, so it renders identical token values.
- *
- * Padding/gap/size tokens are commonly variable-bound. A newly created instance
- * inherits the DESTINATION page's variable modes, which can differ from the
- * component's — e.g. a "density" mode resolving padding 20->16 and gap 12->8,
- * shrinking a 151x40 button to 135x36. Every measurement/annotation is computed
- * from the component's values (151, 20, 12), so without this the drawn instance
- * no longer matches its own spec. Applying the component's resolved modes snaps
- * the instance back to the component's true geometry.
+ * Make a fresh instance resolve variables in its component's modes. A new
+ * instance inherits the DESTINATION page's modes (a density mode can shrink
+ * its padding), while every measurement is computed from the component.
  */
 export async function matchVariableModes(inst: InstanceNode, component: ComponentNode): Promise<void> {
   const modes = (component as SceneNode & { resolvedVariableModes?: Record<string, string> })
     .resolvedVariableModes;
   if (!modes) return;
   const entries = Object.entries(modes);
-  // All collections at once, through the per-build cache: a matrix of forty
-  // instances over three collections is three reads, not a hundred and twenty.
+  // All collections at once, through the per-build cache.
   const collections = await Promise.all(entries.map(([collectionId]) => collectionById(collectionId)));
   entries.forEach(([, modeId], i) => {
     const coll = collections[i];
@@ -178,18 +146,12 @@ export async function matchVariableModes(inst: InstanceNode, component: Componen
 }
 
 /**
- * Set every BOOLEAN component property to true on `inst`, so the layers those
- * properties hide are drawn. Called only when the doc's includeHidden is on.
- *
- * Definitions are read from the component, or from its parent component set
- * when the component is a variant: Figma throws on a variant's own
- * componentPropertyDefinitions. Every boolean is set, not only the ones that
- * hide a documented part: a boolean that defaults to true changes nothing, and
- * a boolean bound to a layer below the anatomy depth still deserves to show,
- * since the token walker already documents that layer.
- *
- * Never throws. A failure is logged and the instance keeps its defaults, which
- * is what the doc showed before this existed.
+ * Set every BOOLEAN component property true on `inst`, so hidden layers draw.
+ * Every one, not only those hiding a documented part: one that defaults true
+ * changes nothing, and a deeper layer is still in the token tables.
+ * A variant's definitions come from its component set: Figma throws on a
+ * variant's own componentPropertyDefinitions. Never throws; on failure the
+ * instance keeps its defaults.
  */
 export async function revealBooleanParts(inst: InstanceNode, component: ComponentNode): Promise<void> {
   try {
@@ -207,14 +169,7 @@ export async function revealBooleanParts(inst: InstanceNode, component: Componen
   }
 }
 
-// ---------------------------------------------------------------------------
-// Text construction
-// ---------------------------------------------------------------------------
-
-/**
- * Create a TextNode using one of the pre-loaded Inter faces.
- * Fonts MUST already be loaded (see buildDocFrame) before this is called.
- */
+/** A TextNode in the body family. Fonts MUST already be loaded (applyThemeToKit). */
 export function makeText(
   chars: string,
   style: FontStyle,
@@ -263,13 +218,8 @@ export function hstack(spacing: number): FrameNode {
   return frame;
 }
 
-/**
- * The readable measure for the foundation frame's notes: the group description
- * lines and the two contrast sentences, 11px muted text on a card that can
- * widen to 1440px. Component prose spans its content column instead (decided
- * 2026-09-18: the 640px cap left a visible empty margin beside tables that
- * spanned the column), so nothing in docFrame or docBlocks reads this.
- */
+/** The readable measure for foundation frame notes. Component prose spans its
+ *  content column instead, so nothing in docFrame or docBlocks reads this. */
 export const PROSE_MEASURE = 640;
 
 /** Shortest a preview cell may be, so a tiny instance still reads as a cell. */
@@ -277,12 +227,9 @@ export const SLOT_MIN_H = 72;
 /** Padding inside a preview slot, each side. */
 export const SLOT_PAD = 12;
 
-/**
- * A live instance of `nodeId`, matched to its component's variable modes so
- * it resolves the same token values (padding, gap, size) the component does,
- * with hidden boolean parts revealed when asked. Null when the id is not a
- * component or instancing throws. Never scaled here: the caller decides.
- */
+/** A live instance of `nodeId` in its component's variable modes, with hidden
+ *  boolean parts revealed when asked. Null when it is not a component or
+ *  instancing throws. Never scaled here. */
 export async function createInstanceFor(nodeId: string, includeHidden = false): Promise<InstanceNode | null> {
   let inst: InstanceNode | null = null;
   try {
@@ -314,8 +261,7 @@ export function slotAround(inst: InstanceNode | null, width: number): FrameNode 
   slot.clipsContent = true;
   slot.strokes = solidFill(palette.divider);
   slot.strokeWeight = 1;
-  // resize() fixes BOTH axes, so the hug on the vertical (primary) axis has
-  // to be restored after it. The old order drew every slot as a square.
+  // resize() fixes BOTH axes, so the vertical (primary) hug is restored after it.
   slot.resize(width, SLOT_MIN_H);
   slot.primaryAxisSizingMode = 'AUTO';
   slot.minHeight = SLOT_MIN_H;
@@ -324,13 +270,9 @@ export function slotAround(inst: InstanceNode | null, width: number): FrameNode 
   return slot;
 }
 
-/**
- * Place a live instance of `nodeId` inside a slot of the given width. The
- * instance renders at true size; it is scaled DOWN only when it would not fit
- * the slot's inner width or `maxH`, and the factor is returned so the caller
- * can say so on canvas. Never scales up. The matrices do not use this: they
- * size their cells to the instance instead (see statesSection.matrixLayout).
- */
+/** A live instance in a slot of `width`, scaled DOWN only to fit the inner
+ *  width or `maxH`, never up; the factor is returned so the caller can say so.
+ *  The matrices size their cells to the instance instead. */
 export async function placeInstance(
   nodeId: string, width: number, maxH = 160, includeHidden = false,
 ): Promise<{ slot: FrameNode; scale: number }> {
@@ -350,18 +292,10 @@ export async function buildSlot(nodeId: string, width: number, maxH = 160, inclu
 }
 
 /**
- * Apply a resolved brand theme to this module's mutable state.
- *
- * palette, cornerScale, and the font families are module-level, so EVERY
- * mutable field is set on every call: a Default build after a themed one must
- * fully reset. Loads the requested families, reverting any family that fails to
- * Inter (families missing Medium/Bold are common), then always loads the Inter
- * faces since they are the fallback and are needed for bold runs. The
- * per-build caches reset here too, so a rebuild after the user edits a
- * component reads its nodes and collections afresh.
- *
- * Both frame families go through here: buildDocFrames for component docs and
- * buildFoundationFrame for foundation docs.
+ * Apply a resolved brand theme to this module's state, setting EVERY field so
+ * a Default build after a themed one fully resets. A family missing a face
+ * falls back to Inter, which is always loaded (bold runs need it). Also resets
+ * the per-build caches. Both frame families call this.
  */
 export async function applyThemeToKit(theme: {
   headerBg: string; accent: string; bodyText: string; tableHeadBg: string;

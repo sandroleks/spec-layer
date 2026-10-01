@@ -1,16 +1,8 @@
 /**
- * Compact Foundation Context for an AI coding agent.
- *
- * FoundationArtifactV5 is the audit/interchange contract: stable ids, segmented
- * paths, typed value envelopes, complete alias provenance, diagnostics prose,
- * and derived statistics are intentionally explicit. That makes it excellent
- * for validation and diffing, but expensive clipboard context.
- *
- * This module is a presentation projection of an already-finished artifact.
- * It keeps the facts an implementation agent needs, uses human-readable names
- * for references, and points back to the canonical artifact with its semantic
- * content hash. It is not a second interchange contract and must never feed a
- * semantic hash or a canvas drift hash.
+ * Compact Foundation Context for an AI coding agent: a presentation projection
+ * of a finished FoundationArtifactV5, with readable reference names, pointing
+ * back by semantic content hash. Not a second interchange contract, and it
+ * must never feed a semantic or canvas drift hash.
  */
 import type { FoundationArtifactV5 } from './canonical';
 import { compareCodeUnits } from './diagnostics';
@@ -40,9 +32,8 @@ export interface FoundationAiContext {
     typography: AiValue[];
     effects: AiValue[];
   };
-  /** Canonical diagnostics a consumer can act on, rendered as prose. A code
-   *  this projection does not know how to render stays out of this list and
-   *  summarized in `issue_counts` only -- see `DIAGNOSTIC_MESSAGE`. */
+  /** Renderable diagnostics as prose; others appear in `issue_counts` only
+   *  (see `DIAGNOSTIC_MESSAGE`). */
   validation?: FoundationValidationRow[];
   issue_counts?: Record<string, Record<string, number>>;
   guidelines?: Record<string, Record<string, string>>;
@@ -51,13 +42,8 @@ export interface FoundationAiContext {
 export interface FoundationValidationRow {
   id: string;
   severity: Severity;
-  /** Human-readable locator for the entity this row is about -- the same
-   *  label `compactToken`/`compactTypography`/`compactEffect` use elsewhere in
-   *  this projection, falling back to the raw stable id when the entity has
-   *  no readable label (for example a dangling collection id an
-   *  UNRESOLVED_REFERENCE names). Without this, two different entities
-   *  drifting the same way on the same property render byte-identical rows
-   *  and a reader cannot tell which one either row is about. */
+  /** The entity's readable label as used elsewhere here, else its raw stable
+   *  id, so two entities drifting alike never render identical rows. */
   path?: string;
   property?: string;
   message: string;
@@ -88,8 +74,8 @@ export interface FoundationAiToken {
 }
 
 export interface FoundationAiContextOptions {
-  /** Component Context embeds a dependency slice and joins it by stable Figma
-   * ids. Whole-Foundation Copy keeps the quieter ambiguity-only behavior. */
+  /** Component Context's dependency slice joins by stable Figma ids;
+   * whole-Foundation Copy adds ids only for ambiguity. */
   includeSourceIds?: boolean;
 }
 
@@ -103,9 +89,9 @@ interface ProjectionIndex {
   ambiguousEntityIds: Set<string>;
 }
 
-/** Prefer source names, add ids only to duplicate names, then fall back to an
- * id-first label for the whole namespace if a source name itself imitates the
- * generated suffix. The last branch is what makes map keys provably unique. */
+/** Source names, ids added only to duplicates, and an id-first label for the
+ * whole namespace if a source name imitates the generated suffix, which is
+ * what makes map keys provably unique. */
 function readableLabels<T>(
   items: T[],
   idOf: (item: T) => string,
@@ -409,30 +395,16 @@ function kebab(code: string): string {
   return code.toLowerCase().replace(/_/g, '-');
 }
 
-/** @internal Renders a typed value envelope compactly for a validation
- *  message. Reads only the shapes a diagnostic's `details` actually carries --
- *  a scalar envelope (`{ type, value }`), a dimension/duration
- *  (`{ type, number, unit }`), or a color (`{ type, hex, alpha, channels? }`)
- *  -- and never invents a value: an unrecognised shape falls back to its own
- *  JSON text rather than a guess. A colour's `alpha` is always stated, never
- *  dropped: `ColorValue` itself carries it "even when opaque, so 'opaque' and
- *  'alpha not stated' are never the same output" (`value.ts`), and two
- *  style/token snapshots that drift only in alpha must not render as the
- *  identical hex twice.
- *
- *  Also reused by `markdown.ts` to render one Foundation token value per mode
- *  column -- reused rather than reimplemented so the two profiles never
- *  disagree on what a value says. Do not change this function's behaviour for
- *  that caller: it also renders `DIAGNOSTIC_MESSAGE` text the AI golden
- *  covers, so any change here moves that fixture too. */
+/** @internal Renders a typed value envelope compactly. Never invents: an
+ *  unrecognised shape falls back to its own text. A colour's alpha is always
+ *  stated, so an alpha-only drift never renders as one hex twice. Shared with
+ *  `markdown.ts`; any change here also moves the AI golden. */
 export function valueText(value: unknown): string {
   if (value === null || value === undefined) return 'unknown';
   if (typeof value === 'object') {
     const record = value as Record<string, unknown>;
     if ('value' in record) {
-      // The typed envelope `{ type, value }` that `compactTypedValue` writes
-      // when a value's type differs from its token's carries an OBJECT here
-      // for a dimension, a duration or a lossy colour: read through it.
+      // `compactTypedValue`'s envelope can hold an OBJECT: read through it.
       return record.value !== null && typeof record.value === 'object'
         ? valueText(record.value)
         : String(record.value);
@@ -452,18 +424,14 @@ export function valueText(value: unknown): string {
   return String(value);
 }
 
-/** Canonical diagnostics a consumer must be able to act on. A count alone
- *  tells a reader something is wrong and nothing about what. Codes absent
- *  from this map stay summarised in `issue_counts` only -- deliberately no
- *  generic fallback, which would emit a row with a useless message for every
- *  code instead of leaving the count to speak for itself. */
+/** Diagnostics a consumer must be able to act on. Codes absent here stay in
+ *  `issue_counts` only; no generic fallback row with a useless message. */
 const DIAGNOSTIC_MESSAGE: Record<string, (d: Diagnostic) => string> = {
   STYLE_BINDING_DRIFT: (d) =>
     `\`${String(d.details?.property)}\` is ${valueText(d.details?.style_value)} in the style but `
     + `${valueText(d.details?.token_value)} in the token it is bound to; both values are kept as `
     + 'Figma states them, and neither is corrected.',
-  // "No unit or more than one": `numericValue` (units.ts) returns null for
-  // both, so this fires when two scopes state conflicting units too.
+  // `numericValue` (units.ts) returns null for no unit and for conflicting units.
   UNIT_METADATA_UNAVAILABLE: (d) =>
     'The numeric value is kept as a bare number because its scopes '
     + `${JSON.stringify(d.details?.scopes ?? [])} state no unit or more than one, so a consumer `
@@ -479,10 +447,7 @@ function diagnosticRows(
     const render = DIAGNOSTIC_MESSAGE[d.code];
     if (!render) return [];
     const property = d.details?.property;
-    // Never fabricated: the same readable label the rest of this projection
-    // uses for this exact id, falling back to the raw stable id (still real,
-    // just less pretty) when the entity carries no label -- for example a
-    // dangling collection id an UNRESOLVED_REFERENCE names.
+    // Never fabricated: the readable label, else the raw stable id.
     const path = index.entityLabelById.get(d.entity_id) ?? d.entity_id;
     return [{
       id: kebab(d.code),

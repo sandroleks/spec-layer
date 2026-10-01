@@ -1,53 +1,35 @@
 /**
- * The canonical value model — spec §9.
+ * The canonical value model (spec §9): one discriminated shape for every value
+ * in the artifact, branched on `kind`, which is always present.
  *
- * One discriminated shape for every value in the artifact. v4's `valueOf`
- * emitted FOUR shapes for one `values` field -- an `{alias, resolved}` object,
- * a bare string, a bare number and a `{hex, alpha}` object -- so every consumer
- * needed a four-way type branch to read a single field. Here the branch is on
- * one key, `kind`, and it is always present.
- *
- * The rule this file exists to enforce: a value that is not known is
- * represented as a value that is not known. Never a plausible default. A
- * substituted black is indistinguishable from a measured one downstream, which
- * is how a generator ships something confidently wrong.
+ * A value that is not known is represented as not known, never as a plausible
+ * default: a substituted black is indistinguishable from a measured one
+ * downstream.
  */
 
 export type TokenType =
   | 'color' | 'dimension' | 'number' | 'string' | 'boolean'
   | 'duration' | 'cubic_bezier' | 'font_family';
 
-/** §9.5. `unitless` is deliberately absent: a unitless quantity is
- *  `type: number`, not a dimension with a null unit. */
+/** §9.5. No `unitless`: a unitless quantity is `type: number`, not a dimension
+ *  with a null unit. */
 export type Unit = 'px' | 'rem' | 'em' | '%' | 'deg' | 'ms' | 's';
 
-/** Runtime mirrors of the two unions above. Types are erased at compile time,
- *  so without these the published JSON Schema and this module can drift with
- *  nothing to catch it. Kept adjacent to their types so a new member is one
- *  edit, and asserted equal in the schema test. */
+/** Runtime mirrors of the two unions above, asserted equal to the published
+ *  JSON Schema in the schema test so the two cannot drift unnoticed. */
 export const SUPPORTED_UNITS: readonly Unit[] =
   ['px', 'rem', 'em', '%', 'deg', 'ms', 's'] as const;
 export const SUPPORTED_TOKEN_TYPES: readonly TokenType[] =
   ['color', 'dimension', 'number', 'string', 'boolean',
    'duration', 'cubic_bezier', 'font_family'] as const;
 export const SUPPORTED_VALUE_KINDS = ['literal', 'alias', 'missing'] as const;
-/** Duration's unit set is a SUBSET of `Unit`, spelled out inline in both
- *  `DurationValue` below and `$defs.duration_value` in the published schema --
- *  and it was the one vocabulary with no runtime mirror, so the schema's copy
- *  had nothing it could be asserted against. Mirrored here for exactly the
- *  reason the two arrays above are. */
+/** Duration's units, a subset of `Unit` spelled out in `DurationValue` and the
+ *  schema's `$defs.duration_value`; mirrored for the same parity check. */
 export const SUPPORTED_DURATION_UNITS: readonly ('ms' | 's')[] = ['ms', 's'] as const;
 
-/** Runtime mirrors of `UnresolvedReason` and `MissingReason`, for the same
- *  reason as the arrays above: the published schema lists them as enums, and
- *  only a runtime array lets the parity test hold the two together.
- *
- *  Declared with `satisfies` rather than a `: readonly X[]` annotation so
- *  each array keeps its own literal-tuple type instead of widening to the
- *  full union -- that is what lets the `Exclude<...>` checks below see
- *  exactly which members are present and fail typecheck on the ones that are
- *  not, rather than silently accepting an array that merely happens to be a
- *  subset. */
+/** Runtime mirrors of `UnresolvedReason` and `MissingReason` for the schema
+ *  parity test. `satisfies`, not a `readonly X[]` annotation, keeps each literal
+ *  tuple type so the `Exclude<...>` checks below see which members are present. */
 export const SUPPORTED_UNRESOLVED_REASONS = [
   'source_library_unavailable', 'target_not_found', 'cycle', 'type_mismatch',
   'depth_exceeded', 'ambiguous_target', 'target_mode_unresolvable',
@@ -58,15 +40,9 @@ export const SUPPORTED_MISSING_REASONS = [
 ] as const satisfies readonly MissingReason[];
 
 /**
- * Compile-time exhaustiveness over `UnresolvedReason` and `MissingReason`.
- *
- * `satisfies` above only proves each array is a SUBSET of its union -- it
- * does not stop a future member being added to `UnresolvedReason` or
- * `MissingReason` without a matching entry here, which is exactly the drift
- * `schemaParity.test.ts` exists to catch at runtime. This catches the same
- * mistake at typecheck instead: `Exclude<Union, ArrayMember>` is `never` only
- * when the array already covers the whole union, so a member left out turns
- * the assigned literal `true` into a type error naming the missing member.
+ * Compile-time exhaustiveness: `satisfies` only proves a subset, so a union
+ * member missing from its array makes `Exclude<Union, ArrayMember>` non-never
+ * and the literal `true` a type error naming that member.
  */
 type _UnresolvedReasonsExhaustive =
   Exclude<UnresolvedReason, (typeof SUPPORTED_UNRESOLVED_REASONS)[number]> extends never
@@ -90,9 +66,8 @@ export interface ColorValue {
   /** 0..1, present even when opaque, so "opaque" and "alpha not stated" are
    *  never the same output. §9.6. */
   alpha: number;
-  /** Source channels 0..1, emitted ONLY when the 8-bit hex above loses
-   *  precision Figma actually had. Emitting them on every colour would triple
-   *  a ramp's size for nothing. */
+  /** Source channels 0..1, only when the 8-bit hex loses precision Figma had;
+   *  on every colour they would triple a ramp's size. */
   channels?: [number, number, number];
 }
 
@@ -109,27 +84,17 @@ export type TypedValue =
   | BooleanValue | DurationValue | CubicBezierValue | FontFamilyValue;
 
 /**
- * One hop of a resolution, identifying BOTH the token and the mode it was read
- * under.
- *
- * A Figma `VARIABLE_ALIAS` points at a variable id and carries no mode: which
- * mode of the target collection applies is resolved from the consuming context,
- * falling back to that collection's default. That makes the mode a decision the
- * extractor makes, and a chain of bare token ids leaves the decision unstated --
- * so a validator, a differ, or a second extractor would each have to re-derive
- * it from mode NAMES or defaults, which is the name-matching this artifact
- * exists to eliminate (§10).
- *
- * Deliberately NOT mirrored as a `target_mode_id` on AliasReference: the
- * reference describes what the source file states, the chain describes what
- * resolution did, and duplicating the first hop's mode across both would give
- * one fact two owners.
+ * One hop of a resolution: the token and the mode it was read under. A Figma
+ * `VARIABLE_ALIAS` carries no mode, so the mode is the extractor's decision
+ * (consuming context, else the target collection's default); stating it spares
+ * every consumer re-deriving it from mode names (§10). Not mirrored as a
+ * `target_mode_id` on AliasReference: the reference is what the source states,
+ * the chain is what resolution did.
  */
 export interface ResolutionStep { token_id: string; mode_id: string }
 
-/** §9.2 — authoritative for lineage. `resolved` is a portability snapshot, so
- *  changing an alias target without changing the resolved value still shows up
- *  in a semantic diff (§10). */
+/** §9.2: authoritative for lineage. `resolved` is a portability snapshot, so a
+ *  retarget that keeps the resolved value still shows in a semantic diff (§10). */
 export interface AliasReference {
   target_id: string | null;
   target_collection_id: string | null;
@@ -145,18 +110,11 @@ export type UnresolvedReason =
   | 'source_library_unavailable' | 'target_not_found' | 'cycle'
   | 'type_mismatch' | 'depth_exceeded' | 'ambiguous_target'
   /**
-   * The alias's TARGET was found, but the mode the hop would have to resolve
-   * through could not be identified — the target collection declares no
-   * usable `default_mode_id` (see §7: "The default mode MUST reference a
-   * declared mode ID").
-   *
-   * A `ResolutionStep` requires BOTH a token id and a mode id, so there is no
-   * way to state this hop truthfully. The alternatives were to put some other
-   * id in the `mode_id` slot (a fabricated mode) or to claim `status:
-   * 'resolved'` with an empty chain (a resolution with no stated hops). Both
-   * assert something the source does not support, so the resolution is
-   * reported unresolved instead — the value is still recoverable from the
-   * target token itself, which is where it actually lives.
+   * The target was found but the hop's mode cannot be identified: the target
+   * collection has no usable `default_mode_id` (§7). A `ResolutionStep` needs a
+   * mode id, and a fabricated mode or a resolved empty chain would both assert
+   * what the source does not, so it is unresolved; the value stays recoverable
+   * from the target token.
    */
   | 'target_mode_unresolvable' | 'target_mode_value_missing';
 
@@ -173,20 +131,13 @@ export type CanonicalValue =
   | { kind: 'alias'; reference: AliasReference; resolved: AliasResolution }
   | { kind: 'missing'; reason: MissingReason };
 
-export const isLiteral = (v: CanonicalValue): v is Extract<CanonicalValue, { kind: 'literal' }> =>
-  v.kind === 'literal';
 export const isAlias = (v: CanonicalValue): v is Extract<CanonicalValue, { kind: 'alias' }> =>
   v.kind === 'alias';
-export const isMissing = (v: CanonicalValue): v is Extract<CanonicalValue, { kind: 'missing' }> =>
-  v.kind === 'missing';
 
 /**
- * The typed value a consumer would use, or null.
- *
- * Null for BOTH a missing value and an unresolved alias, deliberately: to a
- * generator they are the same fact -- there is no value here -- and the reason
- * they differ is carried by the record and the diagnostics, where it belongs. A
- * helper that papered over that with a default would defeat the model.
+ * The typed value a consumer would use, or null for both a missing value and an
+ * unresolved alias: to a generator both mean "no value", and why is carried by
+ * the record and the diagnostics.
  */
 export function resolvedValueOf(v: CanonicalValue): TypedValue | null {
   if (v.kind === 'literal') return v.value;

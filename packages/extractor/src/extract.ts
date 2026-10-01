@@ -7,12 +7,9 @@ import { extractRawValues, type RawValue } from './rawValues';
 import { extractNodeEffects, type NodeEffects } from './effects';
 
 /**
- * One physical variant instance under a COMPONENT_SET (or the lone COMPONENT
- * when no set exists). Carries the Figma node id so the docs site can fetch a
- * preview image, and the axis values from the shared axis model (parsed from
- * the variant name, or the raw name keyed under `Variant` when any sibling
- * name is not axis=value shaped) — guaranteed to agree with the conditions on
- * the rules extractTokens emits.
+ * One variant instance under a COMPONENT_SET (or the lone COMPONENT). `values`
+ * come from the shared axis model (the raw name under `Variant` when any sibling
+ * is not axis=value shaped), so they agree with extractTokens' rule conditions.
  */
 export interface VariantInstance {
   nodeId: string;
@@ -24,23 +21,16 @@ export interface IntermediateSpec {
   name: string;
   figmaKey: string;
   figmaFile: string;
-  /** The Figma file's NAME, when a caller knows it. `figma.root.name` is
-   *  main-thread only, so it reaches the UI on the message that already
-   *  carries the file key; a caller without one omits it rather than
-   *  inventing a placeholder. Rendered in the facts strip, so it enters
-   *  specContentHash: renaming the Figma file is drift. */
+  /** The Figma file's NAME, when known (`figma.root.name` is main-thread only);
+   *  omitted, never a placeholder. Rendered, so in specContentHash: a rename is drift. */
   figmaFileName?: string;
   figmaNode: string;
-  /** The root component's Figma description, verbatim. Empty string when the
-   *  designer wrote none. Rendered (Overview, header subtitle), so it enters
-   *  specHashProjection. */
+  /** The root's Figma description verbatim, '' when none. Rendered, so in specHashProjection. */
   description: string;
-  /** Documentation link URLs attached to the root component. Empty when none.
-   *  Rendered in the facts strip, so hashed. */
+  /** Documentation link URLs on the root. Rendered, so hashed. */
   documentationLinks: string[];
   anatomy: AnatomyPart[];
-  /** Node id of the default-variant COMPONENT — the coordinate space anatomy
-   *  part ids map into, and the node the doc frame screenshots for its diagram. */
+  /** The default variant COMPONENT: anatomy part ids map into it, and the doc frame screenshots it. */
   anatomyComponentId: string;
   props: ComponentProp[];
   variants: VariantAxis[];
@@ -51,11 +41,8 @@ export interface IntermediateSpec {
   gaps: Gap[];
   layout: LayoutSummary[];
   rawValues: RawValue[];
-  /** Effect layers on the default variant. Additive: never included in
-   *  specContentHash, same contract as rawValues. Joined to `gaps` and
-   *  `tokens` on (path, property) -- never on path alone, because one node
-   *  routinely has several unbound rows (fill, border, effects, spacing) at
-   *  the same path. */
+  /** Effect layers on the default variant. Never in specContentHash, like
+   *  rawValues. Joined on (path, property), never path alone: one node has several rows. */
   nodeEffects: NodeEffects[];
 }
 
@@ -68,20 +55,14 @@ export function extract(
   meta: { figmaFile: string; figmaFileName?: string },
 ): IntermediateSpec {
   const { parts, related, componentId } = extractAnatomy(root);
-  // Built once and threaded into both extractTokens and toVariantInstances.
-  // This isn't just avoiding duplicate work: variantAxisModel's fallback (every
-  // variant collapsing to a Variant pseudo-axis) must fire identically for both
-  // consumers, or the conditions on emitted token rules stop agreeing with the
-  // `values` recorded on variant instances, and resolveTokensForVariant can no
-  // longer match them. One shared model makes that agreement structural instead
-  // of relying on both call sites happening to compute the same thing.
+  // One model for extractTokens and toVariantInstances, so the Variant
+  // pseudo-axis fallback fires identically and rule conditions always match the
+  // instances' `values`.
   const model = variantAxisModel(root);
   return {
     name: root.name,
     figmaKey: root.key ?? '',
     figmaFile: meta.figmaFile,
-    // Spread in only when a name was actually supplied, so an absent name is
-    // an absent key rather than a key holding undefined.
     ...(meta.figmaFileName ? { figmaFileName: meta.figmaFileName } : {}),
     figmaNode: root.id,
     description: root.description ?? '',

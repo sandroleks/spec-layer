@@ -6,29 +6,19 @@ export interface ResolvedToken {
   token: string;
 }
 
-/**
- * Filter token rules down to those that apply to a single variant identified
- * by `values` (axis -> selected value).
- *
- * A rule matches when, for every axis it conditions on, the variant's value
- * for that axis is listed in the rule's accepted values. An unconditioned
- * rule (empty `conditions`) matches every variant.
- */
+/** The token rules that apply to one variant (`values`: axis -> selected value). */
 export function resolveTokensForVariant(
   tokens: TokenRule[],
   values: Record<string, string>,
 ): ResolvedToken[] {
   return tokens
     .filter((rule) => matchesVariant(rule.conditions, values))
-    // `token` stays the field name here: ResolvedToken feeds the canvas view
-    // models in docModel.ts and docFrame.ts, which are not references and have
-    // no id or kind to carry.
+    // `token` stays the field name: the canvas view models carry no id or kind.
     .map(({ part, property, name }) => ({ part, property, token: name }));
 }
 
-/** Whether a rule's conditions admit a variant with these axis values. Shared
- *  with diff.ts so the change list and the canvas agree on which variants a
- *  rule reaches. */
+/** Shared with diff.ts so the change list and the canvas agree on which
+ *  variants a rule reaches. An unconditioned rule matches every variant. */
 export function matchesVariant(conditions: Record<string, string[]>, values: Record<string, string>): boolean {
   for (const [axis, allowed] of Object.entries(conditions)) {
     const v = values[axis];

@@ -1,19 +1,13 @@
 /**
- * clipboard.ts — writing text to the clipboard from a Figma plugin iframe.
- *
- * Three tiers, because no single mechanism is reliable here:
+ * Clipboard writes from the Figma plugin iframe, in three tiers:
  *
  *   1. navigator.clipboard.writeText, which the iframe's permissions policy
- *      often blocks outright.
- *   2. A hidden textarea plus document.execCommand('copy'), which only works
- *      inside the user-gesture call stack. An awaited extraction between the
- *      click and this call destroys that stack, so tier 2 can fail for a
- *      reason that has nothing to do with permissions.
- *   3. Showing the text and letting the user copy it. Always works, and is
- *      the reason this function never needs to throw.
+ *      often blocks.
+ *   2. A hidden textarea plus execCommand('copy'), which works only inside the
+ *      user-gesture call stack; an awaited extraction before it destroys that.
+ *   3. Showing the text for the user to copy. Always works, so nothing throws.
  *
- * Callers branch on the returned tier rather than on success, since 'manual'
- * is a real outcome the UI has to narrate, not an error.
+ * Callers branch on the tier: 'manual' is an outcome to narrate, not an error.
  */
 
 export type CopyTier = 'async' | 'exec' | 'manual';
@@ -34,8 +28,7 @@ function tryExec(text: string): boolean {
   try {
     const ta = document.createElement('textarea');
     ta.value = text;
-    // Off-screen rather than display:none: a hidden element cannot be selected,
-    // and an unselected textarea makes execCommand('copy') a no-op.
+    // Off-screen, not display:none: a hidden textarea cannot be selected.
     ta.style.position = 'fixed';
     ta.style.top = '-1000px';
     ta.style.opacity = '0';
@@ -59,31 +52,18 @@ export async function copyText(text: string): Promise<CopyTier> {
   return 'manual';
 }
 
-// Tracks the currently open manual-copy dialog's disposer, so a second call
-// while one is open can close it first rather than stacking a second
-// `.sl-overlay` with a second capture-phase keydown listener.
+// The open dialog's disposer, so a second call closes it rather than stacking.
 let openManualCopyDialog: (() => void) | null = null;
 
 /**
- * Tier 3. The same `.sl-overlay` / `.sl-dialog` the confirm dialog draws
- * (shell/confirmDialog.ts), with the payload in a pre-selected textarea so
- * the user can copy it with the keyboard. Returns a disposer.
+ * Tier 3: the confirm dialog's overlay (shell/confirmDialog.ts) with the text
+ * pre-selected. Returns a disposer. `notice` carries the toast's caveats, since
+ * this payload can be just as incomplete; strings go through textContent only.
  *
- * `notice` carries the same honesty caveats the toast path computes (missing
- * token values, missing guidelines, payload size): a tier-3 user gets a
- * payload that can be just as incomplete, and this is the only place left
- * to say so. Every string lands through textContent, never innerHTML.
- *
- * Escape closes, Tab stays between the textarea and Close, and focus goes
- * back to whatever opened it. Escape runs in the capture phase and stops
- * there, so it never also backs the shell out of the screen underneath.
- *
- * One dialog at a time. Calling this again while one is already open closes
- * it first (running its own disposer, which restores focus to that dialog's
- * opener) before capturing the opener for the new one, so a second quick
- * copy replaces the dialog underneath instead of stacking on top of it, and
- * closing the replacement still returns focus to the control that started
- * the first one, not to anything inside the dialog being replaced.
+ * Escape closes in the capture phase and stops there, so the shell underneath
+ * never also backs out. Tab cycles textarea and Close; focus returns to the
+ * opener. An open dialog is closed before the new opener is captured, so focus
+ * still returns to the first control.
  */
 export function renderManualCopyModal(text: string, notice?: string): () => void {
   openManualCopyDialog?.();

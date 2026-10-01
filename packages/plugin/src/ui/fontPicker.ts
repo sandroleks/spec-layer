@@ -1,11 +1,7 @@
 /**
- * fontPicker.ts — where the theme font menu opens.
- *
- * Only the placement maths lives here. The menu's markup belongs to
- * screens/settings.ts and its listeners to ui-vnext.ts, because every paint
- * replaces the screen's DOM and a component that binds to its own elements
- * cannot survive that. Keeping this pure is what lets the choice of "above or
- * below the input" be unit-tested without a layout engine.
+ * Placement maths for the theme font menu, pure so it tests without a layout
+ * engine. Markup is screens/settings.ts's and listeners ui-vnext.ts's, since
+ * every paint replaces the screen's DOM.
  */
 
 const MENU_GAP = 4; // px between the input and the menu
@@ -20,10 +16,10 @@ export interface MenuRect {
 }
 
 export interface MenuPlacement {
-  /** Set when opening downward: distance from the viewport top. */
+  /** Opening down: distance from the viewport top. */
   top?: number;
-  /** Set when opening upward: distance from the viewport bottom. Anchoring by
-   *  bottom keeps the menu flush to the input as the filtered list shrinks. */
+  /** Opening up: distance from the viewport bottom, so the menu stays flush
+   *  to the input as the list shrinks. */
   bottom?: number;
   left: number;
   width: number;
@@ -31,13 +27,8 @@ export interface MenuPlacement {
   openUp: boolean;
 }
 
-/**
- * Decide where a fixed-position menu should sit relative to its input, so it
- * never gets clipped by the window edge. Opens downward normally; flips up
- * when there is not enough room below and more room above. Pure (no DOM), so
- * the geometry is unit-tested. Coordinates are viewport-relative (for
- * position: fixed), which escapes the settings panel's overflow clipping.
- */
+/** Opens down unless there is too little room below and more above.
+ *  Viewport coordinates, for position: fixed, escape the panel's clipping. */
 export function computeMenuPlacement(
   input: MenuRect,
   viewportHeight: number,

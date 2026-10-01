@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import type { DtcgOptions } from '@spec-layer/extractor';
+import { canonicalJson, type DtcgOptions } from '@spec-layer/extractor';
 import { parseBundle, type BundleV1 } from './bundle';
 import {
   readConfig, resolveOptions, resolveOutDir, legacyOutDir, writeConfig, DEFAULT_COMPONENT_SPECS_DIR, DEFAULT_COMPONENT_FORMAT,
@@ -29,7 +29,7 @@ export type Flags = {
   json?: boolean; install?: boolean; agent?: string[]; platform?: string[];
   /** setup, init, pull, show: how component-specs/ is written or printed. */
   'component-format'?: string;
-  /** pull only: exit 1 when the output report holds an error-severity entry. Default exit codes are otherwise unchanged. */
+  /** pull only: exit 1 when an output report holds an error-severity entry. */
   strict?: boolean;
 };
 /** out/err add a newline per line; write emits exactly the given text, for piped output. */
@@ -37,7 +37,7 @@ export type Io = { out(line: string): void; err(line: string): void; write(text:
 
 const NO_LOCAL_PULL = 'No local pull found. Run spec-layer pull.';
 
-/** How the pull summary names each format. The plugin never shows `md`; neither does this line. */
+/** The plugin never shows `md`; neither does the pull summary. */
 const FORMAT_NAME: Record<ComponentFormat, string> = { yaml: 'YAML', md: 'Markdown' };
 
 /** One manifest read per command, shared by the id fallback and the freshness check. */
@@ -49,26 +49,18 @@ function manifestReader(): (outDir: string) => Manifest | null {
   };
 }
 
-/** Two pulls write the same files when they agree on the selection, the dtcg options, the outputs, and where and how briefs land. */
+/** Two pulls write the same files when they agree on all of these. */
 function sameOutput(
   a: { selection: Selection; dtcg?: DtcgOptions; outputs?: OutputConfig[]; componentSpecsDir?: string; componentSpecsFormat?: ComponentFormat },
   b: { selection: Selection; dtcg?: DtcgOptions; outputs?: OutputConfig[]; componentSpecsDir?: string; componentSpecsFormat?: ComponentFormat },
 ): boolean {
   const selectionKey = (s: Selection) =>
     JSON.stringify([s.foundation, s.components === null ? null : [...new Set(s.components.map(slugify))].sort()]);
-  const key = (v: unknown) => JSON.stringify(sortKeys(v ?? {}));
+  const key = (v: unknown) => canonicalJson(v ?? {});
   return selectionKey(a.selection) === selectionKey(b.selection)
     && key(a.dtcg) === key(b.dtcg) && key(a.outputs ?? []) === key(b.outputs ?? [])
     && (a.componentSpecsDir ?? DEFAULT_COMPONENT_SPECS_DIR) === (b.componentSpecsDir ?? DEFAULT_COMPONENT_SPECS_DIR)
     && (a.componentSpecsFormat ?? DEFAULT_COMPONENT_FORMAT) === (b.componentSpecsFormat ?? DEFAULT_COMPONENT_FORMAT);
-}
-
-function sortKeys(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(sortKeys);
-  if (value && typeof value === 'object') {
-    return Object.fromEntries(Object.keys(value as object).sort().map((k) => [k, sortKeys((value as Record<string, unknown>)[k])]));
-  }
-  return value;
 }
 
 /** --platform values as platforms, or null after printing the usage error. */
@@ -122,11 +114,8 @@ function platformsMissingFormat(platforms: Platform[]): Platform[] {
 }
 
 /**
- * A platform with no format is a capability gap, not a mistake, so this names
- * it rather than staying silent. It only fires for a platform the run named
- * with --platform or read from speclayer.json's `platforms`; a platform this
- * run merely detected says nothing, since detection is a guess the caller
- * never asked to be told about.
+ * A missing format is a capability gap, so it is named. Callers use it only for
+ * a platform named by flag or config, never one merely detected.
  */
 function missingFormatNote(platforms: Platform[]): string {
   return `No token files exist yet for ${platforms.join(', ')}: no output format is available for that platform. Web has css.`;
@@ -134,10 +123,7 @@ function missingFormatNote(platforms: Platform[]): string {
 
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
-/**
- * The value is never echoed: a swapped `--id sl_... --key lib_...` would put
- * the pull key in a terminal scrollback or a CI log, and no command prints it.
- */
+/** Never echoes the value: a swapped --id and --key would put the pull key in scrollback or a CI log. */
 const badLibraryId = (id: string): string =>
   '--id must be "lib_" followed by 24 hex characters, as the plugin shows it.'
   + (id.startsWith('sl_') ? ' That looks like the pull key; pass it with --key.' : '');
@@ -179,10 +165,7 @@ export function runInit(cwd: string, flags: Flags, io: Io): number {
   });
   io.out(`Wrote speclayer.json (library ${flags.id}, output ${outDir}${platforms.length > 0 ? `, platforms ${platforms.join(', ')}` : ''}).`);
   for (const o of outputs) io.out(`Token files for ${o.platform}: ${o.path}/ (${o.format}, ${o.case} names), written by the next pull.`);
-  // `source` is 'config' only when a config was passed in, and init always
-  // passes null, so 'flag' and 'detected' are the only sources worth naming
-  // here: a platform init named or found on disk deserves the same note as
-  // one it wrote to speclayer.json for.
+  // init passes no config, so only flag and detected platforms occur here.
   if (source === 'flag' || source === 'detected') {
     const missing = platformsMissingFormat(platforms);
     if (missing.length > 0) io.out(missingFormatNote(missing));
@@ -196,12 +179,10 @@ function resolved(
   cwd: string, flags: Flags, env: Record<string, string | undefined>, io: Io,
   manifestAt: (outDir: string) => Manifest | null,
 ): (ResolvedOptions & { libraryId: string; key: string }) | null {
-  // A flag --id is shape-checked before any message can name it or any
-  // request can carry it: a pull key pasted as --id would otherwise be printed
-  // by the stored-key message below, or sent in the request URL when swapped
-  // with --key. After this, a flag id in opts.libraryId always has the shape.
-  // An id from speclayer.json is not checked: earlier versions wrote it
-  // unchecked, and refusing a shape they accepted would break that repository.
+  // Shape-check a flag --id before any message names it or any request carries
+  // it, so a pull key pasted as --id is never printed or sent in a URL. An id
+  // from speclayer.json is not checked, so a config earlier versions accepted
+  // keeps working.
   if (flags.id !== undefined && !isLibraryId(flags.id)) {
     io.err(badLibraryId(flags.id));
     return null;
@@ -210,16 +191,12 @@ function resolved(
   try {
     opts = resolveOptions(cwd, flags, env, (outDir) => manifestAt(outDir)?.libraryId ?? null);
   } catch (err) {
-    // resolveOptions reads speclayer.json via readConfig, which throws on
-    // corrupt JSON. Surface the message as plain text rather than letting it
-    // escape uncaught up through cli.ts.
+    // readConfig throws on corrupt JSON.
     io.err(errorText(err));
     return null;
   }
   if (!opts.libraryId) {
-    // A credential file naming a library is the answer to the question being
-    // asked, so say so rather than sending the reader off to find the id they
-    // already have on disk.
+    // A stored key names its library, which is the id the reader needs.
     io.err(opts.storedKeyFor
       ? `No library id. ${CREDENTIALS_NAME} holds a key for library ${opts.storedKeyFor}. `
         + `Pass --id ${opts.storedKeyFor}, or run spec-layer init first.`
@@ -259,13 +236,10 @@ function describePull(bundle: BundleV1, selection: Selection, selected: boolean[
 }
 
 /**
- * First run in a repo: config, gitignore, key, pull.
- *
- * The order is load-bearing. speclayer.json first because it holds no secret
- * and leaves the repo configured even when a later step refuses. The gitignore
- * entry before the key, so the secret is ignored before it exists. The pull
- * last, so a network failure still leaves a usable setup that a bare
- * `spec-layer pull` retries.
+ * First run in a repo: config, gitignore, key, pull. The order is load-bearing:
+ * speclayer.json first (no secret, and configured even if a later step refuses),
+ * the gitignore entry before the key so the secret is ignored before it exists,
+ * the pull last so a network failure leaves a setup `spec-layer pull` retries.
  */
 export async function runSetup(
   cwd: string, flags: Flags, env: Record<string, string | undefined>, io: Io, fetcher?: typeof fetch,
@@ -291,28 +265,20 @@ export async function runSetup(
     return 1;
   }
 
-  // Unlike `init`, `setup` defaults from the committed config rather than
-  // overwriting it. `init` is the first-run command and overwriting is the
-  // point of it; `setup` is also the rotation path, and the command the plugin
-  // hands out carries neither --out nor a selection, so re-pasting it must not
-  // silently reset a chosen output directory or an include block and leave the
-  // old directory stale. That difference is deliberate, which is why these two
-  // blocks are not extracted into a shared helper.
-  //
-  // A corrupt speclayer.json tells us nothing to preserve, and setup
-  // overwriting it is the repair path, so it falls back to the defaults rather
-  // than failing the run.
+  // Unlike `init`, `setup` defaults from the committed config instead of
+  // overwriting it: setup is also the rotation path, and the plugin's command
+  // carries neither --out nor a selection, so re-pasting it must not reset them.
+  // That is why the two blocks are not shared. A corrupt speclayer.json has
+  // nothing to preserve, and setup overwriting it is the repair path.
   let existing: CliConfig | null = null;
   try { existing = readConfig(cwd); } catch { existing = null; }
   const fromFlags = platformsFromFlags(flags, io);
   if (fromFlags === null) return 1;
   const format = componentFormatFromFlags(flags, io);
   if (format === null) return 1;
-  // 0.10.0 and earlier recorded an absolute --out unchecked and wrote every
-  // pull to it joined under the working directory. With no --out, setup
-  // records that relative path instead, which is where the files already are,
-  // so the plugin's command keeps working. This is the only stored value any
-  // command rewrites on its own.
+  // 0.10.0 and earlier joined an absolute --out under the working directory.
+  // With no --out, setup records that relative path, where the files already
+  // are. This is the only stored value any command rewrites on its own.
   let configOutDir = existing?.outDir;
   let legacyFrom: string | null = null;
   if (flags.out === undefined && configOutDir !== undefined) {
@@ -332,11 +298,9 @@ export async function runSetup(
   const componentSpecsDir = existing?.componentSpecsDir ?? DEFAULT_COMPONENT_SPECS_DIR;
   const keptInclude = include ?? existing?.include ?? null;
   const keptDtcg = existing?.dtcg ?? null;
-  // The same rule as include: a flag wins, else what the committed config says.
   const keptFormat = format ?? existing?.componentSpecsFormat ?? null;
-  // Platforms follow the same rule as include: a flag wins, else what the
-  // committed config says, else detection. Outputs keep every entry the config
-  // already has and gain a default for any platform that has none.
+  // Platforms: a flag, else the committed config, else detection. Outputs keep
+  // every configured entry and gain a default for any platform without one.
   const { platforms } = resolvePlatforms(cwd, fromFlags, existing);
   const outputs = withDefaults(existing?.outputs ?? [], platforms);
   writeConfig(cwd, {
@@ -381,8 +345,7 @@ export async function runSetup(
       io.out('Not a git repository, so .gitignore was left alone.');
       break;
     default: {
-      // Compile-time exhaustiveness only. Returning `exhaustive` would set
-      // process.exitCode to a non-number if a future kind ever reached here.
+      // Exhaustiveness only: returning `exhaustive` would set a non-number exit code.
       const exhaustive: never = ignored;
       void exhaustive;
       return 1;
@@ -394,21 +357,16 @@ export async function runSetup(
     ? `Replaced the stored key in ${CREDENTIALS_NAME}.`
     : `Stored the pull key in ${CREDENTIALS_NAME}.`);
 
-  // Pass the key through rather than relying on a re-read of what was just
-  // written, so the pull cannot disagree with the file.
+  // Pass the key through so the pull cannot disagree with the file.
   const outcome: PullOutcome = { retryable: false };
   const code = await pullWith(cwd, { ...flags, key }, env, io, fetcher, outcome);
   if (code !== 0) {
-    // Everything before the pull is on disk, so the reader should not redo it.
-    // Said only when a bare retry can help: after a 401, a 404, a refused
-    // directory, or a --strict report, the line above already says what to
-    // change, and a retry suggestion would contradict it.
+    // Only when a bare retry can help: after a 401, 404, refused directory, or
+    // --strict report, the line above already says what to change.
     if (outcome.retryable) io.err('Setup is stored. Run spec-layer pull to retry.');
     return code;
   }
-  // The setup command is what a developer hands a coding agent, so the agent's
-  // first sight of this tool is this output. Point it at the guide that says
-  // what landed and how to read it, rather than leaving it to open bundle.json.
+  // Setup is often a coding agent's first sight of this tool, so point it at the guide.
   const hosts = detectRepo(cwd).agents;
   io.out('');
   io.out('Next step for a coding agent: npx spec-layer skill --install');
@@ -420,17 +378,10 @@ export async function runSetup(
 }
 
 /**
- * Whether every file this output wrote is still on disk. The record map only
- * proves the output was rendered at all; the list of part files it wrote comes
- * from index.css's own imports, since a map entry names only the file that
- * first declares a token, which for a two-mode collection is always the
- * default mode's file, so a non-default mode file never appears in the map.
- * False when the map is missing, the report is missing, or index.css is
- * missing or unreadable.
- *
- * The report is checked because `printReportSummary` reads it on a 304 and
- * `--strict` decides an exit code from it: granting a 304 without it would
- * leave that pass reading a file this pull never restored.
+ * Whether every file this output wrote is still on disk. Part files come from
+ * index.css's imports, not the map: a map entry names only the file that first
+ * declares a token, so a non-default mode file never appears in it. The report
+ * is checked because a 304 pass and --strict read it.
  */
 function outputFilesOnDisk(cwd: string, outDir: string, o: OutputConfig): boolean {
   const id = outputId(o);
@@ -442,20 +393,16 @@ function outputFilesOnDisk(cwd: string, outDir: string, o: OutputConfig): boolea
 }
 
 /**
- * Whether the files a Foundation pull writes outside `outputs/` are still on
- * disk. `tokens/report.json` is the other half of what `printReportSummary`
- * and `--strict` read, and `fonts.json` is what both that pass and the
- * generated skill read the library's font requirement from; a 304 that leaves
- * either missing leaves a sentence with nothing behind it. `tokens/resolver.json`
- * is what a written Foundation is addressed by everywhere else, so it stands
- * for the token files themselves.
+ * Whether the Foundation files outside `outputs/` are still on disk: the report
+ * and fonts.json that a 304 pass and the skill read, and resolver.json standing
+ * in for the token files.
  */
 function foundationFilesOnDisk(cwd: string, outDir: string): boolean {
   return ['fonts.json', join('tokens', 'report.json'), join('tokens', 'resolver.json')]
     .every((rel) => existsSync(join(cwd, outDir, rel)));
 }
 
-/** A JSON file that may not exist yet, parsed as an array, or `[]` when it is missing, unreadable, or not an array. Never throws. */
+/** A JSON array from disk, or `[]` when missing, unreadable, or not an array. Never throws. */
 function readJsonArray(path: string): unknown[] {
   if (!existsSync(path)) return [];
   try {
@@ -466,49 +413,32 @@ function readJsonArray(path: string): unknown[] {
   }
 }
 
-/** The severity of every entry in a report file, read from disk. `[]` when the file is missing, unreadable, or holds no entries. */
+/** Every entry's severity in a report file; `[]` when missing or unreadable. */
 function readReportSeverities(path: string): Array<'error' | 'warning' | 'info'> {
   return readJsonArray(path)
     .map((entry) => (entry as { severity?: unknown }).severity)
     .filter((s): s is 'error' | 'warning' | 'info' => s === 'error' || s === 'warning' || s === 'info');
 }
 
-/** The family names fonts.json named for this pull, or none when the Foundation was not written or the file cannot be read. */
+/** Family names from fonts.json; none when it was not written or cannot be read. */
 function readFontFamilies(cwd: string, outDir: string): string[] {
   return readJsonArray(join(cwd, outDir, 'fonts.json'))
     .map((entry) => (entry as { family?: unknown }).family)
     .filter((f): f is string => typeof f === 'string');
 }
 
-/** "1 error" / "2 errors": every count this command prints is pluralised, never assumed singular or plural. */
+/** "1 error" / "2 errors". */
 function plural(n: number, word: string): string {
   return `${n} ${word}${n === 1 ? '' : 's'}`;
 }
 
 /**
- * The severity summary and missing-font notes for whatever is on disk after
- * this pull -- whether this run just wrote it (a 200) or it was already
- * there and confirmed current (a 304, which a Foundation pull is only granted
- * when both report files and `fonts.json` were already present -- see
- * `foundationFilesOnDisk` and `outputFilesOnDisk`, which exist partly so this
- * claim is true). A cached pull whose report already names an
- * error is exactly the state `--strict` exists to catch, so this reads from
- * disk by the *configured* outputs and outDir, never from what
- * writeBundleFiles happened to return, and the caller runs it on both
- * outcomes, not only when writeBundleFiles actually ran.
- *
- * Two report files can hold severities, and both are read: `tokens/report.json`
- * (the whole DTCG projection report, written unconditionally whenever the
- * Foundation is pulled -- carries `path_collision` and `alias_type_mismatch`
- * at `error`, and about eight `warning` codes) and one
- * `outputs/<platform>-<format>.report.json` per configured output (currently
- * `name_collision` at `error`, `unitless_number` and others at `warning`).
- * Naming both kinds as "the token output" is accurate: both live under the
- * output directory this pull writes, and the message names every file that
- * actually contributed, never a file with nothing to say.
- *
- * Returns the total error-severity count, so the caller can decide
- * `--strict`'s exit code without re-reading anything.
+ * Prints the severity summary and missing-font notes for what is on disk after
+ * a 200 or a 304 (granted only when the reports and fonts.json are present).
+ * Reads by the configured outputs and outDir, never writeBundleFiles' result,
+ * because a cached pull with an error report is what --strict exists to catch.
+ * Reads `tokens/report.json` and each `outputs/<platform>-<format>.report.json`.
+ * Returns the error count.
  */
 function printReportSummary(cwd: string, outDir: string, outputs: OutputConfig[], io: Io): number {
   const reportPaths: string[] = [];
@@ -527,9 +457,7 @@ function printReportSummary(cwd: string, outDir: string, outputs: OutputConfig[]
   if (errors > 0 || warnings > 0) {
     io.err(`${plural(errors, 'error')}, ${plural(warnings, 'warning')} in the token output. See ${reportPaths.join(', ')}.`);
   }
-  // fonts.json is written whenever the Foundation is selected, and can
-  // legitimately be an empty array; only a family it actually names is worth
-  // checking against the repository.
+  // fonts.json can legitimately be empty; check only the families it names.
   const fontFamilies = readFontFamilies(cwd, outDir);
   if (fontFamilies.length > 0) {
     for (const family of missingFontSourcesInRepo(fontFamilies, cwd)) {
@@ -552,7 +480,7 @@ export async function runPull(
 
 /** What runSetup needs to know about a failed pull beyond its exit code. */
 interface PullOutcome {
-  /** Set when the fetch failed in a way the same request can get past: the network, the timeout, or a 5xx. */
+  /** The failed fetch's `retryable`. */
   retryable: boolean;
 }
 
@@ -577,40 +505,20 @@ async function pullWith(
   const componentSpecsFormat = flagFormat ?? opts.componentSpecsFormat ?? DEFAULT_COMPONENT_FORMAT;
   const { platforms, source } = resolvePlatforms(cwd, fromFlags, opts);
   const outputs = outputsForRun(fromFlags, opts, platforms);
-  // Ask for a 304 only when the last pull wrote the same files this one would,
-  // with the same CLI, AND every one of those files is still on disk; a
-  // changed selection, dtcg block, outputs block, componentSpecsDir, or
-  // component format needs the bundle again to re-project, and so does a
-  // deleted brief, a deliverable directory a developer (or a clean) removed,
-  // or a part file index.css
-  // imports (which is not always every file the record map names, since a map
-  // entry names only the file that first declares a token), since a 304 would
-  // leave any of those missing rather than restoring it. Outputs are only ever
-  // written alongside the Foundation
-  // (writeBundleFiles), so a pull that never writes it - `--only components`,
-  // `include: { foundation: false }`, or a library with none - has no
-  // deliverable files to check, and the existence clause would otherwise
-  // never see a match and redownload the bundle on every run.
+  // Ask for a 304 only when the last pull wrote the same files with the same CLI
+  // and every one is still on disk, since a 304 restores nothing. Deliverables
+  // are written only with the Foundation, so a pull without it checks none, or
+  // it would never match and would redownload on every run.
   //
-  // The version clause is what makes an upgrade land. Everything the CLI
-  // projects - the DTCG tokens, both report files, fonts.json, the CSS and its
-  // header - is computed here, not in the bundle, so a release that changes
-  // any of it changes what a pull writes from bytes that have not moved. With
-  // only the file-existence clauses, a repository that pulled on 0.7.x and
-  // upgraded to get exactly such a fix was told `Already up to date` and kept
-  // last release's files, including a report summary read off stale reports. A
-  // manifest with no cliVersion at all (every release up to and including
-  // 0.8.2, since 0.9.0 is the first to write the field) is in that same
-  // position and must re-project too, which is what `!==` against a string
-  // already gives. The publisher's `extractorVersion` needs no clause of its
-  // own: it travels inside the bundle, so a bump moves the bundle hash and the
-  // `ETag` catches it.
+  // The cliVersion clause makes an upgrade land: DTCG, reports, fonts.json and
+  // CSS are projected here, not in the bundle, so a new CLI changes the output
+  // for unchanged bytes. A manifest with no cliVersion fails `!==` too. The
+  // publisher's extractorVersion travels in the bundle, so the ETag covers it.
   const manifest = manifestAt(join(cwd, opts.outDir));
   const foundationOnDisk = Boolean(manifest?.artifacts.find((a) => a.kind === 'foundation')?.path);
   const willWriteFoundation = selection.foundation && foundationOnDisk;
-  // A manifest from 0.6.0 carries outDir-relative component paths; they will
-  // not exist at the working directory, so the check below forces a re-fetch
-  // that rewrites them. That is the intended migration.
+  // 0.6.0 manifests carry outDir-relative paths that fail this check, forcing
+  // the re-fetch that migrates them.
   const briefsOnDisk = (manifest?.artifacts ?? [])
     .filter((a) => a.kind === 'component' && a.path !== null)
     .every((a) => existsSync(resolve(cwd, a.path as string)));
@@ -635,20 +543,13 @@ async function pullWith(
   }
   if (result.kind === 'not_modified') {
     if (!etag) {
-      // The request carried no If-None-Match, so this 304 answers a question
-      // that was never asked. Calling it success would report files that do
-      // not exist, or were judged stale above, as current. Files from an
-      // earlier pull can still be on disk (a changed selection or CLI sends
-      // no hash either), so the message does not say there are none.
+      // A 304 to a request with no If-None-Match answers nothing, so it is not
+      // success. Earlier files may still exist, so the message does not deny them.
       io.err(`${opts.api} answered 304 Not Modified to a request that sent no If-None-Match, so it cannot be treated as current. Nothing was written, and files from an earlier pull, if any, are unchanged. Run spec-layer pull again.`);
       return 1;
     }
     io.out(`Already up to date ${publishedPhrase(result.version ?? manifest?.version, manifest?.publishedAt ?? 'unknown')}.`);
-    // A 304 for a Foundation pull is granted only once both report files are
-    // confirmed present on disk (foundationFilesOnDisk and outputFilesOnDisk
-    // above), so the exact state where a stale error report sits unread is the
-    // state a 304 reaches most often. --strict must see it here too, not only
-    // after writeBundleFiles actually ran.
+    // --strict must see a cached error report too; see printReportSummary.
     const cachedErrors = printReportSummary(cwd, opts.outDir, outputs, io);
     if (flags.strict && cachedErrors > 0) return 1;
     return 0;
@@ -686,10 +587,8 @@ async function pullWith(
     const o = outputs.find((x) => x.path === r.path);
     if (o) io.out(`Wrote ${r.path}/ (${count(r.files.length)}, ${o.platform}/${o.format}, ${o.case} names).`);
   }
-  // A renamed componentSpecsDir or outputs[].path leaves a full set of marked
-  // files at the old location; nothing else notices, since the old directory
-  // is never touched. Name it rather than delete it: only the developer knows
-  // whether something else still reads from there.
+  // A renamed directory leaves marked files at the old path. Name it, never
+  // delete it: only the developer knows whether something still reads it.
   const staleDirNote = (previous: string, current: string): void => {
     if (previous !== current && existsSync(resolve(cwd, previous))) {
       io.out(`The previous pull wrote ${previous}/; this one wrote ${current}/. Delete ${previous}/ if nothing else uses it.`);
@@ -705,14 +604,8 @@ async function pullWith(
     const missing = platformsMissingFormat(platforms);
     if (missing.length > 0) io.out(missingFormatNote(missing));
   }
-  // A report entry never fails the pull on its own -- changing the default
-  // exit code would break every CI that already runs `pull` -- so this is the
-  // one place a silent name_collision, unitless_number, path_collision, or
-  // alias_type_mismatch gets said out loud. Read from the *configured*
-  // outputs and outDir, matching the not_modified branch above, rather than
-  // outputResults: a report file's presence is what a developer's editor
-  // agrees is the record, not whether this particular run happened to
-  // rewrite it.
+  // A report entry never fails a default pull (that would break every CI that
+  // runs it), so this is where it gets said. See printReportSummary.
   const errors = printReportSummary(cwd, opts.outDir, outputs, io);
   if (flags.strict && errors > 0) return 1;
   return 0;
@@ -764,8 +657,7 @@ export function runList(cwd: string, flags: Flags, io: Io): number {
     io.out(row.map((cell, i) => (i < 3 ? cell.padEnd(widths[i]) : cell)).join('  '));
   }
   for (const o of manifest.outputs ?? []) {
-    // manifest.outputs records the configured list regardless of whether the
-    // Foundation was written; the map file is the on-disk proof the path is real.
+    // manifest.outputs is the configured list; the map file proves it was written.
     const written = existsSync(join(outDir, 'outputs', `${o.platform}-${o.format}.map.json`));
     io.out(['output'.padEnd(widths[0]), `${o.platform}/${o.format}`.padEnd(widths[1]), written ? o.path : 'not written'].join('  '));
   }

@@ -1,10 +1,7 @@
 /**
- * foundationState.ts — the pure selection model behind the Foundations tab.
- *
- * screens/foundations.ts owns markup and painting; everything decidable without
- * a DOM lives here so it can be tested. Mode selections are always stored in
- * collection order rather than click order, so a rebuilt doc's columns do not
- * silently reorder between generations.
+ * The pure selection model behind the Foundations tab; screens/foundations.ts
+ * paints. Modes are stored in collection order, not click order, so a rebuilt
+ * doc's columns never reorder.
  */
 import {
   MAX_MODE_COLUMNS, planFoundationUnits, folderOf, groupTitles,
@@ -19,11 +16,8 @@ function plural(n: number, one: string, many: string): string {
   return `${n} ${n === 1 ? one : many}`;
 }
 
-/**
- * Which row icon a collection gets. Derived in foundationIcon.ts because My
- * Library's foundation rows must answer this the same way from a stored scope
- * on the main thread; re-deriving it here is how the two lists would drift.
- */
+/** Derived in foundationIcon.ts so Library rows, built on the main thread,
+ *  answer the same way. */
 export { collectionIconKind };
 export type { FoundationIconKind };
 
@@ -72,18 +66,13 @@ export function defaultSelection(spec: FoundationSpec): FoundationSelection {
   };
 }
 
-/** Reorder a set of mode ids into the collection's own order. */
 function inCollectionOrder(spec: FoundationSpec, collectionId: string, ids: string[]): string[] {
   const collection = spec.collections.find((c) => c.id === collectionId);
   if (!collection) return [];
   return collection.modes.map((m) => m.modeId).filter((id) => ids.includes(id));
 }
 
-/**
- * Add or replace a collection's entry in the selection, keeping the result
- * ordered by the spec's collection order rather than click/insertion order.
- * Shared by toggleCollection and toggleMode so both stay in sync.
- */
+/** Add or replace a collection's entry, kept in the spec's collection order. */
 function withCollectionEntry(
   spec: FoundationSpec,
   collections: FoundationSelection['collections'],
@@ -120,8 +109,7 @@ export function toggleMode(
   let nextIds: string[];
   if (on) {
     if (current.includes(modeId)) return sel;
-    // At the cap, ignore the check rather than silently evicting a column the
-    // user chose. The UI explains this with the cap note.
+    // At the cap, ignore the check rather than evict a chosen column.
     if (current.length >= MAX_MODE_COLUMNS) return sel;
     nextIds = inCollectionOrder(spec, collectionId, [...current, modeId]);
   } else {
@@ -132,8 +120,7 @@ export function toggleMode(
     return { ...sel, collections: sel.collections.filter((c) => c.collectionId !== collectionId) };
   }
   if (!existing) {
-    // Honor the specific mode the user picked rather than re-deriving the
-    // default (first MAX_MODE_COLUMNS) modes for the collection.
+    // Honour the picked mode, not the collection's default modes.
     return {
       ...sel,
       collections: withCollectionEntry(spec, sel.collections, { collectionId, modeIds: nextIds }),
@@ -159,26 +146,15 @@ export function canGenerate(sel: FoundationSelection): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// How many frames a build will produce
-//
-// A large collection splits into one frame per top-level group, so "one row,
-// one frame" is not true and the user has no way to know it from the row. These
-// derive the real counts from planFoundationUnits, the same function the main
-// thread plans the build with, rather than re-implementing the split rule where
-// it could drift from the build it describes.
+// Frame counts, from planFoundationUnits, the same plan main builds with
 // ---------------------------------------------------------------------------
 
-/** Frames the current selection will produce. */
 export function frameCount(spec: FoundationSpec, sel: FoundationSelection): number {
   return planFoundationUnits(spec, sel).length;
 }
 
-/**
- * Frames each source would produce if it were selected, so a row can say so
- * whether or not it is currently checked. Splitting depends on variable count
- * and name groups, never on which modes are chosen, so planning over
- * everything gives each source its true count.
- */
+/** Frames each source would produce if selected. Splitting never depends on
+ *  the chosen modes, so planning over everything gives the true count. */
 export function framesPerSource(
   spec: FoundationSpec,
 ): { collections: Record<string, number>; textStyles: number; effectStyles: number } {
@@ -203,10 +179,6 @@ export function framesPerSource(
   return { collections, textStyles, effectStyles };
 }
 
-// ---------------------------------------------------------------------------
-// Select all / clear all
-// ---------------------------------------------------------------------------
-
 /** Everything in the file, with each collection's modes at the column cap. */
 export function selectAll(spec: FoundationSpec): FoundationSelection {
   return defaultSelection(spec);
@@ -216,12 +188,8 @@ export function clearAll(): FoundationSelection {
   return { collections: [], textStyles: false, effectStyles: false };
 }
 
-/**
- * Whether every source in the file is selected, which is what the toggle-all
- * link's label reads from. Judged on sources, not modes: a collection past the
- * column cap is fully selected with only four of its modes, since four is all a
- * frame can show.
- */
+/** Judged on sources, not modes: a collection past the column cap counts as
+ *  selected with four modes, all a frame can show. */
 export function allSelected(spec: FoundationSpec, sel: FoundationSelection): boolean {
   const everyCollection = spec.collections.every((c) =>
     sel.collections.some((s) => s.collectionId === c.id));
@@ -236,32 +204,23 @@ export function collectionMeta(c: FoundationSummaryCollection, frames: number): 
     plural(c.variableCount, 'variable', 'variables'),
     plural(c.modes.length, 'mode', 'modes'),
   ];
-  // Only worth saying when it is not the obvious one doc. Each split unit is
-  // its own Section and Library row, so the honest count is docs, and it is
-  // the total rather than a "+" on top of one.
+  // Each split unit is its own doc, so the count is the total docs.
   if (frames > 1) parts.push(`${frames} docs`);
   return parts.join(' · ');
 }
 
-/** The text-styles row's second line. */
 export function textStyleMeta(count: number, frames: number): string {
   const parts = [plural(count, 'style', 'styles')];
   if (frames > 1) parts.push(`${frames} docs`);
   return parts.join(' · ');
 }
 
-/** The effect-styles row's second line. Counts the same way text styles do:
- *  a plain style count, plus a doc count only when the row splits. */
 export function effectStyleMeta(count: number, frames: number): string {
   return textStyleMeta(count, frames);
 }
 
-/**
- * The create button's label. See docs/plugin-voice-and-copy.md ("Footer
- * actions") for why this names the action rather than counting frames:
- * collectionMeta and textStyleMeta already append "N docs" to any row that
- * splits, and a frame is the wrong noun for what the user came for.
- */
+/** Names the action, not a frame count; see docs/plugin-voice-and-copy.md
+ *  ("Footer actions"). Split rows already say "N docs". */
 export const FOUNDATION_CREATE_LABEL = 'Create docs';
 
 // ---------------------------------------------------------------------------
@@ -269,14 +228,10 @@ export const FOUNDATION_CREATE_LABEL = 'Create docs';
 // ---------------------------------------------------------------------------
 
 /**
- * The per-collection briefs for one build: one block per selected collection,
- * each carrying only that collection's own name, modes, alias counts and
- * colour groups. Never merged across collections, so the model is never asked
- * to describe a union that does not exist.
- *
- * Group folders are keyed `collectionId|folder` to match the message the main
- * thread receives. Built from the same `folderOf`/`groupTitle` the renderer
- * uses, so a description cannot arrive keyed to a folder no block will look up.
+ * One brief per selected collection, never merged, so the model never
+ * describes a union that does not exist. Folders are keyed
+ * `collectionId|folder` and built with the renderer's `folderOf`/`groupTitles`,
+ * so every description lands on a folder a block looks up.
  */
 export function groupBriefs(
   spec: FoundationSpec, sel: FoundationSelection,
@@ -325,7 +280,6 @@ export function groupBriefs(
   return { collections };
 }
 
-/** A short, honest rendering of one value for the prompt. */
 function describeValue(value: FoundationValue | undefined): string {
   if (!value) return '';
   switch (value.kind) {

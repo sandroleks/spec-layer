@@ -1,10 +1,8 @@
 /**
- * Markdown projection of a Component Context v5 artifact.
- *
- * A PROJECTION, like `dtcg.ts`: it reads a validated artifact, never feeds a
- * hash, is never stored in a bundle, and nothing parses it back. It cannot say
- * anything the artifact does not say. What the format cannot carry is omitted,
- * never replaced with a plausible default.
+ * Markdown projection of a Component Context v5 artifact. Like `dtcg.ts`, it
+ * reads a validated artifact, never feeds a hash, is never stored in a bundle,
+ * and nothing parses it back. What the format cannot carry is omitted, never
+ * replaced with a plausible default.
  */
 
 import { toYaml } from '../yaml';
@@ -28,17 +26,9 @@ export function escapeInline(text: string): string {
     .trim();
 }
 
-/** @internal `escapeInline` plus the cell separator, escaped in ONE pass.
- *
- * The pipe is in the same character class as the backslash rather than added
- * by a second `.replace`, so the escape character can never be escaped after
- * the delimiter it is supposed to protect. Composing two passes happened to
- * be correct here, because `escapeInline` runs first, but that correctness
- * was an ordering accident a later edit could silently undo, and the same
- * accident in `codeCell` was a real defect: it destroyed a table cell whose
- * value held a backslash before a pipe. One pass removes the ordering
- * question entirely. Verified byte-identical to the two-pass form over every
- * string up to length three drawn from the characters either form touches. */
+/** @internal `escapeInline` plus the cell separator, in ONE pass: with the pipe
+ * in the backslash's character class, no ordering of passes can escape the
+ * escape character after the delimiter it protects. */
 export function escapeCell(text: string): string {
   return text
     .replace(/\r?\n/g, ' ')
@@ -46,58 +36,31 @@ export function escapeCell(text: string): string {
     .trim();
 }
 
-/** @internal `escapeInline` plus the two characters that could make a
- * hostile component name read as something other than the literal text of
- * the H1 title: a leading `#` (escaped only at position zero, so a name that
- * happens to be reused as the whole content of some other line can never be
- * mistaken for a fresh ATX heading) and every `|` (a table cell boundary
- * elsewhere in this document, escaped here purely for consistency with how
- * the same name renders in a table row). Used only for the title -- every
- * other value that could legitimately start with `#` (a hex color, for
- * instance) reaches the page through `escapeCell`/`escapeInline` alone, and
- * must not gain this extra escaping or the golden `#6750a4` token value
- * would corrupt into `\#6750a4`. */
+/** @internal `escapeCell` plus a leading `#`, for the H1 title only, so a
+ * hostile component name cannot forge a heading (`|` is escaped to match the
+ * name in a table row). Other values that may start with `#`, such as a hex
+ * colour, must not get this, or `#6750a4` would render as `\#6750a4`. */
 function escapeHeading(text: string): string {
-  // `escapeCell` has already escaped the backslash and the pipe in one pass,
-  // so the only thing left is the leading hash, which a character class
-  // cannot express because it matters at position zero and nowhere else.
+  // Position zero only, which a character class cannot express.
   return escapeCell(text).replace(/^#/, '\\#');
 }
 
-/** @internal `escapeInline` plus the constructs that open a BLOCK when they
- * lead a line. Used for the two slots where designer-authored free text is
- * pushed to the start of a line: the component description, which sits
- * directly under the H1, and an anatomy part name, which begins a list
- * item's content and would open a heading, a nested list or a fence there
- * exactly as it would at column zero. `escapeInline` alone is not enough,
- * because it neutralises inline markup only: a description beginning with a
- * triple backtick would open a fenced code block that swallows every table
- * and section below it, one beginning with `##` would forge a section
- * heading the renderer never produced, and one beginning with `#` would emit
- * a second H1.
+/** @internal `escapeInline` plus the constructs that open a block when they
+ * lead a line, for the two slots where designer text starts a line: the
+ * description under the H1 and an anatomy part name (a list item's content).
+ * Without it a description could open a fence that swallows the page, forge a
+ * `##` section, or emit a second H1.
  *
- * `escapeInline` has already collapsed every newline to a space and trimmed
- * the result, so only the START of that single line can open anything and one
- * backslash there is enough. The backslash is a Markdown escape, so the
- * character the designer typed is what the reader sees.
- *
- * Deliberately NOT `escapeHeading`: that also escapes every `|`, which is a
- * cell boundary in a table row and nothing at all in a paragraph, so reusing
- * it here would leave a visible stray backslash in prose rather than a needed
- * escape.
- *
- * `>`, `*` and `_` are absent from the list because `escapeInline` has
- * already escaped them, so they can never lead its result; adding them here
- * would be an alternative that can never match. One or two backticks (or
- * tildes) are left alone because a run shorter than three cannot open a
- * fenced block, and escaping it would turn a description that legitimately
- * opens with an inline code span into literal backticks. */
+ * `escapeInline` already made it one trimmed line, so one backslash at the
+ * start suffices. Not `escapeHeading`, whose `|` escape would leave a stray
+ * backslash in prose. `>`, `*` and `_` are absent because `escapeInline`
+ * already escaped them; runs of fewer than three backticks or tildes are left
+ * alone, since they cannot open a fence and may start an inline code span. */
 function escapeBlock(text: string): string {
   return escapeInline(text)
     .replace(/^(`{3,}|~{3,}|[#=+-])/, '\\$1')
-    // An ordered list marker is up to nine digits followed by `.` or `)`;
-    // escaping the delimiter is what stops CommonMark reading it as a list,
-    // and renders as the digits and the delimiter the designer typed.
+    // An ordered list marker (up to nine digits, then `.` or `)`): escaping the
+    // delimiter stops the list and still renders what was typed.
     .replace(/^(\d{1,9})([.)])/, '$1\\$2');
 }
 
@@ -109,27 +72,14 @@ export function code(text: string): string {
   return longest === 0 ? `${fence}${flat}${fence}` : `${fence} ${flat} ${fence}`;
 }
 
-/** @internal `code`, plus escaping for the one character a GFM table row
- * splitter treats as a cell boundary even inside a matched pair of
- * backticks: cell splitting runs on the raw line, before backtick spans are
- * parsed, so `` `a|b` `` as a whole cell's content genuinely widens that row
- * by one column -- wrapping a path in backticks does not, by itself, make an
- * embedded `|` safe. A backslash-escaped pipe is honoured by that splitter
- * even inside backticks and still renders as a literal `|` once the code
- * span is finalised (verified against `mdast-util-gfm-table`), so this is
- * safe everywhere it is used. It is deliberately NOT used by `anatomyBullets`
- * or the `## Issues` bullet list: those spans sit in prose, never a table
- * cell, where a stray backslash would be a fabricated character rather than
- * a needed escape. */
+/** @internal `code` plus `\|`: a GFM row splitter runs before code spans are
+ * parsed, so a `|` inside backticks still splits the cell. The escaped pipe is
+ * honoured there and renders as `|` (verified against `mdast-util-gfm-table`).
+ * Table cells only: in prose (`anatomyBullets`, `## Issues`) the backslash
+ * would be a fabricated character. */
 function codeCell(text: string): string {
-  // A literal backslash has NO encoding inside a code span in a GFM table
-  // row. `\|` is the only escape the row splitter honours there, so a
-  // backslash immediately before a pipe is inexpressible. Verified against
-  // remark-gfm: `a\|b` wrapped by the branch below renders as the row
-  // `` `a\\|b` ``, whose code span is destroyed and whose remaining text is
-  // silently dropped from the cell, and escaping the backslash as well
-  // renders a doubled backslash the designer never typed. Plain escaped text
-  // round-trips every one of those inputs exactly, so a value carrying a
+  // A backslash before a pipe is inexpressible in a table code span (`\|` is
+  // the only escape honoured; verified against remark-gfm), so a value with a
   // backslash gives up the monospace font rather than its own characters.
   if (text.includes('\\')) return escapeCell(text);
   return code(text).replace(/\|/g, '\\|');
@@ -151,10 +101,8 @@ const asRecord = (value: unknown): Record<string, unknown> =>
 const str = (value: unknown): string | undefined =>
   typeof value === 'string' && value.length > 0 ? value : undefined;
 
-// `componentLayout` emits exactly one scope value today
-// (`componentContext.ts:500`). Every member of this map must be a value the
-// extractor actually produces: inventing a sentence for a scope that does not
-// exist is the never-fabricate rule broken in the renderer itself.
+// Only scope values the extractor produces (`componentContext.ts:500`): a
+// sentence for a scope that does not exist would be fabricated.
 const SCOPE_SENTENCE: Record<string, string> = {
   default_variant: 'Default variant.',
 };
@@ -268,24 +216,18 @@ function anatomyBullets(nodes: unknown[], depth: number): string[] {
 const NOT_READ_SENTENCE =
   'Token values are not included: the foundations had not been read when this was exported.';
 
-/** @internal Renders one typography `StyleProperty`, as `compactStyleProperty`
- * (`aiContext.ts:306`) actually shapes it. That function emits exactly four
- * shapes, and each is handled explicitly rather than falling through to the
- * shared `valueText` -- which knows none of them and would silently print
- * `[object Object]`, a never-fabricate violation in a document a coding agent
- * reads as fact:
+/** @internal One typography `StyleProperty` as `compactStyleProperty`
+ * (`aiContext.ts:306`) shapes it. Its four shapes are handled here, since
+ * `valueText` would print `[object Object]` for them:
  *
  * 1. literal, resolved:   `{ type, value }`               -> `valueText(value)`
  * 2. literal, unresolved: `{ missing: reason }`            -> `missing: <reason>`
  * 3. alias, resolved:     `{ alias, resolved: { value } }` -> `<alias> (resolved: <value>)`
  * 4. alias, unresolved:   `{ alias, unresolved: reason }`  -> `<alias> (unresolved: <reason>)`
  *
- * The caller wraps this function's return value in `escapeCell`, same as
- * every other cell in this table, so an alias name containing `|` cannot
- * break the row -- there is deliberately no second escape here. Anything
- * else (a shape this function does not recognise) still falls back to
- * `valueText`, unchanged, per the plan's resolution: a value shape `valueText`
- * renders wrongly is a stop-and-report, not a fork of `valueText` itself. */
+ * The caller escapes the result with `escapeCell`. An unrecognised shape falls
+ * back to `valueText`: a shape it renders wrongly is a stop-and-report, not a
+ * fork of `valueText`. */
 function styleValueText(value: unknown): string {
   if (value !== null && typeof value === 'object') {
     const record = value as Record<string, unknown>;
@@ -304,10 +246,8 @@ function styleValueText(value: unknown): string {
   return valueText(value);
 }
 
-// Deliberately does not render `paragraph_spacing`, `text_case` or
-// `text_decoration`: an honest scope cut to the properties most useful for an
-// implementer, not an oversight. Extend the table and this comment together
-// if a later task needs them.
+// No `paragraph_spacing`, `text_case` or `text_decoration`: a scope cut to what
+// an implementer needs. Extend the table and this comment together.
 function typographySection(items: unknown[]): string | undefined {
   if (items.length === 0) return undefined;
   const rows = items.map((raw) => {
@@ -343,11 +283,8 @@ function effectSummary(effect: Record<string, unknown>): string {
   if (effect.spread !== undefined) parts.push(`spread ${valueText(effect.spread)}`);
   if (effect.color !== undefined) parts.push(valueText(effect.color));
   const summary = parts.join(', ');
-  // A hidden layer must read differently from an active one: `visible` is a
-  // real Figma fact (`EffectV5.visible`), and silently dropping it would have
-  // a coding agent implement a shadow the designer turned off. `visible ===
-  // true` and an absent `visible` both stay unmarked -- the unmarked case is
-  // the normal one, and stating it on every row would only be noise.
+  // A hidden layer is marked, or an agent would implement a shadow the designer
+  // turned off. True or absent `visible` stays unmarked, as the normal case.
   return effect.visible === false ? `${summary} (hidden)` : summary;
 }
 
@@ -357,9 +294,8 @@ function effectsSection(items: unknown[]): string | undefined {
     const style = asRecord(raw);
     const mode = str(style.mode);
     const effects = Array.isArray(style.effects) ? style.effects : [];
-    // Layers are joined with `; `, one level up from the `, ` a single
-    // layer's own fields use, so a reader can find the boundary between two
-    // layers -- otherwise ambiguous whenever two layers share a `type`.
+    // `; ` between layers, above a layer's own `, `, so two layers of one type
+    // stay distinguishable.
     const summary = effects.map((effect) => effectSummary(asRecord(effect))).join('; ');
     return [escapeCell(str(style.name) ?? ''), mode ? escapeCell(mode) : '', escapeCell(summary)];
   });
@@ -370,19 +306,11 @@ function effectsSection(items: unknown[]): string | undefined {
 }
 
 /**
- * One inline effect layer, as `exactEffectLayer` (`componentContext.ts:510`)
- * actually shapes it: the RAW `EffectLayer` record (`effects.ts:44`), not
- * `compactEffect`'s compacted AI-profile shape. The two are unrelated: a raw
- * layer nests its offset in `offset: {x,y}` rather than separate `offset_x`/
- * `offset_y` typed envelopes, names its blur radius `radius` rather than
- * `blur`, and carries a plain `Rgba` (`{hex, alpha}`) rather than a
- * `compactTypedValue` color -- so `effectSummary` (`compactEffect`'s renderer,
- * above) would read every one of those fields as `undefined` and print
- * nothing but the bare effect type. This renders each of the nine concrete
- * shapes `EffectLayer` can be explicitly, using only the fields that shape
- * actually carries, plus any per-field variable binding `exactEffectLayer`
- * attached. Returns plain text; the caller escapes once, after joining every
- * layer for a part.
+ * One inline effect layer as `exactEffectLayer` (`componentContext.ts:510`)
+ * shapes it: the raw `EffectLayer` (`effects.ts:44`), not `compactEffect`'s
+ * shape, so `effectSummary` cannot read it (`offset: {x,y}`, `radius`, a plain
+ * `Rgba`). Each of the nine `EffectLayer` shapes renders from its own fields,
+ * plus any per-field binding. Plain text; the caller escapes once per part.
  */
 function inlineEffectLayerText(raw: unknown): string {
   const layer = asRecord(raw);
@@ -459,11 +387,8 @@ function inlineEffectLayerText(raw: unknown): string {
 }
 
 /**
- * The `## Effects` section: inline effects applied directly to component
- * parts (`artifact.effects_inline`), distinct from `## Tokens used`'s
- * `### Effect styles` subsection above, which renders the Foundation's
- * SHARED effect styles from `compactEffect`'s compacted shape. This section
- * has no relation to that one beyond both describing shadows and blurs.
+ * `## Effects`: inline effects on component parts (`artifact.effects_inline`),
+ * unrelated to `### Effect styles`, which renders the Foundation's shared styles.
  */
 function effectsInlineSection(items: unknown[]): string | undefined {
   if (items.length === 0) return undefined;
@@ -478,10 +403,8 @@ function effectsInlineSection(items: unknown[]): string | undefined {
 }
 
 /**
- * The `## Unbound values` section: `artifact.unbound`, one row per
- * `{ path, property, issue, value? }` entry. An absent `value` renders as an
- * empty cell -- never `none`, never a dash -- because `unbound-value` findings
- * without a value (e.g. a missing token binding) genuinely have none to show.
+ * `## Unbound values`, one row per `artifact.unbound` entry. An absent `value`
+ * is an empty cell, never `none` or a dash: such a finding has none to show.
  */
 function unboundSection(unbound: unknown): string | undefined {
   const entries = Array.isArray(unbound) ? unbound : [];
@@ -499,19 +422,11 @@ function unboundSection(unbound: unknown): string | undefined {
 }
 
 /**
- * The `## Issues` section: every `validation` row that is not an
- * `unbound-value` finding (those are already the Unbound values table above,
- * and repeating them here would double-count the same fact). Omitted
- * entirely when there is none -- including when every validation row is an
- * `unbound-value` finding, which is exactly the golden Button's case.
- *
- * Deliberately reads `validation` ALONE and never `artifact.diagnostics`.
- * `buildComponentArtifactV5` (`componentContext.ts:767`) already folds every
- * diagnostic into `validation` via `componentDiagnosticRows`, which adds
- * `path`/`property` a raw diagnostic does not carry -- so `validation`'s
- * copy of a diagnostic is strictly more informative than the diagnostic
- * itself, and iterating both would render the same finding twice, the
- * duplicate being the worse of the two renderings.
+ * `## Issues`: every `validation` row except `unbound-value` (already the
+ * Unbound values table); omitted when none remain. Reads `validation` alone,
+ * never `artifact.diagnostics`: `buildComponentArtifactV5`
+ * (`componentContext.ts:767`) already folds each diagnostic into `validation`
+ * with path and property added, so reading both would duplicate findings.
  */
 function issuesSection(artifact: ComponentArtifactV5): string | undefined {
   const validation = Array.isArray(artifact.validation) ? artifact.validation : [];
@@ -524,12 +439,9 @@ function issuesSection(artifact: ComponentArtifactV5): string | undefined {
   return lines.length === 0 ? undefined : `## Issues\n\n${lines.join('\n')}`;
 }
 
-/** @internal `escapeInline` for a finding's message, which can name a field
- * in an inline code span (`` `font_size` is 14px in the style ... ``). A
- * backslash inside a code span is a literal character, so escaping the span
- * would print `font\_size`; the text between single-backtick pairs is kept as
- * it is, and everything outside them is escaped as before. An unpaired
- * backtick opens nothing, so it is left in the escaped text. */
+/** @internal `escapeInline` for a finding message, leaving single-backtick code
+ * spans as they are: a backslash inside one is literal (`font\_size`). An
+ * unpaired backtick opens nothing, so it stays in the escaped text. */
 function escapeMessage(text: string): string {
   return text
     .replace(/\r?\n/g, ' ')
@@ -539,9 +451,8 @@ function escapeMessage(text: string): string {
     .trim();
 }
 
-/** @internal One finding as a bullet, `- severity: message (path, property)`.
- * Shared by the component's `## Issues` and the Foundation's own issues under
- * `## Tokens used`, so the two lists cannot format a finding differently. */
+/** @internal One finding as `- severity: message (path, property)`, shared by
+ * `## Issues` and the Foundation issues so both lists format alike. */
 function issueLine(row: Record<string, unknown>): string {
   const severity = escapeInline(str(row.severity) ?? 'info');
   const message = escapeMessage(str(row.message) ?? '');
@@ -552,12 +463,10 @@ function issueLine(row: Record<string, unknown>): string {
   return `- ${severity}: ${message}${where.length > 0 ? ` (${where.join(', ')})` : ''}`;
 }
 
-/** @internal The Foundation's own actionable findings, as the slice's
- * `validation` rows carry them: a style whose value disagrees with the token
- * it is bound to, a number whose unit no scope states. The YAML hands these
- * over; without them a page shows the disagreeing values side by side with
- * nothing saying they disagree. Omitted when there are none. Codes the
- * projection only counts never become rows, so they stay out of the page. */
+/** @internal The Foundation's actionable `validation` rows from the slice (a
+ * style disagreeing with its bound token, a number no scope gives a unit), so a
+ * page never shows disagreeing values without saying so. Omitted when empty;
+ * codes the projection only counts never become rows. */
 function foundationIssuesSection(
   rows: readonly FoundationValidationRow[] | undefined,
 ): string | undefined {
@@ -565,20 +474,17 @@ function foundationIssuesSection(
   return `### Foundation issues\n\n${rows.map((row) => issueLine(asRecord(row))).join('\n')}`;
 }
 
-/** @internal Renders one token value as `compactCanonicalValue`
- * (`aiContext.ts:243`) shapes it. A literal is a plain value `valueText`
- * already knows. The other two shapes are records it does not know, and would
- * print as `[object Object]`:
+/** @internal One token value as `compactCanonicalValue` (`aiContext.ts:243`)
+ * shapes it. `valueText` knows the literal; the other two would print as
+ * `[object Object]`:
  *
  * - missing: `{ missing: reason }` -> `missing: <reason>`
  * - alias:   `{ alias, resolved | unresolved, chain? }` ->
  *   `<alias> (resolved: <value>)` or `<alias> (unresolved: <reason>)`, with
- *   every step of a longer chain joined by `→` in place of the bare alias.
+ *   a longer chain joined by `→` in place of the bare alias.
  *
- * The same wording `styleValueText` uses for a bound style property, so a
- * page says "points at X, resolves to Y" one way. Kept apart from it because
- * the shapes differ: a style's `resolved` wraps its value in `{ type, value }`,
- * a token's `resolved` is the value itself. The caller escapes the result. */
+ * Worded like `styleValueText` but kept apart: a style's `resolved` wraps its
+ * value in `{ type, value }`, a token's is the value. The caller escapes. */
 function tokenValueText(value: unknown): string {
   if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
     const record = value as Record<string, unknown>;
@@ -601,11 +507,9 @@ function tokenValueText(value: unknown): string {
 }
 
 /**
- * The `## Tokens used` section: the Foundation dependency slice a component
- * needs, reusing `componentFoundationAiSlice` for the join, the mode-name
- * mapping and the value formatting rather than a second interpretation of
- * `artifact.references.foundation`. Always renders, even when the foundation
- * was never read, because that absence is itself a fact worth stating.
+ * `## Tokens used`: the Foundation slice the component needs, via
+ * `componentFoundationAiSlice` rather than a second reading of
+ * `references.foundation`. Always rendered: a foundation never read is a fact.
  */
 function tokensUsedSection(artifact: ComponentArtifactV5): string {
   const slice = componentFoundationAiSlice(artifact);
@@ -650,23 +554,18 @@ function tokensUsedSection(artifact: ComponentArtifactV5): string {
   return parts.join('\n\n');
 }
 
-/** @internal The honesty invariant made visible: every prose section carries
- * this exact line directly under its heading, unless a person wrote it (see
- * AUTHORED_MARKER), so a reader can never mistake model-written prose for
- * something a designer wrote. Never appears on a fact section. */
+/** @internal Under the heading of every prose section a person did not write
+ * (see AUTHORED_MARKER), so model prose is never mistaken for a designer's.
+ * Never on a fact section. */
 const AI_MARKER = '*Written by AI from the extracted facts, not read from Figma.*';
 
-/** @internal The same line for a section a person wrote: text typed on the
- * Figma canvas into a placeholder, which the artifact names under
- * `guidelines.authored` (or every section, under `origin: authored`). It
- * takes the place of AI_MARKER, never sits beside it, and a section built
- * from fields only some of which a person wrote keeps AI_MARKER. */
+/** @internal The line for a section a person typed on the canvas, named under
+ * `guidelines.authored` (or all, under `origin: authored`). Replaces AI_MARKER;
+ * a section only partly authored keeps AI_MARKER. */
 const AUTHORED_MARKER = '*Written on the Figma canvas, not generated by AI.*';
 
-/** @internal The marker for a prose section built from `fields`:
- * AUTHORED_MARKER when every one of them that carries content is authored,
- * AI_MARKER otherwise. An artifact with no authorship data reads AI_MARKER
- * everywhere, exactly as it did before authorship was recorded. */
+/** @internal AUTHORED_MARKER when every field of the section that carries
+ * content is authored, else AI_MARKER (also when there is no authorship data). */
 function markerFor(guidelines: Record<string, unknown>, fields: readonly string[]): string {
   if (guidelines.origin === 'authored') return AUTHORED_MARKER;
   const authored = Array.isArray(guidelines.authored) ? guidelines.authored : [];
@@ -677,16 +576,13 @@ function markerFor(guidelines: Record<string, unknown>, fields: readonly string[
   return present.length > 0 && present.every((f) => authored.includes(f)) ? AUTHORED_MARKER : AI_MARKER;
 }
 
-/** @internal An ATX heading of level 1 or 2, CommonMark-legal indentation
- * (up to three leading spaces) included. Levels 3-6 are already deep enough
- * and are left alone; the lookahead requires a following space or end of
- * line, exactly as CommonMark itself does, so `##Heading` (no space) is
- * plain text, not a heading. */
+/** @internal An ATX h1 or h2 with CommonMark's up-to-three-space indent. The
+ * lookahead needs a space or end of line, as CommonMark does (`##Heading` is
+ * text). Levels 3-6 are deep enough already. */
 const ATX_H1_H2 = /^ {0,3}(#{1,2})(?= |$)/;
 
-/** @internal A line that is a fenced code block delimiter (three or more
- * backticks or tildes, CommonMark allows leading indentation here too, but
- * these blobs are never that deeply nested so a bare `trim()` is enough). */
+/** @internal A fence delimiter (three or more backticks or tildes); these blobs
+ * are never nested deep enough to need more than `trim()`. */
 const FENCE_MARKER = /^(`{3,}|~{3,})/;
 
 /** @internal A setext underline candidate: one or more `=` (level 1) or one
@@ -694,33 +590,20 @@ const FENCE_MARKER = /^(`{3,}|~{3,})/;
 const SETEXT_UNDERLINE = /^(?:=+|-+)$/;
 
 /**
- * Prose blobs are already Markdown (bullets, bold lead-ins, sub-headings),
- * so they are embedded rather than escaped. Every heading inside one is
- * demoted to at least `###`, so a model-written heading cannot open a
- * top-level section the renderer itself did not -- this is the ENTIRE
- * enforcement of that invariant, so it walks the blob line by line rather
- * than running one regex over the whole string, to close every CommonMark
- * way a heading can be spelled:
+ * Prose blobs are Markdown, so they are embedded, not escaped, and every
+ * heading in one is demoted to at least `###` so model prose cannot open a
+ * top-level section. This is the whole enforcement, so it walks line by line
+ * to catch every CommonMark heading form:
  *
- * - ATX (`# Heading`, `## Heading`): demoted to `###`, dropping any leading
- *   indentation together with the original hashes (indentation is not
- *   preserved -- a demoted heading reads the same left-aligned as every
- *   other one this renderer produces).
- * - Setext (`Heading` followed by a line of `=` or `-`): the underline line
- *   is dropped and the paragraph line above it becomes `### <text>`. A line
- *   of `-` is only treated as a setext underline when the line directly
- *   above it (as already emitted, i.e. after any of its own demotion) is
- *   non-blank and not itself a heading or fence delimiter -- a blank line
- *   above it makes it a thematic break, and both a table separator row and
- *   a front-matter delimiter also always follow non-blank text, which this
- *   line-by-line heuristic cannot distinguish from a real setext heading.
- *   That is a known, accepted limitation: these blobs are prose, not full
- *   documents with tables or front matter.
+ * - ATX (`# Heading`, `## Heading`): demoted to `###`, leading indent dropped.
+ * - Setext (a line, then a `=` or `-` underline): the underline is dropped and
+ *   the line above becomes `### <text>`. A `-` line counts only when the line
+ *   above (as emitted) is non-blank and not a heading or fence. A table
+ *   separator or front-matter delimiter also matches, an accepted limit for
+ *   prose blobs.
  *
- * Fenced code blocks (three or more backticks or tildes) suspend ALL of the
- * above while open: a `#`-prefixed comment or a `---`-shaped divider inside
- * a fenced sample is sample content, never a heading, and demoting it would
- * corrupt the sample.
+ * An open fenced code block suspends all of this: a `#` comment or `---`
+ * inside a sample is content, and demoting it would corrupt the sample.
  */
 function demote(blob: string): string {
   const lines = blob.split('\n');
@@ -768,40 +651,29 @@ function proseSection(heading: string, blob: string, marker: string): string {
 }
 
 /**
- * `guidelines` exactly as the ARTIFACT carries it: `guidelinesOf`
- * (`brief.ts:371`) renames every field to snake_case on the way in and drops
- * `anatomyParts` entirely. Reading only the exact keys below means a stray
- * camelCase field -- or `anatomyParts` itself -- is silently unread rather
- * than rendered. `origin` and `authored` are never rendered as sections:
- * only `markerFor` reads them, to choose each section's marker line.
+ * `guidelines` as the artifact carries it: `guidelinesOf` (`brief.ts:371`)
+ * snake_cases every field and drops `anatomyParts`, so reading only exact keys
+ * leaves a stray camelCase field unread. `origin` and `authored` only choose
+ * marker lines (`markerFor`).
  */
 function overviewBlock(guidelines: Record<string, unknown>): string | undefined {
   const blob = str(guidelines.definition);
   return blob ? proseSection('Overview', blob, markerFor(guidelines, ['definition'])) : undefined;
 }
 
-/** The `anatomy_summary` paragraph plus its own marker line, meant to be
- * embedded inside the existing `## Anatomy` heading above the bullets
- * (rendered separately, below) -- never a second `## Anatomy` heading. */
+/** The `anatomy_summary` paragraph and its marker, embedded under the existing
+ * `## Anatomy` heading above the bullets, never a second heading. */
 function anatomyProseParagraph(guidelines: Record<string, unknown>): string | undefined {
   const blob = str(guidelines.anatomy_summary);
   return blob ? `${markerFor(guidelines, ['anatomy_summary'])}\n\n${demote(blob)}` : undefined;
 }
 
 /**
- * One bullet per Do or Don't rule. Each rule is a Markdown FRAGMENT, not
- * plain text, exactly like every other prose field: the prose prompt
- * (`prompt.ts:82`) tells the model to open each rule with a short bold
- * lead-in, and its own exemplars (`prompt.ts:177`) carry inline code spans.
- * Escaping them would print `\*\*` where the bold was meant, and -- worse --
- * would put a backslash INSIDE a code span, where a backslash is a literal
- * character rather than an escape: a page reading `` `\<a>` `` tells a coding
- * agent to write a tag no artifact ever mentioned, which is the never-
- * fabricate rule broken in the renderer itself. So each rule goes through
- * `demote`, which floors any heading a model wrote inside it at `###` just as
- * it does for a whole blob. Continuation lines are indented two spaces so a
- * rule that arrives with a line break stays inside its own bullet instead of
- * closing the list.
+ * One bullet per Do or Don't rule. A rule is a Markdown fragment (the prompt,
+ * `prompt.ts:82` and `prompt.ts:177`, asks for bold lead-ins and code spans),
+ * so it goes through `demote`, not escaping: escaping would print `\*\*` and
+ * put a literal backslash inside a code span, fabricating text. Continuation
+ * lines are indented two spaces so a multi-line rule stays in its bullet.
  */
 function ruleList(items: unknown[]): string {
   const indent = (blob: string): string => blob
@@ -811,11 +683,9 @@ function ruleList(items: unknown[]): string {
   return items.map((item) => `- ${indent(demote(String(item)))}`).join('\n');
 }
 
-/** The prose sections that follow every fact section: `## Variants`,
- * `## Do and don't`, `## Accessibility`, `## Interactions`,
- * `## Content considerations`, `## Design considerations`, in that order.
- * `## Overview` and the `## Anatomy` paragraph are placed earlier in the
- * document by `componentMarkdown` itself, so they are not part of this list. */
+/** The prose sections after every fact section, in order: Variants, Do and
+ * don't, Accessibility, Interactions, Content and Design considerations.
+ * `componentMarkdown` places Overview and the Anatomy paragraph earlier. */
 function restProseBlocks(guidelines: Record<string, unknown>): string[] {
   const blocks: string[] = [];
   const add = (heading: string, key: string): void => {
@@ -826,13 +696,9 @@ function restProseBlocks(guidelines: Record<string, unknown>): string[] {
   const dos = Array.isArray(guidelines.dos) ? guidelines.dos : [];
   const donts = Array.isArray(guidelines.donts) ? guidelines.donts : [];
   if (dos.length > 0 || donts.length > 0) {
-    // Two labelled lists, not two unlabelled ones. A bare `-` list followed
-    // by a blank line and another bare `-` list is ONE loose list to
-    // CommonMark, so without these subheadings nothing in the page says which
-    // rules are prohibitions -- a reader would have to infer it from the
-    // wording of each rule. `###` is the right level: the section itself is
-    // `##`, and `demote` floors a model-written heading at `###` too, so a
-    // rule can never open a heading above these.
+    // Two labelled lists: CommonMark reads two bare lists split by a blank line
+    // as one loose list, so nothing would mark the prohibitions. `###` matches
+    // `demote`'s floor, so no rule can open a heading above these.
     const parts = [`## Do and don't`, markerFor(guidelines, ['dos', 'donts'])];
     if (dos.length > 0) parts.push('### Do', ruleList(dos));
     if (donts.length > 0) parts.push(`### Don't`, ruleList(donts));
@@ -885,9 +751,6 @@ export function componentMarkdown(artifact: ComponentArtifactV5): string {
   }
 
   if (artifact.anatomy.length > 0) {
-    // `anatomy_summary` extends this heading with a marked paragraph above
-    // the bullets Task 5 already renders, rather than opening a second
-    // `## Anatomy` heading of its own.
     const anatomyProse = anatomyProseParagraph(guidelines);
     const bullets = anatomyBullets(artifact.anatomy, 0).join('\n');
     const body = anatomyProse ? `${anatomyProse}\n\n${bullets}` : bullets;
@@ -917,7 +780,6 @@ export function componentMarkdown(artifact: ComponentArtifactV5): string {
   const issues = issuesSection(artifact);
   if (issues) blocks.push(issues);
 
-  // The remaining prose sections follow every fact section.
   blocks.push(...restProseBlocks(guidelines));
 
   return `${frontMatter(artifact)}\n${blocks.join('\n\n')}\n`;

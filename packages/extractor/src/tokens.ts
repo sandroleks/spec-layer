@@ -4,31 +4,23 @@ import { parseVariantName, cleanPartName, walkParts } from './naming';
 
 /**
  * A minimized token rule: `name` applies to `part.property` whenever every
- * conditioned axis matches one of its listed values. An empty `conditions`
- * object means the rule applies to every variant. Conditions only name the
- * axes that actually determine the value — axes that never affect it are
- * never mentioned.
+ * conditioned axis matches one of its listed values (empty: every variant).
+ * Only axes that determine the value are named.
  */
 export interface TokenRule extends RefIdentity {
   part: string;
-  /** Path identity from the component root. The join key every consumer uses;
-   *  `part` is the leaf name and is for display only. */
+  /** The join key every consumer uses; `part` is for display only. */
   path: string;
   property: string;
   /** axis -> matching values, axes in variant-name order, values in axis order. */
   conditions: Record<string, string[]>;
-  /** Cleaned name of the boolean property that shows this part, present only
-   *  when the part is hidden by default. Same contract and same spelling as
-   *  `AnatomyPart.shownBy`: absent, never undefined, on a part shown by
-   *  default. A rule carrying it applies only once that property is on, so
-   *  every consumer routes through `tokensFor` rather than reading
-   *  `spec.tokens` directly. */
+  /** The boolean property that shows a part hidden by default; absent, never
+   *  undefined, otherwise (as `AnatomyPart.shownBy`). Consumers route through
+   *  `tokensFor` rather than reading `spec.tokens` directly. */
   shownBy?: string;
 }
 
-/** Stable ids, not prose. A free-form sentence cannot drive UI, a test, or a
- *  comparison against a binding, and the measured number belongs in its own
- *  field rather than embedded in text. */
+/** Stable ids, not prose; the measured number lives in `Gap.value`. */
 export type GapIssue = 'hardcoded-value' | 'hardcoded-color' | 'missing-token-binding';
 
 export interface Gap {
@@ -36,11 +28,9 @@ export interface Gap {
   path: string;
   property: string;
   issue: GapIssue;
-  /** The hardcoded value itself, where there is one to report. */
   value?: number | string;
 }
 
-/** The physical variant nodes of a component (set) plus each one's axis combo. */
 export interface VariantAxisModel {
   variants: SerializedNode[];
   /** Per-variant axis -> value, index-aligned with `variants`. */
@@ -48,16 +38,13 @@ export interface VariantAxisModel {
 }
 
 /**
- * Compute the shared axis model once for the whole component (set).
+ * The shared axis model for a component (set). If any variant name is not
+ * "Axis=Value, ..." shaped, or the axis key-sets disagree, EVERY variant falls
+ * back to a pseudo-axis "Variant" holding the raw name.
  *
- * Variant names parse into axis combos. If any name is not "Axis=Value, ..."
- * shaped (or the axis key-sets disagree across variants), EVERY variant falls
- * back to a single pseudo-axis "Variant" whose value is the raw variant name.
- *
- * Both extractTokens and toVariantInstances (in extract.ts) consume this same
- * model — extract() computes it once and passes it to both — so the
- * conditions on emitted token rules always agree with the `values` recorded on
- * variant instances (and resolveTokensForVariant can match them).
+ * extract() passes one model to extractTokens and toVariantInstances, so rule
+ * conditions agree with variant instance `values` and resolveTokensForVariant
+ * can match them.
  */
 export function variantAxisModel(root: SerializedNode): VariantAxisModel {
   const isInSet = root.type === 'COMPONENT_SET';
@@ -82,7 +69,7 @@ export function variantAxisModel(root: SerializedNode): VariantAxisModel {
   };
 }
 
-/** Render conditions for display: "Type=Secondary · Tertiary, State=Hover", or "—" when unconditioned. */
+/** "Type=Secondary · Tertiary, State=Hover", or "—" when unconditioned. */
 export function formatConditions(conditions: Record<string, string[]>): string {
   const entries = Object.entries(conditions);
   if (!entries.length) return '—';
@@ -90,32 +77,19 @@ export function formatConditions(conditions: Record<string, string[]>): string {
 }
 
 // ---------------------------------------------------------------------------
-// Per-node binding normalization (Figma property names → CSS-like, structural collapses)
+// Per-node binding normalization
 // ---------------------------------------------------------------------------
 
 /**
- * Figma binding property -> CSS-like name used in the spec. Anything absent
- * passes through unchanged, which is correct for names that are already CSS
- * (`opacity`, `width`, `height`) and wrong for anything else, so new Figma
- * binding targets belong here rather than leaking a camelCase name into docs.
+ * Figma binding property -> CSS-like name. Anything absent passes through
+ * unchanged, so a new non-CSS Figma binding target belongs here.
  *
- * A name earns a place in this table only when the Figma property maps
- * UNAMBIGUOUSLY to one CSS property, with no further information needed to
- * pick it. Two properties that look like they qualify do not, and must stay
- * out:
- * - `effects`: a binding here can carry a drop/inner shadow OR a layer/
- *   background blur. Shadows are `box-shadow`; blurs need `filter: blur()`,
- *   which is a different property entirely. This table is a static string
- *   map with no access to the effect's actual type, so it cannot tell which
- *   one it is looking at, and mislabeling a blur as `box-shadow` tells a
- *   developer to implement the wrong thing.
- * - `counterAxisSpacing`: this is the gap on the axis perpendicular to
- *   `itemSpacing`, which is `row-gap` for a HORIZONTAL auto-layout but
- *   `column-gap` for a VERTICAL one. The answer depends on the node's
- *   `layoutMode`, which this table cannot see (and which isn't even
- *   captured on the serialized node today).
- * Passing these two through as their raw Figma names is less polished but
- * never actively wrong, unlike guessing.
+ * Only UNAMBIGUOUS mappings belong. Two must stay out, passed through raw
+ * rather than guessed:
+ * - `effects`: may be a shadow (`box-shadow`) or a blur (`filter: blur()`),
+ *   and this static map cannot see the effect type.
+ * - `counterAxisSpacing`: `row-gap` or `column-gap` depending on
+ *   `layoutMode`, which is not serialized.
  */
 const SIMPLE_PROPERTY_MAP: Record<string, string> = {
   fills: 'fill',
@@ -147,10 +121,8 @@ const RADIUS_INDIVIDUAL_MAP: Record<string, string> = {
   bottomRightRadius: 'border-bottom-right-radius',
 };
 
-/** Every node property a radius can be bound on. One binding on any of them
- *  means the radius is tokenised, whichever corner Figma put it on. Shared
- *  with rawValues.ts so the gap report and the raw-value table cannot
- *  disagree about the same node. */
+/** One binding on any of these means the radius is tokenised. Shared with
+ *  rawValues.ts so the gap report and the raw-value table agree. */
 export const RADIUS_BINDINGS: ReadonlySet<string> = new Set([
   'cornerRadius', 'topLeftRadius', 'topRightRadius', 'bottomLeftRadius', 'bottomRightRadius',
 ]);
@@ -159,29 +131,18 @@ const PADDING_RAW_PROPS = new Set([
   'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'verticalPadding', 'horizontalPadding',
 ]);
 
-/** Sub-properties of a composite `typography` binding — suppressed when `typography` is bound on the same node. */
+/** Suppressed when a composite `typography` is bound on the same node. */
 const TYPOGRAPHY_SUBPROPS = new Set(['fontSize', 'fontFamily', 'fontWeight', 'fontStyle', 'lineHeight', 'letterSpacing']);
 
-/**
- * The property name a real variable/style binding would carry for one raw
- * Figma property name, e.g. `fills` -> `fill`. The single source of truth for
- * that renaming: both a real binding (`normalizeBindings`) and a hardcoded
- * value with no binding at all (`extractGaps`) route through this, so the two
- * can never again land on different property vocabularies for the same
- * underlying thing.
- */
+/** The one rename both `normalizeBindings` and `extractGaps` route through,
+ *  so a binding and a hardcoded value share one property vocabulary. */
 const simpleProperty = (raw: string): string => SIMPLE_PROPERTY_MAP[raw] ?? raw;
 
 /**
- * Decide which composite padding property name(s) apply, given each side's
- * candidate value already narrowed to at most one (a real binding resolves to
- * one token per side; a hardcoded layout value resolves to one number per
- * side): `padding` when all four sides agree, `padding-x`/`padding-y` when a
- * pair agrees, or the four individual `padding-{side}` names otherwise.
- * Shared between `normalizeBindings` (values are token names) and
- * `extractGaps` (values are hardcoded numbers) so a hardcoded padding gap and
- * a real padding binding on the same shape land on the exact same property
- * name.
+ * `padding` when all four sides agree, `padding-x`/`padding-y` when a pair
+ * agrees, else the individual sides. Shared by `normalizeBindings` (refs) and
+ * `extractGaps` (numbers) so a gap and a binding on the same shape land on the
+ * same property name.
  */
 function paddingSides<T>(
   top: T[], right: T[], bottom: T[], left: T[],
@@ -194,8 +155,7 @@ function paddingSides<T>(
   };
   const sides = [top, right, bottom, left];
   const out: Array<{ property: string; value: T }> = [];
-  // Compared through `key`, not by identity: four sides bound to ONE variable
-  // are four distinct ref objects, and a Set of them has size 4.
+  // Compared through `key`: four sides bound to ONE variable are four objects.
   if (sides.every((s) => single(s) !== null)
       && new Set(sides.map((s) => key(single(s)!))).size === 1) {
     out.push({ property: 'padding', value: single(top)! });
@@ -219,14 +179,12 @@ function paddingSides<T>(
 /**
  * Normalize one node's raw bindings:
  * - 4 corner radii sharing a token collapse to `border-radius`
- * - paddings collapse to `padding` (all 4 equal) or `padding-x`/`padding-y` (pairs equal)
- * - typography sub-properties are dropped when a composite `typography` binding exists
+ * - paddings collapse via paddingSides
+ * - typography sub-properties are dropped under a composite `typography`
  * - everything else is renamed via SIMPLE_PROPERTY_MAP
  */
 function normalizeBindings(raw: TokenRef[]): TokenRef[] {
-  // Keyed on the WHOLE ref, not on its name: two different resources sharing a
-  // name are two bindings, and collapsing them on the name is the defect this
-  // change exists to remove.
+  // Keyed on (kind, id), not name: two resources sharing a name are two bindings.
   const byProp = new Map<string, TokenRef[]>();
   for (const b of raw) {
     const refs = byProp.get(b.property) ?? [];
@@ -237,13 +195,10 @@ function normalizeBindings(raw: TokenRef[]): TokenRef[] {
   const out: TokenRef[] = [];
   const emit = (property: string, ref: TokenRef) => {
     if (out.some((o) => o.property === property && o.kind === ref.kind && o.id === ref.id)) return;
-    // The ref travels through with its identity intact; only the PROPERTY is
-    // renamed. Rebuilding `{ property, token }` here would flatten the binding
-    // back to a string one stage after it was resolved.
+    // Only the PROPERTY is renamed; the ref keeps its identity.
     out.push({ ...ref, property });
   };
 
-  // Corner radii
   const radii = RADIUS_PROPS.filter((p) => byProp.has(p));
   const radiusRefs = radii.flatMap((p) => byProp.get(p)!);
   const distinctRadius = new Set(radiusRefs.map((r) => `${r.kind}|${r.id}`));
@@ -253,7 +208,6 @@ function normalizeBindings(raw: TokenRef[]): TokenRef[] {
     for (const p of radii) for (const r of byProp.get(p)!) emit(RADIUS_INDIVIDUAL_MAP[p], r);
   }
 
-  // Padding
   const sideRefs = (...props: string[]) => props.flatMap((p) => byProp.get(p) ?? []);
   for (const { property, value } of paddingSides(
     sideRefs('paddingTop', 'verticalPadding'),
@@ -265,7 +219,6 @@ function normalizeBindings(raw: TokenRef[]): TokenRef[] {
     emit(property, value);
   }
 
-  // Everything else
   const hasTypography = byProp.has('typography');
   for (const [prop, refs] of byProp) {
     if (RADIUS_PROPS.includes(prop) || PADDING_RAW_PROPS.has(prop)) continue;
@@ -280,35 +233,25 @@ function normalizeBindings(raw: TokenRef[]): TokenRef[] {
 // Rule minimization
 // ---------------------------------------------------------------------------
 
-/**
- * The identity key for one reference: what makes two bindings the same binding.
- *
- * `${kind}|${id}`, not the name. A name is a display string and two different
- * Figma resources can share one; a variable and an effect style both called
- * "Elevation/1" must stay two rules.
- */
+/** What makes two bindings the same: kind and id, never the name, which two
+ *  resources (a variable and an effect style both "Elevation/1") can share. */
 const refKey = (r: RefIdentity): string => `${r.kind}|${r.id}`;
 
 /**
- * Marks "this part/property does not exist in this variant". Backfilled into
- * every grid so absence participates in difference-detection like any other
- * value. Never escapes extractTokens: absent rules are dropped when the public
- * shape is built.
- *
- * A plain word rather than a control-character prefix, and safe because a real
- * refKey ALWAYS contains a `|` and this never does. A control character here is
- * exactly the class of invisible source `npm run check:nul` exists to catch.
+ * "This part/property does not exist in this variant", backfilled so absence
+ * takes part in difference-detection; dropped before output. A plain word, not
+ * a control character (see check:nul), and safe because a refKey always has a
+ * `|`.
  */
 const ABSENT_KEY = 'absent';
 
-/** One observed data point: in the variant identified by `combo`, the
- *  part/property carries the references named by `keys`. */
+/** In the variant `combo`, the part/property carries the references `keys`. */
 interface Cell {
   combo: Record<string, string>;
   keys: string[]; // sorted refKeys, or exactly [ABSENT_KEY]
 }
 
-/** Work-in-progress rule: one reference plus conditioned axes mapped to accepted value sets. */
+/** One reference plus conditioned axes mapped to accepted value sets. */
 interface DraftRule {
   key: string;
   values: Map<string, Set<string>>;
@@ -316,10 +259,7 @@ interface DraftRule {
 
 export function extractTokens(root: SerializedNode, model?: VariantAxisModel): TokenRule[] {
   const isInSet = root.type === 'COMPONENT_SET';
-  // Shared with toVariantInstances — see variantAxisModel's comment for why this
-  // isn't just a perf optimization: extract() passes one model to both so the
-  // conditions on emitted rules structurally agree with the `values` recorded
-  // on variant instances, which resolveTokensForVariant relies on to match them.
+  // Shared with toVariantInstances; see variantAxisModel.
   const { variants, combos } = model ?? variantAxisModel(root);
   if (!variants.length) return [];
 
@@ -335,8 +275,7 @@ export function extractTokens(root: SerializedNode, model?: VariantAxisModel): T
       if (!vals.includes(value)) vals.push(value);
     }
   }
-  // Canonical value order: the component set's declared variantOptions order
-  // when available, falling back to first-seen order.
+  // Declared variantOptions order when available, else first-seen order.
   const axisValues = new Map<string, string[]>();
   for (const axis of axisOrder) {
     const obs = observedValues.get(axis)!;
@@ -348,48 +287,32 @@ export function extractTokens(root: SerializedNode, model?: VariantAxisModel): T
   }
 
   // --- Collect the observation grid ----------------------------------------
-  // Grouped by (path, property), NOT (part, property). `part` is unique only
-  // among SIBLINGS, so two nodes with the same cleaned name in DIFFERENT
-  // subtrees ("header > label" and "footer > label") would still share a flat
-  // `part` key. `path`, threaded from walkParts, is the real identity.
-  //
-  // The composite key is JSON, not a separator-joined string. A separator has
-  // to be a character neither component can contain, which in this repo has
-  // meant a NUL or a SOH: invisible in a diff, silent under `grep`, and past
-  // git's binary-detection window. JSON.stringify escapes its own components,
-  // so the key is unambiguous AND readable in a debugger.
+  // Grouped by (path, property): `part` is unique only among siblings. The key
+  // is JSON, not separator-joined: a safe separator would have to be a NUL or
+  // SOH, invisible in a diff. JSON escapes its components.
   const gridKey = (path: string, property: string): string => JSON.stringify([path, property]);
 
   const cellsByPathProp = new Map<string, Cell[]>();
   const pathOrder: string[] = [];
   const propOrder = new Map<string, string[]>();
   const partByPath = new Map<string, string>();
-  /** path -> the boolean property that reveals the layer at that path.
-   *  First observation wins: a layer's visibility binding lives on the
-   *  component set, so every variant reports the same property, and variant
-   *  order is fixed by the axis model either way. */
+  /** path -> the boolean property that reveals it. First observation wins:
+   *  the visibility binding lives on the set, so every variant agrees. */
   const shownByPath = new Map<string, string>();
-  // One definition of "hidden but documentable", shared with anatomy.ts. The
-  // walk below no longer prunes every invisible subtree, only the ones no
-  // consumer could ever reveal, so a layer a boolean property turns on keeps
-  // its bindings and the Tokens section can show them.
+  // "Hidden but documentable", shared with anatomy.ts: the walk prunes only
+  // subtrees no boolean property could reveal.
   const hidden = hiddenPartRules(root);
-  /** Every reference seen anywhere in this component, by refKey, so a rule can
-   *  be turned back into a full identity at emit time. Two refs sharing a
-   *  (kind, id) are the same Figma resource, so overwriting is a no-op. */
+  /** Every reference seen, by refKey, to rebuild a rule's full identity at
+   *  emit time. Overwriting is a no-op: same (kind, id), same resource. */
   const refsByKey = new Map<string, RefIdentity>();
 
   variants.forEach((variant, idx) => {
     const combo = combos[idx];
-    // Outer key path-and-property, inner key refKey, so two refs sharing a name
-    // stay two refs all the way through.
+    // Outer key gridKey, inner key refKey.
     const variantRefs = new Map<string, Map<string, RefIdentity>>();
     // Which property reveals each node in THIS variant, inherited down the
-    // tree: a visible glyph inside a hidden icon container is hidden in
-    // practice, and its tokens are just as conditional as the container's.
-    // Resolved node by node rather than by path prefix, because a path is a
-    // joined string with escaped separators and re-splitting it to find an
-    // ancestor is a parser nobody needs.
+    // tree: a visible glyph inside a hidden container is hidden in practice.
+    // Resolved by node, not path prefix, to avoid re-parsing escaped paths.
     const shownByNode = new Map<SerializedNode, string>();
     const markHidden = (n: SerializedNode, inherited: string | undefined): void => {
       const own = hidden.shownBy(n) ?? inherited;
@@ -404,11 +327,8 @@ export function extractTokens(root: SerializedNode, model?: VariantAxisModel): T
       for (const ref of normalizeBindings(n.bindings ?? [])) {
         const key = gridKey(path, ref.property);
         partByPath.set(path, part);
-        // Store the identity WITHOUT `property`: toTokenRule spreads this over
-        // a literal that already set `property` from the (path, property)
-        // cell it is emitting, so a `property` left on here would win the
-        // spread and stamp whichever property this ref was last seen under
-        // onto the rule.
+        // Without `property`: toTokenRule spreads this after setting its own
+        // `property`, and a leftover one would win the spread.
         const { property: _property, ...identity } = ref;
         let inner = variantRefs.get(key);
         if (!inner) variantRefs.set(key, (inner = new Map()));
@@ -432,14 +352,11 @@ export function extractTokens(root: SerializedNode, model?: VariantAxisModel): T
     }
   });
 
-  // Presence is a JOINT property of a variant's full combo, not a marginal one
-  // per axis: a part can be absent at (X=1,Y=p) while X still spans {1,2} and Y
-  // still spans {p,q} across the cells that DO exist. relevantAxes' per-axis
-  // presence test cannot see that, so both conditions get dropped and the rule
-  // claims a binding on a variant with no such part. Backfilling an explicit
-  // ABSENT cell for every missing combo turns absence into just another token
-  // value, which the difference-detection below already handles correctly.
-  // Cells hold combo objects by reference from `combos`, so identity works here.
+  // Presence is JOINT over a full combo: a part absent at (X=1,Y=p) can still
+  // span every value per axis, which relevantAxes' per-axis test cannot see,
+  // so the rule would claim a binding on a variant without the part. An
+  // explicit ABSENT cell makes absence just another value. Cells hold combo
+  // objects from `combos` by reference, so identity works here.
   for (const cells of cellsByPathProp.values()) {
     const present = new Set(cells.map((c) => c.combo));
     for (const combo of combos) {
@@ -448,8 +365,7 @@ export function extractTokens(root: SerializedNode, model?: VariantAxisModel): T
   }
 
   // --- Minimize each (part, property) grid into rules -----------------------
-  // JSON, not a joined string, for the reason gridKey gives: an axis value is
-  // whatever a designer typed, so no separator character is safely unavailable.
+  // JSON keys, as for gridKey: an axis value is whatever a designer typed.
   const cellKey = (c: Cell) => JSON.stringify(c.keys);
   const projKey = (combo: Record<string, string>, axes: string[]) =>
     JSON.stringify(axes.map((a) => combo[a]));
@@ -496,17 +412,16 @@ export function extractTokens(root: SerializedNode, model?: VariantAxisModel): T
   const buildRules = (cellsIn: Cell[]): DraftRule[] => {
     let cells = cellsIn;
     let relevant = relevantAxes(cells);
-    // Sparse grids can hide pairwise differences (no two variants differ in just
-    // one axis) — repair by adding axes until the projection is unambiguous.
+    // Sparse grids can hide pairwise differences: add axes until the
+    // projection is unambiguous.
     for (const axis of axisOrder) {
       if (!hasConflict(cells, relevant)) break;
       if (!relevant.includes(axis)) relevant = axisOrder.filter((a) => relevant.includes(a) || a === axis);
     }
 
-    // Backstop. If a conflict survives adding every axis, two variants parse to
-    // the SAME combo (hand-edited variant names do this). Unioning their key
-    // sets below would invent a binding no variant carries, so fall back to
-    // fully-specific conditions and keep only the first cell per combo.
+    // A conflict surviving every axis means two variants parse to the SAME
+    // combo. Unioning them would invent a binding, so keep the first cell per
+    // combo under fully-specific conditions.
     if (hasConflict(cells, relevant)) {
       relevant = [...axisOrder];
       const byCombo = new Map<string, Cell>();
@@ -517,7 +432,6 @@ export function extractTokens(root: SerializedNode, model?: VariantAxisModel): T
       cells = [...byCombo.values()];
     }
 
-    // Project cells onto the relevant axes.
     const groups = new Map<string, { combo: Record<string, string>; keys: Set<string> }>();
     for (const c of cells) {
       const k = projKey(c.combo, relevant);
@@ -534,8 +448,7 @@ export function extractTokens(root: SerializedNode, model?: VariantAxisModel): T
       }
     }
 
-    // Merge along each axis: rules with the same key and identical conditions
-    // on every other axis combine their value lists.
+    // Merge rules with the same key and identical conditions on every other axis.
     const conditionKey = (r: DraftRule, excludeAxis: string | null) =>
       JSON.stringify(axisOrder
         .filter((a) => a !== excludeAxis)
@@ -554,12 +467,9 @@ export function extractTokens(root: SerializedNode, model?: VariantAxisModel): T
       rules = [...merged.values()];
     }
 
-    // Drop an axis from a rule when its values cover every value observed in
-    // combination with the rule's remaining conditions. Critically, coverage is
-    // checked against the variants that actually exist (the grid is sparse):
-    // e.g. Danger=true never co-exists with Disabled=true, so a Danger=true
-    // rule drops its Disabled=false condition — without ever claiming combos
-    // that don't exist.
+    // Drop an axis whose values cover every value observed alongside the
+    // rule's other conditions, checked against variants that exist (the grid
+    // is sparse), so no nonexistent combo is ever claimed.
     for (const r of rules) {
       for (const axis of [...r.values.keys()]) {
         const vals = r.values.get(axis)!;
@@ -574,7 +484,7 @@ export function extractTokens(root: SerializedNode, model?: VariantAxisModel): T
       }
     }
 
-    // Dedupe, then remove rules subsumed by a strictly more general rule.
+    // Dedupe, then drop rules subsumed by a strictly more general rule.
     const seen = new Map<string, DraftRule>();
     for (const r of rules) {
       const k = JSON.stringify([r.key, conditionKey(r, null)]);
@@ -609,23 +519,15 @@ export function extractTokens(root: SerializedNode, model?: VariantAxisModel): T
     return {
       part: partByPath.get(path)!, path, property, conditions,
       ...refsByKey.get(r.key)!,
-      // Absent, never undefined, on a rule that applies unconditionally: the
-      // same contract AnatomyPart.shownBy keeps, so `'shownBy' in rule` is a
-      // reliable test and the key never appears in output it does not apply to.
+      // Absent, never undefined, so `'shownBy' in rule` is a reliable test.
       ...(shownBy !== undefined ? { shownBy } : {}),
     };
   };
 
   /**
-   * Sort fields, compared one at a time. Deliberately an array rather than a
-   * separator-joined string: a joined key makes ordering depend on how the
-   * separator sorts against whatever the previous field's last characters were,
-   * and only an unspellable separator such as NUL makes that correct. Field by
-   * field, the question does not arise.
-   *
-   * Field 4 is the reference's NAME, so rules still sort the way a reader
-   * expects to see them. Field 5 is the refKey, which only ever breaks a tie
-   * between two references that genuinely share a name.
+   * Sort fields compared one at a time; a joined key would sort by how the
+   * separator compares. Field 4 is the reference's NAME, as a reader expects;
+   * field 5, the refKey, breaks ties between references sharing a name.
    */
   const ruleSortKey = (r: DraftRule): string[] => {
     const matchesDefault = [...r.values.entries()].every(([a, vs]) => vs.has(defaultCombo[a]));
@@ -645,8 +547,7 @@ export function extractTokens(root: SerializedNode, model?: VariantAxisModel): T
       matchesDefault ? '0' : '1',
       String(r.values.size).padStart(3, '0'),
       axisBits,
-      // An absent rule has no reference and sorts first, exactly as the old
-      // control-character sentinel did. It is dropped below either way.
+      // An absent rule has no reference and sorts first; it is dropped below.
       refsByKey.get(r.key)?.name ?? '',
       r.key,
     ];
@@ -676,19 +577,14 @@ export function extractTokens(root: SerializedNode, model?: VariantAxisModel): T
 }
 
 export interface TokensOptions {
-  /** Include rules marked `shownBy`: the ones that only apply once a boolean
-   *  component property is on. The canvas model and the canvas hash pass a
-   *  doc's `includeHidden` config; the exported contract passes false, because
-   *  a v5 token rule has no field in which to say a rule is conditional. */
+  /** Include rules marked `shownBy`. The canvas model and hash pass the doc's
+   *  `includeHidden`; the v5 export passes false, having no field to say a
+   *  rule is conditional. */
   includeHidden: boolean;
 }
 
-/**
- * The one predicate every canvas consumer and the canvas hash filter token
- * rules through, so they cannot disagree about which rules a doc draws. The
- * `anatomyFor` of tokens, down to returning the same array when nothing is
- * filtered so callers can rely on identity.
- */
+/** The one filter every canvas consumer and the canvas hash use. Like
+ *  `anatomyFor`, returns the same array when nothing is filtered. */
 export function tokensFor(tokens: TokenRule[], options: TokensOptions): TokenRule[] {
   return options.includeHidden ? tokens : tokens.filter((t) => t.shownBy === undefined);
 }
@@ -697,24 +593,17 @@ export function tokensFor(tokens: TokenRule[], options: TokensOptions): TokenRul
 // Extraction gaps (default variant only)
 // ---------------------------------------------------------------------------
 
-/** Properties that indicate a TEXT node's typography is governed by a style or variable. */
+/** Any of these bound means a TEXT node's typography is governed. */
 const TYPOGRAPHY_PROPS = ['typography', 'fontSize', 'fontFamily', 'fontStyle', 'fontWeight', 'lineHeight', 'letterSpacing'];
-/** Bound-variable property names that cover padding. */
 const PADDING_PROPS = ['paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'verticalPadding', 'horizontalPadding'];
 
 export function extractGaps(root: SerializedNode): Gap[] {
   const out: Gap[] = [];
   const seenGaps = new Set<string>();
-  // Separator is a SPACE, not a NUL byte: a NUL in source has bitten this repo
-  // repeatedly and evades lint, tests and `git diff`.
+  // Separator is a SPACE, never a NUL byte (see check:nul).
   const pushGap = (part: string, path: string, property: string,
                     issue: GapIssue, value?: number | string) => {
-    // Keyed on path (not part) + property + issue: `part` is unique only among
-    // siblings, so two nodes with the same cleaned leaf name in different
-    // subtrees ("header > label" and "footer > label") would otherwise share a
-    // key and the second node's gap would silently never get pushed at all.
-    // `property` is included so two distinct issues that happen to share a
-    // path never collapse into one.
+    // Keyed on path, not part, which is unique only among siblings.
     const key = `${path} ${property} ${issue}`;
     if (seenGaps.has(key)) return;
     seenGaps.add(key);
@@ -724,11 +613,7 @@ export function extractGaps(root: SerializedNode): Gap[] {
   const def = defaultVariant(root);
   walkParts(def, isInSet ? 'Container' : cleanPartName(def.name), (n, part, path) => {
     const bound = new Set((n.bindings ?? []).map((b) => b.property));
-    // Every property name below is routed through `simpleProperty` (the same
-    // rename `normalizeBindings` applies to a real binding on `fills`,
-    // `strokes`, etc.) rather than hand-picked, so a hardcoded value and a
-    // real binding for the same raw Figma property can never land on
-    // different property vocabularies.
+    // Property names go through `simpleProperty`, as real bindings do.
     if (n.hasUnboundPaint) {
       pushGap(part, path, simpleProperty('fills'), 'hardcoded-color', n.unboundFill);
     }
@@ -736,19 +621,16 @@ export function extractGaps(root: SerializedNode): Gap[] {
       pushGap(part, path, simpleProperty('strokes'), 'hardcoded-color', n.unboundStroke);
     }
     if (n.hasUnboundGradient) {
-      // A gradient/image fill has no single hex to report, so there is no
-      // `value` here, unlike the solid-fill and stroke cases above.
+      // No single hex to report for a gradient or image fill.
       pushGap(part, path, simpleProperty('fills'), 'missing-token-binding');
     }
     if (n.hasUnboundEffect) {
       pushGap(part, path, simpleProperty('effects'), 'missing-token-binding');
     }
     if (n.opacity !== undefined && n.opacity !== 1 && !bound.has('opacity')) {
-      // Rounded here as well as in serialize.ts, because this number is inside
-      // specContentHash and the extractor also runs over node JSON that did not
-      // come from this repo's serializer (an uploaded dump, an older plugin
-      // build). Figma's float32 opacity would otherwise print 30% as
-      // 0.30000001192092896, both on the page and in the drift baseline.
+      // Rounded here too, not only in serialize.ts: this is hashed, and node
+      // JSON may come from elsewhere. Figma's float32 prints 30% as
+      // 0.30000001192092896.
       pushGap(part, path, simpleProperty('opacity'), 'hardcoded-value', Math.round(n.opacity * 10000) / 10000);
     }
     if (n.type === 'TEXT' && !TYPOGRAPHY_PROPS.some((p) => bound.has(p))) {
@@ -764,11 +646,7 @@ export function extractGaps(root: SerializedNode): Gap[] {
     }
     if (!PADDING_PROPS.some((p) => bound.has(p))) {
       const side = (v: number | undefined): number[] => (v !== undefined ? [v] : []);
-      // Same collapsing `normalizeBindings` applies to real padding bindings,
-      // run over the raw numbers instead of token names: equal numbers stand
-      // in for "the same token" so a hardcoded padding gap lands on exactly
-      // the property (`padding`, `padding-x`/`padding-y`, or an individual
-      // side) that a real binding on this same shape would use.
+      // Equal numbers stand in for "the same token"; see paddingSides.
       for (const { property, value } of paddingSides(
         side(l.paddingTop), side(l.paddingRight), side(l.paddingBottom), side(l.paddingLeft),
       )) {

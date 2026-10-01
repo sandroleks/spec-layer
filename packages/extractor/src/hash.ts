@@ -2,57 +2,36 @@ import { sha256 } from 'js-sha256';
 import type { IntermediateSpec, VariantInstance } from './extract';
 import type { ComponentProp, VariantAxis } from './props';
 import { tokensFor, type GapIssue } from './tokens';
-import { unitContent, type FoundationSpec, type FoundationScope } from './foundation';
+import {
+  unitContent, type FoundationSpec, type FoundationScope, type FoundationUnitContent,
+} from './foundation';
 import { anatomyFor } from './anatomy';
-import { compareCodeUnits } from './v5/diagnostics';
+import { canonicalJson } from './v5/canonical';
 
-/** Canonical JSON: object keys sorted recursively, then SHA-256. */
-function canonical(value: unknown): string {
-  // An undefined member becomes `null`, exactly as JSON.stringify writes it;
-  // `JSON.stringify(undefined)` is undefined and would leave an empty slot.
-  if (Array.isArray(value)) return `[${value.map((v) => (v === undefined ? 'null' : canonical(v))).join(',')}]`;
-  if (value && typeof value === 'object') {
-    // Mirror JSON.stringify's own dropping of undefined-valued keys, keeping
-    // canonical output consistent regardless of whether a caller passes them.
-    const entries = Object.entries(value as Record<string, unknown>)
-      .filter(([, v]) => v !== undefined)
-      .sort(([a], [b]) => compareCodeUnits(a, b))
-      .map(([k, v]) => `${JSON.stringify(k)}:${canonical(v)}`);
-    return `{${entries.join(',')}}`;
-  }
-  return JSON.stringify(value);
-}
-
-export const contentHash = (value: unknown): string => sha256(canonical(value));
+/** SHA-256 over canonical JSON (keys sorted by code unit at every depth). */
+export const contentHash = (value: unknown): string => sha256(canonicalJson(value));
 
 /**
- * "Would hash the same": two values are equal when their canonical
- * serializations match. Key order and undefined-valued keys are ignored,
- * exactly as contentHash ignores them. This is the equality the Library diff
- * uses, so "changed" in a change list means precisely "moved the hash".
+ * "Would hash the same": key order and undefined-valued keys are ignored, as
+ * contentHash ignores them. The Library diff uses this, so "changed" means
+ * "moved the hash".
  */
 export function canonicalEqual(a: unknown, b: unknown): boolean {
-  return canonical(a) === canonical(b);
+  return canonicalJson(a) === canonicalJson(b);
 }
 
 export interface SpecHashOptions {
-  /** Hash the parts a boolean property hides by default. Mirrors the doc's
-   *  `includeHidden` config: off or absent hashes exactly what every existing
-   *  doc's baseline was computed over, so no committed doc reports a false
-   *  update. On, the revealed depth-0 parts enter like any other part, because
-   *  the canvas then draws them (rendered implies hashed). */
+  /** Mirrors the doc's `includeHidden` config. Off or absent hashes what every
+   *  existing baseline was computed over; on, the revealed depth-0 parts enter
+   *  because the canvas then draws them (rendered implies hashed). */
   includeHidden?: boolean;
 }
 
 /**
- * The object specContentHash hashes. Exported so the Library can store it as a
- * doc's drift baseline and diff it later: the diff input IS the hash input, so
- * a change list can never disagree with the badge in either direction.
- *
- * The legacy `token` key (from the newer `name` field) and the depth-0 anatomy
- * reduction are part of the contract: every committed doc's baseline was hashed
- * over exactly this shape. Parts marked `hiddenByDefault` enter only when
- * `SpecHashOptions.includeHidden` is on; see that type.
+ * The object specContentHash hashes, stored by the Library as the drift
+ * baseline: the diff input IS the hash input, so a change list cannot disagree
+ * with the badge. The legacy `token` key and the depth-0 anatomy reduction are
+ * contract: every committed baseline was hashed over this shape.
  */
 export interface SpecHashProjection {
   name: string;
@@ -73,39 +52,27 @@ export interface SpecHashProjection {
 }
 
 /**
- * The drift baseline projection. Excludes rawValues and nodeEffects, and
- * reduces anatomy to the depth-0 {id,name,type,nested} shape. `description`
- * DOES enter: the Overview and the header subtitle render it, so an edit to
- * it is a visible change. Its arrival, together with the code-unit key
- * ordering, is the EXTRACTOR_VERSION '3' rebuild: every doc stamped '2' reads
- * rebuild-required rather than being compared against a projection it was
- * never hashed over.
+ * The drift baseline projection. `description` enters because the Overview
+ * and header subtitle render it; its arrival is part of the EXTRACTOR_VERSION
+ * '3' rebuild, so a doc stamped '2' reads rebuild-required.
  */
 export function specHashProjection(spec: IntermediateSpec, options: SpecHashOptions = {}): SpecHashProjection {
   const {
-    // Excluded on purpose. rawValues and nodeEffects are additive detail that
-    // alters no rendered output, so including either would flip every
-    // committed document to "update available" for a change nobody can see
-    // on canvas. figmaFileName and documentationLinks are extracted for the
-    // YAML brief and Component Context v5 and drawn nowhere since the facts
-    // strip went (2026-09-18); hashed implies rendered, so a file rename or a
-    // new documentation link must not read as drift the Update cannot show.
+    // Excluded: rawValues and nodeEffects alter no rendered output, and
+    // figmaFileName and documentationLinks are drawn nowhere (they feed the
+    // YAML brief and v5). Hashed implies rendered, so none may read as drift.
     rawValues: _rawValues,
     nodeEffects: _nodeEffects,
     figmaFileName: _figmaFileName,
     documentationLinks: _documentationLinks,
-    // Hashed as extracted.
     name, figmaKey, figmaFile, figmaNode, description, anatomyComponentId,
     props, variants, variantInstances, states, related,
     // Hashed through the reductions below.
     anatomy, tokens, gaps, layout,
     ...unrouted
   } = spec;
-  // Every IntermediateSpec field is named above, so `unrouted` is `{}`. A
-  // field added to IntermediateSpec lands here and fails to compile until it
-  // is routed: excluded with a reason, or hashed. The `...rest` spread this
-  // replaces let a new field into every committed document's hash silently,
-  // which is an unplanned rebuild request (review 2026-09-23).
+  // A field added to IntermediateSpec lands in `unrouted` and fails to compile
+  // until it is routed: excluded with a reason, or hashed, never by accident.
   const _everyFieldRouted: Record<string, never> = unrouted;
   void _everyFieldRouted;
   return {
@@ -114,91 +81,48 @@ export function specHashProjection(spec: IntermediateSpec, options: SpecHashOpti
     anatomy: anatomyFor(anatomy, { includeHidden: options.includeHidden === true })
       .filter((p) => p.depth === 0)
       .map(({ id, name, type, nested }) => ({ id, name, type, nested })),
-    // `path` is a new identity for data already hashed under `part`, so it must
-    // not enter the hash: every committed doc compares against a baseline
-    // computed without it, and including it would flip all of them to "update
-    // available" for a change that alters no rendered output. Same reasoning, and
-    // same shape, as the anatomy reduction above.
-    //
-    // The projection emits the OLD key `token` from the NEW field `name`. The
-    // rename carries no content: it is the same string, resolved from the same
-    // Figma resource, and every committed doc's baseline was computed with it
-    // under the old key. Emitting `name` here instead would drift every document
-    // on every canvas for a field rename. The new identity fields (`id`, `kind`,
-    // `remote`, `collectionId`) stay out for the same reason `path` does.
-    // Filtered by the doc's own flag, exactly as anatomy is: the rendered
-    // token table and the drift baseline have to be computed from the same
-    // list, or a Library row's change list could disagree with its badge.
-    // `shownBy` itself stays out of the projection; a rule's PRESENCE in this
-    // array already carries it, and every committed doc's baseline was
-    // computed without the key.
+    // `path` and the identity fields (`id`, `kind`, `remote`, `collectionId`)
+    // re-identify data already hashed under `part`, so they stay out or every
+    // committed doc drifts. The OLD key `token` carries the NEW field `name`
+    // for the same reason. Filtered by the doc's flag as anatomy is, so the
+    // rendered table and the baseline share one list; `shownBy` stays out
+    // because a rule's presence already carries it.
     tokens: tokensFor(tokens, { includeHidden: options.includeHidden === true })
       .map(({ part, property, conditions, name: token }) => ({ part, property, conditions, token })),
-    // Same reasoning as `tokens` above: `path` is a new identity for data
-    // already hashed under `part`, so it stays out. `property` and `value` do
-    // enter: they are real content (the measured number is its own field, not
-    // text inside `issue`), so dropping them would silently stop the hash from
-    // noticing a gap's value change.
-    //
-    // gaps itself reaches only componentBrief's `unbound` list (the clipboard
-    // brief, generated fresh on every click, never stored), so nothing on
-    // canvas ever renders a gap directly. It stays in this hash anyway:
-    // rawValues IS rendered (docModel.ts builds the Tokens table's unbound
-    // rows from it) but is excluded from this hash, and gaps/rawValues are
-    // produced by the same hardcoded-value detection and move together. Right
-    // now, gaps moving is what makes that detection register as drift at all.
-    // Excluding gaps here would leave a hardcoded-value change silently
-    // unflagged rather than merely over-flagged, which is worse, not better.
-    // Do not remove this without first covering that case some other way.
+    // `path` stays out as in `tokens`; `property` and `value` are real content.
+    // No canvas renders a gap, but gaps move with rawValues (same hardcoded-
+    // value detection), which IS rendered yet excluded above. Gaps are what
+    // makes a hardcoded-value change register as drift: do not remove them
+    // without covering that case some other way.
     gaps: gaps.map(({ part, property, issue, value }) =>
       ({ part, property, issue, ...(value !== undefined ? { value } : {}) })),
-    // `values` and `path` are both new identities for data already hashed
-    // here: the numbers live inside `summary`'s rendered sentence (validate.ts
-    // reads the structured `values`, never the sentence), and `path` names the
-    // same node `part` already names. Both must stay out of the hash for the
-    // same reason `path` stays out of `tokens`/`gaps` above. The projection
-    // names the two fields it keeps rather than deleting the ones it drops, so
-    // a field added to LayoutSummary later is excluded by default.
+    // `values` repeats the numbers in `summary`'s sentence and `path` the node
+    // `part` names, so both stay out. Naming the kept fields excludes any
+    // field added to LayoutSummary by default.
     layout: layout.map(({ part, summary }) => ({ part, summary })),
   };
 }
 
-/**
- * The drift baseline hash. This is the single source of truth for a component
- * doc's content_hash; on-canvas drift detection and the stored baseline both
- * derive from specHashProjection.
- */
+/** A component doc's drift baseline hash, over specHashProjection. */
 export function specContentHash(spec: IntermediateSpec, options: SpecHashOptions = {}): string {
   return contentHash(specHashProjection(spec, options));
 }
 
 /**
- * The drift baseline for one foundation output unit.
- *
- * Hashes the WHOLE unitContent() result, so "update available" always
- * corresponds to a visible change. Ids, extractedAt, fileKey, and anything
- * extracted but unrendered are excluded structurally: they are simply not in
- * unitContent's output.
- *
- * Deliberately not a field list. An earlier draft enumerated four fields and
- * thereby dropped omittedModeNames, which frames render in their footer, so
- * renaming an omitted mode changed the document without moving its hash. Every
- * field of FoundationUnitContent is rendered by definition; enumerating them
- * here can only ever go stale. Add fields to FoundationUnitContent, not here.
- *
- * The converse is FoundationUnitContent's job, not this function's: nothing
- * may sit in that type unless a frame draws it, or this hash flips on changes
- * whose Update produces a byte-identical frame and the badge becomes noise.
- *
- * A scope whose source no longer exists hashes a stable sentinel rather than
- * throwing, so a stale link resolves to a comparable value.
+ * The drift baseline for one foundation output unit. Hashes the WHOLE
+ * unitContent() result, not a field list: every FoundationUnitContent field is
+ * rendered, and nothing may sit there unless a frame draws it. Add fields to
+ * FoundationUnitContent, not here. A scope whose source is gone hashes a
+ * stable sentinel, so a stale link stays comparable.
  */
 export function foundationContentHash(spec: FoundationSpec, scope: FoundationScope): string {
-  const content = unitContent(spec, scope);
-  if (!content) return contentHash({ foundationUnit: null });
-  // Hash the WHOLE unitContent result, never a cherry-picked field list. Any
-  // field added to FoundationUnitContent is rendered by definition, so it must
-  // be hashed; a hand-maintained projection here would silently drop it. This
-  // is what makes the invariant structural rather than a matter of discipline.
-  return contentHash(content);
+  return foundationUnitContentHash(unitContent(spec, scope));
+}
+
+/**
+ * foundationContentHash for a caller that already holds the unit's content
+ * (null for a scope that no longer resolves), so it is not derived twice.
+ */
+export function foundationUnitContentHash(content: FoundationUnitContent | null): string {
+  return content ? contentHash(content) : contentHash({ foundationUnit: null });
 }

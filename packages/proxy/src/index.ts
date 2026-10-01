@@ -16,13 +16,10 @@ export interface Env {
 }
 
 /**
- * One Durable Object per identity and profile: single-threaded execution
- * makes reserve/commit atomic without explicit locking. Every rule and the
- * storage layout live in QuotaStore, which the tests drive over an in-memory
- * storage; this class only binds `ctx.storage` and exposes the four
- * operations over RPC. The profile rides on each call because the object's
- * name, not its state, decides it. `now` comes from the Worker so the clock
- * is one place, as before.
+ * One Durable Object per identity and profile: single-threaded execution makes
+ * reserve/commit atomic without locks. Rules and storage live in QuotaStore;
+ * this binds `ctx.storage` over RPC. The profile rides on each call because the
+ * object's name decides it, and `now` comes from the Worker, the one clock.
  */
 export class QuotaDO extends DurableObject<Env> {
   private store(profile: QuotaProfile): QuotaStore {
@@ -56,7 +53,6 @@ function doQuotaClient(ns: DurableObjectNamespace<QuotaDO>, identityId: string, 
   };
 }
 
-/** The KV namespace as a LibraryStore: KV already lists by prefix; the stream read is `get(key, 'stream')`. */
 function kvLibraryStore(kv: KVNamespace): LibraryStore {
   return {
     get: (key) => kv.get(key),
@@ -79,8 +75,7 @@ const worker = {
       log: requestLog(req, (line) => console.log(line)),
       licenseLimiter,
       requestLimiter,
-      // Same KV namespace as licenseCache today; a dedicated namespace later
-      // is a one-line change once library volume warrants it.
+      // Shares licenseCache's namespace; splitting it is a one-line change.
       libraryStore: kvLibraryStore(env.LICENSE_CACHE),
     };
     return route(req, deps);

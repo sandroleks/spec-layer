@@ -1,11 +1,8 @@
 /**
- * componentFormat.ts — how component context leaves the plugin: YAML or
- * Markdown.
- *
- * Shared by the main thread, which stores the choice, and the UI, which uses
- * it. It imports nothing and touches no global, so it is safe in Figma's
- * sandbox. The values are the CLI's own (`--component-format yaml|md`), so a
- * setup command can carry the plugin's value through unchanged.
+ * How component context leaves the plugin: YAML or Markdown. Shared by the main
+ * thread and the UI, so it imports nothing and touches no global (Figma's
+ * sandbox). The values are the CLI's (`--component-format yaml|md`), so a setup
+ * command carries the plugin's value through unchanged.
  */
 
 export const COMPONENT_FORMATS = ['yaml', 'md'] as const;
@@ -19,10 +16,7 @@ export function isComponentFormat(value: unknown): value is ComponentFormat {
   return typeof value === 'string' && (COMPONENT_FORMATS as readonly string[]).includes(value);
 }
 
-/**
- * A stored value as a format. Missing or unrecognised reads as the default
- * rather than as a guess at what was meant.
- */
+/** Missing or unrecognised reads as the default, never as a guess. */
 export function storedComponentFormat(value: unknown): ComponentFormat {
   return isComponentFormat(value) ? value : DEFAULT_COMPONENT_FORMAT;
 }

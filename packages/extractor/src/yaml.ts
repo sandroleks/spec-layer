@@ -1,24 +1,13 @@
 /**
- * yaml.ts — a deterministic YAML emitter for the brief shapes in brief.ts.
+ * A deterministic YAML 1.2 emitter for the brief shapes in brief.ts, not a
+ * general library: the shapes are closed and both ends are controlled. Tests
+ * parse the output with js-yaml to prove the escaping, where a hand-rolled
+ * emitter fails.
  *
- * Deliberately NOT a general YAML library. Both ends of this format are
- * controlled, the shapes are closed, and the output is snapshot-tested, so
- * shipping a general parser into a plugin bundle would buy nothing. The tests
- * parse this emitter's output with js-yaml (a dev dependency) to prove the
- * escaping is right, which is where a hand-rolled emitter actually fails.
- *
- * Emits YAML 1.2. Block style by default; short, scalar-only collections render
- * in flow style (see flowText) because the brief is read in a chat window and a
- * two-fact condition costing five lines is the difference between a payload that
- * pastes and one that does not.
- *
- * Implementation note: every internal helper below returns fully-formed,
- * already-indented lines (an array of strings, one per output line) rather
- * than building strings via leading-newline conventions and regex de-indent.
- * A list item's nested map/array is produced as normal lines at indent+2,
- * then its first line has that same padding stripped off so it can follow
- * "- " on one line — a plain string slice, not a regex de-indent, so it can't
- * misfire on content that happens to start with spaces.
+ * Block style by default; short scalar-only collections go flow style
+ * (flowText) so the brief stays compact enough to paste into a chat window.
+ * Helpers return fully indented lines; a list item's nested block has its first
+ * line's padding sliced off to follow "- ", never a regex de-indent.
  */
 
 export type YamlValue =
@@ -27,20 +16,14 @@ export type YamlValue =
   | { [k: string]: YamlValue | undefined };
 
 /**
- * Characters that change a plain scalar's meaning in block context, plus the
- * shapes YAML would coerce to a non-string: numbers, booleans in all their
- * spellings, and null. `yes`/`no`/`on`/`off` are YAML 1.1 booleans that many
- * parsers still honour, so they are quoted defensively.
+ * Plain scalars YAML would coerce to a non-string: numbers, booleans in every
+ * spelling (including YAML 1.1 `yes`/`no`/`on`/`off`, which parsers still
+ * honour), and null.
  */
 const RESERVED_WORD = /^(y|n|yes|no|true|false|on|off|null|~)$/i;
 const NUMERIC = /^[-+]?(\d[\d_]*(\.\d*)?([eE][-+]?\d+)?|\.\d+|0[xob][0-9a-fA-F_]+)$/;
-/**
- * The YAML 1.1 special floats, unsigned or signed, in any case:
- * `.inf`, `.Inf`, `.INF`, `-.inf`, `+.inf`, `.nan`, `.NaN`, `.NAN`, etc.
- * Needs its own pattern rather than relying on LEADING_INDICATOR: that class
- * catches a leading `-` but not `+`, so "+.inf" would otherwise slip through
- * unquoted and round-trip as `null`.
- */
+/** YAML 1.1 special floats (`.inf`, `-.Inf`, `+.NAN`, ...). LEADING_INDICATOR
+ *  catches a leading `-` but not `+`, so "+.inf" would round-trip as `null`. */
 const SPECIAL_FLOAT = /^[-+]?\.(inf|nan)$/i;
 const LEADING_INDICATOR = /^[-?:,[\]{}#&*!|>'"%@`]/;
 /** Any C0 control character: NUL through US (0x00-0x1F), including \n, \r, \t. */
@@ -65,10 +48,8 @@ function unicodeEscape(ch: string): string {
 }
 
 /**
- * Double-quoted style. `\\`, `"`, and the three control chars with standard
- * short escapes come first; every other C0 control character (NUL, BEL, VT,
- * ESC, etc.) is escaped as `\uXXXX` -- the raw byte is otherwise embedded
- * unchanged and js-yaml refuses to parse it ("non-printable characters").
+ * Double-quoted style. A C0 control without a short escape becomes `\uXXXX`:
+ * js-yaml refuses the raw byte ("non-printable characters").
  */
 function doubleQuote(s: string): string {
   const body = s
@@ -81,24 +62,15 @@ function doubleQuote(s: string): string {
   return `"${body}"`;
 }
 
-/**
- * A single-line scalar: plain if safe, double-quoted if not. Used both for
- * map values (never called with a multi-line string) and for map keys.
- */
+/** A single-line scalar (map value or key): plain if safe, else double-quoted. */
 function inlineScalar(s: string): string {
   return needsQuote(s) ? doubleQuote(s) : s;
 }
 
 /**
- * True when a value can be written on the same line as its "key:" or "- "
- * (a scalar, or an empty collection rendered as "[]"/"{}"). False for
- * non-empty arrays/maps and for multi-line strings that need a block form.
- *
- * A string containing `\r` is always inline, even if it also contains `\n`:
- * a YAML literal block scalar has no way to represent a bare `\r` or a
- * `\r\n` pair, so such strings fall back to the double-quoted inline form
- * (via needsQuote's control-character check) instead of silently losing the
- * `\r` bytes to a literal block scalar.
+ * True when a value fits on its "key:" or "- " line: a scalar, or an empty
+ * collection as "[]"/"{}". A string with `\r` is always inline (double-quoted):
+ * a literal block scalar cannot represent a bare `\r` or `\r\n`.
  */
 function isInline(value: YamlValue): boolean {
   if (value === null || typeof value === 'boolean' || typeof value === 'number') return true;
@@ -120,35 +92,24 @@ function inlineText(value: YamlValue): string {
   return '{}';
 }
 
-/** Width budget for a flow collection, measured on the rendered text excluding
- *  indentation. Past this, block style is more readable than a long line, which is
- *  the only reason flow style is worth having. */
+/** Width budget for a flow collection, excluding indentation; past it block
+ *  style reads better. */
 const FLOW_MAX = 72;
 
 /**
- * A collection is flow-eligible when every member is an inline scalar, or is itself
- * a flow-eligible collection. Nesting is allowed because `when: { type: [Primary] }`
- * is exactly that shape and is the case this exists for.
- *
- * Depth is bounded: two levels is enough for every shape the brief emits, and an
- * unbounded rule would let a deeply nested object collapse into an unreadable line.
+ * Flow-eligible: every member is an inline scalar or a flow-eligible
+ * collection, so `when: { type: [Primary] }` qualifies. Bounded at two levels,
+ * enough for every brief shape, so deep nesting never collapses into one line.
  */
 function flowEligible(value: YamlValue, depth = 0): boolean {
   if (isInline(value)) return true;
-  // A non-inline string is a multi-line string (isInline already covers every
-  // string that could be written as a scalar). It belongs to the block-scalar
-  // path, never flow. Without this check, `Object.values()` below would be
-  // called on a string primitive, which coerces it to an array of its
-  // individual characters -- each one an "eligible" one-char scalar -- and
-  // silently misjudge a multi-line string as a flow-eligible collection.
+  // A non-inline string is multi-line and belongs to the block-scalar path;
+  // `Object.values` would split it into one-char "eligible" scalars.
   if (typeof value === 'string') return false;
   if (depth >= 2) return false;
   if (Array.isArray(value)) return value.every((m) => flowEligible(m, depth + 1));
   if (value === null || typeof value !== 'object') {
-    // Unreachable given the checks above (isInline already excludes null,
-    // booleans and numbers), but narrows `value` to a plain object for
-    // Object.values below without an unsafe cast -- same shape as the
-    // equivalent guard in blockLines().
+    // Unreachable (isInline excludes null and scalars); narrows without a cast.
     throw new Error(`yaml: flowEligible() called on a non-collection value: ${JSON.stringify(value)}`);
   }
   const members = Object.values(value).filter((v) => v !== undefined);
@@ -156,39 +117,25 @@ function flowEligible(value: YamlValue, depth = 0): boolean {
   return members.every((m) => flowEligible(m as YamlValue, depth + 1));
 }
 
-/**
- * A comma separates flow members and `{}`/`[]` close a flow map/sequence, so a
- * scalar carrying one of those characters would end its collection early if
- * written unquoted -- something block style never has to worry about, since it
- * has no such terminators. `needsQuote` alone therefore isn't a wide enough net
- * inside a flow collection.
- */
+/** Flow terminators (`,` `{}` `[]`) that would end a collection early if
+ *  unquoted; `needsQuote` covers block context only. */
 const FLOW_UNSAFE = /[,{}[\]]/;
 
-/**
- * Decide whether a scalar needs quoting when written inside a flow collection,
- * then hand the actual escaping to the existing `doubleQuote`/`inlineText` so
- * the two styles never diverge on how a quoted value is produced -- only on
- * when quoting is triggered.
- */
+/** Flow context adds quoting triggers but shares `doubleQuote`, so the styles
+ *  differ only in when they quote, never in how. */
 function flowScalar(value: YamlValue): string {
   if (typeof value !== 'string') return inlineText(value);
   return needsQuote(value) || FLOW_UNSAFE.test(value) ? doubleQuote(value) : value;
 }
 
-/** Render a flow-eligible collection. Scalars go through flowScalar (which itself
- *  defers to doubleQuote for escaping), so the quoting rules are extended for
- *  flow's extra terminators without duplicating how a quoted value is produced. */
+/** Render a flow-eligible collection; scalars go through flowScalar. */
 function flowText(value: YamlValue): string {
   if (isInline(value)) return flowScalar(value);
   if (Array.isArray(value)) {
     return `[${value.map((v) => flowText(v)).join(', ')}]`;
   }
   if (value === null || typeof value !== 'object') {
-    // Unreachable: flowText is only ever called on a value that flowEligible
-    // already accepted, and that rules out everything but null/array/object --
-    // null and every scalar are inline and handled above. Kept, like the
-    // matching guard in flowEligible, to narrow for Object.entries below.
+    // Unreachable: flowEligible accepted the value; narrows for Object.entries.
     throw new Error(`yaml: flowText() called on a non-collection value: ${JSON.stringify(value)}`);
   }
   const entries = Object.entries(value).filter(([, v]) => v !== undefined);
@@ -204,45 +151,25 @@ function asFlow(value: YamlValue): string | null {
 }
 
 /**
- * A literal block scalar cannot auto-detect its indentation when the first
- * non-empty content line begins with a space: YAML takes that line's leading
- * spaces as the indentation, so a later line with fewer spaces ends the
- * scalar early (js-yaml: "bad indentation of a mapping entry"), and when
- * every line begins with spaces the parse succeeds and drops them. Blank
- * lines before the first non-empty one are emitted empty by
- * blockScalarLines, so `\n*` is exactly what can precede it. The same test
- * js-yaml's own dumper applies before it writes an indentation indicator.
+ * A literal block scalar cannot auto-detect indentation when its first
+ * non-empty line starts with a space: a later shorter line ends it early, or
+ * every line loses its leading spaces. Leading blank lines are emitted empty,
+ * hence `\n*`. js-yaml's own dumper applies the same test.
  */
 const LEADING_SPACE = /^\n* /;
 
 /**
- * A multi-line string as a YAML block scalar. Only called for strings that
- * contain `\n` and no `\r` -- isInline() routes anything containing `\r` to
- * the double-quoted inline form instead, since a literal block scalar has no
- * way to represent a bare `\r` or `\r\n` pair (js-yaml silently drops the
- * `\r` bytes on load rather than erroring, which is worse than a crash).
- * Trailing whitespace on an interior line, by contrast, round-trips through
- * a literal block scalar without any special-casing -- verified against
- * js-yaml directly -- so no fallback is needed for that case.
+ * A multi-line string (with `\n`, never `\r`; see isInline) as a block scalar.
+ * Interior trailing whitespace round-trips without special-casing.
  *
- * Chomping indicator is picked from the number of trailing newlines in `s`:
- * `|-` (strip) for zero, `|+` (keep) for one or more. The brief's sketch used
- * clip (bare `|`) for "exactly one trailing newline", which silently drops
- * data in two cases verified by this module's tests: a string with two or
- * more trailing newlines (e.g. "a\n\n" round-trips to "a\n" under clip), and
- * a string that is entirely blank (e.g. "\n" round-trips to "" under clip,
- * because clip strips a wholly-blank scalar's only line along with it).
- * Keep chomping reproduces every trailing newline exactly in both cases, so
- * it is used uniformly whenever the count is nonzero -- clip is never used.
+ * Chomping: `|-` for no trailing newline, `|+` for one or more. Clip (`|`) is
+ * never used: it loses data for "a\n\n" (loads as "a\n") and "\n" (loads as "").
  *
- * Indentation indicator (YAML 1.2, 8.1.1.1) only when LEADING_SPACE says
- * auto-detection would fail, so every string that parsed before is emitted
- * byte for byte as it was. It is the content indentation relative to the
- * parent node's: a map value's parent is its key's column and a list item's
- * is its dash, both `indent - 2`; the top-level node's parent indentation is
- * -1 (9.1.4, `s-l+block-node(-1, block-in)`), so a top-level scalar at column
- * 2 carries `3`. Verified against js-yaml for the map, list and top-level
- * shapes and for keep chomping.
+ * An indentation indicator (YAML 1.2, 8.1.1.1) only when LEADING_SPACE says
+ * auto-detection would fail, so every other string is emitted unchanged. It is
+ * relative to the parent's indentation: `indent - 2` for a map value or list
+ * item, -1 for the top-level node (9.1.4, `s-l+block-node(-1, block-in)`), so a
+ * top-level scalar at column 2 carries `3`.
  */
 function blockScalarLines(s: string, indent: number, parentIndent: number): string[] {
   const pad = ' '.repeat(indent);
@@ -291,9 +218,8 @@ function emitListItem(value: YamlValue, indent: number): string[] {
     const [indicator, ...lines] = blockScalarLines(value, indent + 2, indent);
     return [`${pad}- ${indicator}`, ...lines];
   }
-  // Non-empty nested array or map: its lines are already indented by indent+2,
-  // which is exactly the width of `pad + "- "`, so the first line's padding
-  // is stripped and replaced by "- " to put it on the same line.
+  // Nested lines sit at indent+2, the width of `pad + "- "`, so the first
+  // line's padding is swapped for "- ".
   const lines = blockLines(value, indent + 2);
   const first = lines[0].slice(indent + 2);
   return [`${pad}- ${first}`, ...lines.slice(1)];
@@ -305,9 +231,7 @@ function blockLines(value: YamlValue, indent: number): string[] {
     return value.flatMap((item) => emitListItem(item, indent));
   }
   if (value === null || typeof value !== 'object') {
-    // Unreachable given the call sites (each already excludes inline values,
-    // which covers null/boolean/number/string), but keeps this function
-    // total instead of relying on an unsafe cast at every call site.
+    // Unreachable (callers exclude inline values); keeps this total without a cast.
     throw new Error(`yaml: blockLines() called on a non-collection value: ${JSON.stringify(value)}`);
   }
   const entries = Object.entries(value).filter((e): e is [string, YamlValue] => e[1] !== undefined);

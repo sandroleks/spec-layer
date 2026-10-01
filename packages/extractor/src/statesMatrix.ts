@@ -1,9 +1,8 @@
 import type { VariantAxis } from './props';
 import { isModifierAxis, isStateAxisName } from './pivot';
 
-/** A single column in the states matrix: a header label plus the axis→value
- *  overrides applied on top of the default variant to reach this column.
- *  Empty `override` for the synthesized flags "Default" column. */
+/** A header label plus the axis→value overrides applied to the default
+ *  variant; empty `override` for the synthesized flags "Default" column. */
 export interface StateColumn {
   label: string;
   override: Record<string, string>;
@@ -21,25 +20,9 @@ export interface StateMatrixInfo {
 
 /**
  * Conventional lifecycle order; unrecognized states trail in axis order.
- *
- * `hover`/`focus` are the two concepts in this vocabulary that designers
- * plausibly name either as the bare noun ("Hover", "Focus") or as the
- * adjectival participle ("Hovered", "Focused") — both spellings describe the
- * same ongoing pointer/keyboard condition, so both must resolve to the same
- * rank. `focused` already had its participle listed; `hovered` did not,
- * which meant a `Hovered` value fell through to the unrecognized bucket and
- * sorted after every recognized state (including "Disabled") instead of
- * next to "Hover" — sorting a hover state after a disabled state matches no
- * real interaction lifecycle. `hovered` is added directly after `hover`.
- *
- * This does NOT extend to `pressed`/`selected`/`filled`/`disabled`/
- * `checked`/`visited`: those are the *result* of a verb (press, select,
- * fill, disable, check, visit) rather than a state a designer would name in
- * its bare infinitive form, so only the participle belongs in the
- * vocabulary. Adding a base entry for those would recognize values
- * ("Press", "Select", …) that describe an action, not a persisted state —
- * see the doc comment on `stateBaseName` for why blanket suffix-stripping
- * to derive them automatically is explicitly avoided.
+ * `hover` and `focus` are listed as noun and participle, since designers name
+ * them both ways. `pressed`, `selected` and the like are participle only: the
+ * bare verb ("Press", "Select") names an action, not a state.
  */
 const STATE_ORDER = [
   'default', 'enabled', 'rest', 'hover', 'hovered', 'focus', 'focused',
@@ -50,28 +33,18 @@ const STATE_ORDER = [
 
 const STATE_VOCAB = new Set(STATE_ORDER);
 
-/** One character's worth of `\s`. Tested one character at a time, so no run of
- *  whitespace can make the test itself backtrack. */
+/** Tested one character at a time, so no whitespace run can backtrack. */
 const WHITESPACE = /\s/;
 
 /**
- * The state concept a prop/value names, with any trailing parenthetical
- * qualifier stripped: `active (Filled)` → `active`. Lets qualified variant
- * axes still match the state vocabulary.
+ * The state concept a prop/value names, trailing parenthetical stripped:
+ * `active (Filled)` → `active`.
  *
- * A reverse scan, not `replace(/\s*\([^)]*\)\s*$/, '')`. That regex is
- * quadratic on a long run of whitespace, or of `(`, that never reaches the
- * anchor, because the engine retries the whole tail from every start position.
- * It was CodeQL's one high-severity finding here, and the result feeds
- * `orderStates`, so it reaches `spec.states` and `specContentHash`: the scan
- * has to return the same string the regex did for every input, which
- * `redos.test.ts` pins against the regex itself.
- *
- * Read right to left, as the pattern reads: `$`, then `\s*`, then `\)`, then
- * `[^)]*` back to a `\(`, then `\s*` again. The subtlety is that `[^)]*`
- * happily contains `(`, and the engine takes the LEFTMOST start that matches,
- * so of the several `(` that may sit in that run the earliest one wins. On
- * `a ((x)` the regex strips from the first `(`, giving `a`, not `a (`.
+ * A reverse scan, because `replace(/\s*\([^)]*\)\s*$/, '')` is quadratic.
+ * The result reaches `spec.states` and `specContentHash`, so it must equal the
+ * regex for every input; `redos.test.ts` pins that. Read right to left: `$`,
+ * `\s*`, `\)`, `[^)]*` back to a `\(`, `\s*`. `[^)]*` may contain `(` and the
+ * LEFTMOST match wins, so `a ((x)` gives `a`, not `a (`.
  */
 export function stateBaseName(v: string): string {
   const lowered = v.trim().toLowerCase();
@@ -93,8 +66,7 @@ export function stateBaseName(v: string): string {
   return lowered.slice(0, cut).trim();
 }
 
-/** Rank a state-like name by conventional lifecycle order; unrecognized names
- *  sort last (stable relative to their original order via the caller). */
+/** Unrecognized names rank last; the caller keeps them stable. */
 function stateRank(v: string): number {
   const i = STATE_ORDER.indexOf(stateBaseName(v));
   return i === -1 ? STATE_ORDER.length : i;
@@ -105,11 +77,8 @@ function orderStates(values: string[]): string[] {
   return values.map((v, i) => ({ v, i })).sort((a, b) => stateRank(a.v) - stateRank(b.v) || a.i - b.i).map((x) => x.v);
 }
 
-/** An axis is state-like when named State/Status, or when ≥2 of its values sit
- *  in the state vocabulary. Exported so the ambiguous-state-axis finding in
- *  validate.ts tests exactly what detectStateMatrix tests, rather than
- *  reimplementing the same rule and risking disagreement with what the
- *  frames actually render. */
+/** Named State/Status, or ≥2 values in the state vocabulary. Exported so
+ *  validate.ts tests exactly what detectStateMatrix tests. */
 export function isStateLike(axis: VariantAxis): boolean {
   const n = axis.prop.trim().toLowerCase();
   if (isStateAxisName(axis.prop) || n === 'status') return true;
@@ -117,16 +86,14 @@ export function isStateLike(axis: VariantAxis): boolean {
   return hits >= 2;
 }
 
-/** True when a prop name itself names a state concept — used to pick out
- *  boolean state-flag axes (Hover/Disabled/…) as distinct from unrelated
- *  boolean modifiers (HasIcon, …). */
+/** Picks out boolean state-flag axes (Hover, Disabled) from unrelated
+ *  boolean modifiers (HasIcon). */
 export function isStateVocabName(prop: string): boolean {
   const n = prop.trim().toLowerCase();
   return isStateAxisName(prop) || n === 'status' || STATE_VOCAB.has(stateBaseName(prop));
 }
 
-/** The axis value that represents "flag on": prefer a case-insensitive
- *  "true" match, else the last value. */
+/** "Flag on": a case-insensitive "true", else the last value. */
 function trueValueOf(axis: VariantAxis): string {
   return axis.values.find((v) => v.toLowerCase() === 'true') ?? axis.values[axis.values.length - 1];
 }
@@ -159,8 +126,7 @@ export function detectStateMatrix(variants: VariantAxis[]): StateMatrixInfo | nu
   return { encoding: 'flags', columns, rowAxis: rowAxis?.prop ?? null, axis: null };
 }
 
-/** The variant props that the States matrix consumes: the enum state axis, or
- *  the boolean state-flag axes. Variants excludes exactly these. */
+/** The variant props the States matrix consumes; Variants excludes exactly these. */
 export function stateAxisProps(variants: VariantAxis[]): Set<string> {
   const info = detectStateMatrix(variants);
   if (!info) return new Set();

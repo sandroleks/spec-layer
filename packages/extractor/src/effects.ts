@@ -1,10 +1,7 @@
 /**
- * effects.ts — the effect layer model, and the pure converter from Figma's own
- * effect shapes into it.
- *
- * Pure and Figma-free, like everything else in this package: `effectLayerOf`
- * takes a structurally-typed plain object, so the plugin's serializers can hand
- * it a live `Effect` and a test can hand it a literal.
+ * effects.ts: the effect layer model, and the pure converter from Figma's effect
+ * shapes into it. `effectLayerOf` takes a structurally typed object, so the
+ * plugin can hand it a live `Effect` and a test a literal.
  */
 import type { RefIdentity, SerializedNode } from './tree';
 import { defaultVariant } from './anatomy';
@@ -21,25 +18,16 @@ export type EffectField = 'color' | 'radius' | 'spread' | 'offsetX' | 'offsetY';
 export type EffectBindings = Partial<Record<EffectField, RefIdentity>>;
 
 /**
- * One effect layer.
+ * One effect layer: nine concrete shapes plus `unknown`, matching Figma's
+ * `Effect` union. `radius` is not universal: noise has none, and a union that
+ * fabricated one would invent a measurement.
  *
- * Nine concrete shapes plus `unknown`, matching Figma's `Effect` union exactly.
- * `radius` is deliberately NOT universal: `NoiseEffectBase` has no radius field,
- * and a union that fabricated one to look rectangular would be inventing a
- * measurement nobody made.
+ * Each member has a single literal `type` (and `blurType`), because
+ * `Extract<EffectLayer, { type: 'b' }>` cannot pick out a member whose `type`
+ * is `'a' | 'b'`, and callers rely on that narrowing.
  *
- * Each concrete shape is its own member with a single literal `type` (and,
- * for blurs, a single literal `blurType`) rather than sharing one member across
- * a literal union. A member whose `type` field is itself `'a' | 'b'` cannot be
- * picked out by `Extract<EffectLayer, { type: 'b' }>` — TS requires the whole
- * member to be assignable to the filter, and a two-literal field never is — so
- * collapsing shadow or blur variants into one member would silently break the
- * exact narrowing idiom this module's own callers and tests rely on.
- *
- * Bindings attach to their FIELD, never to the layer, because that is where
- * Figma puts them: node-level `boundVariables.effects` is a flat `VariableAlias[]`
- * with no field or layer identity, while the real per-field bindings sit on each
- * effect object.
+ * Bindings attach to their FIELD, as Figma's do: node-level
+ * `boundVariables.effects` is a flat `VariableAlias[]` with no field identity.
  */
 export type EffectLayer =
   | { type: 'drop-shadow'; visible: boolean; blendMode: string;
@@ -74,17 +62,9 @@ export type EffectLayer =
 export interface RawEffect { type: string; [k: string]: unknown }
 
 /**
- * Trim binary-float noise off a measurement.
- *
- * Figma stores these as doubles derived from percentage and pixel inputs, so a
- * line height typed as 140 arrives as 139.9999976158142 and an alpha of 4%
- * as 0.03999999910593033. Emitted raw, an agent reproduces the noise verbatim
- * in generated CSS.
- *
- * Two places, two precisions. Geometry gets 2 decimals, which is past any
- * precision a type ramp or a shadow expresses while keeping a real 137.5 intact.
- * Alpha gets 4, because Figma's own percent field can express 0.125 and two
- * decimals would silently round it to 0.13.
+ * Trim binary-float noise off a measurement (140 arrives as 139.9999976158142),
+ * which an agent would otherwise copy into CSS. Geometry takes 2 decimals,
+ * keeping a real 137.5; alpha takes 4, since Figma's percent field expresses 0.125.
  */
 export const roundN = (n: number, places: number): number => {
   const f = 10 ** places;
@@ -107,15 +87,9 @@ const NOISE_TYPES: Record<string, 'monotone' | 'duotone' | 'multitone'> = {
 };
 
 /**
- * One raw effect as an EffectLayer.
- *
- * `bindings` is supplied by the caller rather than read here, because resolving
- * a variable id to a name is asynchronous and Figma-side; this function stays
- * pure so every shape can be covered from a literal.
- *
- * An unrecognized `type` becomes `{ type: 'unknown', figma_type }` rather than
- * being dropped. Noise, texture and glass are recent additions and there will be
- * more; a shape we cannot describe is still worth making visible.
+ * One raw effect as an EffectLayer. `bindings` comes from the caller, since
+ * resolving a variable id is async and Figma-side. An unrecognized `type`
+ * becomes `{ type: 'unknown', figma_type }`, never dropped.
  */
 export function effectLayerOf(raw: RawEffect, bindings?: EffectBindings): EffectLayer {
   const r = raw as Record<string, never> & RawEffect;
@@ -136,15 +110,13 @@ export function effectLayerOf(raw: RawEffect, bindings?: EffectBindings): Effect
         color: rgbaOf(shadow.color),
         offset: vec2Of(shadow.offset),
         radius: round2(shadow.radius),
-        // Optional on Figma's own type. An absent spread is an absent key, not
-        // a fabricated 0, so a reader cannot mistake "not set" for "set to 0".
+        // An absent spread is an absent key, never a fabricated 0.
         ...(shadow.spread !== undefined ? { spread: round2(shadow.spread) } : {}),
         ...(shadow.showShadowBehindNode !== undefined
           ? { showShadowBehindNode: shadow.showShadowBehindNode } : {}),
         ...bound,
       };
-      // Two returns, not a ternary on `type`, so each object's `type` field is
-      // one literal — the shape the split union (and Extract) requires.
+      // Two returns, so each object's `type` is one literal, as the split union requires.
       return raw.type === 'DROP_SHADOW'
         ? { type: 'drop-shadow', ...shared }
         : { type: 'inner-shadow', ...shared };
@@ -158,8 +130,7 @@ export function effectLayerOf(raw: RawEffect, bindings?: EffectBindings): Effect
       };
       const isLayer = raw.type === 'LAYER_BLUR';
       const radiusBinding = bindings?.radius ? { bindings: { radius: bindings.radius } } : {};
-      // Two returns per branch, not a shared `type` const, for the same reason
-      // as the shadow case: the union needs one literal `type` per member.
+      // Two returns per branch, as in the shadow case.
       if (blur.blurType === 'PROGRESSIVE' && blur.startOffset && blur.endOffset) {
         const progressive = {
           blurType: 'progressive' as const, visible, radius: round2(blur.radius),
@@ -239,11 +210,9 @@ export interface NodeEffects {
 }
 
 /**
- * Effect layers on the DEFAULT variant, path-keyed.
- *
- * Walks exactly the way extractGaps does (default variant, hidden subtrees
- * INCLUDED) so an entry here and a gap there always describe the same set of
- * nodes. rawValues walks with skipInvisible and would not line up.
+ * Effect layers on the DEFAULT variant, path-keyed. Walks as extractGaps does
+ * (hidden subtrees included) so both describe the same nodes; rawValues skips
+ * invisible ones and would not line up.
  */
 export function extractNodeEffects(root: SerializedNode): NodeEffects[] {
   const out: NodeEffects[] = [];

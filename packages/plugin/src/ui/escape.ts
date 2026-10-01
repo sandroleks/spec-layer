@@ -1,11 +1,5 @@
-/**
- * HTML-escapes text that lands inside a markup template string.
- *
- * Attribute values are always double-quoted in this UI, so these four
- * characters are the whole set: an unescaped single quote cannot end an
- * attribute here. Nine screen modules carried their own copy of this
- * function; one place means one test and one place to widen it.
- */
+/** HTML-escapes text for a markup template. Attributes are always
+ *  double-quoted here, so these four characters are the whole set. */
 export function esc(value: string): string {
   return value
     .replace(/&/g, '&amp;')

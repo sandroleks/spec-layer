@@ -5,9 +5,8 @@ import type {
 import { send } from './actions';
 import { PROXY_URL, type ProxyAuth } from './proxy';
 
-// One in-flight image request at a time; resolved by ui-vnext.ts on 'componentImage'.
-// The timer is cleared on resolve so a stale timeout can never null-resolve a
-// newer request (see plan review). settle() is idempotent and self-clearing.
+// One in-flight image request, resolved by ui-vnext.ts on 'componentImage'.
+// settle() clears the timer, so a stale timeout never null-resolves a newer one.
 type ImageResult = { base64: string; mediaType: string } | null;
 let pendingImage: ((r: ImageResult) => void) | null = null;
 let pendingTimer: ReturnType<typeof setTimeout> | null = null;
@@ -52,13 +51,8 @@ export async function generateProse(
   });
 }
 
-/**
- * One AI call for every colour group in a foundation build.
- *
- * Deliberately one request rather than one per group: a document with six groups
- * costs one generation, which is what the tab's copy promises. Shares the prose
- * cache store, so re-running an unchanged build is free.
- */
+/** One AI call for every colour group, as the tab's copy promises. Shares the
+ *  prose cache, so an unchanged rebuild is free. */
 export async function generateGroupDescriptions(
   input: GroupDraftInput,
   auth: ProxyAuth,

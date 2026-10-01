@@ -1,14 +1,7 @@
 /**
- * header.ts — the 48px utility header.
- *
- * Figma draws the plugin name and icon in its own title bar, so this holds
- * only high-value utilities: quick search, the AI writing allowance, and the
- * theme control. The search control keeps the same position and size on every
- * screen.
- *
- * The allowance is rendered once and repainted in place. Rebuilding it would
- * let the header change height between the loading and loaded states, which
- * the direction explicitly forbids.
+ * The 48px utility header: search, the AI writing allowance, and the theme
+ * control (Figma's title bar already shows the plugin name). The allowance is
+ * repainted in place, so the header never changes height between states.
  */
 
 import type { AllowanceState } from '../viewModel/contracts';
@@ -33,8 +26,7 @@ export function headerMarkup(): string {
   return (
     '<header class="sl-utility-header">' +
 
-    // No shortcut chip. The Cmd/Ctrl+K binding in ui-vnext.ts is unaffected;
-    // only the badge is gone.
+    // No shortcut chip; Cmd/Ctrl+K still works (ui-vnext.ts).
     `<button class="sl-header-search" id="${HEADER_IDS.search}" type="button" ` +
     'aria-label="Search your docs">' +
     `${icon('search', 15)}<span>Search</span>` +
@@ -43,9 +35,8 @@ export function headerMarkup(): string {
     '<div class="sl-ai-allowance" data-state="loading">' +
     `<button class="sl-allowance-summary" id="${HEADER_IDS.allowance}" type="button" ` +
     'aria-label="AI writing: checking your plan. Open License.">' +
-    // The ring and the Pro check share one cell. Both are always present and
-    // CSS picks by [data-state], which keeps renderAllowance a repaint rather
-    // than a rebuild.
+    // The ring and Pro check are both always present; CSS picks by [data-state],
+    // so renderAllowance only repaints.
     '<span class="sl-allowance-status">' +
     '<svg class="sl-allowance-ring" viewBox="0 0 26 26" aria-hidden="true">' +
     '<circle data-track cx="13" cy="13" r="10"></circle>' +
@@ -57,8 +48,7 @@ export function headerMarkup(): string {
     '<span class="sl-allowance-copy"><strong>AI writing</strong>' +
     '<small>Checking your plan</small></span>' +
     '</button>' +
-    // This is deliberately a sibling, not a nested interactive element: the
-    // allowance summary still opens License while Upgrade goes to checkout.
+    // A sibling, not nested: the summary opens License while Upgrade goes to checkout.
     '<button class="sl-allowance-action" type="button" data-license-open="upgrade" ' +
     'aria-label="Upgrade to Pro, opens in your browser" hidden>Upgrade</button>' +
     '</div>' +
@@ -70,10 +60,7 @@ export function headerMarkup(): string {
   );
 }
 
-/**
- * Repaint the allowance control in place. `root` is the header element; the
- * control itself is looked up by id so callers cannot pass the wrong node.
- */
+/** Repaint the allowance control in place; `root` is the header, the control found by id. */
 export function renderAllowance(root: HTMLElement, state: AllowanceState): void {
   const button = root.querySelector<HTMLButtonElement>(`#${HEADER_IDS.allowance}`);
   // Loud rather than invisible: a `root` that does not contain the control is

@@ -1,9 +1,6 @@
 /**
- * foundationOverview.ts: the deterministic facts the collection overview
- * prompt is built from. Names, modes and alias counts only; the model is told
- * exactly these and nothing else about the collection as a whole.
- *
- * Pure: no Figma, no DOM.
+ * The deterministic facts the collection overview prompt is built from: names,
+ * modes and alias counts, and nothing else about the collection as a whole.
  */
 import type { FoundationSpec } from './foundation';
 import { compareCodeUnits } from './v5/diagnostics';
@@ -11,11 +8,9 @@ import { compareCodeUnits } from './v5/diagnostics';
 export interface AliasCount { collection: string; count: number }
 
 /**
- * How many variables of `collectionId` alias into each other collection. A
- * variable counts once per target collection even when several of its modes
- * alias into that collection; aliases into its own collection and literal
- * values do not count. Sorted by count descending, then by name by code unit,
- * so the same spec always yields the same list and the same prompt bytes.
+ * How many variables of `collectionId` alias into each other collection, once
+ * per target however many modes alias there. Sorted by count descending, then
+ * name by code unit, so the same spec yields the same prompt bytes.
  */
 export function collectionAliasCounts(spec: FoundationSpec, collectionId: string): AliasCount[] {
   const collection = spec.collections.find((c) => c.id === collectionId);

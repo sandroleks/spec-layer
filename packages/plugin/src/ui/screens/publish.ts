@@ -1,15 +1,8 @@
 /**
- * publish.ts — the Publish screen.
- *
- * Presentation only, the same split screens/library.ts has against
- * viewModel/library.ts: `ui/publish.ts` (same basename, one directory up) owns
- * publish state, the bundle, and the proxy calls. This module turns a
- * PublishState into markup and knows nothing else.
- *
- * The screen is deliberately short. It states where the library stands, hands
- * over the two things a reader came for (the developer command and the agent
- * prompt, each visible in full with its own Copy), and leaves the explanation
- * of publishing and pulling to the documentation the footer links to.
+ * The Publish screen, presentation only: `ui/publish.ts` owns the state, the
+ * bundle and the proxy calls. The screen states where the library stands, hands
+ * over the developer command and the agent prompt, and leaves the explanation
+ * to the documentation the footer links to.
  */
 
 import { icon } from '../shell/icons';
@@ -29,11 +22,8 @@ import { isSemver, type Bump } from '@spec-layer/extractor';
 import { esc } from '../escape';
 
 /**
- * The one sentence of explanation, shown only before the first publish, where
- * the setup blocks would otherwise be. Once there is a library the blocks
- * speak for themselves and the footer's documentation link carries the rest.
- * Names both audiences: the command is for a developer, the prompt for a
- * coding agent, and neither is the whole point.
+ * The one sentence of explanation, shown only before the first publish in place
+ * of the setup blocks. Names both audiences: developers and coding agents.
  */
 const BEFORE_FIRST_PUBLISH =
   'Publish this file’s component and foundation docs so developers and ' +
@@ -41,12 +31,9 @@ const BEFORE_FIRST_PUBLISH =
   'first publish.';
 
 /**
- * The footer's primary is always the Publish action (the download has its own
- * button in the scroll body), but the two intents share one collect, so this
- * button also goes busy and disables while a download runs. Saying
- * "Publishing…" then would claim an action the user never took: `intent`
- * (already in `state` for `skippedMessage`, see ui/publish.ts) says which
- * round trip is actually in flight, so the busy label can say so honestly.
+ * Publish and download share one collect, so the primary goes busy during a
+ * download too; `intent` says which round trip runs, so the label never claims
+ * "Publishing…" for an action the user never took.
  */
 function busyLabel(state: PublishState): string {
   if (state.intent === 'download') return 'Downloading…';
@@ -55,18 +42,10 @@ function busyLabel(state: PublishState): string {
 }
 
 /**
- * Back control, the title, and a status pill.
- *
- * The title is the act alone, "Publish", like the Library footer button that
- * opens this screen. It used to say "for developers", which named half the
- * audience: the agent prompt below is for a coding agent. The pill is the
- * status at a glance; the meta line under the header carries the date.
- *
- * The `<small>` eyebrow slot is deliberately unused. It means "what kind of
- * thing the h1 names" ("Selected component" above a component's name), and a
- * clickable "Library" breadcrumb there would give one slot a second,
- * navigational category — the mistake the button-icon contract in
- * design-system/components.css was written to stop.
+ * Back control, the title, and a status pill. The `<small>` eyebrow stays
+ * unused: a clickable "Library" breadcrumb there would give the slot a second,
+ * navigational meaning, which the button-icon contract in
+ * design-system/components.css forbids.
  */
 export function publishHeaderMarkup(state: PublishState): string {
   // Neutral until the file's identity has arrived: "Not published" for a
@@ -84,18 +63,15 @@ export function publishHeaderMarkup(state: PublishState): string {
 }
 
 /**
- * One muted line under the header: when the library was last published, and
- * on a free plan how many free publishes are left. Each part appears only when it
- * has a true value. "Not recorded" covers a library published by a build
- * before the date was stored; the next publish records one. Never a guessed
- * date. `locale` is for deterministic tests; the plugin passes none.
+ * One muted line: when the library was last published and, on a free plan, the
+ * publishes left, each only when known. "Not recorded" covers a library
+ * published before the date was stored; never a guessed date. `locale` is for tests.
  */
 function metaMarkup(state: PublishState, allowance: PublishAllowance, locale?: string): string {
   const parts: string[] = [];
   if (state.libraryId) {
     const when = state.lastPublishedAt ? formatPublishedAt(state.lastPublishedAt, locale) : null;
-    // The same source the Version block reads, so the two never name
-    // different versions.
+    // The Version block's source, so the two never name different versions.
     const version = currentVersionOf(state);
     if (version) {
       parts.push(
@@ -121,11 +97,9 @@ const RANK: Record<Bump, number> = { patch: 0, minor: 1, major: 2 };
 const plural = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`;
 
 /**
- * One line under the next version: what kind of changes drove it. Counts come
- * from the change list, so the line and the list can never disagree. An empty
- * list does not mean nothing changed (the content did, or there would be no
- * next version; the server may just have no list, as for a stored bundle it
- * cannot read), so it says the list is empty rather than the changes.
+ * What kind of changes drove the next version, counted from the change list so
+ * the two never disagree. An empty list says the list is empty, not that
+ * nothing changed: the server may have no list for a stored bundle.
  */
 export function proposalReason(proposal: DryRunResult): string {
   let added = 0; let removed = 0; let renamed = 0; let changed = 0;
@@ -146,12 +120,9 @@ export function proposalReason(proposal: DryRunResult): string {
 const BUMP_WORD: Record<Bump, string> = { patch: 'Patch', minor: 'Minor', major: 'Major' };
 
 /**
- * The raise control: Patch, Minor, Major, plain words only. A choice below
- * the dry run's minimum is disabled and explains itself in a tooltip rather
- * than in small print inside the button. When the minimum is already major
- * there is nothing to choose, so no control is drawn; the line above it
- * already says why. Each button sits in a span (the segmented control styles
- * `> span > button` too) because the tooltip needs a positioned wrapper.
+ * The raise control. A choice below the dry run's minimum is disabled with a
+ * tooltip, which needs each button in a positioned span; at a major minimum
+ * there is nothing to choose, so no control is drawn.
  */
 function bumpControl(minimum: Bump, chosen: Bump | null): string {
   if (minimum === 'major') return '';
@@ -169,15 +140,9 @@ function bumpControl(minimum: Bump, chosen: Bump | null): string {
 }
 
 /**
- * The two ways out of the version block: re-run the check this session
- * holds, and open the history. "Check again" stays on screen, and stays
- * focusable, while a check is already running or the screen is busy some
- * other way: `aria-disabled`, not the `disabled` attribute, so a reader who
- * had focus on it (or is tabbing through) never loses it to `<body>` the
- * moment it needs to look inactive. The controller's own guard
- * (`onPublishRecheck`) already makes a click while busy a no-op, so nothing
- * else has to. Both are small secondaries so neither competes with the
- * footer's primary.
+ * Check again and Version history. While busy, Check again is `aria-disabled`,
+ * not `disabled`, so a focused reader never loses focus to `<body>`;
+ * `onPublishRecheck` already ignores a click while busy.
  */
 function versionActions(state: PublishState): string {
   const recheckDisabled = state.proposalStatus === 'loading' || isPublishBusy(state);
@@ -191,15 +156,10 @@ function versionActions(state: PublishState): string {
 }
 
 /**
- * Every proposal note states an answer as of when it was computed, not a
- * live fact: a variable, style, or layer edited straight on the canvas is
- * invisible to this session until the next dry run, so the wording never
- * reads as a present-tense claim about the file right now. Worded per
- * source (see `PublishState.proposalSource`), since a proposal born from a
- * publish already reflects exactly what that publish just sent, and only a
- * canvas edit made since could make it stale, while a dry run's answer is
- * only ever as of the moment it ran. "Check again" (above) is the way to
- * ask again after such an edit.
+ * A proposal is an answer as of when it was computed: canvas edits are
+ * invisible until the next dry run, so the note never claims the file's present
+ * state. Worded per `proposalSource`, since a publish's own proposal reflects
+ * exactly what it sent.
  */
 function checkedNote(state: PublishState): string {
   return state.proposalSource === 'publish'
@@ -210,11 +170,9 @@ function checkedNote(state: PublishState): string {
 const INVALID_FIRST_VERSION_HINT = 'Use three numbers, like 1.0.0.';
 
 /**
- * The version block: the next version and one line of why, the raise
- * control, the note, and the way to the history. The meta line under the
- * header already names the current version, so the block never repeats it.
- * Every line states only what the proxy or the rules said, never a guessed
- * version.
+ * The version block: the next version and why, the raise control, the note,
+ * and the history. Every line states only what the proxy or the rules said,
+ * never a guessed version.
  */
 function versionBlock(state: PublishState): string {
   const head = (extra = '') =>
@@ -227,10 +185,8 @@ function versionBlock(state: PublishState): string {
   );
   let body: string;
   if (!state.infoKnown) {
-    // Whether this file has a library is not known yet, so neither a first
-    // version field nor a next version can be shown without guessing. The
-    // header pill and the disabled footer button already read "Checking…";
-    // a third copy here said the same thing a third way.
+    // Unknown whether this file has a library, so nothing can show without
+    // guessing; the pill and footer already read "Checking…".
     return '';
   }
   if (!state.libraryId) {
@@ -253,15 +209,11 @@ function versionBlock(state: PublishState): string {
   if (state.proposalStatus === 'loading') {
     body = note(`Checking what changed since ${esc(since)}<span class="sl-work-dots" aria-hidden="true"><i></i><i></i><i></i></span>`);
   } else if (state.proposalStatus === 'failed') {
-    // A dry run that could not be computed still lets the publish go through:
-    // the proxy applies the minimum bump on its own, so the reader is told
-    // that rather than left staring at a blank block.
+    // The publish still goes through, since the proxy applies the minimum bump
+    // itself, so the reader is told that.
     body = note(PROPOSAL_FAILED_MESSAGE) + noteField;
   } else if (!state.proposal) {
-    // No failure and no answer yet: either nothing has asked (a fresh publish
-    // just landed) or the reply has not arrived. Neutral, not a failure
-    // claim, and points at the control that gets one rather than at a vague
-    // "try again".
+    // Nothing has asked yet or the reply is out: neutral, not a failure claim.
     body = note('Press Check again to see what changed.') + noteField;
   } else if (state.proposal.unchanged) {
     body = note(`Nothing changed since ${esc(since)}. ${checkedNote(state)}`);
@@ -286,11 +238,7 @@ function versionBlock(state: PublishState): string {
   return `<section class="sl-publish-block sl-publish-version">${head(versionActions(state))}${body}</section>`;
 }
 
-/**
- * A labelled block with the full text visible and one Copy. Both blocks have
- * the same shape so the reader learns it once: the developer's command and
- * the agent's prompt are peers, not a primary and a variant.
- */
+/** A labelled block with the full text and one Copy; command and prompt are peers. */
 function copyBlock(kind: 'command' | 'agent', label: string, text: string): string {
   return (
     '<section class="sl-publish-block">' +
@@ -303,15 +251,9 @@ function copyBlock(kind: 'command' | 'agent', label: string, text: string): stri
 }
 
 /**
- * The no-account route. Sits below the setup blocks in every state, including
- * before the first publish, because a snapshot depends on nothing the publish
- * service holds. Disabled while a collect is in flight, since both actions
- * share one round trip.
- *
- * The format line says how the zip writes components and where that is set.
- * The setting lives in Settings, not here: a second control on this screen
- * would read as a separate choice. It shows in both formats, so someone who
- * only ever downloads still learns the choice exists.
+ * The no-account route, shown in every state since a snapshot needs nothing
+ * the publish service holds; disabled during a collect, which it shares. The
+ * format line points to Settings rather than adding a second control here.
  */
 function downloadBlock(busy: boolean, format: ComponentFormat): string {
   return (
@@ -330,23 +272,17 @@ function downloadBlock(busy: boolean, format: ComponentFormat): string {
 }
 
 /**
- * The meta line, the setup blocks once there is a key, the rotate action, and
- * an error line when the last action failed. Successes are toasts (see the
- * controller's `notify`), so nothing here restates them. Everything varies in
- * height with state, which is why it lives in the scroll body rather than the
- * fixed-height footer band.
+ * The meta line, the setup blocks once there is a key, and the rotate action:
+ * all vary in height with state, so they live in the scroll body.
  */
 export function publishScrollMarkup(
   state: PublishState, allowance: PublishAllowance, locale?: string,
   componentFormat: ComponentFormat = DEFAULT_COMPONENT_FORMAT,
 ): string {
   const busy = isPublishBusy(state);
-  // Rotating during an upload would race the publish on the server, so the
-  // control is disabled while the footer reports work in progress. Its own
-  // row, apart from the copy actions: the one destructive control on the
-  // screen. `is-danger` sets only the label colour, which composes with the
-  // secondary tone's surface and border instead of replacing them the way
-  // `data-tone="danger"` would.
+  // Disabled during an upload, which rotating would race on the server. Its own
+  // row as the one destructive control; `is-danger` colours only the label,
+  // keeping the secondary tone's surface and border.
   const rotateRow =
     '<div class="sl-publish-rotate">' +
     '<button class="sl-button is-danger" data-tone="secondary" type="button" ' +
@@ -359,16 +295,11 @@ export function publishScrollMarkup(
       copyBlock('agent', 'AI agent setup', agentSetupMessage(state.libraryId, state.pullKey, componentFormat)) +
       rotateRow;
   } else if (state.libraryId) {
-    // The id lives in the file; the key lives on the device that published or
-    // rotated last, because the server hands it out only then and the file is
-    // readable by every editor. Both halves are needed for a command a
-    // developer can actually run, so with only the id the screen says where
-    // the key is and names both ways out: ask, or rotate. Rotating from here
-    // works only with the license key the library was published with, since
-    // a Figma identity alone must also present the current pull key, so the
-    // sentence says so. This is the one place the rotate consequence is
-    // stated, since rotating from here cuts off developers the reader may not
-    // know about.
+    // The id lives in the file; the key only on the device that last published
+    // or rotated, since the server hands it out only then and every editor can
+    // read the file. Rotating here needs the original license key (a Figma
+    // identity must also present the pull key), and this is the one place the
+    // rotate consequence is stated.
     body =
       '<section class="sl-publish-block">' +
       '<div class="sl-publish-block-head"><h2>Developer setup</h2></div>' +
@@ -382,7 +313,7 @@ export function publishScrollMarkup(
   } else if (state.infoKnown) {
     body = `<p class="sl-publish-intro">${BEFORE_FIRST_PUBLISH}</p>`;
   } else {
-    body = ''; // the header pill and the footer button already say the identity is being read
+    body = ''; // the pill and footer already say the identity is being read
   }
   // Room to scroll the last control out from under the floating error.
   const hasError = state.status === 'error' && Boolean(state.message);
@@ -397,20 +328,14 @@ export function publishScrollMarkup(
 }
 
 /**
- * The way to the docs, then the one primary, plus a progress line while a
- * publish runs.
+ * The docs link, then the one primary, plus a progress line while a publish
+ * runs. The docs link is an anchor with target _blank, the plugin's way out of
+ * the iframe (Settings > About does the same).
  *
- * Documentation is a footer secondary rather than a link in the body: the
- * body no longer explains publishing, so the explanation needs a permanent,
- * findable exit. An anchor with target _blank is the plugin's established way
- * to leave the iframe (Settings > About does the same).
- *
- * The progress line is why the primary can keep a single static glyph in
- * every state (see the spinner exception in the button-icon contract): the
- * screen reports the work, so the glyph never has to. Labels follow
- * docs/plugin-voice-and-copy.md — the busy label is the present participle plus
- * an ellipsis, the same button working rather than a new action, and the
- * progress labels carry no ellipsis because `sl-work-dots` animates one.
+ * The progress line lets the primary keep one static glyph (see the spinner
+ * exception in the button-icon contract). Labels follow
+ * docs/plugin-voice-and-copy.md: the busy label is a present participle plus an
+ * ellipsis; progress labels carry none because `sl-work-dots` animates one.
  */
 export function publishFooterMarkup(state: PublishState): string {
   const busy = isPublishBusy(state);
@@ -424,27 +349,19 @@ export function publishFooterMarkup(state: PublishState): string {
       }) +
       '</div>'
     )
-    // Errors stay on screen until the next action; a toast would be gone
-    // before the reader looked up from the button. They float in the same
-    // slot as progress, just above the button that failed: at the end of the
-    // body they sat below the fold on any library with setup blocks.
+    // Errors stay on screen until the next action, floating just above the
+    // button that failed; a toast would be gone before the reader looked up.
     : state.status === 'error' && state.message
       ? '<div class="sl-footer-progress">' +
         `<div class="sl-banner sl-footer-error" data-tone="danger" role="alert">${esc(state.message)}</div>` +
         '</div>'
       : '';
-  // The primary names the version a publish would make, so the reader never
-  // has to hold the raise control's choice in their head to know what
-  // clicking it does. Silent when there is nothing to propose yet (no
-  // library) or nothing to publish (the dry run reported unchanged):
-  // `nextVersionFor` already carries that guard.
+  // The primary names the version a publish would make; `nextVersionFor`
+  // returns nothing with no library or nothing to publish.
   const next = busy ? null : nextVersionFor(state);
-  // Before the file's identity has arrived, "Publish library" would be a
-  // first-publish claim this task exists to remove, right under a
-  // "Checking…" pill and version block. The button matches them instead,
-  // disabled, until infoKnown says which one is true. Busy still wins first:
-  // the download action needs no identity and can be running (and disabled
-  // for its own honest reason, see busyLabel) while infoKnown is still false.
+  // Before the identity arrives, "Publish library" would be a first-publish
+  // claim, so the button reads "Checking…", disabled. Busy wins first: a
+  // download needs no identity and can run while infoKnown is false.
   const label = busy
     ? busyLabel(state)
     : !state.infoKnown ? 'Checking…' : next ? `Publish ${esc(next)}` : 'Publish library';
@@ -479,10 +396,8 @@ export function renderPublishScreen(
 }
 
 /**
- * Reflects the first-version field's validity without a repaint. Typing used
- * to redraw the whole screen per keystroke and put the caret at the end.
- * Trims the way onInitialVersionInput does, so the two never disagree.
- * Returns false when the field is not on screen.
+ * Reflects the first-version field's validity without a repaint, which would
+ * move the caret. Trims like onInitialVersionInput. False when the field is absent.
  */
 export function patchInitialVersion(root: ParentNode, value: string): boolean {
   const input = root.querySelector<HTMLInputElement>('[data-publish-initial-version]');

@@ -2,17 +2,9 @@ import { memoizedResolver } from './resolverMemo';
 import type { NodeResolver } from './serialize';
 import type { SerializedNode } from '@spec-layer/extractor';
 
-/**
- * One resolver memo per Library drift pass.
- *
- * Every component doc in a file binds the same few dozen variables and
- * styles, so a memo per `requestDrift` (the shape before this) refetched
- * them once per document. The publish pass already holds one memo for its
- * whole batch; this does the same for drift, keyed by the pass id the UI
- * sends with each request. A new id replaces the memo, which is what bounds
- * its lifetime: resolverMemo.ts warns against a memo that outlives a pass,
- * because a rename between passes would serve the old name.
- */
+/** One resolver memo per Library drift pass, keyed by the UI's pass id. A new
+ *  id replaces it: a memo that outlived its pass would serve a renamed
+ *  variable's old name. */
 export class DriftPassResolvers {
   private held: { passId: string; memo: NodeResolver } | null = null;
 

@@ -1,19 +1,14 @@
 /**
- * roving.ts — keyboard movement inside a tab strip or a radio group.
- *
- * One pure rule, so both composite widgets on Settings move the same way and
- * the rule is testable without a DOM. The caller owns focus and state; this
- * only answers "which item does this key land on".
+ * Keyboard movement inside a tab strip or a radio group, shared by both
+ * composite widgets on Settings. The caller owns focus and state.
  */
 
 export type RovingAxis = 'horizontal' | 'both';
 
 /**
- * The index `key` moves to among `count` items, or null when this widget does
- * not answer that key (the caller then lets the event through, so Tab still
- * leaves the widget). Horizontal answers Left and Right; `both` also answers
- * Up and Down, the way a radio group does. Moves wrap at the ends; Home and End
- * go to the ends. A stale `current` is clamped first.
+ * The index `key` moves to, or null when this widget does not answer that key
+ * (the event then passes through, so Tab still leaves the widget). `both` adds
+ * Up and Down, as a radio group does. Moves wrap; a stale `current` is clamped.
  */
 export function rovingIndex(
   current: number,

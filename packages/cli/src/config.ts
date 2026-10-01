@@ -13,15 +13,13 @@ export const DEFAULT_COMPONENT_SPECS_DIR = 'component-specs';
 const CONFIG_NAME = 'speclayer.json';
 
 /**
- * The swap in files.ts deletes outDir wholesale, so outDir is only ever a
- * relative path under the working directory. `join(cwd, '/abs')` used to
- * nest an absolute --out under cwd silently while every message named the
- * absolute path; refusing here means init and setup never record such a
- * value either. The same sentence is thrown by assertReplaceable in files.ts.
+ * The swap in files.ts deletes outDir wholesale, so outDir must be a relative
+ * path under the working directory. assertReplaceable in files.ts throws the
+ * same sentence.
  */
 export const OUT_DIR_RULE = 'The output directory must be a relative path inside the current directory: not ".", not a parent of it, and not an absolute path.';
 
-/** The same rule, refusing a value typed as `--out`, so the reader knows which input to change. */
+/** The same rule for a typed `--out`, so the reader knows which input to change. */
 export const OUT_FLAG_RULE = '--out must be a relative path inside the current directory: not ".", not a parent of it, and not an absolute path.';
 
 function outDirAllowed(cwd: string, value: string): boolean {
@@ -31,11 +29,9 @@ function outDirAllowed(cwd: string, value: string): boolean {
 }
 
 /**
- * Where CLI 0.10.0 and earlier really wrote an absolute `outDir` from
- * speclayer.json. They recorded `init --out /x` unchecked and then joined it
- * under the working directory, so every pull landed in `<cwd>/x`. Returns that
- * directory as a relative path with `/` separators, or null when the value is
- * not absolute or the joined path is not a usable output directory either.
+ * Where CLI 0.10.0 and earlier really wrote an absolute `outDir`: joined under
+ * the working directory, so `/x` landed in `<cwd>/x`. Returns that relative path
+ * with `/` separators, or null when not absolute or not usable either.
  */
 export function legacyOutDir(cwd: string, value: string): string | null {
   if (!isAbsolute(value)) return null;
@@ -56,9 +52,8 @@ function configOutDirRefusal(cwd: string, value: string): string {
 }
 
 /**
- * The output directory for a run, as typed: the flag, then the config, then
- * the default. A refused flag throws OUT_FLAG_RULE; a refused config value
- * names speclayer.json and its field, so the reader can tell where it came from.
+ * The run's output directory, as typed: the flag, then the config, then the
+ * default. A refused config value names speclayer.json, so its source is clear.
  */
 export function resolveOutDir(cwd: string, out: string | undefined, configOutDir: string | undefined): string {
   if (out !== undefined) {
@@ -75,12 +70,9 @@ export function resolveOutDir(cwd: string, out: string | undefined, configOutDir
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
 
 /**
- * The API origin, checked before any request carries the key. The key
- * travels in the Authorization header of every request, so plain http is
- * refused except to this machine, where a local proxy build is the only
- * thing listening. A trailing slash is dropped: it would build "//v1/..."
- * paths the proxy router 404s on. `source` names the input the value came
- * from, so a refusal points at the flag or the variable that holds it.
+ * The API origin, checked before any request carries the key. The key rides in
+ * every Authorization header, so plain http is refused except to localhost. A
+ * trailing slash is dropped, since "//v1/..." paths 404 in the proxy router.
  */
 export function apiOrigin(value: string, source: '--api' | 'SPEC_LAYER_API' = '--api'): string {
   let url: URL;
@@ -96,11 +88,8 @@ export function apiOrigin(value: string, source: '--api' | 'SPEC_LAYER_API' = '-
 }
 
 /**
- * The id shape the publish service issues: `newLibraryId` in
- * packages/proxy/src/libraries.ts writes `lib_` plus 24 hex characters, and
- * its `LIBRARY_ID_RE` accepts nothing else. Checked at init and setup so a
- * typo is caught before it is written to speclayer.json and the server is
- * left to answer 404.
+ * The id shape the proxy issues (`newLibraryId` and `LIBRARY_ID_RE` in
+ * packages/proxy/src/libraries.ts), so a typo is caught before speclayer.json.
  */
 export const LIBRARY_ID_RE = /^lib_[0-9a-f]{24}$/;
 
@@ -159,11 +148,8 @@ function parseDtcg(value: unknown): DtcgOptions {
 }
 
 /**
- * `componentSpecsDir` is the visible directory the component briefs are
- * written to, relative to the working directory. Normalized so a value typed
- * or committed on Windows (backslashes, a leading `./`) means the same thing
- * as it does on every other platform, and so a trailing slash does not make
- * two settings compare as different when they name the same directory.
+ * The visible briefs directory, relative to the working directory. Normalized
+ * so backslashes, a leading `./`, or a trailing slash name the same directory.
  */
 function parseComponentSpecsDir(value: unknown): string {
   if (typeof value !== 'string' || value.length === 0) throw new Error('speclayer.json "componentSpecsDir" must be a non-empty string.');
@@ -193,7 +179,6 @@ function parseOutputs(value: unknown): OutputConfig[] {
   if (!Array.isArray(value)) throw new Error('speclayer.json "outputs" must be an array.');
   const outputs = value.map((v, i) => parseOutput(v, i));
 
-  // Check for duplicate platform/format pairs
   const seen = new Set<string>();
   for (const output of outputs) {
     const key = `${output.platform}/${output.format}`;
@@ -247,22 +232,14 @@ export function writeConfig(
 
 export interface ResolvedOptions {
   libraryId: string | null; outDir: string; api: string; key: string | null;
-  /** Where component briefs are written; the config's value or the default. */
   componentSpecsDir: string;
-  /** The config's componentSpecsFormat, when it has one; pull applies the flag first and the default last. */
+  /** The config's value only; pull applies the flag first and the default last. */
   componentSpecsFormat?: ComponentFormat;
-  /** The config's include block, when it has one, for pull to fall back on. */
   include?: Selection;
-  /** The config's dtcg block, when it has one, for pull to pass through to writeBundleFiles. */
   dtcg?: DtcgOptions;
-  /** The config's platforms block, when it has one, for pull and skill to read before detecting. */
   platforms?: Platform[];
-  /** The config's outputs block, when it has one, for pull to write deliverables from. */
   outputs?: OutputConfig[];
-  /**
-   * Set when a credential file exists but was issued for another library, so
-   * the caller can say that instead of reporting a plain missing key.
-   */
+  /** The stored key's library, when it was issued for another one. */
   storedKeyFor?: string;
 }
 
@@ -277,20 +254,15 @@ export function resolveOptions(
   const libraryId = flags.id ?? config?.libraryId ?? manifestLibraryId(join(cwd, outDir));
 
   // Read the credential file only when nothing else supplies a key, so a
-  // corrupt file cannot break a run that passed --key or set SPEC_LAYER_KEY.
-  //
-  // `||` rather than `??`: an exported but empty SPEC_LAYER_KEY (a CI secret
-  // that resolved to nothing, a stale shell profile line) is no key at all. A
-  // `??` here would disagree with the falsy check below, read a perfectly good
-  // stored key off disk, and then discard it for the empty string.
+  // corrupt file cannot break a run that passed one. `||`, not `??`: an
+  // exported but empty SPEC_LAYER_KEY is no key at all.
   const supplied = flags.key || env.SPEC_LAYER_KEY || null;
   let storedKey: string | null = null;
   let storedKeyFor: string | undefined;
   if (!supplied) {
     const stored = readCredentials(cwd);
     if (stored) {
-      // An empty stored key is normalised the same way, so `key` is null when
-      // there is no usable key rather than an empty string that reads as one.
+      // An empty stored key is no key either, so `key` is null, never "".
       if (libraryId && stored.libraryId === libraryId) storedKey = stored.key || null;
       else storedKeyFor = stored.libraryId;
     }

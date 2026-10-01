@@ -1,22 +1,11 @@
-/**
- * componentScreen.ts — the section picker, as pure data.
- *
- * The user's section choice lives in a set and is handed to `createDocFrame`
- * rather than read back out of the DOM at build time, so the choice is
- * inspectable and testable without a DOM.
- */
+/** The section picker as pure data, handed to `createDocFrame` rather than read from the DOM. */
 
 import { ALL_SECTIONS, GROUPS, type GroupId, type SectionId } from '../docModel';
 import type { AllowanceState, ComponentScreenState, SectionGroupView, SectionOption } from './contracts';
 import { formatResetDate } from './allowance';
 import type { ComponentFacts } from './componentFacts';
 
-/**
- * Related components is the only section that starts unchecked. The approved
- * component-screen prototype shows every accessibility section included.
- *
- * This is the one source for that default.
- */
+/** The one source for which sections start unchecked. */
 export const DEFAULT_OFF_SECTIONS: ReadonlySet<SectionId> = new Set<SectionId>([
   'related',
 ]);
@@ -26,31 +15,14 @@ export function defaultSections(): Set<SectionId> {
 }
 
 /**
- * Whether a fresh selection documents the parts a boolean property hides.
- *
- * On whenever the component has any. A layer a boolean property reveals is
- * part of the component someone is trying to understand, so leaving it out by
- * default made the common case the one that needed a click, and made the
- * option easy to miss entirely. Off when there are none, so the flag never
- * says a doc drew something it did not.
- *
- * The one source for that default, the way `DEFAULT_OFF_SECTIONS` is for
- * sections. It is seeded when facts arrive, not at selection creation: before
- * extraction finishes there is nothing to reveal and the screen must not
- * guess.
+ * On whenever a boolean property hides parts, off otherwise so the flag never
+ * claims a doc drew something it did not. Seeded when facts arrive, not at selection.
  */
 export function defaultIncludeHidden(facts: ComponentFacts): boolean {
   return facts.hasHiddenParts;
 }
 
-/**
- * Group the sections for display.
- *
- * `aiEnabled` only controls whether the AI badges show. It never changes which
- * sections are available: turning AI off has to leave every deterministic
- * section selectable, because that is the fallback when the free allowance runs
- * out.
- */
+/** `aiEnabled` toggles only the AI badges, never availability: deterministic sections are the fallback. */
 export function sectionGroups(
   selected: ReadonlySet<SectionId>,
   expanded: ReadonlySet<GroupId>,
@@ -68,8 +40,7 @@ export function sectionGroups(
       }));
     return {
       id,
-      // GROUPS types its labels as plain strings, but its three values are
-      // exactly the literals the contract names.
+      // GROUPS types labels as string; its values are the contract's literals.
       label: label as SectionGroupView['label'],
       expanded: expanded.has(id),
       included: options.filter((o) => o.selected).length,
@@ -79,34 +50,25 @@ export function sectionGroups(
   });
 }
 
-/** `{included} of {total} included`, the wording the group headers use. */
 export function includedLabel(group: SectionGroupView): string {
   return `${group.included} of ${group.total} included`;
 }
 
-/** Every section in a group, for the header's own checkbox-style bulk action. */
 export function sectionIdsInGroup(id: GroupId): SectionId[] {
   return ALL_SECTIONS.filter((s) => s.group === id).map((s) => s.id);
 }
 
-/**
- * Sections the current component cannot fill.
- *
- * States is the only one today: without a state-like variant axis there is
- * nothing to tabulate, and offering it would promise an empty table.
- */
+/** Sections the component cannot fill: States without a state-like axis would be an empty table. */
 export function unavailableSections(facts: ComponentFacts): Set<SectionId> {
   const out = new Set<SectionId>();
   if (facts.hasStates === false) out.add('states');
   return out;
 }
 
-/** `{selected} of {total} selected`, for the variant picker's header. */
 export function variantCountLabel(selected: number, total: number): string {
   return total === 0 ? '' : `${selected} of ${total} selected`;
 }
 
-/** Checkbox state for a bulk variant control. */
 export function variantBulkState(
   selected: ReadonlySet<string>,
   variantIds: readonly string[],
@@ -118,7 +80,7 @@ export function variantBulkState(
   };
 }
 
-/** Select or clear every variant without replacing the selection set. */
+/** Mutates `selected` in place rather than replacing it. */
 export function applyVariantBulk(
   selected: Set<string>,
   variantIds: readonly string[],
@@ -130,12 +92,7 @@ export function applyVariantBulk(
   }
 }
 
-/**
- * Select or clear a whole group in place.
- *
- * Unavailable sections are skipped on the way in: a bulk select must not put
- * back a section the component cannot fill, which the row itself refuses.
- */
+/** Select or clear a whole group in place, never adding an unavailable section. */
 export function applyGroupBulk(
   sections: Set<SectionId>,
   group: GroupId,
@@ -148,12 +105,7 @@ export function applyGroupBulk(
   }
 }
 
-/**
- * Copy the screen's picks into the value consumed by build and download.
- *
- * Unavailable sections are removed even if stale selection state still holds
- * them. Variant choices only apply while Tokens is included.
- */
+/** Drops unavailable sections even from stale state; variant picks apply only while Tokens is on. */
 export function componentDocSelection(
   selected: ReadonlySet<SectionId>,
   variantIds: ReadonlySet<string>,
@@ -168,14 +120,9 @@ export function componentDocSelection(
 }
 
 /**
- * The line under the AI writing switch when the free allowance is spent.
- *
- * The header already knows the count; without this the switch stays on, the
- * badges promise prose, Create runs, and the user learns from a toast after
- * the build that every AI section is a placeholder. Only the free tier with
- * nothing left speaks: Pro has no monthly cap, and `loading` or `unknown`
- * would be a claim the plugin cannot back. The reset date is the proxy's, or
- * left out.
+ * Warns before Create that AI sections will be placeholders. Only a spent free
+ * tier speaks: Pro has no cap, and `loading` or `unknown` would be a claim the
+ * plugin cannot back. The reset date is the proxy's, or left out.
  */
 export function exhaustedAiNote(aiEnabled: boolean, allowance: AllowanceState): string | null {
   if (!aiEnabled || allowance.kind !== 'free' || allowance.remaining > 0) return null;
@@ -184,15 +131,7 @@ export function exhaustedAiNote(aiEnabled: boolean, allowance: AllowanceState): 
   return `${lead} Sections marked AI will be drawn as placeholders.`;
 }
 
-/**
- * The screen a failed component build leaves behind.
- *
- * Both failure routes use it: a `docFrameError` from the main thread, and a
- * pre-render failure the Create presenter reports (no section picked, or
- * assembly throwing before anything is sent). The failure stays on the panel
- * as a banner until the next Create or a selection replaces it. With no
- * component current there is no screen to hold it, so the panel goes empty.
- */
+/** For a `docFrameError` or a pre-render failure; with no component current the panel goes empty. */
 export function failedBuildScreen(
   componentName: string,
   message: string,
@@ -204,24 +143,12 @@ export function failedBuildScreen(
 
 /**
  * What a selection report does to the component screen on its way in.
- *
- * - `keep`: the outgoing screen is a build error and the selection is the
- *   same component, so the banner stays. A no-op reselection (the selection
- *   main.ts replays after a build, or clicking away and back while the build
- *   ran) must not hide a failure the reader has not seen yet.
- * - `toast`: the outgoing screen is a build error, the selection is a
- *   different component or nothing, and it arrives within
- *   `FAILED_BUILD_TOAST_WINDOW_MS` of the banner being painted. That covers
- *   the selection deferred during the build (applied as the build completes)
- *   and the one main.ts replays after it: the banner was gone before anyone
- *   could read it, so the failure goes out as a toast instead.
- * - `replace`: anything else, the usual reading or empty transition. That
- *   includes a different selection made after the window, silently: the
- *   banner has already been on screen, and repeating it as a toast would say
- *   the same failure twice.
- *
- * `elapsedMs` is how long the error screen has been painted; the host owns the
- * clock and passes the difference in, so this stays pure.
+ * - `keep`: a build error and the same component; a no-op reselection (main.ts
+ *   replays one after a build) must not hide an unseen failure.
+ * - `toast`: a build error and a different selection or none within
+ *   `FAILED_BUILD_TOAST_WINDOW_MS` of painting, so the unread failure toasts.
+ * - `replace`: anything else; after the window the banner was seen.
+ * `elapsedMs` is how long the error screen has been painted; the host owns the clock.
  */
 export type SelectionOutcome = 'keep' | 'toast' | 'replace';
 

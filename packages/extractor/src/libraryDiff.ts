@@ -1,22 +1,12 @@
 /**
- * libraryDiff.ts: the typed diff between two published library bundles, and
- * the semantic version bump it requires.
+ * The typed diff between two published library bundles, and the semantic
+ * version bump it requires. The proxy stores the result, so output must be
+ * byte-identical across machines: every sort uses compareCodeUnits.
  *
- * Figma-free and deterministic. The proxy runs it on every publish and stores
- * the result, so two machines must produce byte-identical output for the same
- * pair of bundles: every sort here uses compareCodeUnits, never localeCompare.
- *
- * Only Figma facts feed the diff: component properties, variant axes and their
- * options, states, anatomy parts, token bindings, layout and effect values,
- * foundation collections, modes, tokens and their per-mode values, and
- * styles. Prose, descriptions, diagnostics, completeness, the export envelope,
- * the AI projections and the bundle's file and plugin metadata are never read.
- * Token bindings are compared per variant when both bundles carry a variants
- * list, and by rule identity otherwise.
- *
- * Built on `diffKeyed` from diff.ts. `diff.ts` explains changes to a designer
- * on the Library screen; this module explains them to a version number and a
- * history pane, so its output is structured rather than prose.
+ * Only Figma facts feed the diff. Prose, descriptions, diagnostics,
+ * completeness, the export envelope, the AI projections and file and plugin
+ * metadata are never read. Built on `diffKeyed`; diff.ts explains changes to a
+ * designer, this module to a version number and a history pane.
  */
 import { diffKeyed, axisModel, comboKey, coverConditions, describeScope, type Combo } from './diff';
 import { matchesVariant } from './resolve';
@@ -27,11 +17,8 @@ import type { CanonicalValue, TypedValue } from './v5/value';
 
 export type ChangeKind = 'added' | 'removed' | 'renamed' | 'changed';
 
-/**
- * The v5 component artifact carries variant axes and their options but no
- * variant instance list, so there is no `variant` entity: an added option is
- * the observable event when a variant appears.
- */
+/** No `variant` entity: the v5 artifact has no variant instance list, so an
+ *  added option is the observable event when a variant appears. */
 export type ChangeEntity =
   | 'component' | 'property' | 'option' | 'variant_axis'
   | 'state' | 'anatomy_part' | 'binding' | 'value'
@@ -48,9 +35,7 @@ export interface LibraryChange {
   id: string;
   /** Display name after the change. */
   name: string;
-  /** Rendered previous value, when meaningful. */
   from: string | null;
-  /** Rendered new value, when meaningful. */
   to: string | null;
   /** Variant condition or mode, when meaningful. */
   scope: string | null;
@@ -58,18 +43,17 @@ export interface LibraryChange {
 }
 
 export interface LibraryDiff {
-  /** Sorted with compareChanges; deterministic. */
+  /** Sorted with compareChanges. */
   changes: LibraryChange[];
-  /** The highest bump across changes; null when changes is empty. */
+  /** Null when changes is empty. */
   minimumBump: Bump | null;
   counts: { major: number; minor: number; patch: number };
 }
 
 /**
- * Entities whose removal or rename breaks a consumer and whose addition is a
- * compatible extension. Everything else is a value and moves the patch number.
- * A style is structural: code that applies a text or effect style by name
- * breaks when it is removed or renamed, just as it does for a token.
+ * Entities whose removal or rename breaks a consumer and whose addition is
+ * compatible. Everything else moves the patch number. A style is structural:
+ * code applies it by name, as with a token.
  */
 const STRUCTURAL: ReadonlySet<ChangeEntity> = new Set<ChangeEntity>([
   'component', 'property', 'option', 'variant_axis', 'state', 'anatomy_part',
@@ -89,31 +73,24 @@ export function compareBump(a: Bump, b: Bump): number {
   return BUMP_RANK[a] - BUMP_RANK[b];
 }
 
-/** Three dotted numeric identifiers as semver 2.0.0 writes them: digits only,
- *  no leading zero on a multi-digit run. Each must also be a safe integer so
- *  `nextVersion` can add one without rounding: a 22-digit run passed the old
- *  `\d+`, came back from `nextVersion` as `1e+21.0.0`, and no later check
- *  accepted that, so the library could never publish again. */
+/** Semver 2.0.0 numeric identifiers: no leading zero on a multi-digit run. */
 const SEMVER_RE = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 
-/** Three dotted integers. No prerelease, no build metadata, no leading `v`,
- *  no leading zeros, each a safe integer. */
+/** No prerelease, build metadata, leading `v` or leading zeros. Each part must
+ *  be a safe integer, or `nextVersion` would round (`1e+21.0.0`) and the
+ *  library could never publish again. */
 export function isSemver(value: unknown): value is string {
   if (typeof value !== 'string') return false;
   const match = SEMVER_RE.exec(value);
   return match !== null && match.slice(1).every((n) => Number.isSafeInteger(Number(n)));
 }
 
-/** Reads the stored version, where leading zeros are allowed: an older proxy
- *  could store `01.0.0`, and it bumped then. Each part must still be a safe
- *  integer, so the arithmetic below never rounds. */
+/** Stored versions may carry leading zeros (`01.0.0`); an older proxy wrote them. */
 const STORED_VERSION_RE = /^(\d+)\.(\d+)\.(\d+)$/;
 
-/** `null` means no version yet, and the first version is always 1.0.0. The
- *  current version is read leniently (leading zeros allowed, so `01.0.0` plus
- *  a patch gives `1.0.1`), but the version it returns always passes the strict
- *  `isSemver`. Throws rather than returning a string `isSemver` would refuse,
- *  so a version can never be stored that the next publish cannot read. */
+/** `null` (no version yet) gives 1.0.0. Reads `current` leniently but always
+ *  returns a strict `isSemver`, throwing otherwise, so a version the next
+ *  publish cannot read is never stored. */
 export function nextVersion(current: string | null, bump: Bump): string {
   if (current === null) return '1.0.0';
   const match = STORED_VERSION_RE.exec(current);
@@ -129,7 +106,7 @@ export function nextVersion(current: string | null, bump: Bump): string {
   return next;
 }
 
-/** Foundation first (null component sorts before any name), then by component, entity, id, scope, kind, from, to. */
+/** Foundation (null component) first, then component, entity, id, scope, kind, from, to. */
 export function compareChanges(a: LibraryChange, b: LibraryChange): number {
   return compareCodeUnits(a.component ?? '', b.component ?? '')
     || compareCodeUnits(a.entity, b.entity)
@@ -140,12 +117,8 @@ export function compareChanges(a: LibraryChange, b: LibraryChange): number {
     || compareCodeUnits(a.to ?? '', b.to ?? '');
 }
 
-/**
- * The version log a published library carries, declared here beside the
- * change type because three packages read it: the proxy writes it, the plugin's
- * history pane renders it, and the CLI will read it. Same reasoning as the
- * bundle contract in libraryBundle.ts.
- */
+/** A published library's version log: the proxy writes it, the plugin's history
+ *  pane renders it, and the CLI will read it. */
 export interface VersionRecord {
   version: string;
   publishedAt: string;
@@ -182,8 +155,7 @@ function summarize(changes: LibraryChange[]): LibraryDiff {
 }
 
 // ---------------------------------------------------------------------------
-// Tolerant readers. A stored bundle may come from an older plugin, so every
-// read tolerates a missing or misshapen field and reads it as absent.
+// Tolerant readers: a stored bundle may come from an older plugin.
 // ---------------------------------------------------------------------------
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
@@ -211,9 +183,7 @@ function readWhen(value: unknown): Record<string, string[]> | null {
 }
 
 // ---------------------------------------------------------------------------
-// Value rendering. One formatter per v5 value shape so `from` and `to` read
-// the same in every change. Nothing is invented: an unresolved alias names its
-// reason and never a guessed number.
+// Value rendering. An unresolved alias names its reason, never a guessed number.
 // ---------------------------------------------------------------------------
 
 export function formatTyped(value: TypedValue): string {
@@ -256,10 +226,8 @@ export function formatCanonicalValue(value: CanonicalValue): string {
 
 interface AxisFact { name: string; options: string[]; default: string | null }
 interface PropertyFact { name: string; kind: string; default: string | null; options: string[] | null }
-/** Keyed by `path`, not `name`: a part name repeats across anatomy branches
- *  (e.g. two containers each with a `Label`), and pairing by name alone would
- *  let `diffKeyed`'s positional matching fabricate a `changed` between two
- *  unrelated nodes, or swallow a real add/remove. */
+/** Keyed by `path`, not `name`: a name repeats across anatomy branches, and
+ *  positional matching would fabricate a `changed` between unrelated nodes. */
 interface PartFact { path: string; name: string; type: string; shownBy: string | null; component: string | null }
 interface BindingFact { path: string; property: string; when: Record<string, string[]> | null; sourceId: string }
 interface ValueFact { id: string; value: string }
@@ -274,7 +242,7 @@ interface ComponentFacts {
   parts: PartFact[];
   bindings: BindingFact[];
   values: ValueFact[];
-  /** From the bundle entry, not the artifact; empty when the bundle predates it. */
+  /** From the bundle entry, not the artifact; may be empty. */
   variants: VariantFact[];
   /** source_id to display name, from `references.used`. */
   tokenNames: Record<string, string>;
@@ -404,15 +372,11 @@ function change(
 }
 
 /**
- * Bindings compared per variant, not per rule, the way the Library screen's
- * diff does (tokenItems in diff.ts): the minimizer recomputes every rule's
- * condition over the whole grid, so adding one variant rewrites the
- * condition on every existing binding, and a diff keyed by condition reads
- * that as one removal plus additions per binding. Both sides are expanded
- * over the variants they share and compared cell by cell; cells that moved
- * the same way share one change, scoped by the fewest conditions that
- * select exactly them. Variants on one side only are the option and axis
- * changes' story and are not compared here.
+ * Bindings compared per variant, as tokenItems in diff.ts does: the minimizer
+ * recomputes every rule's condition over the whole grid, so one added variant
+ * rewrites every condition. Both sides are expanded over their shared variants
+ * and compared cell by cell; cells that moved alike share one change, scoped
+ * by the fewest conditions that select exactly them.
  */
 function diffBindingsPerVariant(before: ComponentFacts, after: ComponentFacts, out: LibraryChange[]): void {
   const component = after.name;
@@ -431,10 +395,8 @@ function diffBindingsPerVariant(before: ComponentFacts, after: ComponentFacts, o
   const defaults = new Map<string, string>();
   for (const axis of after.axes) if (axis.default !== null) defaults.set(axis.name, axis.default);
 
-  // property key -> variant key -> sorted source ids bound there. Ids, not
-  // display names: a token rename is one `renamed` change on the foundation's
-  // `token` entity, and comparing names here reported it again as a
-  // `binding` change on every variant of every component bound to the token.
+  // property key -> variant key -> sorted source ids. Ids, not names: a token
+  // rename is one foundation `renamed` change, not a binding change everywhere.
   const cells = (facts: ComponentFacts): Map<string, Map<string, string[]>> => {
     const sets = new Map<string, Map<string, Set<string>>>();
     for (const combo of shared) {
@@ -455,9 +417,7 @@ function diffBindingsPerVariant(before: ComponentFacts, after: ComponentFacts, o
     }
     return result;
   };
-  // `from` and `to` still read as display names, each side's own, sorted by
-  // code unit exactly as the cells were sorted when they held names, so a
-  // real rebinding renders as it did before.
+  // `from` and `to` render each side's own display names, sorted by code unit.
   const names = (facts: ComponentFacts, ids: string[]): string =>
     ids.map((id) => facts.tokenNames[id] ?? id).sort(compareCodeUnits).join(', ');
   const b = cells(before);
@@ -493,7 +453,6 @@ function diffBindingsPerVariant(before: ComponentFacts, after: ComponentFacts, o
   }
 }
 
-/** Changes inside one component that exists on both sides. */
 function diffComponentPair(before: ComponentFacts, after: ComponentFacts, out: LibraryChange[]): void {
   const component = after.name;
   if (before.name !== after.name) {
@@ -533,8 +492,8 @@ function diffComponentPair(before: ComponentFacts, after: ComponentFacts, out: L
   if (before.variants.length > 0 && after.variants.length > 0) {
     diffBindingsPerVariant(before, after, out);
   } else {
-    // Rule identity: the only comparison possible for a bundle that predates
-    // the variants list. Reads a re-expressed condition as remove plus add.
+    // Rule identity, for a bundle without a variants list. Reads a
+    // re-expressed condition as remove plus add.
     const tokenName = (facts: ComponentFacts, sourceId: string): string => facts.tokenNames[sourceId] ?? sourceId;
     const bindings = diffKeyed(before.bindings, after.bindings, bindingKey, (x, y) => x.sourceId === y.sourceId);
     const bindingId = (b: BindingFact): string => `${b.path} / ${b.property}`;
@@ -574,7 +533,7 @@ interface TokenFact {
   type: string;
   scopes: string[];
   collectionId: string;
-  /** mode id to rendered value. */
+  /** Mode id to rendered value. */
   values: Record<string, string>;
 }
 interface StyleFact { id: string; name: string; summary: string; body: string }
@@ -596,7 +555,7 @@ function formatTypography(properties: Record<string, unknown>): string {
   return `${resolved('font_family')} ${resolved('font_weight')} ${resolved('font_size')}/${resolved('line_height')}`;
 }
 
-/** The names the canvas draws for each v5 effect kind (foundationSpecimens.ts). */
+/** The labels the canvas draws (foundationSpecimens.ts). */
 const EFFECT_LABEL: Record<string, string> = {
   drop_shadow: 'Drop shadow',
   inner_shadow: 'Inner shadow',
@@ -605,10 +564,8 @@ const EFFECT_LABEL: Record<string, string> = {
 };
 
 /**
- * Display only. `summary` is compared only against the other side's summary,
- * formatted the same way in the same run, and the style's full body decides
- * whether it changed, so a label never hides or invents a change. A kind this
- * map does not know keeps its own name rather than a guessed one.
+ * Display only: the style's full body decides whether it changed, so a label
+ * never hides or invents a change. An unknown kind keeps its own name.
  */
 function formatEffects(effects: unknown[]): string {
   if (effects.length === 0) return 'no layers';
@@ -739,9 +696,7 @@ function diffFoundation(before: LibraryBundleV1, after: LibraryBundleV1, out: Li
   for (const s of styles.added) out.push(change({ kind: 'added', entity: 'style', component: null, id: s.id, name: s.name, from: null, to: s.summary, scope: null }));
   for (const s of styles.removed) out.push(change({ kind: 'removed', entity: 'style', component: null, id: s.id, name: s.name, from: s.summary, to: null, scope: null }));
   for (const { before: sb, after: sa } of styles.changed) {
-    // A rename is its own change, as it is for a token: it breaks code that
-    // applies the style by name. The body is compared separately, so a rename
-    // with the same values moves no patch line.
+    // A rename is its own (major) change; the body is compared separately.
     if (sb.name !== sa.name) {
       out.push(change({ kind: 'renamed', entity: 'style', component: null, id: sa.id, name: sa.name, from: sb.name, to: sa.name, scope: null }));
     }
@@ -750,10 +705,6 @@ function diffFoundation(before: LibraryBundleV1, after: LibraryBundleV1, out: Li
     out.push(change({ kind: 'changed', entity: 'style', component: null, id: sa.id, name: sa.name, from: readable ? sb.summary : null, to: readable ? sa.summary : null, scope: null }));
   }
 }
-
-// ---------------------------------------------------------------------------
-// Entry point.
-// ---------------------------------------------------------------------------
 
 export function libraryDiff(before: LibraryBundleV1, after: LibraryBundleV1): LibraryDiff {
   const changes: LibraryChange[] = [];

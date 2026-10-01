@@ -39,20 +39,14 @@ export function extractVariants(root: SerializedNode): VariantAxis[] {
 }
 
 /**
- * The component's states, using the SAME detection the States matrix uses.
- * An earlier version matched only a prop literally named "state", so a
- * `Status=[Enabled,Hover,Disabled]` component reported ["Default"] in the spec
- * while the matrix rendered three columns for the same component.
- * Flag-encoded states ("Default" plus one column per boolean) come back in
- * column order; "Default" is the synthesized base column.
+ * The component's states, from the SAME detection the States matrix uses, so
+ * the two cannot disagree. Flag-encoded states come back in column order, with
+ * "Default" as the synthesized base column.
  */
 export function extractStates(root: SerializedNode): string[] {
   const info = detectStateMatrix(extractVariants(root));
   if (!info) return ['Default'];
   const labels = info.columns.map((c) => c.label);
-  // Guard, not expected to be reachable from real Figma data: a VARIANT
-  // property always has at least one option, so a detected enum state axis
-  // always yields at least one column. Kept anyway so extractStates never
-  // silently narrows its documented ['Default'] fallback contract to [].
+  // Unreachable from real Figma data; keeps the ['Default'] fallback contract.
   return labels.length ? labels : ['Default'];
 }

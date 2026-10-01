@@ -1,10 +1,8 @@
 /**
- * foundation.ts — the pure, Figma-free model for the file's design foundation:
- * variable collections (with modes and alias chains) and text styles.
- *
- * Mirrors the serialize.ts → extract.ts boundary used for components. The
- * plugin dumps raw Figma data (aliases left as {type,id}); everything here is
- * synchronous and fixture-testable, including alias resolution.
+ * foundation.ts: the pure model for the file's design foundation: variable
+ * collections (with modes and alias chains) and text styles. The plugin dumps
+ * raw Figma data (aliases left as {type,id}); everything here, alias resolution
+ * included, is synchronous and fixture-testable.
  */
 import type { EffectLayer } from './effects';
 import { canonicalColor } from './v5/color';
@@ -12,7 +10,7 @@ import { compareCodeUnits } from './v5/diagnostics';
 import { canonicalNumber } from './v5/precision';
 
 // ---------------------------------------------------------------------------
-// Raw dump — produced by packages/plugin/src/serializeFoundation.ts
+// Raw dump, produced by packages/plugin/src/serializeFoundation.ts
 // ---------------------------------------------------------------------------
 
 export interface RawVariableAlias { type: 'VARIABLE_ALIAS'; id: string }
@@ -22,9 +20,8 @@ export type RawVariableValue = RawRGBA | number | string | boolean | RawVariable
 export type FoundationVariableType = 'COLOR' | 'FLOAT' | 'STRING' | 'BOOLEAN';
 export type FoundationPublishStatus = 'UNPUBLISHED' | 'CURRENT' | 'CHANGED';
 
-/** Source publication facts Figma exposes independently. `publishStatus` is
- * null when the async status read failed or was not made (the plugin skips it
- * on paths that never export the dump); hidden/remote remain usable facts. */
+/** Publication facts Figma exposes. `publishStatus` is null when the async read
+ * failed or was skipped; hidden/remote stay usable facts. */
 export interface RawPublicationMetadata {
   hiddenFromPublishing: boolean;
   publishStatus: FoundationPublishStatus | null;
@@ -57,8 +54,7 @@ export interface RawCollection {
 }
 
 export interface RawTextStyle {
-  /** Stable Figma style id. Optional only for legacy injected dumps captured
-   * before Foundation Context v5 Phase 3. */
+  /** Stable Figma style id. Optional only for legacy dumps (before Foundation Context v5 Phase 3). */
   id?: string;
   name: string;
   description: string;
@@ -81,13 +77,9 @@ export interface RawTextStyle {
 }
 
 /**
- * One effect style from the file, with each layer already converted through the
- * shared EffectLayer union.
- *
- * Literal layers stay in the shared EffectLayer union used by v4/component
- * briefs. Phase 3 additionally keeps exact source binding ids in `bindings`,
- * beside rather than inside that legacy projection, so canonical export can
- * join by stable identity without changing older YAML or canvas hashes.
+ * One effect style, layers already in the shared EffectLayer union. Exact source
+ * binding ids sit in `bindings`, beside that projection, so the export joins by
+ * stable identity without changing older YAML or canvas hashes.
  */
 export interface RawEffectStyle {
   /** Stable Figma style id. Optional only for legacy injected dumps. */
@@ -123,12 +115,9 @@ export interface SerializedFoundation {
   externals: RawExternalRef[];
   extractedAt: string;
   /**
-   * Which reads failed. Absent on a clean read, never `[]`.
-   *
-   * serializeFoundation catches an API failure and returns an empty foundation,
-   * which makes total failure indistinguishable from a file that genuinely has
-   * no variables. This is the difference, and it is a prerequisite for the
-   * `unavailable` resolution status rather than a nicety.
+   * Which reads failed; absent on a clean read, never `[]`. serializeFoundation
+   * returns an empty foundation on failure, so this is what tells it from a file
+   * with no variables (the `unavailable` resolution status).
    */
   unavailable?: FoundationRead[];
   /** Stable source ids/names that could not be read. Absent on a complete
@@ -231,12 +220,6 @@ export interface FoundationSpec {
   unavailable?: FoundationRead[];
   unavailableSources?: string[];
   sourceIssues?: FoundationSourceIssue[];
-  /**
-   * Present only on a narrowed spec. Lets a resolver distinguish "excluded by
-   * scope" from "not present locally" — two causes that a lookup returning
-   * nothing collapses into one.
-   */
-  narrowedTo?: FoundationCopyTarget;
 }
 
 export type FoundationScope =
@@ -244,55 +227,6 @@ export type FoundationScope =
       group?: string; modeIds: string[] }
   | { target: 'textStyles'; group?: string }
   | { target: 'effectStyles'; group?: string };
-
-/**
- * What a single Copy-for-AI request covers.
- *
- * Deliberately coarser than FoundationScope, which additionally carries a
- * `group` and a `modeIds` subset. Both of those are artifacts of drawing a
- * frame — modes are capped at MAX_MODE_COLUMNS because a frame has four
- * columns, and a collection over SPLIT_THRESHOLD is divided into one document
- * per group — and the clipboard has neither limit. A copy that inherited them
- * would silently hide modes and whole token families from the agent reading it.
- */
-export type FoundationCopyTarget =
-  | { target: 'collection'; collectionId: string }
-  | { target: 'textStyles' }
-  | { target: 'effectStyles' };
-
-/**
- * Reduce a whole-file spec to the part one Copy covers, so colorContrast and
- * any other whole-spec reader can run over it unmodified.
- *
- * Returns null when the target resolves to nothing: a collection deleted since
- * its document was generated, or a text-styles target in a file whose styles
- * are all gone. Null rather than an empty spec, because "there is nothing here
- * any more" is a message the caller must show, not a brief it should copy.
- *
- * Alias values are untouched. They were resolved during buildFoundation, so a
- * variable aliasing into a collection this narrowing drops still carries both
- * its target name and its resolved concrete value.
- *
- * The kept collection is not cloned: it is the same object reference as in
- * `spec`. Treat both the input and the returned spec's collection as
- * read-only, since mutating one mutates the other.
- */
-export function narrowFoundation(
-  spec: FoundationSpec,
-  target: FoundationCopyTarget,
-): FoundationSpec | null {
-  if (target.target === 'textStyles') {
-    if (spec.textStyles.length === 0) return null;
-    return { ...spec, collections: [], textStyles: spec.textStyles, effectStyles: [], narrowedTo: target };
-  }
-  if (target.target === 'effectStyles') {
-    if (spec.effectStyles.length === 0) return null;
-    return { ...spec, collections: [], textStyles: [], effectStyles: spec.effectStyles, narrowedTo: target };
-  }
-  const collection = spec.collections.find((c) => c.id === target.collectionId);
-  if (!collection) return null;
-  return { ...spec, collections: [collection], textStyles: [], effectStyles: [], narrowedTo: target };
-}
 
 /** Rows per output unit, above which a unit splits by top-level group. */
 export const SPLIT_THRESHOLD = 150;
@@ -304,13 +238,9 @@ export const MAX_MODE_COLUMNS = 4;
 // ---------------------------------------------------------------------------
 
 /**
- * Top-level path segment. "color/bg/brand" → "color"; "standalone" → itself.
- *
- * This is the SPLIT key: it decides how a large collection is divided into
- * separate documents. `folderOf` is the finer BLOCK key used to divide one
- * document's rows into titled groups. Both exist because they answer different
- * questions, and a design system that names everything `color/...` needs the
- * finer one to get any grouping at all.
+ * Top-level path segment ("color/bg/brand" → "color"): the SPLIT key dividing a
+ * large collection into documents. `folderOf` is the finer BLOCK key that groups
+ * one document's rows.
  */
 export function groupOf(name: string): string {
   const i = name.indexOf('/');
@@ -318,16 +248,10 @@ export function groupOf(name: string): string {
 }
 
 /**
- * The folder a variable sits in, which is its whole name minus the leaf:
- * "color/surface/primary/light" → "color/surface/primary".
- *
- * This mirrors what Figma's own variables panel shows, where a slash is a
- * folder, so grouping on it means the document's blocks match the structure the
- * user built. Returns '' for a name with no folder at all, which the renderer
- * draws without a heading rather than inventing one.
- *
- * Deliberately the immediate parent rather than a fixed depth: token sets nest
- * to whatever depth they nest to, and any fixed level is wrong for somebody.
+ * A variable's folder, its name minus the leaf ("color/surface/primary/light" →
+ * "color/surface/primary"), as Figma's variables panel shows it. '' for no
+ * folder, drawn without a heading. The immediate parent, not a fixed depth,
+ * since sets nest arbitrarily.
  */
 export function folderOf(name: string): string {
   const i = name.lastIndexOf('/');
@@ -349,25 +273,15 @@ function titleAtDepth(folder: string, depth: number): string {
   return parts.slice(Math.max(parts.length - depth, 0)).map(capitalize).join(' / ');
 }
 
-/**
- * A block's heading: the final folder segment, capitalized. "colors/blue" reads
- * as "Blue", "color/surface" as "Surface".
- *
- * Not the whole path, which is what the tokens spell but not what a reader wants
- * at the top of a block.
- */
+/** A block's heading: the final folder segment, capitalized ("colors/blue" reads "Blue"). */
 export function groupTitle(folder: string): string {
   return titleAtDepth(folder, 1);
 }
 
 /**
- * Titles for one document's groups, widened only if they would collide.
- *
- * Two folders can end in the same segment ("color/surface" and "brand/surface"),
- * and two blocks both headed "Surface" in one frame is worse than a longer
- * heading. When that happens every title in the document takes one more segment,
- * so the set stays uniform rather than one odd heading out. Returned in the same
- * order as `folders`.
+ * Titles for one document's groups. When two would collide ("color/surface",
+ * "brand/surface"), every title takes one more segment, so the set stays
+ * uniform. Same order as `folders`.
  */
 export function groupTitles(folders: string[]): string[] {
   const maxDepth = Math.max(1, ...folders.map((f) => segmentsOf(f).length));
@@ -388,13 +302,9 @@ export interface FoundationRowGroup<T extends { name: string } = FoundationVaria
 }
 
 /**
- * Group rows by their folder, in first-appearance order, preserving row order
- * inside each group.
- *
- * Shared rather than done in the renderer because two callers need to agree: the
- * frame builder draws these blocks, and the AI description pass keys its output
- * by folder. If they grouped separately, a description could land on the wrong
- * block or on none.
+ * Group rows by folder in first-appearance order, keeping row order. Shared,
+ * because the frame builder and the AI description pass (keyed by folder) must
+ * group identically or a description lands on the wrong block.
  */
 export function groupRowsByFolder<T extends { name: string }>(rows: T[]): FoundationRowGroup<T>[] {
   const groups: FoundationRowGroup<T>[] = [];
@@ -447,9 +357,8 @@ function indexVariables(dump: SerializedFoundation): Map<string, VarIndexEntry> 
   const map = new Map<string, VarIndexEntry>();
   for (const collection of dump.collections) {
     for (const variable of collection.variables) {
-      // Keep the first source declaration. Duplicate stable ids are diagnosed
-      // by the v5 exporter; silently switching to the last declaration would
-      // make source order change which graph is resolved.
+      // Keep the first declaration: the v5 exporter diagnoses duplicates, and
+      // taking the last would let source order change the resolved graph.
       if (!map.has(variable.id)) map.set(variable.id, { variable, collection });
     }
   }
@@ -542,9 +451,8 @@ function legacyValueOf(value: FoundationProvenanceValue): FoundationValue {
       return { kind: 'unresolved', reason };
     }
     case 'alias':
-      // Legacy buildFoundation returned a bare missing value when the target
-      // entity itself could not be read or found. Keep that render/v4 shape;
-      // the richer alias identity remains available in provenance.
+      // An unreadable or missing target keeps the bare missing shape for
+      // render/v4; provenance keeps the full alias identity.
       if (value.resolved?.kind === 'unresolved' && value.resolved.reason === 'missing') {
         return { kind: 'unresolved', reason: 'missing' };
       }
@@ -812,7 +720,6 @@ export interface FoundationSelection {
   /** Collections the user chose, with the mode ids they chose for each. */
   collections: { collectionId: string; modeIds: string[] }[];
   textStyles: boolean;
-  /** Whether the effect-styles unit is built. */
   effectStyles: boolean;
 }
 
@@ -830,20 +737,14 @@ function titleOf(base: string, group?: string): string {
   return group ? `${base} · ${group}` : base;
 }
 
-/** Title for the text-styles unit, which has no collection to name. */
+/** Titles for the style units, which have no collection to name. */
 const TEXT_STYLES_TITLE = 'Text styles';
-/** Title for the effect-styles unit, which has no collection to name. */
 const EFFECT_STYLES_TITLE = 'Effect styles';
 
 /**
- * The document title for one unit, derived from its scope and rendered content.
- *
- * Three places need this title: planFoundationUnits (building the batch), the
- * renderer (drawing the header band), and updateFoundationDoc (rebuilding one
- * doc from its stored scope, with no batch around it). Deriving it in one place
- * is what stops those three from disagreeing about what a document is called,
- * and derives it from fields the drift hash already covers rather than from a
- * separately stored string.
+ * One unit's document title, from its scope and rendered content. Planning, the
+ * renderer, and single-doc update all call this, so they agree, and it reads
+ * only fields the drift hash already covers.
  */
 export function foundationUnitTitle(
   scope: FoundationScope, content: FoundationUnitContent,
@@ -854,7 +755,7 @@ export function foundationUnitTitle(
   return titleOf(base, content.group);
 }
 
-/** Distinct top-level groups in first-appearance order (a Set keeps insertion order). */
+/** Distinct top-level groups in first-appearance order. */
 function groupsInOrder(names: string[]): string[] {
   const seen = new Set<string>();
   for (const name of names) seen.add(groupOf(name));
@@ -940,20 +841,14 @@ function planStyleUnits(
 }
 
 // ---------------------------------------------------------------------------
-// Row building — the single source of rendered content
+// Row building: the single source of rendered content
 // ---------------------------------------------------------------------------
 
 /**
- * One value cell. `value` is drawn as the swatch and label.
- *
- * `modeName` is the one field in this projection no renderer reads: the column
- * headers come from FoundationUnitContent.modeNames, and cells are matched to
- * them positionally. It stays because it is not independently variable, so it
- * cannot break "hashed implies rendered". unitContent builds it and modeNames
- * from the same `modes` array in the same order, so cells[i].modeName is always
- * modeNames[i], and no change to the file can move the hash through this field
- * without also moving it through the column header that is drawn. It keeps each
- * cell self-describing for any renderer that does not iterate positionally.
+ * One value cell, drawn as the swatch and label. No renderer reads `modeName`
+ * (headers come from modeNames, matched by position), but it cannot break
+ * "hashed implies rendered": unitContent builds both from one `modes` array, so
+ * cells[i].modeName is always the drawn modeNames[i].
  */
 export interface FoundationRowCell { modeName: string; value: FoundationValue }
 
@@ -992,21 +887,12 @@ export const TEXT_METRIC_FIELDS = [
 ] as const;
 
 /**
- * The fields the effect specimen line names, per layer type, and so the only
- * bindings an effect row carries. The same job TEXT_METRIC_FIELDS does for a
- * text style.
- *
- * This is the renderer's vocabulary, in the renderer's spelling: the plugin's
- * serializeFoundation.ts renames Figma's `radius`/`offsetX`/`offsetY` to
- * `blur`/`offset_x`/`offset_y` for EVERY layer type, but `layerLines`
- * (packages/plugin/src/foundationSpecimens.ts) only looks a chip up in its
- * shadow and blur branches. A binding on any other layer type, or on a shadow
- * field that branch does not print, would be hashed and never drawn, and then
- * a source change would move foundationContentHash over a byte-identical
- * frame. Change one side and this list has to move with it.
- *
- * A layer type absent from this map draws no chip at all: noise, texture,
- * glass and unknown print their numbers with no bound field.
+ * The fields the effect specimen line names per layer type, and so the only
+ * bindings an effect row carries (as TEXT_METRIC_FIELDS does for text). In the
+ * renderer's spelling (`blur`, `offset_x`): `layerLines` in
+ * packages/plugin/src/foundationSpecimens.ts prints chips only in its shadow and
+ * blur branches, and any other binding would be hashed but never drawn. Change
+ * one side and this list moves with it. An absent layer type draws no chip.
  */
 const DRAWN_EFFECT_FIELDS: Record<string, readonly string[]> = {
   'drop-shadow': ['offset_x', 'offset_y', 'blur', 'spread', 'color'],
@@ -1016,32 +902,19 @@ const DRAWN_EFFECT_FIELDS: Record<string, readonly string[]> = {
 };
 
 /**
- * ONLY what a frame actually draws for a variable: the name, the optional
- * description column, one cell per rendered mode, and the declared type.
- *
- * `resolvedType` was deliberately absent while nothing read it. It is here now
- * because it selects the layout: a COLOR variable renders as a swatch list with
- * its formats, everything else renders as a table row. That makes it the single
- * most visible field in the projection rather than an unrendered one, so both
- * directions of the invariant hold. Retyping a variable from COLOR to FLOAT
- * moves the hash and the Update that follows produces a genuinely different
- * frame.
- *
- * It has to be the declared type rather than the resolved value's own `kind`.
- * A colour variable aliased entirely into a published library resolves to no
- * local value at all, and inferring "not a colour" from that would drop a whole
- * semantic collection into the numbers table.
+ * ONLY what a frame draws for a variable: name, description, one cell per
+ * rendered mode, and the declared type. `resolvedType` selects the layout (COLOR
+ * as swatches, else a table row), so it is rendered and hashed. The declared
+ * type, not the value's `kind`: a colour aliased into a library resolves to no
+ * local value and must still render as a colour.
  */
 export interface FoundationVariableRow {
   kind: 'variable';
   name: string;
   description: string;
   resolvedType: FoundationVariableType;
-  /**
-   * The code syntax Figma's variable settings define, per platform, exactly as
-   * stored (`WEB`, `ANDROID`, `iOS`). Empty when none is defined. Every entry is
-   * drawn as a chip under the name, so all of it is hashed; nothing is derived.
-   */
+  /** Figma's code syntax per platform as stored (`WEB`, `ANDROID`, `iOS`); each
+   *  entry is drawn as a chip, so all of it is hashed. Nothing is derived. */
   codeSyntax: Record<string, string>;
   /** The scale drawing a number cell shows above its value; null draws nothing. */
   glyph: FoundationGlyph | null;
@@ -1049,13 +922,9 @@ export interface FoundationVariableRow {
 }
 
 /**
- * The metrics the text-style specimen list draws: the specimen is set in
- * family/style at fontSize with the style's line height, letter spacing, case
- * and decoration applied, and the metrics line names each of them plus the
- * paragraph spacing. `boundTokens` names the variable bound to each metric the
- * line shows, keyed by `TEXT_METRIC_FIELDS`, because the line draws that name
- * as a chip. `paragraphIndent` and any other binding reach no pixel and stay
- * out, so a change to them moves no hash.
+ * The metrics the text-style specimen draws. `boundTokens` names the variable
+ * bound to each shown metric (keyed by `TEXT_METRIC_FIELDS`), drawn as a chip.
+ * `paragraphIndent` and other bindings reach no pixel, so they stay out of the hash.
  */
 export interface FoundationTextMetrics {
   fontFamily: string;
@@ -1077,13 +946,10 @@ export interface FoundationTextRow {
 }
 
 /**
- * ONLY what the effect frame draws: the specimen card applies `layers`, the
- * text under it lists them, and `boundTokens` names the variable bound to each
- * listed field as a chip, keyed by `effects[<index>].<field>` and filtered to
- * DRAWN_EFFECT_FIELDS: a binding on a field that layer type's line does not
- * print reaches no pixel and stays out, so a change to it moves no hash.
- * Layers are carried with any `bindings` key stripped, because a binding's id
- * is not drawn and ids must never move the hash.
+ * ONLY what the effect frame draws: the card applies `layers`, the text lists
+ * them, and `boundTokens` (keyed `effects[<index>].<field>`, filtered to
+ * DRAWN_EFFECT_FIELDS) names each drawn binding. Layers drop their `bindings`
+ * key: ids are not drawn and must never move the hash.
  */
 export interface FoundationEffectRow {
   kind: 'effectStyle';
@@ -1101,36 +967,24 @@ export interface FoundationUnitContent {
   modeNames: string[];
   rows: FoundationRow[];
   /**
-   * Mirrors FoundationUnit.omittedModeNames — computed from the same inputs
-   * (the collection's modes vs. scope.modeIds) and must always agree with it.
-   * It also has to live here, not just on FoundationUnit, because unitContent
-   * is what the drift hash consumes: if a footer note names an omitted mode
-   * but that name is absent from this return, renaming the mode changes what
-   * the frame renders while leaving the hash unchanged.
+   * Mirrors FoundationUnit.omittedModeNames from the same inputs. It lives here
+   * because the drift hash consumes unitContent: the footer note names these,
+   * so a mode rename must move the hash.
    */
   omittedModeNames: string[];
   /**
-   * Present only when this unit is one of several a single source was split
-   * into, which is exactly when `scope.group` is set. Frames render it as
-   * "Part {index + 1} of {total}, covering {group}."
-   *
-   * Derived here rather than passed in, for two reasons. It has to be inside
-   * unitContent's return, or the footer note it drives is rendered but not
-   * hashed, and adding a group to a large collection would renumber surviving
-   * frames with no "Update available" to say so. And deriving it from the scope alone is what makes the numbers agree
-   * between a whole-batch render and a single-doc rebuild: updateFoundationDoc
-   * has no batch around it to count, so any numbering the batch computed for
-   * itself would be lost on the next Update.
+   * Set only when a source was split into several units (`scope.group` set);
+   * drawn as "Part {index + 1} of {total}, covering {group}." Derived here so the
+   * note is hashed, and from the scope alone so a batch render and a single-doc
+   * rebuild number parts the same.
    */
   part?: { index: number; total: number };
 }
 
 /**
- * The part numbering for a group-scoped unit, given the source's full ordered
- * group list. Undefined when there is nothing to number: a lone group is not a
- * split, and a frame that says "Part 1 of 1" would be noise. Absent rather
- * than present-and-suppressed so that the hash covers the note exactly when
- * the note is drawn.
+ * Part numbering for a group-scoped unit. Undefined for a lone group ("Part 1 of
+ * 1" is noise), absent rather than suppressed, so the hash covers the note
+ * exactly when it is drawn.
  */
 function partOf(groups: string[], group: string): { index: number; total: number } | undefined {
   if (groups.length <= 1) return undefined;
@@ -1159,13 +1013,9 @@ function boundMetricTokens(bound: Record<string, string>): Record<string, string
 }
 
 /**
- * The binding keys the effect specimen line can actually print, for these
- * layers. Keys are `effects[<index>].<field>`, the shape serializeFoundation
- * emits, so the layer index is the position in this same array.
- *
- * `spread` is conditional on purpose: layerLines omits the spread part
- * entirely when the layer has no spread, so a bound spread on such a layer
- * reaches no pixel.
+ * The binding keys the effect line prints for these layers, as
+ * `effects[<index>].<field>` (serializeFoundation's shape). `spread` only when
+ * the layer has one, since layerLines omits it otherwise.
  */
 function drawnEffectBindingKeys(layers: EffectLayer[]): Set<string> {
   const keys = new Set<string>();
@@ -1189,11 +1039,8 @@ function stripBindings(layer: EffectLayer): EffectLayer {
 
 /**
  * The rows and mode columns for one output unit. Every renderer AND the drift
- * hash consume this, which is what mechanically guarantees "the hash covers
- * exactly what is rendered".
- *
- * Returns null when the scope's source is gone: a collection id that is no
- * longer in the file, or a named group that matches nothing.
+ * hash consume this, which guarantees the hash covers exactly what is rendered.
+ * Null when the scope's source is gone (a missing collection or an empty group).
  */
 export function unitContent(
   spec: FoundationSpec, scope: FoundationScope,
@@ -1202,10 +1049,8 @@ export function unitContent(
     const styles = scope.group
       ? spec.textStyles.filter((s) => s.group === scope.group)
       : spec.textStyles;
-    // A group is derived from style names, so a named group with no members
-    // cannot legitimately exist: zero rows means the group is gone (renamed,
-    // or its last style deleted). Reporting that as a valid empty unit would
-    // let the doc read "In sync" while rebuilding to an empty frame.
+    // Groups come from style names, so an empty named group is gone; a valid
+    // empty unit would read "In sync" over an empty frame.
     if (scope.group && styles.length === 0) return null;
     const part = scope.group
       ? partOf(groupsInOrder(spec.textStyles.map((s) => s.name)), scope.group)
@@ -1280,10 +1125,8 @@ export function unitContent(
     ? collection.variables.filter((v) => v.group === scope.group)
     : collection.variables;
 
-  // Same reasoning as the text-styles branch: a group with zero variables is
-  // a group that no longer exists. A collection-scoped unit (no group) with
-  // zero variables is a different, legitimate case — an empty collection — and
-  // still returns a valid, empty unit.
+  // As for text styles, an empty group is gone. An empty collection with no
+  // group is legitimate and returns a valid, empty unit.
   if (scope.group && variables.length === 0) return null;
 
   const omittedModeNames = collection.modes

@@ -1,22 +1,8 @@
 /// <reference types="@figma/plugin-typings" />
 /**
- * foundationFrame.ts — renders one foundation output unit as a Figma Section.
- *
- * Deliberately separate from docFrame.ts: that file owns the component
- * document and is already large. What the two share, they share through code
- * rather than by resemblance — frameKit primitives for the palette, fonts and
- * corner style, and brandHeader for the header band — so a foundation frame
- * inherits the user's brand theme and captured logo with no theming code of its
- * own, and stays in step when the component frame is restyled.
- *
- * The card chrome matches a component doc: one fixed-width card, the brand
- * header band across the top, then a bordered table on the body background.
- *
- * The pure functions here (valueLines, swatchColorOf, footerNotes,
- * headerSubtitle, tableColumns, cardWidth) are unit-tested, and the cell
- * builders' sizing contract is pinned against a stub of Figma's resize
- * behaviour. Everything else about the layout is verified by the manual Figma
- * pass, the same treatment docFrame.ts gets.
+ * Renders one foundation output unit as a Figma Section. It shares frameKit
+ * primitives and brandHeader with docFrame.ts, so it inherits the brand theme
+ * and logo with no theming code of its own.
  */
 import type {
   FoundationUnit, FoundationUnitContent, FoundationValue, FoundationScope,
@@ -39,12 +25,8 @@ import type { PillState } from './publishPill';
 
 type UnresolvedReason = Extract<FoundationValue, { kind: 'unresolved' }>['reason'];
 
-/**
- * Reader words for each unresolved reason code. The codes (`cycle`, `depth`,
- * `missing`) are extractor vocabulary and must never be drawn into a customer's
- * file as they are. Display only: foundationContentHash hashes the code, not
- * this label, so rewording here moves no hash.
- */
+/** Reader words for each unresolved reason code, which is never drawn as is.
+ *  Display only: foundationContentHash hashes the code, not this label. */
 const UNRESOLVED_WORDS: Record<UnresolvedReason, string> = {
   external: 'library variable',
   cycle: 'aliases form a loop',
@@ -57,14 +39,8 @@ export function unresolvedLabel(reason: UnresolvedReason): string {
   return `Not resolved: ${UNRESOLVED_WORDS[reason]}`;
 }
 
-/**
- * Label for a single value. Never returns an empty string.
- *
- * The alias branch is a floor, not a path the extractor takes: resolution
- * flattens chains, so a resolved target is a literal or an unresolved reason.
- * Degrading to the target's name beats rendering "[object Object]" if that ever
- * stops being true.
- */
+/** Label for a single value, never empty. The alias branch is only a floor:
+ *  resolution flattens chains, so a resolved target is never an alias. */
 function leafLabel(value: FoundationValue): string {
   switch (value.kind) {
     case 'alias':
@@ -74,7 +50,6 @@ function leafLabel(value: FoundationValue): string {
       return value.alpha < 1 ? `${h} ${Math.round(value.alpha * 100)}%` : h;
     }
     case 'number':
-      // String() on a number never prints trailing zeros: 16 stays "16", 1.5 stays "1.5".
       return String(value.value);
     case 'string':
       return value.value === '' ? 'Empty string' : value.value;
@@ -85,37 +60,22 @@ function leafLabel(value: FoundationValue): string {
   }
 }
 
-/**
- * One cell's text, split across two lines.
- *
- * A semantic token's cell has two things to say: which primitive it points at,
- * and what that resolves to. On one line those ran together as
- * "→ colors/blue/500  #722ED1", which read as crowded and, at any realistic
- * column width, overflowed into the next column. Stacking them gives each a
- * short line and lets the column be narrower than before rather than wider.
- *
- * `secondary` is empty when there is nothing more to say, which is the common
- * case for a plain literal value.
- */
+/** One cell's text on two lines: an alias's target, then what it resolves to.
+ *  `secondary` is empty when there is nothing more to say. */
 export interface ValueLines { primary: string; secondary: string }
 
 export function valueLines(value: FoundationValue): ValueLines {
   if (value.kind !== 'alias') return { primary: leafLabel(value), secondary: '' };
   const primary = `→ ${value.targetName}`;
-  // A library's modes cannot be mapped onto local ones, so there is no value to
-  // show. Say which kind of reference it is rather than leaving a bare arrow.
+  // A library's modes cannot map onto local ones, so there is no value to show.
   if (value.external) return { primary, secondary: 'Library variable' };
   if (!value.resolved) return { primary, secondary: '' };
   return { primary, secondary: leafLabel(value.resolved) };
 }
 
 // ---------------------------------------------------------------------------
-// Colour formats
-//
-// A colour swatch carries the value in the three notations a developer actually
-// pastes: hex, rgb, hsl. All three are derived from the same hex the drift hash
-// already covers, so they add nothing to the projection and cannot drift from
-// it: change the colour and the hex moves, so the hash moves.
+// Colour formats: hex, rgb and hsl, all derived from the hex the drift hash
+// already covers, so they cannot drift from it.
 // ---------------------------------------------------------------------------
 
 /** One decimal at most, with no trailing ".0" (matching how CSS is written). */
@@ -140,12 +100,8 @@ export function rgbLabel(hexValue: string, alpha: number): string {
     : `rgb(${r}, ${g}, ${b})`;
 }
 
-/**
- * `hsl(212.9, 93.9%, 19.4%)`, or `hsla(...)` when the colour is not opaque.
- *
- * Hue is undefined for a grey, where the standard convention is 0, which is what
- * makes white read as `hsl(0, 0%, 100%)` rather than `hsl(NaN, 0%, 100%)`.
- */
+/** `hsl(212.9, 93.9%, 19.4%)`, or `hsla(...)` when not opaque. A grey's
+ *  undefined hue is 0, by convention. */
 export function hslLabel(hexValue: string, alpha: number): string {
   const [r255, g255, b255] = channels(hexValue);
   const r = r255 / 255, g = g255 / 255, b = b255 / 255;
@@ -167,13 +123,9 @@ export function hslLabel(hexValue: string, alpha: number): string {
 }
 
 /**
- * The value lines beside one swatch, in render order.
- *
- * A direct colour gets all three notations, the way a token reference table
- * does. An alias gets its target and the resolved hex instead: the target is the
- * fact a reader of a semantic collection needs, and the primitive it points at
- * has its own frame carrying the full formats, so nothing is lost across the
- * document set and a four-mode semantic row stays readable.
+ * The value lines beside one swatch, in render order. A direct colour gets all
+ * three notations; an alias gets its target and resolved hex, since the
+ * primitive's own frame carries the full formats.
  */
 export function swatchValueLines(value: FoundationValue): string[] {
   if (value.kind === 'color') {
@@ -198,12 +150,7 @@ function plural(n: number, one: string, many: string): string {
   return `${n} ${n === 1 ? one : many}`;
 }
 
-/**
- * The header band's subtitle line: what this document covers, counted.
- *
- * Reads only `content`, for the same reason footerNotes does: everything the
- * frame states has to come from what the drift hash reads.
- */
+/** The header subtitle, counted. Reads only `content`, as footerNotes does. */
 export function headerSubtitle(content: FoundationUnitContent, target: FoundationScope['target']): string {
   if (target === 'textStyles') return plural(content.rows.length, 'text style', 'text styles');
   if (target === 'effectStyles') return plural(content.rows.length, 'effect style', 'effect styles');
@@ -212,12 +159,9 @@ export function headerSubtitle(content: FoundationUnitContent, target: Foundatio
 }
 
 /**
- * The frame's footer lines, in render order.
- *
- * Takes ONLY the content object, never the surrounding batch. Everything a
- * footer says has to come from what the drift hash reads, or the note is
- * rendered without being covered. Part numbers passed as arguments would sit
- * outside the hash and disagree between a batch render and a single-doc Update.
+ * The frame's footer lines, in render order. Takes ONLY `content`: whatever a
+ * footer says must come from what the drift hash reads, or it is rendered
+ * without being covered.
  */
 export function footerNotes(content: FoundationUnitContent): string[] {
   const notes: string[] = [];
@@ -232,8 +176,7 @@ export function footerNotes(content: FoundationUnitContent): string[] {
 
 const COL_NAME = 240;
 const COL_DESC = 220;
-// A stacked "name over value" pair fits a shorter column than a one-line cell,
-// so four mode columns stay narrower than the description column would suggest.
+// A stacked "name over value" pair fits a narrower column.
 const COL_MODE = 160;
 const ROW_PAD = 10;
 const CELL_GAP = 12;
@@ -246,66 +189,39 @@ const CONTENT_WIDTH = CARD_WIDTH_MIN - HEADER_PAD_X * 2;
 
 export interface TableColumn { label: string; width: number }
 
-/**
- * The table's columns, in render order, as label/width pairs.
- *
- * One list drives the header row, every data row, and the card width, so a
- * column cannot be labelled at one width and filled at another.
- */
+/** The table's columns in render order. One list drives the header, every
+ *  row and the card width, so a column cannot be labelled at one width and
+ *  filled at another. */
 export function tableColumns(
   content: FoundationUnitContent, hasDescriptions: boolean,
 ): TableColumn[] {
   const columns: TableColumn[] = [{ label: 'Name', width: COL_NAME }];
   if (hasDescriptions) columns.push({ label: 'Description', width: COL_DESC });
-  // Only a collection unit gets here. A text-styles or effect-styles unit
-  // renders its specimen list instead and returns before this is called, which
-  // is why there is no parameter for it: a flag whose other branch no live
-  // caller can reach is dead code that only its own test keeps alive.
+  // Only a collection unit gets here; specimen units return earlier.
   for (const name of content.modeNames) columns.push({ label: name, width: COL_MODE });
   return columns;
 }
 
-/**
- * The laid-out width of a table row: its cells, the gaps between them, and the
- * row's own left and right padding, which keeps the first and last cell off the
- * table's border.
- *
- * The card's width has to be derived from this exact number. The card clips its
- * contents, so a table one pixel wider than the space inside the card's padding
- * is a table with a clipped right-hand column.
- */
+/** A table row's laid-out width: cells, gaps and the row's own side padding.
+ *  The card width derives from exactly this, because the card clips. */
 export function rowWidth(columns: TableColumn[]): number {
   return columns.reduce((sum, c) => sum + c.width, 0)
     + CELL_GAP * Math.max(columns.length - 1, 0)
     + CELL_GAP * 2;
 }
 
-/**
- * The card's width: whatever the table needs plus the shared padding, but never
- * narrower than a component doc frame. A single-mode collection would otherwise
- * produce a card too narrow to carry the header band's 38px title.
- *
- * Unbounded above, unlike the component frame, and safely so: the widest table
- * this can produce is a description column plus the four-mode cap, which lands
- * inside the component frame's own ceiling.
- */
+/** The card's width: the table plus padding, never narrower than a component
+ *  doc frame. Unbounded above: a description column plus the four-mode cap
+ *  still fits inside the component frame's ceiling. */
 export function cardWidth(columns: TableColumn[]): number {
   return Math.max(CARD_WIDTH_MIN, rowWidth(columns) + HEADER_PAD_X * 2);
 }
 
 /**
- * Pin a frame to a fixed width while its height keeps hugging its content.
- *
- * Uses the axis-explicit layoutSizing* API on purpose. The primary/counter API
- * is a trap here: on a HORIZONTAL frame the primary axis is the WIDTH and the
- * counter axis is the HEIGHT, so `resize(width, 1)` followed by
- * `primaryAxisSizingMode = 'FIXED'` re-fixes the axis resize had already fixed
- * and leaves the height pinned at the literal 1 that was passed, clipping every
- * row to a sliver. resize() fixes BOTH axes in the Figma API, so the height hug
- * must be restored explicitly, and it must be restored on the vertical axis.
- *
- * Safe before or after the children exist: resize is handed the frame's current
- * height rather than a literal, and the HUG on the last line is what governs.
+ * Pin a frame's width while its height hugs. Uses the axis-explicit
+ * layoutSizing* API: on a HORIZONTAL frame the primary axis is the width, so
+ * the primary/counter API would leave the height fixed. resize() fixes BOTH
+ * axes, so the vertical hug must be restored after it.
  */
 function fixWidthHugHeight(frame: FrameNode, width: number): void {
   frame.layoutSizingHorizontal = 'FIXED';
@@ -314,18 +230,10 @@ function fixWidthHugHeight(frame: FrameNode, width: number): void {
 }
 
 /**
- * Append a text node that wraps inside its cell instead of running past it.
- *
- * This is the structural half of the crowding fix. makeText leaves a text node
- * on Figma's default sizing, which hugs its content on both axes, so a cell of
- * FIXED width does not constrain it at all: a long token path or a description
- * of any length simply drew over the next column, and the rightmost column's
- * overflow was clipped by the table's own border. FILL plus a HEIGHT-only
- * autoresize makes the text wrap to the column and the row grow to fit, which
- * holds for any content without measuring anything.
- *
- * `parent` must already be FIXED on the horizontal axis; Figma rejects FILL on a
- * child of a frame that hugs the axis being filled.
+ * Append a text node that wraps inside its cell. makeText's default sizing hugs
+ * both axes, so a FIXED cell would not constrain it; FILL plus a HEIGHT-only
+ * autoresize wraps it to the column. `parent` must already be FIXED
+ * horizontally: Figma rejects FILL on a child of a frame that hugs that axis.
  */
 function wrappingText(
   parent: FrameNode, chars: string, style: 'Regular' | 'Medium', size: number, color: RGB,
@@ -350,9 +258,8 @@ export function cellText(label: string, width: number, muted = false): FrameNode
 }
 
 // ---------------------------------------------------------------------------
-// Reference chips — the developer-facing name Figma's variable settings
-// define, shown exactly as stored. Only what Figma's code syntax carries is
-// ever drawn here: no chip is ever derived from the token's own name or path.
+// Reference chips: Figma's code syntax, shown exactly as stored. No chip is
+// ever derived from the token's own name or path.
 // ---------------------------------------------------------------------------
 
 /** Figma's code-syntax platform keys as people read them; an unknown key is shown as stored. */
@@ -365,11 +272,7 @@ function referenceChip(platform: string, identifier: string, width: number): Fra
   c.cornerRadius = radius(6);
   c.fills = solidFill(palette.chipBg);
   c.counterAxisAlignItems = 'CENTER';
-  // A chip hugs its text, so a long identifier used to run past the Name
-  // column and get clipped by the table. The chip is capped at the cell width
-  // and drops the identifier under the platform label when the two no longer
-  // fit side by side; the identifier wraps inside the chip's own inset. Both
-  // bounds derive from `width`: nothing here guesses how wide a label is.
+  // Capped at the cell width, so a long identifier wraps instead of clipping.
   c.maxWidth = width;
   c.layoutWrap = 'WRAP';
   const label = makeText(PLATFORM_LABEL[platform] ?? platform, 'Regular', 10, palette.muted);
@@ -377,18 +280,14 @@ function referenceChip(platform: string, identifier: string, width: number): Fra
   c.appendChild(label);
   const id = makeText(identifier, 'Medium', 11, palette.heading);
   id.textAutoResize = 'WIDTH_AND_HEIGHT';
-  // Figma only accepts a max width on an auto-layout child, so the cap is set
-  // after the append. Set before it, the call throws and the build stops.
+  // Figma accepts maxWidth only on an auto-layout child: set it after the append, or it throws.
   c.appendChild(id);
   id.maxWidth = Math.max(1, width - 12); // 6 + 6 chip padding
   return c;
 }
 
-/**
- * The developer-facing names Figma's variable settings define, one chip per
- * platform, in code-unit key order (the projection already sorted them). Null
- * when the variable defines none: no chip is ever derived from the token name.
- */
+/** One chip per platform, in code-unit key order (the projection sorted
+ *  them). Null when the variable defines none. */
 export function referenceChips(codeSyntax: Record<string, string>, width: number): FrameNode | null {
   const entries = Object.entries(codeSyntax);
   if (entries.length === 0) return null;
@@ -413,17 +312,13 @@ export function swatchCell(value: FoundationValue, width: number, glyph: Foundat
   cell.counterAxisAlignItems = 'MIN';
   fixWidthHugHeight(cell, width);
 
-  // The scale drawing, if this row's glyph and value earn one: a value that
-  // fails to resolve to a number, or that glyphSpec refuses (negative,
-  // non-finite, out-of-range opacity), leaves the cell exactly as before.
+  // A scale drawing only when the value is a number glyphSpec accepts.
   const n = glyph ? glyphValue(value) : null;
   const spec = glyph && n !== null ? glyphSpec(glyph, n, width) : null;
   if (spec) cell.appendChild(buildGlyph(spec, width));
 
   const line = hstack(8);
-  // Top-aligned, not centred: a wrapped two-line cell beside a one-line cell
-  // reads as a table when their first lines align and as a mess when their
-  // midpoints do.
+  // Top-aligned, so wrapped and one-line cells share a first line.
   line.counterAxisAlignItems = 'MIN';
   cell.appendChild(line);
   line.layoutSizingHorizontal = 'FILL';
@@ -447,25 +342,15 @@ export function swatchCell(value: FoundationValue, width: number, glyph: Foundat
     || (value.kind === 'alias' && !value.external && value.resolved?.kind === 'unresolved');
   const { primary, secondary } = valueLines(value);
   wrappingText(lines, primary, 'Regular', 11, unresolved ? palette.muted : palette.body);
-  // The resolved value is supporting detail for the name above it, so it is
-  // smaller and muted whether or not the alias resolved.
+  // The resolved value is supporting detail: smaller and muted.
   if (secondary) wrappingText(lines, secondary, 'Regular', 10, palette.muted);
   return cell;
 }
 
 // ---------------------------------------------------------------------------
-// Swatch list — the layout colour variables get instead of a table row.
-//
-// A grid of hex codes is the wrong shape for colour: the value a reader wants is
-// the colour itself, and the swatch has to be big enough to judge. So a colour
-// row is a swatch, the token's name and description, and the value in the
-// notations a developer pastes.
-//
-// Single-mode collections take the reference shape exactly: a column of swatches
-// down the left, name and description beside them, values right-aligned at the
-// far edge. Multi-mode collections cannot, since there is one value slot and
-// several values, so the name leads and each mode follows as its own labelled
-// swatch block.
+// Swatch list: colour variables get a swatch, name, description and values
+// instead of a table row. Single-mode: swatch, name, values right-aligned.
+// Multi-mode: the name leads and each mode follows as its own swatch block.
 // ---------------------------------------------------------------------------
 
 const SWATCH = 44;          // single-mode: the reference's large chip
@@ -476,16 +361,10 @@ const NAME_MIN = 300;       // single-mode: the name column FILLs beyond this
 const NAME_W = 280;         // multi-mode: fixed, so the mode blocks line up
 const VALUES_W = 210;       // single-mode: the right-aligned value stack
 const MODE_BLOCK_W = 190;   // multi-mode: swatch plus its values
-// Row rhythm. Bumped from the first pass, which read as cramped once a mapped
-// (multi-mode) collection had three or four columns of small type packed
-// together: the row itself needs more air, not just the text inside it.
 const SWATCH_ROW_PAD = 18;
 const GROUP_GAP = 32;       // between one titled group and the next
 const GROUP_HEAD_GAP = 14;  // a group's heading to its own rows
-// The mode-heading row ("Light  Dark  Wireframe") is a caption for the table
-// directly under it, not a section break, so it sits close to it: a fraction of
-// GROUP_GAP, which is reserved for the bigger, structural gap between one titled
-// group and the next.
+// The mode-heading row captions the list under it, so it sits closer than GROUP_GAP.
 const HEADER_GAP = 12;
 
 /** True for the rows the swatch list owns. */
@@ -493,10 +372,7 @@ export function isColorRow(row: FoundationRow): boolean {
   return row.kind === 'variable' && row.resolvedType === 'COLOR';
 }
 
-/**
- * Inner width one swatch-list row needs, which the card must be wide enough to
- * hold for the same reason the table's is: the card clips.
- */
+/** Inner width one swatch-list row needs; the card clips, so it must fit this. */
 export function swatchRowWidth(modeCount: number): number {
   if (modeCount <= 1) {
     return SWATCH + SWATCH_GAP + NAME_MIN + SWATCH_GAP + VALUES_W;
@@ -509,21 +385,15 @@ function swatchChip(color: RGB | null, size: number): RectangleNode {
   const chip = figma.createRectangle();
   chip.resize(size, size);
   chip.cornerRadius = radius(6);
-  // An unresolved value gets an empty outlined box rather than a missing one: a
-  // gap in the swatch column reads as a rendering fault, not as "no value".
+  // Unresolved gets an empty outlined box: a gap reads as a rendering fault.
   chip.fills = color ? solidFill(color) : [];
   chip.strokes = solidFill(palette.border);
   chip.strokeWeight = 1;
   return chip;
 }
 
-/**
- * The token's name over its description.
- *
- * `showDescription` is the user's Foundations setting, which governs both
- * layouts. The swatch list ignored it at first, which quietly overrode a choice
- * the user had made for the table in the same frame.
- */
+/** The token's name over its description. `showDescription` is the user's
+ *  Foundations setting, which governs both layouts. */
 function nameBlock(
   row: FoundationVariableRow, width: number | 'fill', showDescription: boolean,
 ): FrameNode {
@@ -535,9 +405,7 @@ function nameBlock(
     const desc = makeText(row.description, 'Regular', 11, palette.muted);
     block.appendChild(desc);
   }
-  // The single-mode column FILLs a row whose total width is fixed
-  // (swatchRowWidth), and that fill resolves to exactly NAME_MIN: there is no
-  // unbounded case here to guess at.
+  // The single-mode FILL resolves to exactly NAME_MIN in a fixed-width row.
   const chips = referenceChips(row.codeSyntax, width === 'fill' ? NAME_MIN : width);
   if (chips) block.appendChild(chips);
   return block;
@@ -552,17 +420,8 @@ function wrapNameBlock(block: FrameNode): void {
   }
 }
 
-/**
- * Render a value stack with a primary/secondary hierarchy, instead of every
- * line looking the same.
- *
- * `swatchValueLines` and `valueLines` both already put the fact that matters
- * first: the hex for a literal colour, the target name for an alias. Styling by
- * POSITION rather than by what the line contains is what lets one function serve
- * both cases and stay correct if a third value kind is ever added. Without this,
- * "→ colors/red/500" and "#F53F3F" read as two equally-weighted facts, which is
- * why the table felt flat rather than scannable.
- */
+/** A value stack styled by POSITION: the first line is the fact that matters
+ *  (the hex, or an alias's target), the rest are muted detail. */
 function appendSwatchValues(
   parent: FrameNode, lines: string[], align: 'LEFT' | 'RIGHT' = 'LEFT',
 ): void {
@@ -572,7 +431,6 @@ function appendSwatchValues(
   });
 }
 
-/** One swatch-list row. */
 function swatchRow(
   row: FoundationVariableRow, modeCount: number, divider: boolean,
   showDescriptions: boolean,
@@ -591,7 +449,6 @@ function swatchRow(
   }
 
   if (modeCount <= 1) {
-    // The reference shape: swatch, name, values hard right.
     const cell = row.cells[0];
     line.appendChild(swatchChip(cell ? swatchColorOf(cell.value) : null, SWATCH));
 
@@ -622,21 +479,12 @@ function swatchRow(
     const values = vstack(3);
     block.appendChild(values);
     values.layoutSizingHorizontal = 'FILL';
-    // No mode label here: the list's header row names each column once. Labelling
-    // every block repeated the mode names on every row, which for six rows and
-    // three modes meant eighteen copies of "Light / Dark / Wireframe".
+    // No mode label: the list's header row names each column once.
     appendSwatchValues(values, swatchValueLines(cell.value));
   }
   return line;
 }
 
-/**
- * The swatch list for every colour row in a unit.
- *
- * Borderless with hairline dividers, unlike the table: the reference reads as a
- * list of colours rather than a grid of cells, and an outer box around 40 tall
- * rows only boxes them in.
- */
 function modeHeadings(modeNames: string[]): FrameNode {
   const head = hstack(SWATCH_GAP);
   head.name = 'Modes';
@@ -668,39 +516,28 @@ function buildSwatchList(
   rows: FoundationVariableRow[], modeNames: string[], showDescriptions: boolean,
   groupDescriptions?: Record<string, string>,
 ): FrameNode {
-  // Two different gaps live here, and a single auto-layout frame can only ever
-  // apply one itemSpacing between its children, so this is two nested frames
-  // rather than one: `wrap` (HEADER_GAP) holds the optional mode-heading row
-  // next to `groups` (GROUP_GAP), which holds the group blocks. Without the
-  // split, the header's caption-to-table relationship and the bigger break
-  // between two groups were forced to the same number, and the header ended up
-  // as far from the table as one whole group is from the next.
+  // Two nested frames, since one auto layout has one itemSpacing: `wrap`
+  // (HEADER_GAP) holds the mode headings and `groups` (GROUP_GAP).
   const wrap = vstack(HEADER_GAP);
   wrap.name = 'Colors';
 
-  // Only a multi-mode list needs mode headings, and only once: with one mode
-  // there is nothing to tell apart, and the reference has no header row at all.
+  // Mode headings only when there are modes to tell apart.
   if (modeNames.length > 1) wrap.appendChild(modeHeadings(modeNames));
 
   const groupsList = vstack(GROUP_GAP);
   wrap.appendChild(groupsList);
 
   const groups = groupRowsByFolder(rows);
-  // Titles come from the extractor so the AI pass and the frame agree on them.
-  // Every folder-bearing group is titled now, including a lone one: a short
-  // "Surface" says something the frame's own title does not, which a repeat of
-  // the full folder path did not.
+  // Extractor titles, so the AI pass and the frame agree.
   const titles = groupTitles(groups.map((g) => g.folder));
 
   groups.forEach((group, gi) => {
     const block = vstack(GROUP_HEAD_GAP);
     block.name = group.folder || 'Ungrouped';
-    // Rows at the root of a collection have no folder to name, so they get no
-    // heading rather than an invented one.
+    // Root rows have no folder, so no heading rather than an invented one.
     if (group.folder) block.appendChild(groupHeading(titles[gi]));
 
-    // Keyed by folder, not by title: the title can widen to avoid a clash, and
-    // keying on a value that moves would drop the description when it did.
+    // Keyed by folder, not title: a title can widen to avoid a clash.
     const note = groupDescriptions?.[group.folder];
     if (note) {
       const wrapNote = vstack(0);
@@ -712,8 +549,7 @@ function buildSwatchList(
     const body = vstack(0);
     block.appendChild(body);
     group.rows.forEach((row, i) => {
-      // The divider count restarts per group: the heading already separates the
-      // block above, so a leading hairline would double it.
+      // Dividers restart per group; the heading already separates the block above.
       body.appendChild(swatchRow(row, modeNames.length, i > 0, showDescriptions));
     });
 
@@ -722,35 +558,23 @@ function buildSwatchList(
   return wrap;
 }
 
-/**
- * A block with its heading, used only when one frame holds both layouts.
- *
- * The two are grouped rather than appended side by side so the heading sits
- * against its own block: as separate children of the body they were separated by
- * the body's own 28px rhythm, which reads as a heading floating between blocks
- * rather than belonging to the one below it.
- */
+/** A heading grouped with its block, so it sits against the block rather than
+ *  at the body's 28px rhythm. */
 function labelledBlock(text: string, block: FrameNode): FrameNode {
   const group = vstack(10);
   const label = makeText(text, 'Medium', 11, palette.muted);
-  // The fixed labels are a word or two; a mode name is user-authored and
-  // unbounded. Capped at the prose measure so a long one wraps instead of
-  // widening the group past its block and out of the card. Set after the
-  // append: Figma only accepts a max width on an auto-layout child.
+  // A mode name is unbounded, so cap it at the prose measure. Set after the
+  // append: Figma accepts maxWidth only on an auto-layout child.
   group.appendChild(label);
   label.maxWidth = PROSE_MEASURE;
   group.appendChild(block);
   return group;
 }
 
-// A grid to the next grid, and the last grid to the note under it. Wider than
-// the swatch list's own rhythm because each grid is a bordered box.
+// Grid to grid, and grid to note.
 const CONTRAST_GAP = 16;
 
-/**
- * A note set to a readable measure. The contrast block's two prose strings are
- * the only sentences on a foundation frame long enough to need one.
- */
+/** A note set to the prose measure. */
 function contrastNote(parent: FrameNode, text: string): void {
   const box = vstack(0);
   parent.appendChild(box);
@@ -758,13 +582,8 @@ function contrastNote(parent: FrameNode, text: string): void {
   wrappingText(box, text, 'Regular', 11, palette.muted);
 }
 
-/**
- * The contrast block: one grid per mode, plus whatever the model has to say.
- *
- * The empty case draws its REASON rather than an empty grid. The two look
- * identical on a frame and mean opposite things, and a reader who sees a blank
- * grid concludes the colours are fine.
- */
+/** One contrast grid per mode, plus the model's note. The empty case draws its
+ *  REASON: a blank grid reads as "the colours are fine". */
 function buildContrastBlock(model: ContrastBlockModel): FrameNode {
   const stack = vstack(CONTRAST_GAP);
   stack.name = 'Contrast';
@@ -772,24 +591,17 @@ function buildContrastBlock(model: ContrastBlockModel): FrameNode {
     contrastNote(stack, model.reason);
     return labelledBlock('Contrast', stack);
   }
-  // Labelled by mode only when there are several, the same rule the swatch
-  // list's mode headings follow: with one mode there is nothing to tell apart.
   const many = model.matrices.length > 1;
   for (const m of model.matrices) {
     const grid = matrixFrame(m);
     stack.appendChild(many ? labelledBlock(m.mode, grid) : grid);
   }
-  // Under the grids, not over them: it says what is missing from what you just
-  // read, which is a footnote rather than a preamble.
+  // Under the grids: a footnote on what is missing.
   if (model.note) contrastNote(stack, model.note);
   return labelledBlock('Contrast', stack);
 }
 
-/**
- * A column heading. Not uppercased, unlike the component doc's table headings:
- * half of these labels are user-authored mode names, and shouting a name the
- * user chose back at them misrepresents what the mode is called.
- */
+/** A column heading. Not uppercased: many are user-authored mode names. */
 export function headerCell(label: string, width: number): FrameNode {
   const cell = vstack(0);
   fixWidthHugHeight(cell, width);
@@ -804,8 +616,7 @@ function tableRow(children: FrameNode[], divider: boolean): FrameNode {
   row.paddingBottom = ROW_PAD;
   row.paddingLeft = CELL_GAP;
   row.paddingRight = CELL_GAP;
-  // First lines align across the row. With cells that can wrap to different
-  // heights, centring each one against the others reads as ragged.
+  // First lines align; centring cells of different heights reads as ragged.
   row.counterAxisAlignItems = 'MIN';
   row.layoutSizingHorizontal = 'HUG';
   for (const c of children) row.appendChild(c);
@@ -819,26 +630,17 @@ function tableRow(children: FrameNode[], divider: boolean): FrameNode {
   return row;
 }
 
-/** The footer note block. Shared by both exits from the frame builder.
- *  Exported for its sizing test. */
+/** The footer note block, shared by every exit. Exported for its sizing test. */
 export function buildFooter(notes: string[]): FrameNode {
   const footer = vstack(2);
   footer.name = 'Notes';
-  // The measure the contrast notes use. A long list of omitted mode names is
-  // the one footer line that can outrun the card; it used to run past the
-  // card edge and be clipped rather than wrap.
+  // The prose measure, so a long list of omitted modes wraps.
   fixWidthHugHeight(footer, PROSE_MEASURE);
   for (const n of notes) wrappingText(footer, n, 'Regular', 10, palette.muted);
   return footer;
 }
 
-/**
- * Wrap the finished card in its Section and size the Section around it.
- *
- * Shared by both exits for one reason: a colours-only frame returns before the
- * table is built, and a second copy of this would be the place a future change
- * to one exit silently fails to reach the other.
- */
+/** Wrap the card in its Section, sized around it. One copy for every exit. */
 function finishCard(card: FrameNode, title: string): SectionNode {
   const section = figma.createSection();
   try {
@@ -849,18 +651,15 @@ function finishCard(card: FrameNode, title: string): SectionNode {
     section.resizeWithoutConstraints(card.width + 80, card.height + 80);
     return section;
   } catch (err) {
-    // createSection auto-appends to the current page, so a throw here would
-    // leave an empty or half-filled Section behind. The card is the caller's
-    // to remove (it may not have been appended yet).
+    // createSection auto-appends to the page, so never leave it half-filled.
+    // The card is the caller's to remove.
     try { section.remove(); } catch { /* already gone */ }
     throw err;
   }
 }
 
-/**
- * Build one foundation Section. `loadFonts` reports families that failed so the
- * caller can note the fallback on the affected rows.
- */
+/** Build one foundation Section. A specimen whose font failed to load is
+ *  noted on its row. */
 export async function buildFoundationFrame(
   content: FoundationUnitContent,
   unit: FoundationUnit,
@@ -868,24 +667,19 @@ export async function buildFoundationFrame(
   includeDescriptions: boolean,
   logoBase64?: string | null,
   groupDescriptions?: Record<string, string>,
-  // Optional and defaulted off, on the same parameter path groupDescriptions
-  // takes. A caller that has not been taught about contrast yet renders exactly
-  // what it rendered before, which is what keeps every existing doc's drift
-  // baseline where it is.
+  // Defaulted off, so a caller that omits it renders what it always did and no
+  // existing doc's drift baseline moves.
   includeContrast = false,
   contrast?: ColorContrastReport,
   pill: PillState | null = null,
   collectionOverview?: string,
 ): Promise<SectionNode> {
-  // Reset and apply theme state BEFORE any layout reads palette or fonts.
-  // Skipping this would inherit whatever the last component build left in
-  // frameKit's module state.
+  // Apply theme state BEFORE any layout reads palette or fonts, or this build
+  // inherits the last build's frameKit module state.
   await applyThemeToKit(theme);
 
   const isText = unit.scope.target === 'textStyles';
-  // The two specimen units render a list and return before the table is built,
-  // so neither has columns or a description column to decide. Deciding them
-  // anyway was work no frame drew, saved only by the early returns below.
+  // Specimen units render a list and return before the table.
   const usesTable = unit.scope.target !== 'textStyles' && unit.scope.target !== 'effectStyles';
 
   // Colour variables render as a swatch list, everything else as a table. A
@@ -893,27 +687,19 @@ export async function buildFoundationFrame(
   const colorRows = content.rows.filter(isColorRow) as FoundationVariableRow[];
   const tableRows = content.rows.filter((r) => !isColorRow(r));
 
-  // Decided before the card is sized, because the card CLIPS and a grid at the
-  // extractor's 24 column cap is wider than anything the table or the swatch
-  // list asks for.
-  //
-  // Skipped for a styles unit: it holds no colour variables at all, so a
-  // "no colour pairs to measure" note there would state the obvious about a
-  // document that never had any, and its collectionName is empty besides.
+  // Decided before the card is sized: the card CLIPS, and a grid at the
+  // extractor's 24 column cap is the widest block. A styles unit has no
+  // colour variables, so it gets none.
   const contrastModel = includeContrast && contrast && unit.scope.target === 'collection'
     ? contrastBlockModel(contrast, content.collectionName)
     : null;
 
-  // The column appears only when the user asked for descriptions AND some row
-  // in this unit actually has one, so a file with no descriptions never gets a
-  // column of blanks. Judged on the TABLE's rows alone: a colour row carries its
-  // description inline, so counting those would add an all-blank column whenever
-  // only colours are described.
+  // Only when asked for AND some TABLE row has one, so there is never a column
+  // of blanks. Colour rows carry their descriptions inline.
   const hasDescriptions = usesTable && includeDescriptions
     && tableRows.some((r) => r.description.length > 0);
 
-  // Load every family a specimen needs. Track failures so a wrong-looking
-  // specimen is always acknowledged rather than silently wrong.
+  // Track failures so a wrong-looking specimen is always acknowledged.
   const failedFamilies = new Set<string>();
   if (isText) {
     const wanted = new Map<string, FontName>();
@@ -922,21 +708,15 @@ export async function buildFoundationFrame(
       wanted.set(`${row.metrics.fontFamily}|${row.metrics.fontStyle}`,
         { family: row.metrics.fontFamily, style: row.metrics.fontStyle });
     }
-    for (const [key, fontName] of wanted) {
-      try { await figma.loadFontAsync(fontName); }
-      catch { failedFamilies.add(key); }
-    }
+    await Promise.all([...wanted].map(([key, fontName]) => Promise.resolve()
+      .then(() => figma.loadFontAsync(fontName))
+      .catch(() => { failedFamilies.add(key); })));
   }
 
-  // Derived from content, not read off `unit`: the title is rendered text, so it
-  // has to come from the same object the drift hash reads. It also has to agree
-  // with the title the batch and a later single-doc Update compute, which is why
-  // one function in the extractor derives all three.
+  // From `content`, which the drift hash reads, not from `unit`. One extractor
+  // function derives every title, so a batch and an Update agree.
   const title = foundationUnitTitle(unit.scope, content);
-  // A specimen unit never draws this table (buildTextSpecimenList or
-  // buildEffectSpecimenList replaces it below), so it has no columns to derive;
-  // an empty list still leaves cardWidth at its floor, which is exactly the
-  // width the specimen list gets.
+  // No columns for a specimen unit leaves cardWidth at its floor.
   const columns = usesTable ? tableColumns(content, hasDescriptions) : [];
   // The card has to fit whichever layouts it holds, since it clips its contents.
   const width = Math.max(
@@ -968,11 +748,9 @@ export async function buildFoundationFrame(
         blendMode: 'NORMAL',
       },
     ];
-    // Fix the width BEFORE appending: a child can only be set to FILL once its
-    // parent is FIXED on that axis.
+    // Fix the width BEFORE appending: FILL needs a parent FIXED on that axis.
     fixWidthHugHeight(card, width);
 
-    // --- brand header band ---
     const header = await buildBrandHeader({
       eyebrow: 'Foundations',
       title,
@@ -992,9 +770,8 @@ export async function buildFoundationFrame(
     card.appendChild(body);
     body.layoutSizingHorizontal = 'FILL';
 
-    // The AI paragraph about the whole collection. Untagged on purpose: it is
-    // generated text, so selfHash covers it and a hand edit reads as Edited,
-    // exactly like the group lines. Never read back from canvas.
+    // The AI collection overview. Untagged: selfHash covers it, so a hand edit
+    // reads as Edited. Never read back from canvas.
     const overview = unit.scope.target === 'collection' ? collectionOverview?.trim() : undefined;
     if (overview) {
       const box = vstack(0);
@@ -1004,25 +781,19 @@ export async function buildFoundationFrame(
       wrappingText(box, overview, 'Regular', 13, palette.body);
     }
 
-    // A frame holding both layouts labels them, so the split reads as deliberate
-    // rather than as two unrelated blocks. A frame with only one needs no label.
+    // Label the layouts only when the frame holds both.
     const bothLayouts = colorRows.length > 0 && tableRows.length > 0;
 
-    // --- swatch list (colours) ---
     if (colorRows.length > 0) {
       const list = buildSwatchList(
         colorRows, content.modeNames, includeDescriptions, groupDescriptions);
       body.appendChild(bothLayouts ? labelledBlock('Colors', list) : list);
     }
 
-    // --- contrast grids ---
-    // After the colours it measures and before the table of everything else, and
-    // ahead of the early return below so a colours-only frame gets it too.
+    // Ahead of the early returns, so a colours-only frame gets it too.
     if (contrastModel) body.appendChild(buildContrastBlock(contrastModel));
 
-    // --- text-style specimens (in place of a table for this unit) ---
-    // A text-styles unit holds nothing but textStyle rows, so it never reaches
-    // the generic table below: the specimen list IS its body.
+    // A styles unit's specimen list IS its body.
     if (unit.scope.target === 'textStyles') {
       const textRows = content.rows.filter((r): r is FoundationTextRow => r.kind === 'textStyle');
       body.appendChild(buildTextSpecimenList(textRows, CONTENT_WIDTH, includeDescriptions, failedFamilies));
@@ -1031,9 +802,6 @@ export async function buildFoundationFrame(
       return finishCard(card, title);
     }
 
-    // --- effect-style specimens (in place of a table for this unit) ---
-    // Same shape as the text-styles exit above, and for the same reason: an
-    // effect-styles unit holds nothing but effectStyle rows.
     if (unit.scope.target === 'effectStyles') {
       const effectRows = content.rows.filter((r): r is FoundationEffectRow => r.kind === 'effectStyle');
       body.appendChild(buildEffectSpecimenList(effectRows, CONTENT_WIDTH, includeDescriptions));
@@ -1042,7 +810,6 @@ export async function buildFoundationFrame(
       return finishCard(card, title);
     }
 
-    // --- table (everything else) ---
     if (tableRows.length === 0) {
       const notes = footerNotes(content);
       if (notes.length > 0) body.appendChild(buildFooter(notes));
@@ -1062,8 +829,7 @@ export async function buildFoundationFrame(
     table.appendChild(head);
 
     tableRows.forEach((row) => {
-      // Cells are filled in column order, so a cell's width is always the width
-      // its own heading was measured at.
+      // Filled in column order, so each cell gets its heading's width.
       let next = 0;
       const widthOf = (): number => columns[next++]?.width ?? COL_MODE;
 
@@ -1075,26 +841,18 @@ export async function buildFoundationFrame(
       if (row.kind === 'variable') {
         for (const cell of row.cells) cells.push(swatchCell(cell.value, widthOf(), row.glyph));
       }
-      // A textStyle or effectStyle row never reaches this table: buildFoundationFrame
-      // renders the matching specimen list for that unit and returns before this loop runs.
 
-      // Every row after the header carries the hairline above it, so the table's
-      // own border is never doubled at the last row.
+      // A hairline above every row after the header, so the border never doubles.
       table.appendChild(tableRow(cells, true));
     });
 
-    // --- footer notes ---
-    // Derived from `content` alone, never from `unit` or from parameters: the
-    // renderer must read the same object the drift hash reads.
     const notes = footerNotes(content);
     if (notes.length > 0) body.appendChild(buildFooter(notes));
 
     return finishCard(card, title);
   } catch (err) {
-    // Never litter the canvas on failure, the same rule buildDocFrames keeps:
-    // every frame this build made is inside `card` (or was removed with the
-    // Section by finishCard), and createFrame auto-appends to the page, so an
-    // orphan here is a visible card with no link and no registry entry.
+    // Never litter the canvas: createFrame auto-appends to the page, and every
+    // frame this build made is inside `card`.
     try { card.remove(); } catch { /* already gone */ }
     throw err;
   }

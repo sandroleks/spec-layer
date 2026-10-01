@@ -77,12 +77,9 @@ const noPublishStatus = async (): Promise<PublishStatus | null> => null;
 
 export interface FoundationReaderOptions {
   /**
-   * Read `getPublishStatusAsync` for every variable, collection and style. It
-   * is one bridge call each, so a 5,000-variable file pays 5,000 of them. Only
-   * the v5 projections read `publication.publishStatus`; the drift, render and
-   * change-list paths never do, and foundationContentHash does not hash it
-   * (pinned in the extractor's foundationHash.test.ts), so they pass false and
-   * every status comes back null, which the schema already reads as unknown.
+   * Read `getPublishStatusAsync` for every variable, collection and style, one
+   * bridge call each. Only the v5 projections read it; foundationContentHash
+   * does not hash it. Off, every status is null, which the schema reads as unknown.
    */
   publishStatus: boolean;
 }
@@ -107,23 +104,10 @@ function readerVariable(v: VariableSource, publishStatus: PublishStatus | null):
 }
 
 /**
- * A FoundationReader for one serialization pass.
- *
- * The first variable lookup reads every local variable in one
- * getLocalVariablesAsync call and indexes it by id, so a 464-variable file
- * costs one round trip for values instead of 464. An id the bulk read did not
- * return (or a bulk read that failed) falls back to getVariableByIdAsync, so
- * nothing is reported missing that Figma can still hand over.
- *
- * Publication status is per source and read concurrently under
- * serializeFoundation's Promise.all when `options.publishStatus` is true; see
- * FoundationReaderOptions for which callers turn it off. An absent
- * `publication` drops the field from every v5 artifact built from this dump,
- * and the selection-time dump is the same session cache the publish path
- * reads, so those two callers always read it.
- *
- * Create one per pass. The index is a snapshot; a reader kept across passes
- * would serve stale values after an edit.
+ * A FoundationReader for one serialization pass. The first variable lookup
+ * reads every local variable in one bulk call; an id it missed, or a failed
+ * bulk read, falls back to getVariableByIdAsync. Create one per pass: the
+ * index is a snapshot and would serve stale values after an edit.
  */
 export function createFoundationReader(
   variables: VariablesSource,
@@ -136,8 +120,7 @@ export function createFoundationReader(
     if (!index) {
       index = variables.getLocalVariablesAsync()
         .then((list) => new Map(list.map((v) => [v.id, v] as const)))
-        // A failed bulk read must not fail every lookup; the per-id path below
-        // still works, exactly as the reader behaved before the bulk read.
+        // A failed bulk read must not fail every lookup; the per-id path still works.
         .catch(() => new Map<string, VariableSource>());
     }
     return index;
@@ -191,8 +174,7 @@ export function createFoundationReader(
         id: s.id,
         name: s.name,
         description: s.description ?? '',
-        // Handed to effectLayerOf as-is: it is structurally typed for exactly
-        // this, which keeps the effect union in the extractor rather than here.
+        // Handed to effectLayerOf as-is, keeping the effect union in the extractor.
         effects: s.effects as unknown as RawEffect[],
         remote: s.remote,
         publishStatus: await statusOf(s),

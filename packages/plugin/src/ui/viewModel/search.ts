@@ -1,21 +1,14 @@
 /**
- * The command palette searches connected Library documents and nothing else.
- * With no query typed it lists the most recently generated component docs, so
- * the palette opens on something useful rather than on a list of rail
- * destinations the sidebar already shows. The host remains responsible for
- * opening the Library and revealing the row the user picked.
+ * The command palette searches connected Library documents only. The host
+ * opens the Library and reveals the picked row.
  */
 export interface SearchDocument {
   docId: string;
-  /** Which document type this row is, mirroring `LibraryEntry.kind`. */
+  /** Mirrors `LibraryEntry.kind`. */
   kind: 'component' | 'foundation';
   label: string;
   sourceLabel: string;
-  /**
-   * Last successful generation time, copied from the doc link. Orders the
-   * default recent list. A missing or invalid value sorts last rather than
-   * reading as brand new.
-   */
+  /** Last generation time from the doc link; an invalid value sorts last, never as new. */
   generatedAt: number;
 }
 
@@ -28,20 +21,16 @@ export type SearchResult = SearchDocumentResult;
 export interface SearchModel {
   query: string;
   /**
-   * True while no query is typed, which is when `results` is the recent
-   * component list rather than a match set. The presentation layer titles the
-   * group from this, and it is the difference between "nothing documented yet"
-   * and "no matches".
+   * No query typed, so `results` is the recent component list, not a match
+   * set: "nothing documented yet" rather than "no matches".
    */
   recent: boolean;
   results: SearchDocumentResult[];
-  /** Always zero when there are no results, otherwise clamped to a valid result. */
+  /** Zero with no results, otherwise clamped to a valid result. */
   activeIndex: number;
 }
 
-/** Recent components shown before typing. */
 const RECENT_LIMIT = 6;
-/** Matches shown for a typed query, which can reach both document kinds. */
 const QUERY_LIMIT = 8;
 
 function normalized(value: string): string {
@@ -57,12 +46,8 @@ function recency(document: SearchDocument): number {
 }
 
 /**
- * Builds the complete presentation state.
- *
- * No query lists component docs newest first: the palette's job before typing
- * is "take me back to what I was documenting". A query searches every
- * connected document, components and foundations alike, in registry order —
- * recency is not a relevance signal once the user has said what they want.
+ * No query lists component docs newest first. A query searches every
+ * connected document in registry order: recency is not a relevance signal.
  */
 export function buildSearchModel(
   documents: readonly SearchDocument[],
@@ -98,10 +83,7 @@ export type SearchNavigationKey =
   | 'Home'
   | 'End';
 
-/**
- * Pure keyboard pointer movement for the host controller. Arrow navigation
- * wraps, while Home and End jump to the list boundaries.
- */
+/** Arrows wrap; Home and End jump to the ends. */
 export function nextSearchIndex(
   current: number,
   key: SearchNavigationKey,

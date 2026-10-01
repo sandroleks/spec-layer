@@ -1,8 +1,6 @@
 /**
- * history.ts (screen): the version history pane. Presentation only, the same
- * split screens/publish.ts has against ui/publish.ts. One sl-library-row per
- * record, newest first, with a disclosure that opens one card of changes per
- * component.
+ * The version history pane, presentation only: one row per record, newest
+ * first, with a disclosure that opens one card of changes per component.
  */
 import type { VersionRecord } from '@spec-layer/extractor';
 import { icon } from '../shell/icons';
@@ -21,10 +19,8 @@ export function historyHeaderMarkup(): string {
 }
 
 /**
- * The bump word, with its one-sentence meaning in the shell's tooltip
- * pattern. The trigger is the wrapper span, so hovering the badge shows it;
- * a focus rule in patterns.css shows it when the disclosure has keyboard
- * focus, since the badge sits inside that button.
+ * The bump word with its meaning as a tooltip. A focus rule in patterns.css
+ * shows it when the disclosure has keyboard focus, since the badge sits inside.
  */
 function badge(record: VersionRecord): string {
   const tone = bumpTone(record.bump);
@@ -52,9 +48,8 @@ function detailsMarkup(record: VersionRecord, expanded: boolean): string {
   const total = record.counts.major + record.counts.minor + record.counts.patch;
   let content: string;
   if (record.changes.length === 0 && record.changesTruncated) {
-    // Compacted by the proxy's log cap (see versions.ts compactLog): the
-    // counts survive, but the per-change list this old does not. Never claim
-    // "No changes" over a version that plainly had some.
+    // The proxy's log cap (versions.ts compactLog) keeps only counts this old;
+    // never claim "No changes" over a version that had some.
     content =
       '<p class="sl-library-change-fallback"><strong>Older versions keep only a count of their changes. ' +
       `This one had ${total}.</strong></p>`;
@@ -79,11 +74,8 @@ function detailsMarkup(record: VersionRecord, expanded: boolean): string {
 }
 
 /**
- * One row is one button. The version, its badge, the date, the chevron, and
- * the note all sit inside the disclosure, so a click anywhere on the row
- * opens the changes; a chip-sized target on a full-width row read as a
- * control that only worked in one spot. The button's accessible name is its
- * content, which names the version, the bump, and the date in reading order.
+ * One row is one button, so a click anywhere opens the changes; its accessible
+ * name is its content: version, bump and date in reading order.
  */
 function rowMarkup(record: VersionRecord, expanded: boolean, locale?: string): string {
   const when = formatPublishedAt(record.publishedAt, locale);
@@ -132,9 +124,7 @@ export function historyScrollMarkup(state: HistoryState, locale?: string): strin
       break;
     case 'ready':
       if (state.log && state.log.records.length > 0) {
-        // Rows run edge to edge, the way the Library list does, so the hover
-        // band and the hairlines span the panel instead of reading as an
-        // inset card. Prose states below keep the padded Publish body.
+        // Rows run edge to edge like the Library list; prose states keep the padded body.
         const rows = state.log.records.map((record) => rowMarkup(record, state.expanded === record.version, locale)).join('');
         return `<div class="sl-history-list">${rows}</div>`;
       }

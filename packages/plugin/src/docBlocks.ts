@@ -1,10 +1,8 @@
 /// <reference types="@figma/plugin-typings" />
 /**
- * docBlocks.ts: the blocks Docs 2.0 added to the component document.
- *
- * Every block that carries editorial text tags it (see canvasProse.ts for the
- * slot and key contract). Deterministic text is left untagged so selfHash
- * covers it and an Update rebuilds it.
+ * Blocks of the component document. Editorial text is tagged (see
+ * canvasProse.ts for the slot and key contract); deterministic text stays
+ * untagged so selfHash covers it and an Update rebuilds it.
  */
 import type { ColumnBlock, KeyboardRow, PropertyRow } from './ui/docModel';
 import type { GuidelinePair, GuidelineCard } from '@spec-layer/extractor';
@@ -73,10 +71,8 @@ export function buildTwoColumns(left: ColumnBlock, right: ColumnBlock, contentWi
   return row;
 }
 
-/** A Do card sits on a faint green tint with a green border and label; a
- *  Don't card the same in red. The tints say which half is which before the
- *  label is read, and stay legible because the rule and reason keep the
- *  document's own heading and body inks. */
+/** A Do card on a faint green tint with green border and label, a Don't card
+ *  in red, so the halves read before the label; text keeps the doc's inks. */
 function guidelineCard(card: GuidelineCard | null, kind: 'do' | 'dont'): FrameNode {
   const box = vstack(8);
   box.paddingTop = box.paddingBottom = box.paddingLeft = box.paddingRight = 16;
@@ -103,9 +99,8 @@ function guidelineCard(card: GuidelineCard | null, kind: 'do' | 'dont'): FrameNo
   return box;
 }
 
-/** Paired Do and Don't cards, one pair per row. The pair row carries its
- *  index. The row hugs the taller card and both cards fill its height, so a
- *  pair always reads as two equal blocks however long each reason runs. */
+/** Paired Do and Don't cards, one pair per row carrying its index. Both cards
+ *  fill the row's height, so a pair reads as two equal blocks. */
 export function buildGuidelinePairs(pairs: GuidelinePair[], contentWidth: number): FrameNode {
   const grid = vstack(16);
   grid.resize(contentWidth, 1);
@@ -197,9 +192,8 @@ export function buildKeyboardTable(rows: KeyboardRow[], contentWidth: number): F
  *  Only the description cell is editorial; it carries the property name. */
 export function buildPropertiesTable(rows: PropertyRow[], hasDescriptions: boolean, contentWidth: number): FrameNode {
   const labels = hasDescriptions ? ['Property', 'Type', 'Values', 'Default', 'Description'] : ['Property', 'Type', 'Values', 'Default'];
-  // Shares of the column for the fixed cells; the last column grows. Values
-  // takes the widest fixed share: when four fixed columns split 55% evenly,
-  // Values had 105px and an option such as "Color Background" broke mid-word.
+  // Shares of the column for the fixed cells; the last grows. Values gets the
+  // widest share, or an option like "Color Background" breaks mid-word.
   const shares = hasDescriptions ? [0.16, 0.12, 0.22, 0.13] : [0.22, 0.16, 0.32];
   const widths: (number | 'grow')[] = [...shares.map((share) => Math.floor(contentWidth * share)), 'grow'];
   const table = tableShell();
@@ -228,13 +222,11 @@ export function buildPropertiesTable(rows: PropertyRow[], hasDescriptions: boole
 }
 
 // ---------------------------------------------------------------------------
-// Placeholders — a writing section nobody has written yet (see
-// ui/placeholders.ts). The box is untagged chrome with no text of its own.
-// The tag is stamped with PLACEHOLDER_TAG_KEY, which keeps it out of the
-// generated lane, so deleting it is not a hand edit. The structure inside
-// carries the same slot tags the filled section uses, and every guidance node
-// is stamped with PLACEHOLDER_KEY so the read-back can tell guidance from
-// something typed over it.
+// Placeholders: a writing section nobody has written yet (see
+// ui/placeholders.ts). The box is untagged chrome. The tag carries
+// PLACEHOLDER_TAG_KEY, so deleting it is not a hand edit. Inside, the filled
+// section's slot tags, with each guidance node stamped PLACEHOLDER_KEY so
+// read-back can tell guidance from text typed over it.
 // ---------------------------------------------------------------------------
 
 /** One muted Regular guidance line, stamped with its own text. */
@@ -334,8 +326,7 @@ function placeholderBody(shape: PlaceholderShape, width: number): FrameNode {
       return row;
     }
     case 'keyboardRow': {
-      // Same columns as buildKeyboardTable. The row has no key tag: its keys
-      // are whatever gets typed into the first cell (see canvasProse.ts).
+      // Same columns as buildKeyboardTable; no key tag (see canvasProse.ts).
       const widths: (number | 'grow')[] = [Math.floor(width * 0.3), 'grow'];
       const table = tableShell();
       const head = headerRow(['Key', 'Action'], widths);
@@ -360,9 +351,8 @@ function placeholderBody(shape: PlaceholderShape, width: number): FrameNode {
   }
 }
 
-/** A writing section drawn as a marked placeholder: a dashed box in the doc's
- *  own border colour, the Placeholder tag, then guidance in the section's own
- *  shape. */
+/** A writing section as a marked placeholder: a dashed box in the doc's border
+ *  colour, the Placeholder tag, then guidance in the section's shape. */
 export function buildPlaceholderBlock(shape: PlaceholderShape, contentWidth: number): FrameNode {
   const box = vstack(14);
   box.resize(contentWidth, 1);

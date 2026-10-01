@@ -3,7 +3,7 @@ import {
   buildFoundation, unitContent,
   type FoundationScope, type FoundationSpec, type SerializedFoundation,
 } from '../src/foundation';
-import { foundationContentHash } from '../src/hash';
+import { foundationContentHash, foundationUnitContentHash } from '../src/hash';
 
 function dump(): SerializedFoundation {
   return {
@@ -199,6 +199,14 @@ describe('foundationContentHash', () => {
     };
     expect(hashOf(dump(), gone)).toBe(hashOf(dump(), deleted));
     expect(hashOf(dump(), gone)).not.toBe(hashOf(dump(), { ...SEMANTIC, group: 'bg' }));
+  });
+
+  it('hashes content a caller already holds exactly as it hashes the scope', () => {
+    const spec = buildFoundation(dump());
+    const deleted: FoundationScope = { ...SEMANTIC, collectionId: 'deleted' };
+    for (const scope of [SEMANTIC, OTHER, deleted]) {
+      expect(foundationUnitContentHash(unitContent(spec, scope))).toBe(foundationContentHash(spec, scope));
+    }
   });
 });
 
@@ -404,7 +412,6 @@ it('is unchanged by FoundationSpec fields that reach no rendered row', () => {
   const widened = {
     ...spec,
     effectStyles: [{ id: 'S:1', name: 'Focused/Primary', description: '', group: 'Focused', effects: [] }],
-    narrowedTo: { target: 'collection', collectionId: 'c1' },
     unavailable: ['effectStyles'],
   } as unknown as typeof spec;
 

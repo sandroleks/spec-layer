@@ -101,6 +101,16 @@ requests carry token names and resolved values without an image.
    selection, while it runs: changing the selection during a failing build
    still surfaces the failure as a toast, because the selection changed
    before you could see the banner, and the panel shows the new selection.
+10. Select a large component set and wait for the panel to show it, tick a
+    non-default variant, then click five layers inside the set in quick
+    succession. The panel keeps the component without going back to
+    reading, the variant stays ticked, and Figma stays responsive. Rename a
+    layer in the set and click inside it again: the panel reads it again.
+    Rename a variable the set binds and click inside it: it reads again.
+11. With AI writing on, **Create docs** for a component, click a layer
+    inside the same set, and press **Create docs** again: the header's AI
+    count drops once, not twice. Edit the component's description and press
+    **Create docs**: a new draft is requested.
 
 Also verify a nested selection resolves to its enclosing component and a
 non-component selection shows an actionable empty state with no toast. Click
@@ -569,6 +579,17 @@ record.
     rows appear, not partway through the check, and the list does not move
     when the check finishes. The count under the filters leaves that doc
     out: it has no source check to run.
+26. On a file with docs built and checked by the previous release, open
+    Library on the new build and wait for the check: every row that read
+    **In sync** before still reads **In sync**, and no row reads **Edited**
+    that was not edited. (Hand-edit detection now finds tagged layers with
+    one native search; a mismatch here would mark every doc edited.)
+27. With at least five component docs checked, **Update** one drifted row.
+    When it finishes, the other rows keep their badges without a new check
+    count, the updated row reads **In sync**, and the line under the filters
+    keeps the earlier check's time. **Update all docs** on several drifted
+    rows: none of them is checked again afterwards. **Refresh library**
+    then checks every row.
 
 ## AI-writing allowance (free plan)
 

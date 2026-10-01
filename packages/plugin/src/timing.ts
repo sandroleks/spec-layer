@@ -1,18 +1,12 @@
 /**
- * Measurement for a `DRIFT_TIMING=1` build only (see build.mjs). main.ts and
- * ui-vnext.ts construct this behind `__DRIFT_TIMING__`, so a normal build
- * drops the module with the branch. Nothing here reads that flag, which is
- * what lets it run under test.
+ * For a `DRIFT_TIMING=1` build only (build.mjs): callers construct this behind
+ * `__DRIFT_TIMING__`, so a normal build drops it; it never reads the flag, so
+ * it runs under test.
  *
- * A thread that is busy cannot run a timer, so a repeating timer that fires
- * late measures how long the thread was held: on the main thread, the time
- * Figma could not repaint or take input; in the UI iframe, the time the
- * plugin could not. Elapsed time around an async handler cannot tell the
- * difference between waiting on Figma and holding the thread; this can.
- *
- * The late tick runs after the block has ended, when the activity then is
- * often idle again, so a report names everything that ran since the
- * previous tick.
+ * A busy thread cannot run a timer, so a repeating timer's lateness is how
+ * long the thread was held, which elapsed time around an await cannot tell
+ * from waiting on Figma. The late tick fires after the block, so a report
+ * names everything since the previous tick.
  */
 export class BlockWatch {
   private last: number;

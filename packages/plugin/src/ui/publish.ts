@@ -1,16 +1,12 @@
 /**
- * publish.ts — assemble a library bundle through the SAME extractor code
- * paths Copy for AI uses, and POST it to the proxy.
- *
- * Deterministic bundle assembly (buildPublishBundle) lives beside the proxy
- * calls (publishBundle / rotatePullKey) because both halves of a publish
- * share one module boundary: what gets sent, and how it is sent.
+ * Assemble a library bundle through the same extractor paths Copy for AI uses,
+ * and send it to the proxy: what gets sent, and how.
  */
 import {
   extract, buildFoundation, compareCodeUnits, toYaml, EXTRACTOR_VERSION,
   buildFoundationArtifactV5, foundationDtcgDocument,
   buildComponentArtifactV5, componentAiContext, parseQuotaHeaders,
-  compareBump, isSemver, nextVersion, specContentHash, proseToLegacy,
+  compareBump, isSemver, nextVersion, specContentHash, proseToLegacy, knownFileKey,
   type FoundationArtifactV5, type ProxyQuota, type YamlValue, type SerializedFoundation,
   type Bump, type LibraryChange,
 } from '@spec-layer/extractor';
@@ -39,18 +35,17 @@ export interface PublishBundleV1 {
   foundation: { ai: string; artifact: FoundationArtifactV5 } | null;
   components: Array<{
     name: string; ai: string; artifact: unknown;
-    /** Every variant instance, name and axis values, so the proxy's diff can
-     *  compare bindings per variant (libraryDiff.ts). */
+    /** Every variant instance, so the proxy's diff compares bindings per
+     *  variant (libraryDiff.ts). */
     variants: Array<{ name: string; values: Record<string, string> }>;
   }>;
 }
 
 export interface PublishStamps {
   components: PublishStampComponent[];
-  /** The Foundation dump the bundle was built from, or null when it carried
-   *  none. Sent verbatim on `stampPublished` so foundation docs are stamped
-   *  with the hash of exactly the published content, without a second live
-   *  read of the file. */
+  /** The Foundation dump the bundle was built from, or null. Sent verbatim on
+   *  `stampPublished` so foundation docs get the hash of exactly the published
+   *  content, with no second live read. */
   foundation: SerializedFoundation | null;
 }
 
@@ -74,7 +69,7 @@ export function buildPublishArtifacts(
   if (sources.foundation) {
     const spec = buildFoundation(sources.foundation);
     const { artifact } = buildFoundationArtifactV5(spec, {
-      exportId: `foundation:${spec.fileKey && spec.fileKey !== 'unknown' ? spec.fileKey : 'local'}:${generatedAt}`,
+      exportId: `foundation:${knownFileKey(spec.fileKey) ?? 'local'}:${generatedAt}`,
       generatedAt,
       build,
     });
@@ -91,9 +86,8 @@ export function buildPublishArtifacts(
         figmaFile: sources.fileKey,
         ...(sources.fileName ? { figmaFileName: sources.fileName } : {}),
       });
-      // The same extraction the doc's Generate ran (actions.ts passes the same
-      // options), hashed both ways a doc can be configured, so the main thread
-      // can stamp each doc with the hash its own includeHidden produces.
+      // The same extraction a doc build runs, hashed both ways so main can
+      // stamp each doc with the hash its own includeHidden produces.
       stamps.push({
         sourceNodeId: node.id,
         hashes: {
@@ -106,7 +100,7 @@ export function buildPublishArtifacts(
         generatedAt,
         build,
         ...(foundationArtifact ? { foundation: foundationArtifact } : {}),
-        // The v5 artifact still reads the v1 shape; the doc stores v2.
+        // The v5 artifact reads the v1 shape; the doc stores v2.
         prose: prose ? proseToLegacy(prose) : null,
       });
       return {
@@ -136,9 +130,8 @@ export type PublishOutcome =
   | { kind: 'created'; libraryId: string; pullKey: string; publishedAt: string; version: string | null }
   | { kind: 'updated'; libraryId: string; publishedAt: string; version: string | null }
   | { kind: 'unchanged'; libraryId: string; publishedAt: string; version: string | null }
-  /** The proxy refused because the chosen bump undercounts the actual changes.
-   *  Carries the minimum it will accept and the version that bump produces, so
-   *  the screen can re-render with both without a second round trip. */
+  /** The chosen bump undercounts the changes. Carries the minimum the proxy
+   *  accepts and its version, so the screen re-renders with no round trip. */
   | { kind: 'below_minimum'; minimumBump: Bump; proposedVersion: string }
   | { kind: 'gone' }
   | { kind: 'error'; message: string };
@@ -148,12 +141,9 @@ export type PublishQuotaSnapshot = NonNullable<ProxyQuota['publish']>;
 
 export interface PublishResult {
   outcome: PublishOutcome;
-  /**
-   * The publish allowance the response reported, or null when it carried no
-   * quota headers (a network failure, or a refusal the proxy answers before
-   * it reaches the quota engine). The proxy sends them on 200, 201, 402, 409,
-   * and 429, so a spent update is visible without a second round trip.
-   */
+  /** Null when the response had no quota headers (a network failure, or a
+   *  refusal before the quota engine). The proxy sends them on 200, 201, 402,
+   *  409 and 429. */
   quota: PublishQuotaSnapshot | null;
 }
 
@@ -170,7 +160,7 @@ const UNREACHABLE = 'Couldn’t reach Spec Layer. Check your connection and try 
 
 const PUBLISH_LIMIT_MESSAGE_PREFIX = 'Couldn’t publish. The free plan publishes 1 Figma file.';
 
-/** Bytes as "5.6 MB", with no decimal when it is whole, or the raw value when it is not a number. */
+/** Bytes as "5.6 MB" (no decimal when whole), or the raw value if not a number. */
 function megabytes(bytes: unknown): string {
   if (typeof bytes !== 'number' || !Number.isFinite(bytes)) return String(bytes);
   const mb = bytes / 1_000_000;
@@ -182,10 +172,9 @@ const NOT_OWNER =
   + 'Publish from the device that first published it or last rotated its key.';
 
 /**
- * The spent allowance, in the server's own number. The 402 carries the
- * publish quota headers, so the count is read from them rather than written
- * here, where it could drift from the proxy's limit. A response without them
- * gets the sentence with no number, never a guessed one.
+ * The spent allowance in the server's own number, read from the 402's quota
+ * headers so it cannot drift from the proxy's limit. Without them the sentence
+ * has no number, never a guessed one.
  */
 function exhaustedCopy(body: Record<string, unknown>, quota: PublishQuotaSnapshot | null): string {
   const reset = formatResetDate(typeof body.resetsAt === 'string' ? body.resetsAt : '');
@@ -202,8 +191,8 @@ function publishErrorCopy(
 ): string {
   const error = typeof body.error === 'string' ? body.error : '';
   if (status === 401) {
-    // A bearer-only request with a key that is not buying Pro. Say what the
-    // proxy said about the key rather than asking for one already entered.
+    // A key that is not buying Pro: say what the proxy said about it rather
+    // than asking for a key already entered.
     if (error === 'license_not_active') {
       return body.reason === 'unreachable'
         ? 'Couldn’t publish. Spec Layer couldn’t check your license key right now. Try again in a minute.'
@@ -226,7 +215,7 @@ function publishErrorCopy(
     if (existing) {
       const name = typeof existing.fileName === 'string' && existing.fileName ? existing.fileName : 'another file';
       // A lapsed Pro license still owns every library it created, so the
-      // count can exceed one; name the first and say how many there are.
+      // count can exceed one.
       const owned = typeof body.owned === 'number' && body.owned > 1
         ? `${body.owned} files, including ${name}`
         : name;
@@ -244,9 +233,8 @@ async function bodyOf(res: Response): Promise<Record<string, unknown>> {
 }
 
 /**
- * The library's pull key travels with every write to it. A Figma identity is
- * not a secret, so for a library created on a free plan the proxy accepts an
- * update or a rotate only from a caller who also holds the key it handed out.
+ * The pull key travels with every write. A Figma identity is not a secret, so
+ * a free-plan library accepts an update or rotate only with its key.
  */
 const withPullKey = (headers: Record<string, string>, pullKey: string | null | undefined): Record<string, string> =>
   pullKey ? { ...headers, 'X-Pull-Key': pullKey } : headers;
@@ -255,12 +243,10 @@ export async function publishBundle(
   bundle: PublishBundleV1,
   opts: {
     auth: ProxyAuth; libraryId: string | null; pullKey?: string | null; fetcher?: typeof fetch;
-    /** The publisher's raise. Omitted or null lets the proxy apply the
-     *  minimum bump the changes require. */
+    /** Omitted or null lets the proxy apply the minimum bump. */
     bump?: Bump | null;
     note?: string | null;
-    /** Only meaningful on a create; the proxy ignores it on an update, since
-     *  an existing library already has a version. */
+    /** Create only; ignored on an update. */
     initialVersion?: string | null;
   },
 ): Promise<PublishResult> {
@@ -284,8 +270,7 @@ export async function publishBundle(
     return { outcome: { kind: 'error', message: UNREACHABLE }, quota: null };
   }
   const body = await bodyOf(res);
-  // Read the allowance off every answer that states one, refusals included: a
-  // 402 is exactly when the screen's count matters most.
+  // Refusals included: a 402 is when the count matters most.
   const quota = parseQuotaHeaders(res.headers);
   const result = (outcome: PublishOutcome): PublishResult => ({ outcome, quota });
   const version = typeof body.version === 'string' ? body.version : null;
@@ -305,18 +290,15 @@ export async function publishBundle(
   ) {
     return result({ kind: 'below_minimum', minimumBump: body.minimumBump as Bump, proposedVersion: body.proposedVersion });
   }
-  // Only a library the proxy no longer has is gone. A 403 means it exists and
-  // someone else owns it (or this device lacks its key): the id in the file
-  // is still the one developers pull, so it must stay put.
+  // Only a 404 is gone. A 403 means another owner or a missing key, and the
+  // file's id is still the one developers pull, so it stays.
   if (opts.libraryId && res.status === 404) return result({ kind: 'gone' });
   return result({ kind: 'error', message: publishErrorCopy(res.status, body, quota) });
 }
 
 /**
- * The screen shows no dry-run message (a failed dry run reads as
- * PROPOSAL_FAILED_MESSAGE in the version block), so a request that never
- * reached the proxy carries none. The refusals keep theirs for a caller that
- * wants to show one.
+ * A request that never reached the proxy carries no message: the screen shows
+ * PROPOSAL_FAILED_MESSAGE instead. Refusals keep theirs.
  */
 export async function dryRunBundle(
   bundle: PublishBundleV1,
@@ -360,8 +342,7 @@ export async function rotatePullKey(
 ): Promise<{ kind: 'rotated'; pullKey: string } | { kind: 'error'; message: string }> {
   const headers = authHeaders(auth);
   if (!headers) return { kind: 'error', message: ROTATE_NO_IDENTITY };
-  // Same guard as the history fetch: the id is interpolated into the path
-  // while the caller's key rides in the header.
+  // The id goes into the path while the key rides in a header.
   if (!isLibraryId(libraryId)) return { kind: 'error', message: ROTATE_BAD_ID };
   const doFetch = fetcher ?? fetch;
   let res: Response;
@@ -372,10 +353,8 @@ export async function rotatePullKey(
   }
   const body = await bodyOf(res);
   if (res.ok) return { kind: 'rotated', pullKey: String(body.pullKey) };
-  // Ownership is proved by the identity that published (the license key, or
-  // the Figma account together with the current pull key), so a teammate
-  // looking at the file's id can reach the button and be refused. Say what
-  // it takes, rather than quoting the status code.
+  // Ownership is the publishing license key, or the Figma account plus the
+  // current pull key, so a teammate can be refused. Say what it takes.
   if (res.status === 403 || body.error === 'not_owner') {
     return {
       kind: 'error',
@@ -389,12 +368,8 @@ export async function rotatePullKey(
   };
 }
 
-/**
- * The flag a setup line carries for the component format. Empty for YAML, the
- * CLI's default, so the YAML command stays exactly what it always was. The
- * CLI's `setup` stores the flag in speclayer.json, so every later pull in that
- * repository writes the same format.
- */
+/** Empty for YAML, the CLI default. `setup` stores the flag in speclayer.json,
+ *  so every later pull writes the same format. */
 function formatFlag(format: ComponentFormat): string {
   return format === 'md' ? ' --component-format md' : '';
 }
@@ -404,11 +379,9 @@ export function setupCommand(libraryId: string, pullKey: string, format: Compone
 }
 
 /**
- * The same setup, phrased for a coding agent a developer pastes it to. It
- * carries `--yes` because an unattended npx run otherwise stops to ask before
- * downloading the package, and it ends with the command that writes the
- * agent's guide to the pulled files, since an agent that only receives the
- * setup line has no way to know what landed or how to read it.
+ * The setup phrased for a coding agent. `--yes` because unattended npx stops
+ * to ask before downloading; it ends with the command that writes the agent's
+ * guide, since the setup line alone says nothing about what landed.
  */
 export function agentSetupMessage(libraryId: string, pullKey: string, format: ComponentFormat): string {
   return [
@@ -425,11 +398,7 @@ export function agentSetupMessage(libraryId: string, pullKey: string, format: Co
 }
 
 // ---------------------------------------------------------------------------
-// Publish controller — module state driving the library screen's "Publish for
-// developers" section, mirroring the module-state + host pattern actions.ts
-// uses for foundations. Lives beside buildPublishBundle/publishBundle/
-// rotatePullKey because it is the third leg of the same publish flow:
-// assemble, send, orchestrate.
+// Publish controller: module state plus a host, as actions.ts does for foundations
 // ---------------------------------------------------------------------------
 
 export type PublishSourcesMsg = Extract<MainToUi, { type: 'publishSources' }>;
@@ -441,60 +410,39 @@ export interface PublishState {
   libraryId: string | null;
   pullKey: string | null;
   lastPublishedAt: string | null;
-  /** Which action the in-flight collect belongs to. All three actions share
-   *  one round trip to the main thread, and only this says which reply
-   *  handler should run. */
+  /** Which action the in-flight collect belongs to; all three share one
+   *  round trip to main. */
   intent: 'publish' | 'download' | 'dryRun';
-  /** The component format the in-flight download was started with. Read at
-   *  the click, so a change in Settings during the collect cannot change the
-   *  zip. Only a download reads it. */
+  /** Taken at the download click, so a Settings change mid-collect cannot
+   *  change the zip. */
   downloadFormat: ComponentFormat;
-  /** The library's current version as last reported; null before the first
-   *  versioned publish. */
+  /** Null before the first versioned publish. */
   version: string | null;
-  /** The last dry-run answer, or the local first-publish proposal. Null while
-   *  none is known. */
+  /** The last dry-run answer, or the local first-publish proposal. */
   proposal: DryRunResult | null;
   proposalStatus: 'idle' | 'loading' | 'failed';
-  /** The publisher's raise. Null means "apply the minimum". */
+  /** Null means "apply the minimum". */
   chosenBump: Bump | null;
   note: string;
-  /** The editable first version, only sent on a create. */
+  /** Sent only on a create. */
   initialVersion: string;
   /**
-   * Whether this session has heard the file's publish identity: a
-   * `publishInfo` reply, or a `publishSources` reply (which carries it).
-   * Until then the screen shows neither "Published" nor "Not published" and
-   * proposes no version, since either would be a guess about the file.
+   * Whether this session has heard the file's publish identity (`publishInfo`
+   * or `publishSources`). Until then the screen claims neither "Published" nor
+   * "Not published" and proposes no version: either would be a guess.
    */
   infoKnown: boolean;
-  /**
-   * Bumped by `invalidatePublishProposal` every time something in this
-   * session could have changed what a publish would contain: a doc created,
-   * updated, or rebuilt; a Foundation build; a doc detached or removed; or a
-   * Library update batch finishing. Compared against `collectGeneration` so a
-   * collect already in flight when one of those lands can tell its own
-   * answer is about to be stale (see `onPublishSources`).
-   */
+  /** Bumped by `invalidatePublishProposal` whenever the session may have
+   *  changed what a publish would contain. */
   proposalGeneration: number;
   /**
-   * The `proposalGeneration` in effect when the current (or most recent)
-   * collect for a dry run or a publish was sent (`requestPublishSources`).
-   * Checked against `proposalGeneration` both when that collect's sources
-   * reply lands and again after the proxy call it triggers resolves, so an
-   * invalidation landing while sources were being gathered, or while the
-   * network call was in flight, is caught rather than the stale answer it
-   * produced landing as if it were still current. A download never reads
-   * this: a snapshot is not a proposal and cannot go stale the same way.
+   * `proposalGeneration` when the current dry-run or publish collect was sent.
+   * Checked when the sources reply lands and again after the proxy call, so an
+   * invalidation during either is caught. A download never reads it.
    */
   collectGeneration: number;
-  /**
-   * Where the current `proposal` came from, so the version block can word
-   * its "checked" note honestly. A dry run only ever answers for the moment
-   * it ran; canvas edits since then are invisible to it. A publish's own
-   * result is different: it reflects exactly what that publish just sent,
-   * with nothing for "Check again" to add until something changes after it.
-   */
+  /** Where `proposal` came from, so the "checked" note is honest: a dry run
+   *  answers only for its moment; a publish's result is exactly what it sent. */
   proposalSource: 'check' | 'publish';
 }
 
@@ -507,8 +455,7 @@ export function createPublishState(): PublishState {
   };
 }
 
-/** The local proposal for a library with no id yet: no proxy round trip can
- *  answer this, since there is nothing published to diff against. */
+/** The local proposal for a library with no id: nothing to diff against. */
 export function firstPublishProposal(): DryRunResult {
   return {
     currentVersion: null, unchanged: false, minimumBump: null, proposedVersion: '1.0.0',
@@ -516,13 +463,9 @@ export function firstPublishProposal(): DryRunResult {
   };
 }
 
-/**
- * The proposal to show right after a publish just landed: nothing changed
- * since the version the proxy just assigned, since no dry run has run since.
- * Used instead of a bare `proposal: null` so `versionBlock` never falls back
- * to `PROPOSAL_FAILED_MESSAGE` (a failure) under a publish that just
- * succeeded.
- */
+/** The proposal right after a publish: unchanged since the assigned version.
+ *  Not null, so `versionBlock` never shows PROPOSAL_FAILED_MESSAGE under a
+ *  publish that just succeeded. */
 export function publishedProposal(version: string): DryRunResult {
   return {
     currentVersion: version, unchanged: true, minimumBump: null, proposedVersion: null,
@@ -544,22 +487,16 @@ export function effectiveBump(s: Readonly<PublishState>): Bump | null {
   return compareBump(s.chosenBump, minimum) >= 0 ? s.chosenBump : null;
 }
 
-/**
- * The version to show as "current". The proxy's own answer (the dry run or
- * the last publish's proposal) is the authority; the locally stored version
- * is only a fallback for a screen that has not heard back from the proxy yet.
- */
+/** The proxy's answer is the authority; the stored version is a fallback until
+ *  it replies. */
 export function currentVersionOf(s: Readonly<PublishState>): string | null {
   return s.proposal?.currentVersion ?? s.version;
 }
 
 /**
- * The version a publish would produce right now, or null when there is
- * nothing to propose: no proposal known yet, the proposal says nothing
- * changed, or there is no library to version at all. `nextVersion` throws on
- * a current version it cannot parse; a version the proxy assigned is always a
- * semver, but the guard costs nothing and keeps a corrupt value from taking
- * the whole screen down with it.
+ * The version a publish would produce now, or null with nothing to propose.
+ * The catch keeps a corrupt stored version, which `nextVersion` throws on,
+ * from taking the screen down.
  */
 export function nextVersionFor(s: Readonly<PublishState>): string | null {
   if (!s.proposal || s.proposal.unchanged || !s.libraryId) return null;
@@ -579,20 +516,10 @@ let state: PublishState = createPublishState();
 export interface PublishHost {
   repaint(): void;
   send(msg: UiToMain): void;
-  /**
-   * A publish allowance the proxy just stated. The controller cannot repaint
-   * the meter itself: the quota lives in the panel's state, and without this
-   * the screen would keep showing the count from the last quota fetch after
-   * spending an update.
-   */
+  /** A publish allowance the proxy just stated. The quota lives in the panel's
+   *  state, so the controller cannot repaint the meter itself. */
   onPublishQuota(snapshot: PublishQuotaSnapshot): void;
-  /**
-   * A success to announce as a toast. Successes leave the screen (a published
-   * library shows its commands, a rotated key shows its new command), so the
-   * confirmation is a passing notice, not a line that sits under the blocks
-   * until the next action. Errors stay in `state.message` instead, where the
-   * screen keeps them on view.
-   */
+  /** A success, as a toast. Errors stay in `state.message`, on view. */
   notify(message: string): void;
 }
 
@@ -610,39 +537,25 @@ export function publishState(): Readonly<PublishState> {
 }
 
 /**
- * Start a publish: ask the main thread to collect this file's sources.
- *
- * `_auth` is accepted (unused here) for symmetry with onPublishSources and
- * onRotateClick, which each recompute their own effective auth freshly at the
- * moment they run, since a license can activate or lapse mid-session. This
- * step only talks to the main thread's Figma sandbox, which needs no proxy
- * identity.
+ * Start a publish: ask main to collect this file's sources. `_auth` is unused;
+ * onPublishSources recomputes auth when it runs, since a license can change
+ * mid-session.
  */
 export function onPublishClick(_auth: ProxyAuth): void {
   if (state.status === 'collecting' || state.status === 'uploading') return;
-  // The button is disabled until the identity is known (see
-  // publishFooterMarkup), so this only guards a click that reached here some
-  // other way; it must not start a publish that has not decided create or
-  // update yet.
+  // Never start a publish that has not decided create or update.
   if (!state.infoKnown) return;
   state = {
     ...state, status: 'collecting', message: null, intent: 'publish',
-    // Stamped for the same reason startDryRun stamps it: so the outcome that
-    // eventually lands (created/updated/unchanged, below) can tell whether
-    // something invalidated the proposal while this publish's own network
-    // call was in flight.
+    // See startDryRun.
     collectGeneration: state.proposalGeneration,
   };
   host.repaint();
   host.send({ type: 'requestPublishSources' });
 }
 
-/**
- * Start a download: the same collect a publish starts, marked so the reply
- * writes a zip instead of contacting the proxy. Takes no auth because a
- * snapshot needs no identity, no license, and no pull key. The format is
- * taken now, from the caller, and held for the reply.
- */
+/** The same collect a publish starts, but the reply writes a zip. A snapshot
+ *  needs no identity, license or pull key. */
 export function onDownloadSkillClick(format: ComponentFormat): void {
   if (state.status === 'collecting' || state.status === 'uploading') return;
   state = { ...state, status: 'collecting', message: null, intent: 'download', downloadFormat: format };
@@ -651,23 +564,15 @@ export function onDownloadSkillClick(format: ComponentFormat): void {
 }
 
 /**
- * Open the publish screen. A library with no id yet has nothing to diff
- * against, so it gets the fixed 1.0.0 proposal locally, with no round trip.
- * A known library gets a dry run once per session: a proposal this session
- * already holds stands until the publisher asks again (onPublishRecheck) or
- * publishes. Every open used to re-extract every component and post a dry
- * run, for a screen that had not changed.
+ * Open the publish screen. A library with no id gets the 1.0.0 proposal
+ * locally. A known library gets one dry run per session; the proposal stands
+ * until a recheck or a publish, so reopening re-extracts nothing.
  */
 export function onPublishOpen(): void {
   if (state.status === 'collecting' || state.status === 'uploading') return;
   if (!state.infoKnown) {
-    // Nothing is known about this file yet: no first-publish proposal (it
-    // would read as "not published" for a file that is) and no dry run
-    // (there is no id to run it against). The controller re-enters here
-    // when publishInfo lands. Ask again rather than leaving the pane
-    // waiting forever on a reply that may have been lost: the request is
-    // idempotent, and this is the one path that gets another try each time
-    // the reader opens Publish.
+    // No proposal and no dry run until the identity is known; re-entered when
+    // publishInfo lands. Ask again in case the reply was lost: it is idempotent.
     host.repaint();
     host.send({ type: 'requestPublishInfo' });
     return;
@@ -684,8 +589,7 @@ export function onPublishOpen(): void {
   startDryRun();
 }
 
-/** The version block's "Check again": a dry run the publisher asked for,
- *  replacing whatever proposal this session holds. */
+/** "Check again": a fresh dry run replacing the held proposal. */
 export function onPublishRecheck(): void {
   if (state.status === 'collecting' || state.status === 'uploading' || !state.libraryId) return;
   startDryRun();
@@ -694,10 +598,8 @@ export function onPublishRecheck(): void {
 function startDryRun(): void {
   state = {
     ...state, status: 'collecting', intent: 'dryRun', proposalStatus: 'loading', message: null,
-    // The sources this collect is about to gather answer for the file as it
-    // stands right now: stamp the request with the current generation so
-    // onPublishSources can tell, when the reply lands, whether anything
-    // invalidated the proposal in the meantime.
+    // Stamped so onPublishSources can tell whether anything invalidated the
+    // proposal while this collect was in flight.
     collectGeneration: state.proposalGeneration,
   };
   host.repaint();
@@ -705,24 +607,13 @@ function startDryRun(): void {
 }
 
 /**
- * Called wherever something in this session could have changed what a
- * publish would contain: a doc created, updated, or rebuilt; a Foundation
- * build; a doc detached or removed; or a Library update batch finishing (see
- * each call site in ui-vnext.ts). A proposal computed before any of these no
- * longer describes the file and must not keep being shown, or land, as if it
- * still did.
+ * Called wherever the session may have changed what a publish would contain:
+ * a doc created, updated, rebuilt, detached or removed, a Foundation build, or
+ * a Library update batch finishing.
  *
- * The generation bump always runs, busy or not: a collect already in flight
- * (a dry run's sources request, or a publish's) was launched against the
- * file as it stood before this call, so its reply, and the proxy call it
- * makes, are each checked against the generation the collect was sent with
- * (`collectGeneration`, in `onPublishSources`, at both points) and discarded
- * or corrected in favor of the truth, if this has moved past it. Clearing the
- * proposal itself only happens while idle: a publish in flight, or a dry run
- * already loading, ends with its own true answer (the outcome branches in
- * `onPublishSources`), so clearing here first would only be overwritten a
- * moment later, or would blank a "Checking…" note that is already honest
- * about not having an answer yet.
+ * The generation bump always runs, so an in-flight collect is caught by its
+ * `collectGeneration` check. The proposal is cleared only while idle: a busy
+ * publish or dry run ends with its own true answer.
  */
 export function invalidatePublishProposal(): void {
   state = { ...state, proposalGeneration: state.proposalGeneration + 1 };
@@ -739,22 +630,15 @@ export function onBumpChoice(bump: Bump): void {
 
 export function onNoteInput(text: string): void {
   state = { ...state, note: text.slice(0, 500) };
-  // No repaint: the textarea already shows the text, and a repaint would move
-  // the caret.
+  // No repaint: it would move the caret.
 }
 
 export function onInitialVersionInput(text: string): void {
   state = { ...state, initialVersion: text.trim() };
 }
 
-/**
- * The publish, download and dry-run intents share this one guard (see
- * `onPublishSources`, first check), but they must not share its wording: a
- * download or a dry run that stops here never touched the proxy, and telling
- * that user something was "published" would be a fabricated claim about
- * their own action. Only the verb, its object, and the retry step vary; the
- * count and the component names are identical either way.
- */
+/** All intents share this guard but not its wording: a download that stops
+ *  here never touched the proxy, so "published" would be a false claim. */
 function skippedMessage(skipped: Array<{ name: string; reason: string }>, intent: PublishState['intent']): string {
   const names = skipped.map((s) => s.name).join(', ');
   const count = skipped.length;
@@ -765,12 +649,9 @@ function skippedMessage(skipped: Array<{ name: string; reason: string }>, intent
 }
 
 /**
- * Why a publish or download would carry nothing, or null when it would carry
- * something. The proxy accepts an empty bundle, so without this a first
- * publish of an empty file creates a library, a pull key, and spends the free
- * plan's one library; a republish would replace what developers pull with
- * nothing. A failed variable read also arrives empty (`unavailable`, or null
- * when the read threw), and asking that user to add variables would be wrong.
+ * Why a publish or download would carry nothing, or null. The proxy accepts an
+ * empty bundle, which would spend the free library or wipe what developers
+ * pull. A failed variable read (`unavailable`, or null) is not "add variables".
  */
 export function emptyBundleMessage(
   msg: Pick<PublishSourcesMsg, 'components' | 'foundation'>,
@@ -786,19 +667,13 @@ export function emptyBundleMessage(
   return `Nothing was ${verb}. This file has no local variables or styles and no component docs yet. Add a variable or style, or create a doc, then try again.`;
 }
 
-/** Shown when the download branch itself throws (a `Blob`/`URL`/`document`
- *  failure, or a bad zip), so the controller lands in `error` instead of
- *  staying in `collecting` with both entry points guard-blocked and no
- *  message on screen. Names what failed without inventing why. */
+/** When the download branch throws, so the controller lands in `error` rather
+ *  than stuck in `collecting`. Names what failed without inventing why. */
 const DOWNLOAD_FAILED_MESSAGE =
   'Couldn’t create the download. Nothing was saved. Try again, or reopen the plugin if it keeps happening.';
 
-/**
- * Shown when building the bundle for a publish throws (a source the extractor
- * cannot read). The fixed sentence says what happened; the caught error's own
- * text is technical detail, so it goes last, in parentheses, the way
- * `sourcesErrorMessage` places it.
- */
+/** When building the bundle throws. The error's text is detail, so it goes
+ *  last in parentheses, as in `sourcesErrorMessage`. */
 function buildFailedMessage(err: unknown): string {
   const sentence = 'Couldn’t build the library from this file’s docs. Nothing was published. '
     + 'Try again, or reopen the plugin if it keeps happening.';
@@ -810,11 +685,8 @@ const GONE_MESSAGE =
   'Couldn’t publish. Spec Layer no longer has this library. '
   + 'Publish again to create a new one, then share its new setup command with your developers.';
 
-/**
- * Stamp only when the proxy named a version. A proxy that predates
- * versioning answers without one; then the date is recorded as before and no
- * pill can claim a version nobody assigned.
- */
+/** Stamp only when the proxy named a version; otherwise record the date, so
+ *  no pill claims a version nobody assigned. */
 function stamp(libraryId: string, version: string | null, publishedAt: string, stamps: PublishStamps): void {
   if (version === null) {
     host.send({ type: 'setPublishedAt', libraryId, publishedAt });
@@ -831,12 +703,9 @@ export async function onPublishSources(
   auth: ProxyAuth,
   fetcher?: typeof fetch,
 ): Promise<void> {
-  // The reply carries the file's identity, so from here it is known whatever
-  // else this reply says. Until now it was not known, so no publish or rotate
-  // can have run (a publish waits for the identity, a rotate needs the id it
-  // carries): take it from the reply rather than mark it known with no id,
-  // which would read as "Not published" for a file that is. Only a download
-  // can get here first, since it needs no identity.
+  // The reply carries the file's identity; take it rather than mark it known
+  // with no id, which would read as "Not published". Only a download can get
+  // here before the identity is known.
   state = state.infoKnown
     ? state
     : {
@@ -845,11 +714,7 @@ export async function onPublishSources(
       lastPublishedAt: msg.publishInfo.publishedAt, version: msg.publishInfo.version,
     };
   if (state.intent === 'dryRun' && state.collectGeneration !== state.proposalGeneration) {
-    // Something invalidated the proposal (a doc changed, a library update
-    // batch finished, ...) after this collect was sent: the sources it
-    // carries answer for a file that no longer exists. Discard them and ask
-    // again against the file as it stands now, rather than showing a
-    // proposal computed from stale sources as if it were current.
+    // Invalidated after this collect was sent: its sources are stale. Ask again.
     startDryRun();
     return;
   }
@@ -881,22 +746,15 @@ export async function onPublishSources(
         'application/zip',
       );
     } catch {
-      // No completion message comes back from a download either way, so a
-      // throw here (a DOM failure, a bad zip) must recover the controller
-      // itself rather than leaving `collecting` with both entry points
-      // guard-blocked and nothing on screen.
       state = { ...state, status: 'error', message: DOWNLOAD_FAILED_MESSAGE };
       host.repaint();
       return;
     }
-    // No completion message comes back from a download, so the presenter
-    // returns to idle itself. Nothing about the library identity changes
-    // (the file's stored one may have been learned above, which is not a
-    // change): a snapshot is not a publish.
+    // No completion message comes back from a download, so return to idle
+    // here. A snapshot is not a publish: the identity is unchanged.
     state = { ...state, status: 'idle', message: null };
     host.repaint();
-    // The file is handed to the browser, which can still refuse to save it,
-    // so the toast claims only that the download started.
+    // The browser can still refuse to save, so claim only that it started.
     host.notify('Snapshot download started.');
     return;
   }
@@ -905,8 +763,6 @@ export async function onPublishSources(
     const libraryId = state.libraryId ?? msg.publishInfo.libraryId;
     const pullKey = state.pullKey ?? msg.publishInfo.pullKey;
     if (!libraryId) {
-      // Nothing published yet to diff against: the fixed local proposal
-      // stands, and no round trip was ever needed.
       state = { ...state, status: 'idle', proposal: firstPublishProposal(), proposalStatus: 'idle' };
       host.repaint();
       return;
@@ -915,21 +771,15 @@ export async function onPublishSources(
     try {
       ({ bundle } = buildPublishArtifacts(msg, new Date().toISOString()));
     } catch {
-      // A source the extractor cannot build from. Leaving `collecting` here
-      // would block every Publish entry for the rest of the session; a failed
-      // check is honest, and publishing stays possible (the proxy still
-      // applies the minimum).
+      // Staying in `collecting` would block Publish for the session; a failed
+      // check is honest, and the proxy still applies the minimum.
       state = { ...state, status: 'idle', proposal: null, proposalStatus: 'failed', message: null };
       host.repaint();
       return;
     }
     const answer = await dryRunBundle(bundle, { auth, libraryId, pullKey, fetcher });
     if (state.collectGeneration !== state.proposalGeneration) {
-      // Invalidated while the dry-run POST itself was in flight (not just
-      // between the collect being sent and its sources landing, which the
-      // check above this branch already covers): what came back answers for
-      // the file as it stood before that change. Discard it and ask again
-      // against the file as it stands now.
+      // Invalidated while the dry-run POST was in flight. Ask again.
       startDryRun();
       return;
     }
@@ -940,16 +790,14 @@ export async function onPublishSources(
     return;
   }
 
-  // What this session already knows wins; otherwise the identity the main
-  // thread read from the file in this same round trip. A publishInfo reply
-  // that has not landed yet can no longer cost us a republish.
+  // Session state wins; otherwise the identity main read in this round trip,
+  // so a late publishInfo reply cannot cause a duplicate create.
   const libraryId = state.libraryId ?? msg.publishInfo.libraryId;
   const pullKey = state.pullKey ?? msg.publishInfo.pullKey;
   const lastPublishedAt = state.lastPublishedAt ?? msg.publishInfo.publishedAt;
 
-  // A pre-versioning library (one with an id) always gets 1.0.0 from the
-  // proxy, which is the spec's rule, so only a true create needs a valid
-  // first version before any network call.
+  // A pre-versioning library gets 1.0.0 from the proxy (the spec's rule), so
+  // only a create needs a valid first version.
   if (!libraryId && !isSemver(state.initialVersion)) {
     state = { ...state, status: 'error', message: INVALID_FIRST_VERSION };
     host.repaint();
@@ -963,9 +811,7 @@ export async function onPublishSources(
   try {
     artifacts = buildPublishArtifacts(msg, new Date().toISOString());
   } catch (err) {
-    // Nothing reached the proxy, so nothing was published. Leaving
-    // `uploading` here would block every Publish entry for the rest of the
-    // session with nothing on screen to say why.
+    // Staying in `uploading` would block Publish for the session.
     state = { ...state, status: 'error', message: buildFailedMessage(err) };
     host.repaint();
     return;
@@ -977,19 +823,12 @@ export async function onPublishSources(
     note: state.note.trim() || null,
     initialVersion: libraryId ? null : state.initialVersion,
   });
-  // Before the repaint below, so one paint shows both the result and the count
-  // it left behind.
+  // Before the repaint, so one paint shows the result and the new count.
   if (quota) host.onPublishQuota(quota);
 
-  // Something invalidated the proposal while this publish's own network call
-  // was in flight. The result below is still correct either way: the library
-  // id, the version, and the stamps all come from the proxy's real answer to
-  // the bundle that was actually sent. But "nothing changed since <version>"
-  // would not be, since something has changed since the sources for that
-  // bundle were collected, and this session no longer knows what: the
-  // created, updated, unchanged and below_minimum cases below fall back to
-  // no proposal at all (`Press Check again to see what changed.`) rather
-  // than guess.
+  // Invalidated mid-upload: the id, version and stamps are still the proxy's
+  // real answer, but "nothing changed since <version>" is not, so the cases
+  // below keep no proposal rather than guess.
   const collectStale = state.collectGeneration !== state.proposalGeneration;
 
   switch (outcome.kind) {
@@ -1004,10 +843,8 @@ export async function onPublishSources(
         message: null,
         chosenBump: null,
         note: '',
-        // Nothing changed since the version this publish just assigned: no
-        // dry run has run since, so the block must not read as a failed one.
-        // A proxy that predates versioning names no version, and there is
-        // nothing to propose against; the next Publish open dry-runs afresh.
+        // See publishedProposal. With no version named there is nothing to
+        // propose against; the next open dry-runs afresh.
         proposal: !collectStale && outcome.version ? publishedProposal(outcome.version) : null,
         proposalStatus: 'idle',
         proposalSource: 'publish',
@@ -1030,10 +867,7 @@ export async function onPublishSources(
         message: null,
         chosenBump: null,
         note: '',
-        // See the 'created' case just above: an unchanged proposal for the
-        // version just published, not null, so the block never reads as a
-        // failed dry run under a publish that just succeeded, unless the
-        // collect it was built from went stale mid-upload.
+        // See the 'created' case.
         proposal: !collectStale && outcome.version ? publishedProposal(outcome.version) : null,
         proposalStatus: 'idle',
         proposalSource: 'publish',
@@ -1046,13 +880,9 @@ export async function onPublishSources(
       );
       break;
     case 'unchanged': {
-      // The unchanged answer carries the stored library's existing date, which
-      // is the true last-published time, so it is recorded like the others.
-      // Nothing changed, so no doc gets a fresh stamp, and the proposal
-      // settles to "nothing changed" so the screen stops offering a next
-      // version the proxy just said it would not assign (unless the collect
-      // it was computed from went stale mid-upload, in which case that
-      // "nothing changed" is exactly what can no longer be trusted).
+      // The answer carries the true last-published date. No doc gets a fresh
+      // stamp, and the proposal settles to "nothing changed" so the screen
+      // stops offering a version the proxy will not assign.
       const version = outcome.version ?? state.version;
       state = {
         ...state,
@@ -1071,15 +901,9 @@ export async function onPublishSources(
       break;
     }
     case 'below_minimum':
-      // Re-render with the server's own minimum and the version it would
-      // produce, so the screen shows the real floor without a second dry run.
-      // Nothing was actually published (the proxy refused this attempt), so
-      // this is a fresh check, not "what you just published": 'check' is the
-      // honest source label regardless of what an earlier publish this
-      // session set it to. The refusal message stands either way (it is the
-      // proxy's answer to what was sent), but if something changed while the
-      // upload was in flight, that floor and its next version describe a
-      // bundle that no longer matches the file, so no proposal is kept.
+      // Show the server's floor without a second dry run. Nothing was
+      // published, so the source is 'check'. If the collect went stale, that
+      // floor describes a bundle that no longer matches, so none is kept.
       state = {
         ...state,
         status: 'error',
@@ -1097,13 +921,9 @@ export async function onPublishSources(
       };
       break;
     case 'gone':
-      // Never recreate on the user's behalf: the developers pulling the old id
-      // would be stranded without anyone being told. Drop the stale identity
-      // here and in the file so the next click is a deliberate new library.
-      // The dead library's version, proposal and chosen bump go with it: the
-      // next publish is a create, and none of the three may leak onto it
-      // (a resurrected version, a stale minimum behind effectiveBump, or a
-      // bump sent alongside initialVersion).
+      // Never recreate silently: developers pulling the old id would be
+      // stranded. Drop the identity here and in the file so the next click is
+      // a deliberate create, and its version, proposal and bump with it.
       state = {
         ...state,
         status: 'error',
@@ -1125,22 +945,13 @@ export async function onPublishSources(
   host.repaint();
 }
 
-/**
- * `requestPublishSources`' outer catch (main.ts) reaches this on every
- * intent, exactly like the `skipped` guard above, so it needs the same
- * intent-aware treatment `skippedMessage` got: a download or a dry run that
- * never read a usable source never touched the proxy, and telling that user
- * something was "published" would be a fabricated claim about their own
- * action.
- */
+/** Reached on every intent, so worded per intent as in skippedMessage. */
 function sourcesErrorMessage(message: string, intent: PublishState['intent']): string {
   const outcome = intent === 'download' ? 'downloaded' : 'published';
   const sentence = `Couldn’t read this file’s docs. Nothing was ${outcome}. `
     + 'Try again, or reopen the plugin if it keeps happening.';
-  // `message` is a caught error's own text (main.ts forwards `err.message`
-  // verbatim): technical detail, so it goes last, in parentheses. A trailing
-  // period of its own is dropped so the parentheses close cleanly, and an
-  // empty one adds nothing rather than a bare "()".
+  // `message` is the caught error's text: detail, last, in parentheses, with
+  // its own trailing period dropped and nothing added when empty.
   const detail = message.trim().replace(/\.$/, '');
   return detail ? `${sentence} (${detail})` : sentence;
 }
@@ -1155,21 +966,15 @@ export function onPublishSourcesError(message: string): void {
 }
 
 /**
- * Seed libraryId, pullKey and lastPublishedAt from what was last persisted
- * for this file, so a fresh session's publish screen can show the setup
- * command, the Rotate action and the last publish date without waiting for a
- * publish. Only takes effect while idle: once a publish (or rotate) has run
- * this session, that in-memory result is the truth, and a slow publishInfo
- * reply landing afterward must not clobber it.
+ * Seed the identity from what was persisted for this file. Only while idle:
+ * once a publish or rotate has run, its in-memory result is the truth, and a
+ * slow reply must not clobber it.
  */
 export function onPublishInfo(msg: PublishInfoMsg): void {
   if (state.status !== 'idle') {
     if (!state.infoKnown) {
-      // Busy or finished, but before the identity was known no publish or
-      // rotate can have run (a publish waits for it, a rotate needs the id
-      // it carries), so this is a download, running or failed, which never
-      // touches the identity. Take it from the reply: marking it known
-      // without it would read as "Not published" for a file that is.
+      // Before the identity is known only a download can be running, which
+      // never touches it, so take the reply's.
       state = {
         ...state, infoKnown: true,
         libraryId: msg.libraryId, pullKey: msg.pullKey, lastPublishedAt: msg.publishedAt, version: msg.version,
@@ -1177,16 +982,12 @@ export function onPublishInfo(msg: PublishInfoMsg): void {
       host.repaint();
       return;
     }
-    // A publish or rotate is the truth for the identity now; only the fact
-    // that one is known may land.
+    // A publish or rotate owns the identity now; only `infoKnown` may land.
     state = { ...state, infoKnown: true };
     host.repaint();
     return;
   }
-  // A different library id than this (idle) session already holds means the
-  // file's saved identity changed since: whatever this session computed
-  // against the old one (a proposal, a chosen bump) can no longer answer for
-  // the new one.
+  // A new library id: a proposal or bump computed for the old one is void.
   const identityChanged = msg.libraryId !== state.libraryId;
   state = {
     ...state, infoKnown: true,
@@ -1206,10 +1007,8 @@ export function isBump(value: string): value is Bump {
 
 export async function onRotateClick(auth: ProxyAuth, fetcher?: typeof fetch): Promise<void> {
   const libraryId = state.libraryId;
-  // A rotate racing an upload would let the two overwrite each other's
-  // result on the server, and a failed rotate flipping status mid-upload
-  // would re-enable Publish. The button is disabled while busy; this is the
-  // guard behind it.
+  // A rotate racing an upload would overwrite each other's result on the
+  // server, and a failed rotate mid-upload would re-enable Publish.
   if (!libraryId || isPublishBusy(state)) return;
   const outcome = await rotatePullKey(libraryId, auth, fetcher, state.pullKey);
   if (outcome.kind === 'rotated') {
