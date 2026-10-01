@@ -37,6 +37,10 @@ describe('ui harness', () => {
       await import('../src/ui/harness');
       const scroll = document.getElementById('sl-screen-scroll');
       expect(scroll?.children.length ?? 0).toBeGreaterThan(0);
+      if (query === 'view=component&state=error&facts=states') {
+        // The failed build's banner sits in the footer's status slot.
+        expect(document.getElementById('sl-screen-footer')?.innerHTML).toContain('sl-footer-error');
+      }
     });
   }
 });

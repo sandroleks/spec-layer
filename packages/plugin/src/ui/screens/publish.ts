@@ -382,7 +382,7 @@ export function publishScrollMarkup(
   } else if (state.infoKnown) {
     body = `<p class="sl-publish-intro">${BEFORE_FIRST_PUBLISH}</p>`;
   } else {
-    body = ''; // the version block above already says the identity is being read
+    body = ''; // the header pill and the footer button already say the identity is being read
   }
   // Room to scroll the last control out from under the floating error.
   const hasError = state.status === 'error' && Boolean(state.message);

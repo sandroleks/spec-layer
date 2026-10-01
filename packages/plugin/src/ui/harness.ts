@@ -740,7 +740,7 @@ if (view === 'library') {
       // source check fills the check line under the filters.
       progress: updatingAll
         ? {
-            label: 'Updating document 1 of 3',
+            label: 'Updating docs',
             current: 0,
             total: 3,
           }
