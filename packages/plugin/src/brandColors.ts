@@ -1,14 +1,8 @@
 /**
- * brandColors — the user-customizable brand colors used in the generated
- * Guidelines frame, plus pure helpers shared by the UI (validation/preview)
- * and the main thread (resolving a stored theme to concrete values, and
- * migrating the 1.x two-color shape).
- *
- * Only two colors are customizable: the header band and the accent color.
- * The rest of the frame palette (body ink, borders, table tints) stays fixed.
- *
- * Stored shape: each field is either a normalized `#rrggbb` string or `null`
- * (meaning "use the default"). No DOM, no Figma APIs — trivially testable.
+ * The user's brand theme for generated frames, plus pure helpers shared by the
+ * UI (validation, preview) and the main thread (resolving a stored theme,
+ * migrating the 1.x two-color shape). A color field is a normalized `#rrggbb`
+ * or `null` for the default. No DOM, no Figma APIs.
  */
 
 export const DEFAULT_HEADER_BG = '#0f172a';
@@ -21,23 +15,13 @@ export interface BrandColors {
   accent: string | null;
 }
 
-/**
- * Validate + normalize a hex color string. Accepts `#rrggbb` or `rrggbb`
- * (case-insensitive) and returns a lowercase `#rrggbb`. Returns null for any
- * input that isn't a 6-digit hex color, so callers can reject it.
- */
+/** `#rrggbb` or `rrggbb` in any case as lowercase `#rrggbb`, else null. */
 export function parseBrandHex(input: string): string | null {
   const trimmed = input.trim().replace(/^#/, '');
   if (!/^[0-9a-fA-F]{6}$/.test(trimmed)) return null;
   return `#${trimmed.toLowerCase()}`;
 }
 
-/**
- * BrandTheme extends the two-color brand into a full theme: palette (header,
- * accent, body text, table head background) plus heading/body font families.
- * Each field is either a concrete value or `null` (meaning "use the
- * default"), same convention as `BrandColors`.
- */
 export const DEFAULT_BODY_TEXT = '#334155';
 export const DEFAULT_TABLE_HEAD_BG = '#f8fafc';
 export const DEFAULT_FONT = 'Inter';
@@ -45,6 +29,7 @@ export const DEFAULT_FONT = 'Inter';
 export type CornerStyle = 'sharp' | 'soft' | 'round';
 export const DEFAULT_CORNER_STYLE: CornerStyle = 'soft';
 
+/** Four colors, two font families and a corner style; `null` means default. */
 export interface BrandTheme {
   headerBg: string | null;
   accent: string | null;
@@ -58,7 +43,7 @@ export interface BrandTheme {
   cornerStyle: CornerStyle | null;
 }
 
-/** Empty overrides — every field falls back to its default. */
+/** Every field null, so every field falls back to its default. */
 export function emptyBrandTheme(): BrandTheme {
   return {
     headerBg: null,
@@ -71,10 +56,7 @@ export function emptyBrandTheme(): BrandTheme {
   };
 }
 
-/**
- * Resolve a stored theme to concrete values, substituting defaults for any
- * null/missing field.
- */
+/** A stored theme with defaults for every null or missing field. */
 export function resolveTheme(stored: BrandTheme | null | undefined): {
   headerBg: string;
   accent: string;
@@ -95,11 +77,8 @@ export function resolveTheme(stored: BrandTheme | null | undefined): {
   };
 }
 
-/**
- * Migrate a stored value to the current `BrandTheme` shape. Legacy
- * `{ headerBg, accent }` objects (from before theming) load with the new
- * fields defaulted to null; full themes pass through unchanged.
- */
+/** Legacy `{ headerBg, accent }` objects load with the other fields null; full
+ *  themes pass through unchanged. */
 export function migrateBrandColors(
   legacy: BrandColors | BrandTheme | null | undefined
 ): BrandTheme {
@@ -108,11 +87,9 @@ export function migrateBrandColors(
 }
 
 /**
- * Built-in theme presets. Each preset is a full personality: all four
- * colors, both fonts, and a corner style. "Default" stores concrete values
- * equal to the built-in defaults so active-preset detection is uniform.
- * Heading fonts are Google Fonts available in Figma by default; the build
- * still falls back to Inter if one is missing.
+ * Built-in full-theme presets. "Default" stores concrete values equal to the
+ * defaults so active-preset detection is uniform. Heading fonts are Google
+ * Fonts Figma has by default; the build falls back to Inter if one is missing.
  */
 export const THEME_PRESETS: { name: string; theme: BrandTheme }[] = [
   {
@@ -149,11 +126,8 @@ export const THEME_PRESETS: { name: string; theme: BrandTheme }[] = [
   },
 ];
 
-/**
- * Which preset (if any) the stored theme currently equals. Compares RESOLVED
- * values so a null field and a concrete field holding the default are equal.
- * Returns the preset name, or null when the theme is custom.
- */
+/** The preset the stored theme equals, or null when custom. Compares resolved
+ *  values, so a null field equals a concrete default. */
 export function matchPreset(theme: BrandTheme | null | undefined): string | null {
   const t = resolveTheme(migrateBrandColors(theme));
   for (const preset of THEME_PRESETS) {

@@ -18,7 +18,7 @@ export type { QuotaProfile };
 
 export interface QuotaClient {
   reserve(tier: Tier, cacheKey: string, opts?: ReserveOptions): Promise<ReserveResult>;
-  /** Commits and returns the snapshot after it, so the success path costs one Durable Object hop. */
+  /** Returns the snapshot too, so the success path costs one Durable Object hop. */
   commit(tier: Tier, cacheKey: string, body: string, opts?: CommitOptions): Promise<QuotaSnapshot>;
   /** Frees the reservation uncounted; `opts.head` records a head as `commit` would. */
   release(cacheKey: string, opts?: ReleaseOptions): Promise<void>;
@@ -31,13 +31,12 @@ export interface HandlerDeps {
   fetcher: typeof fetch;
   licenseCache: KVLike;
   now(): number;
-  /** One engine per identity and profile. `profile` defaults to 'ai'. */
+  /** One engine per identity and profile; `profile` defaults to 'ai'. */
   quotaFor(identityId: string, profile?: QuotaProfile): QuotaClient;
   log(event: string, fields: Record<string, unknown>): void;
   licenseLimiter: SlidingWindowLimiter;
   requestLimiter: SlidingWindowLimiter;
-  /** Library bundle storage. Wired to the same KV namespace as licenseCache
-   *  today; a separate dep so a dedicated namespace later is a one-line change. */
+  /** Separate from licenseCache so a dedicated namespace stays a one-line change. */
   libraryStore: LibraryStore;
 }
 
@@ -65,25 +64,20 @@ const REQUEST_FIELDS = new Set(['model', 'max_tokens', 'system', 'messages']);
 
 /** The model each proved tier writes with. The plugin never names one. */
 export const MODEL_BY_TIER: Record<Tier, string> = { pro: 'claude-sonnet-5', free: 'claude-haiku-4-5' };
-/** Sonnet 5 runs adaptive thinking when the field is omitted and bills it as
- *  output; low effort keeps that small for a formatting-heavy JSON task. Haiku
- *  4.5 rejects `output_config.effort`, so free gets nothing extra. */
+/** Sonnet 5 bills adaptive thinking as output, so low effort keeps it small.
+ *  Haiku 4.5 rejects `output_config.effort`, so free sends none. */
 export const PRO_OUTPUT_CONFIG = { effort: 'low' } as const;
 
-/**
- * How long one Anthropic call may run. Below `RESERVATION_TTL_MS`: a call that
- * outlived its reservation would let a retry be charged twice for one answer.
- */
+/** Below `RESERVATION_TTL_MS`: a call outliving its reservation would let a retry be charged twice. */
 export const UPSTREAM_TIMEOUT_MS = 150_000;
 
 /** Code units of a device name forwarded to Lemon Squeezy as `instance_name`. */
 export const MAX_INSTANCE_NAME_LENGTH = 64;
 
 /**
- * A `log` that stamps every line with the request it belongs to: the
- * Cloudflare ray id and the route, so a `fair_use_flag` or `upstream_error`
- * can be found beside its invocation in the dashboard. Nothing from a header
- * that could carry a key is ever included.
+ * A `log` that stamps every line with the ray id and route, to find it beside
+ * its invocation in the dashboard. Nothing from a header that could carry a
+ * key is ever included.
  */
 export function requestLog(req: Request, sink: (line: string) => void): HandlerDeps['log'] {
   const ray = req.headers.get('CF-Ray');
@@ -103,9 +97,8 @@ export function parseProseCacheKey(key: string): ProseKeyInfo | null {
   const version = Number(m[1]);
   const kind = m[2] ? 'groups' : 'component';
   const tier = (m[3] as Tier | undefined) ?? null;
-  // The v2 groups key never shipped (Plan 2 merged and Plan 3 replaced it before
-  // a release), so nothing legitimate sends it; refusing it keeps its cache
-  // entries from ever answering a v3 request.
+  // The v2 groups key never shipped; refusing it keeps its cache entries from
+  // ever answering a v3 request.
   if (kind === 'groups' && version === 2) return null;
   const legacy = (kind === 'component' && version <= 8) || (kind === 'groups' && version <= 1);
   if (legacy && tier !== null) return null;
@@ -113,8 +106,7 @@ export function parseProseCacheKey(key: string): ProseKeyInfo | null {
   return { version, kind, tier };
 }
 
-/** The body forwarded to Anthropic: the client's request plus what only the
- *  server may decide. A legacy request already names its model. */
+/** The client's request plus what only the server decides; a legacy request names its own model. */
 export function upstreamRequest(request: Record<string, unknown>, tier: Tier, legacy: boolean): Record<string, unknown> {
   if (legacy) return request;
   return { ...request, model: MODEL_BY_TIER[tier], ...(tier === 'pro' ? { output_config: PRO_OUTPUT_CONFIG } : {}) };
@@ -156,11 +148,8 @@ function componentPrompt(content: unknown): string | null {
 }
 
 /**
- * The proxy must not be usable as a generic Anthropic relay.
- *
- * Exported so a client can be tested against the real rules rather than against
- * a guess at them. The cacheKey prefix in particular is a contract a client
- * cannot discover by reading its own code.
+ * The proxy must not be usable as a generic Anthropic relay. Exported so a
+ * client is tested against the real rules, the cacheKey prefix included.
  */
 export function validateProseBody(body: unknown): string | null {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return 'invalid body';
@@ -183,13 +172,9 @@ export function validateProseBody(body: unknown): string | null {
   if (!Array.isArray(r.messages)) return 'missing messages';
 
   if (info.kind === 'groups') {
-    // The foundation prompt has its own counter, GROUP_PROMPT_VERSION, which is
-    // not the component prose one: its v2 added the collection-overview rule and
-    // its v3 rewrote the prompt as one block per collection and raised the cap.
-    // Every one of those is different bytes from what shipped, and a 5.1.0
-    // client keeps sending the shipped ones under a groups v1 key, so the legacy
-    // branch compares against the frozen copies. Without them every shipped
-    // foundation build loses its AI descriptions the moment this deploys.
+    // The foundation prompt versions separately (GROUP_PROMPT_VERSION). A 5.1.0
+    // client still sends the shipped bytes under a groups v1 key, so the legacy
+    // branch compares against frozen copies, or its builds lose AI descriptions.
     if (r.system !== (legacy ? LEGACY_FOUNDATION_SYSTEM_PROMPT : FOUNDATION_SYSTEM_PROMPT)) return 'system not allowed';
     if (r.max_tokens !== (legacy ? LEGACY_GROUP_MAX_TOKENS : GROUP_MAX_TOKENS)) return 'max_tokens not allowed';
     if (r.messages.length !== 1) return 'invalid messages';
@@ -234,12 +219,9 @@ export function validateProseBody(body: unknown): string | null {
 }
 
 /**
- * Byte-for-byte equality of a message's content with the shipped one, whether
- * it is a string or a block array. JSON.stringify is stable for the shapes the
- * extractor builds (a fixed key order in a literal), and the expected side is
- * built by the same code, so a serialized comparison is exact here. It is also
- * how the one allowed `cache_control` is pinned to its position: any other
- * placement changes the bytes and fails.
+ * Byte-for-byte equality with the shipped content. JSON.stringify is stable
+ * for the extractor's literal shapes, and this also pins the one allowed
+ * `cache_control` to its position.
  */
 function sameContent(actual: unknown, expected: unknown): boolean {
   return JSON.stringify(actual) === JSON.stringify(expected);
@@ -273,10 +255,9 @@ export async function handleProse(req: Request, deps: HandlerDeps): Promise<Resp
     identityId = `free:${identity.id}`;
   }
 
-  // The key names the tier the client believes it has, and the generated answer
-  // is cached under it. A key that disagrees with the proof would let a Pro user
-  // be served a Haiku draft (or the reverse), so it is refused before any quota
-  // is reserved rather than quietly answered from the wrong bucket.
+  // The answer is cached under the key's tier. A key disagreeing with the proof
+  // would serve a Pro user a Haiku draft (or the reverse), so refuse it before
+  // reserving any quota.
   const keyInfo = parseProseCacheKey(cacheKey)!; // validated above
   if (keyInfo.tier !== null && keyInfo.tier !== tier) return json(400, { error: 'tier mismatch' });
 
@@ -297,12 +278,11 @@ export async function handleProse(req: Request, deps: HandlerDeps): Promise<Resp
     case 'proceed':
       break;
     default:
-      // Fail closed: a ReserveResult variant this switch doesn't know must
-      // never reach the upstream call.
+      // Fail closed: an unknown variant must never reach the upstream call.
       return json(500, { error: 'internal' });
   }
   if (reserved.kind === 'proceed' && reserved.flagged) {
-    deps.log('fair_use_flag', { identityId, tier }); // counters only — never content
+    deps.log('fair_use_flag', { identityId, tier }); // counters only, never content
   }
 
   let upstream: Response;
@@ -332,11 +312,9 @@ export async function handleProse(req: Request, deps: HandlerDeps): Promise<Resp
     return json(502, { error: 'upstream_error', status: upstream.status });
   }
 
-  // AbortSignal.timeout aborts the whole fetch, including a body still
-  // streaming past the deadline: a second guard here catches that case the
-  // same way as the initial call. Any other body-read error still reaches
-  // route()'s catch-all as a 500, uncounted, but frees the reservation first,
-  // so a retry runs instead of answering 409 until the reservation expires.
+  // The timeout also aborts a body still streaming. Any other read error is
+  // route()'s 500, uncounted, after freeing the reservation so a retry runs
+  // instead of answering 409 until it expires.
   let text: string;
   try {
     text = await upstream.text();
@@ -371,16 +349,13 @@ export async function handleQuota(req: Request, deps: HandlerDeps): Promise<Resp
   }
   const proofs = callerProofs(req.headers, deps.salt);
   const figmaId = proofs.figmaHash ? `free:${proofs.figmaHash}` : null;
-  // Same rule as `resolveCaller`'s `tierIdentity` in libraries.ts: Pro counts
-  // under the license, free under the Figma identity. The two must agree, or
-  // this meter reports a different bucket than a publish spends from.
+  // Must match `tierIdentity` in libraries.ts, or this meter reports a
+  // different bucket than a publish spends from.
   const publishIdentity = tier === 'pro' ? identityId : (figmaId ?? identityId);
   const publish = await deps.quotaFor(publishIdentity, 'publish').snapshot(tier);
   const s = await deps.quotaFor(identityId).snapshot(tier);
   if (identity.kind === 'license' && tier === 'free') {
-    // licResult is always non-null here: the `identity.kind === 'license'` branch above
-    // always assigns it. The `licResult &&` guard exists only to satisfy TS control-flow
-    // analysis (it can't see that `tier === 'free'` implies the license branch ran).
+    // licResult is non-null here; the guard only satisfies TS control flow.
     return json(200, { ...s, publish, licenseReason: licResult && licResult.tier === 'free' ? licResult.reason : undefined });
   }
   return json(200, { ...s, publish });
@@ -397,8 +372,7 @@ export async function handleActivate(req: Request, deps: HandlerDeps): Promise<R
   if (!LICENSE_KEY_RE.test(body.key)) return json(200, { valid: false, status: 'invalid' });
   const licenseDeps = { fetcher: deps.fetcher, cache: deps.licenseCache, now: deps.now };
   try {
-    // Repeat activation on a known device: validate the existing instance rather
-    // than calling activate again (which would consume another device slot).
+    // A known device validates its instance; activate would consume another slot.
     if (typeof body.instanceId === 'string' && body.instanceId) {
       const v = await validateLicense(body.key, body.instanceId, licenseDeps);
       return json(200, { valid: v.valid, status: v.status, instanceId: body.instanceId });
@@ -429,12 +403,12 @@ export async function handleDeactivate(req: Request, deps: HandlerDeps): Promise
 }
 
 const CORS_HEADERS: Record<string, string> = {
-  // Figma plugin iframes run with Origin: null — '*' (with header-based auth,
-  // no cookies) is the correct and safe setting here.
+  // Figma plugin iframes send Origin: null; with header auth and no cookies,
+  // '*' is safe.
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Authorization, Content-Type, X-Figma-User, X-Pull-Key, If-None-Match',
-  // Without this, the plugin iframe cannot read the quota headers at all.
+  // Without this the plugin iframe cannot read the quota headers.
   'Access-Control-Expose-Headers':
     'X-Tier, X-Quota-Used, X-Quota-Limit, X-Quota-Remaining, X-Quota-Resets-At, ETag, X-Published-At, X-Library-Version',
   'Access-Control-Max-Age': '86400',
@@ -467,11 +441,8 @@ export async function route(req: Request, deps: HandlerDeps): Promise<Response> 
   try {
     return withCors(await routeInner(req, deps));
   } catch (err) {
-    // The last line of defence: an uncaught throw from any handler must still
-    // answer with CORS headers, or the plugin sees an opaque network failure
-    // instead of a real status. Handlers that need a more specific answer
-    // (activation's 502 on an unreachable Lemon Squeezy, say) catch their own
-    // errors before this ever runs; this is only for what nothing else caught.
+    // An uncaught throw must still carry CORS headers, or the plugin sees an
+    // opaque network failure instead of a real status.
     deps.log('internal_error', { message: err instanceof Error ? err.message : String(err) });
     return withCors(json(500, { error: 'internal' }));
   }

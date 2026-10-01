@@ -16,7 +16,7 @@ export function categorize(property: string): PropertyCategory {
   return 'measurements';
 }
 
-/** Variant axis whose values are exactly {true, false} (case-insensitive). */
+/** Values are exactly {true, false}, case-insensitive. */
 export function isModifierAxis(axis: VariantAxis): boolean {
   if (axis.values.length !== 2) return false;
   const lower = axis.values.map((v) => v.toLowerCase());

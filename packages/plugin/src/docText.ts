@@ -1,11 +1,7 @@
 /// <reference types="@figma/plugin-typings" />
 /**
- * docText.ts: the text and table primitives every generated block shares.
- *
- * Lifted from docFrame.ts so anatomySection.ts and docBlocks.ts can build
- * bullets, prose and tables without importing the frame entry point.
- * Editorial tagging lives here too, because a block that renders prose is a
- * block that must tag it for read-back.
+ * The text and table primitives every generated block shares, including
+ * editorial tagging: a block that renders prose must tag it for read-back.
  */
 import { parseRuns, headingLine } from './ui/docModel';
 import type { Bullet, TextRun } from './ui/docModel';
@@ -21,18 +17,10 @@ export function tagLine(node: SceneNode, kind: LineKind): void {
 }
 
 /**
- * Apply run styling over `node.characters`. Bold runs take the Bold face.
- * Code runs take the Medium face in `codeInk`, which is how a code span is
- * drawn on canvas: Figma text has no inline boxes, so a chip is impossible
- * inside wrapping text, and Medium is otherwise unused in body text, which is
- * what lets textToMarkdown read it back as backticks. `prefix` accounts for
- * leading characters placed ahead of the runs.
- *
- * `codeInk` defaults to the heading ink, right for every body-surface caller
- * (prose, bullets). The header subtitle sits on the dark header band instead
- * of the page background, so its caller (docFrame.ts's buildHeader) must pass
- * an ink that reads there — the default would paint a code span the same
- * colour as the band on the default theme, making it invisible.
+ * Apply run styling over `node.characters`, after `prefix` leading characters.
+ * Bold runs take Bold; code runs take Medium in `codeInk`, since Figma text has
+ * no inline boxes and Medium, unused in body text, is what textToMarkdown reads
+ * back as backticks. On the header band, pass an ink that reads there.
  */
 export function applyRuns(node: TextNode, runs: TextRun[], prefix = 0, codeInk: RGB = palette.heading): void {
   let cursor = prefix;
@@ -204,9 +192,8 @@ export function buildTable(columns: string[], rows: string[][], contentWidth: nu
     head.appendChild(cell);
     applyColWidth(cell, widths[i]);
   }
-  // Data rows. Kept as a permanent fallback: a table with no rows still says
-  // "None" rather than reading as a bare header strip. A cell is a label, so
-  // no period. Every current caller skips an empty table, so this is a guard.
+  // A guard: an empty table says "None" (a label, so no period), not a bare
+  // header strip. Current callers skip empty tables.
   if (rows.length === 0) {
     const empty = hstack(0);
     table.appendChild(empty);

@@ -4,17 +4,12 @@ import type {
 } from '@spec-layer/extractor';
 import { effectLayerOf } from '@spec-layer/extractor';
 
-/** VariableBindableEffectField. Shadows accept all five; blurs accept `radius`
- *  alone; noise, texture and glass accept none and declare `boundVariables?: {}`.
- *  Reading all five off every effect is safe because an effect that cannot bind
- *  a field simply has no entry for it. */
+/** VariableBindableEffectField. Shadows bind all five, blurs only `radius`,
+ *  others none; a field an effect cannot bind simply has no entry. */
 const EFFECT_FIELDS = ['color', 'radius', 'spread', 'offsetX', 'offsetY'] as const;
 
-/**
- * Resolve the reference name/key for an instance's main component. When the main
- * component is a variant inside a component set, the set carries the real name/key,
- * so prefer it over the variant's combo name (e.g. "Size=Large, State=Default").
- */
+/** An instance's main component name and key. For a variant, the set's, not
+ *  the combo name ("Size=Large, State=Default"). */
 export function mainComponentRef(
   mc: { name: string; key: string; parent: { type: string; name: string; key: string } | null },
 ): { name: string; key: string } {
@@ -24,8 +19,7 @@ export function mainComponentRef(
   return { name: mc.name, key: mc.key };
 }
 
-/** A resolved variable as a reference identity. `collectionId` is spread in only
- *  when Figma gave one, so an absent collection is an absent key. */
+/** `collectionId` only when Figma gave one: absent is an absent key. */
 export function variableRef(v: ResolvedVariable): RefIdentity {
   return {
     id: v.id, name: v.name, kind: 'variable', remote: v.remote,
@@ -33,17 +27,16 @@ export function variableRef(v: ResolvedVariable): RefIdentity {
   };
 }
 
-/** A resolved style as a reference identity, or null for a GRID style. No node
- *  property this file reads can produce a grid binding, so a grid style here
- *  means the id was not what it claimed and dropping it is the honest result. */
+/** Null for a GRID style: no property read here binds one, so the id was not
+ *  what it claimed and dropping it is honest. */
 export function styleRef(s: ResolvedStyle): RefIdentity | null {
   return s.kind === 'grid-style'
     ? null
     : { id: s.id, name: s.name, kind: s.kind, remote: s.remote };
 }
 
-/** What Figma says about a variable a node binds. Ids and `remote` come from the
- *  API (`Variable.remote`), never from a failed lookup somewhere downstream. */
+/** Ids and `remote` come from the API (`Variable.remote`), never from a failed
+ *  lookup downstream. */
 export interface ResolvedVariable {
   id: string;
   name: string;
@@ -52,13 +45,9 @@ export interface ResolvedVariable {
 }
 
 /**
- * What Figma says about a style a node binds.
- *
- * `kind` maps from `BaseStyle.type`, which is a closed four-value union
- * (`PAINT | TEXT | EFFECT | GRID`). Asking the style is the point: the property
- * a style id was read from is a strong hint and not an answer, and an `effects`
- * binding in particular is the one the property map at tokens.ts:100 records as
- * unresolvable without it.
+ * `kind` maps from `BaseStyle.type` (`PAINT | TEXT | EFFECT | GRID`). The
+ * property an id was read from is a hint, not an answer; tokens.ts:100 records
+ * an `effects` binding as unresolvable without it.
  */
 export interface ResolvedStyle {
   id: string;
@@ -67,14 +56,13 @@ export interface ResolvedStyle {
   kind: 'paint-style' | 'text-style' | 'effect-style' | 'grid-style';
 }
 
-/** Injected resolver — keeps serialize.ts free of Figma globals so it runs under vitest. */
+/** Injected, so this file has no Figma globals and runs under vitest. */
 export interface NodeResolver {
   variable(id: string): Promise<ResolvedVariable | null>;
   style(id: string): Promise<ResolvedStyle | null>;
   mainComponent(node: unknown): Promise<{ name: string; key: string } | null>;
 }
 
-// Structurally-typed shapes for what we read off the raw Figma node.
 interface RawBoundVar { id: string }
 type BoundVarValue = RawBoundVar | RawBoundVar[];
 interface RawNode {
@@ -85,24 +73,18 @@ interface RawNode {
   key?: string;
   description?: string;
   documentationLinks?: Array<{ uri?: string }>;
-  // `| symbol` for the same reason fontSize/fontName carry it below: Figma
-  // returns figma.mixed from all four of these when a TEXT node's character
-  // ranges are not uniform. Typing them as a bare array/string is what let
-  // `fills.some(...)` ship and throw in Figma while tsc stayed silent.
+  // `| symbol`: Figma returns figma.mixed from these four when a TEXT node's
+  // ranges are not uniform. Without it tsc lets `fills.some(...)` throw.
   fills?: Array<{ type: string; color?: { r: number; g: number; b: number }; opacity?: number }> | symbol;
   fillStyleId?: string | symbol;
   strokes?: Array<{ type: string; color?: { r: number; g: number; b: number }; opacity?: number }> | symbol;
   strokeStyleId?: string | symbol;
-  // The whole effect object, not just its type. Reading only `.length` is what
-  // made a shadow with a variable-bound colour and hardcoded radius, offset and
-  // spread count as fully bound while silently dropping every geometry value.
+  // The whole effect, so hardcoded geometry beside a bound colour is not lost.
   effects?: RawEffect[];
   opacity?: number;
   textStyleId?: string | symbol;
   effectStyleId?: string | symbol;
-  // Figma returns figma.mixed (a symbol) for these when a TEXT node's range
-  // isn't uniform. Typing the symbol keeps callers from smuggling it through
-  // as a bogus number/object — every read site must check `typeof` first.
+  // figma.mixed on non-uniform TEXT ranges: every read must check `typeof`.
   fontSize?: number | symbol;
   fontName?: { family: string; style: string } | symbol;
   layoutMode?: string;
@@ -126,11 +108,8 @@ interface RawNode {
   children?: RawNode[];
 }
 
-/**
- * Figma exposes weight as a style NAME, not a number. Map the common ladder;
- * anything unrecognized falls back to 400, which yields the stricter AA
- * threshold and so cannot produce a false pass.
- */
+/** Figma gives weight as a style name. Unknown falls back to 400, the stricter
+ *  AA threshold, so it cannot produce a false pass. */
 const WEIGHTS: Record<string, number> = {
   thin: 100, hairline: 100, extralight: 200, ultralight: 200, light: 300,
   regular: 400, normal: 400, book: 400, medium: 500, semibold: 600, demibold: 600,
@@ -145,43 +124,30 @@ function fontWeightOf(style: string): number {
 export async function serializeNode(node: RawNode, resolver: NodeResolver): Promise<SerializedNode> {
   const bindings: TokenRef[] = [];
 
-  // --- Resolve boundVariables ---
   const bv = node.boundVariables ?? {};
   for (const [property, value] of Object.entries(bv)) {
-    // Resolve ALL entries of array-valued variables.
     const entries: RawBoundVar[] = Array.isArray(value) ? value : [value];
     for (const entry of entries) {
       if (!entry?.id) continue;
       const v = await resolver.variable(entry.id);
-      // Deduped on the resolved ID, not on the name: two ids resolving to one
-      // name are two bindings.
+      // Deduped on id, not name: two ids with one name are two bindings.
       if (v && !bindings.some((b) => b.property === property && b.id === v.id)) {
         bindings.push({ property, ...variableRef(v) });
       }
     }
   }
 
-  // --- Resolve style ids ---
-  // The property each id was read from decides the BINDING property; the style
-  // itself decides what kind of thing it is. Those are two different questions,
-  // and the second is never answered by guessing from the first.
+  // The source property decides the binding property; the style itself decides
+  // its kind, never guessed from the property.
   const styleBinding = async (id: string, property: string): Promise<void> => {
     const s = await resolver.style(id);
     const ref = s ? styleRef(s) : null;
     if (ref) bindings.push({ property, ...ref });
   };
-  // Two different questions, deliberately kept apart.
-  //
-  // "Which id can I look up" must be a string: handing figma.mixed (a symbol)
-  // to getStyleByIdAsync asks Figma about an id that does not exist.
-  //
-  // "Is this paint styled at all" stays the raw truthiness it has always been,
-  // because a mixed style id means SOME range is style-bound, which is the
-  // opposite of a hardcoded unbound paint -- and because narrowing it here
-  // would flip hasUnboundPaint to true for a text node with uniform fills and
-  // mixed style ranges. That node never crashed, so it may already have a
-  // committed document, and specContentHash covers the gap that verdict feeds.
-  // Moving it would make every such document falsely report an update.
+  // A lookup id must be a string: figma.mixed would ask about an id that does
+  // not exist. "Is it styled" stays raw truthiness: a mixed id means some range
+  // is style-bound, and narrowing it would flip hasUnboundPaint, a gap inside
+  // specContentHash, so existing documents would falsely report an update.
   const fillStyleId = typeof node.fillStyleId === 'string' ? node.fillStyleId : '';
   const strokeStyleId = typeof node.strokeStyleId === 'string' ? node.strokeStyleId : '';
   const fillStyled = Boolean(node.fillStyleId);
@@ -195,15 +161,11 @@ export async function serializeNode(node: RawNode, resolver: NodeResolver): Prom
     await styleBinding(node.effectStyleId, 'effects');
   }
 
-  // --- Unbound paints, effects and opacity ---
   const to2 = (n: number) => Math.round(n * 255).toString(16).padStart(2, '0');
   const hex = (c: { r: number; g: number; b: number }) => `#${to2(c.r)}${to2(c.g)}${to2(c.b)}`;
 
-  // Array.isArray, not `?? []`: figma.mixed is a symbol, so it is neither null
-  // nor undefined and slipped through into `.some()`. Mixed reads as "no paint
-  // this read can speak for", which is why no verdict below fires for it -- a
-  // multi-colour label has fills, and claiming hasUnboundPaint or a hex for it
-  // would be inventing a gap and a value nobody read.
+  // Array.isArray, not `?? []`: figma.mixed is a symbol. Mixed fills get no
+  // verdict, since a gap or hex for them would be a value nobody read.
   const fills = Array.isArray(node.fills) ? node.fills : [];
   const hasSolidFill = fills.some((f) => f.type === 'SOLID');
   const fillsBound = 'fills' in bv || fillStyled;
@@ -211,8 +173,7 @@ export async function serializeNode(node: RawNode, resolver: NodeResolver): Prom
   const solidFill = hasUnboundPaint ? fills.find((f) => f.type === 'SOLID' && f.color) : undefined;
   const unboundFill = solidFill?.color ? hex(solidFill.color) : undefined;
 
-  // Gradients and images can't bind to a colour variable, only to a style, so a
-  // style id is the only thing that makes them intentional.
+  // Gradients and images bind only to a style.
   const hasGradient = fills.some((f) => f.type.startsWith('GRADIENT_') || f.type === 'IMAGE');
   const hasUnboundGradient = hasGradient && !fillStyled ? true : undefined;
 
@@ -226,20 +187,14 @@ export async function serializeNode(node: RawNode, resolver: NodeResolver): Prom
   const rawEffects = node.effects ?? [];
   const hasEffects = rawEffects.length > 0;
   const effectStyled = typeof node.effectStyleId === 'string' && Boolean(node.effectStyleId);
-  // UNCHANGED semantics, deliberately. hasUnboundEffect is what extractGaps
-  // keys the `effects` gap on, and gaps are inside specContentHash. Changing
-  // when this fires would move every committed document's drift baseline for a
-  // change that adds detail rather than altering a verdict.
+  // Keep when this fires: extractGaps keys the `effects` gap on it, and gaps
+  // are inside specContentHash, so a change moves every drift baseline.
   const effectsBound = 'effects' in bv || effectStyled;
   const hasUnboundEffect = hasEffects && !effectsBound ? true : undefined;
 
-  // The layers themselves, whenever the node has effects and no effect STYLE --
-  // not only when nothing is bound. A style name is a pointer to a definition
-  // extracted once in the foundation; a node-level effect has no name to point
-  // at, so it is inlined. Per-field bindings are read from each effect's own
-  // boundVariables, which is where Figma actually puts them: node-level
-  // boundVariables.effects is a flat VariableAlias[] with no field or layer
-  // identity at all.
+  // Inlined whenever there is no effect style (a style points at the
+  // foundation). Field bindings come from each effect's own boundVariables:
+  // node-level boundVariables.effects has no field or layer identity.
   let effects: EffectLayer[] | undefined;
   if (hasEffects && !effectStyled) {
     effects = [];
@@ -255,28 +210,20 @@ export async function serializeNode(node: RawNode, resolver: NodeResolver): Prom
       try {
         effects.push(effectLayerOf(raw, bindings));
       } catch {
-        // A shape we cannot read is reported as unmodelled, exactly as an
-        // unrecognised `type` already is. serializeNode recurses through
-        // Promise.all, so letting this throw would reject the whole tree and
-        // return an empty component for one bad layer.
+        // Unmodelled, like an unknown `type`: a throw would reject the whole
+        // Promise.all tree for one bad layer.
         effects.push({ type: 'unknown', figma_type: raw.type });
       }
     }
   }
 
-  // Figma's opacity is float32-backed, so 30% comes back as 0.30000001192092896.
-  // That value is written verbatim into the gap's `value` field, which IS
-  // covered by specContentHash, so leaving it unrounded puts float noise in
-  // front of the reader and in the drift baseline. Four decimals is well past
-  // anything Figma's own percent field can express.
+  // Float32: 30% reads 0.30000001192092896, and the value lands in a gap that
+  // specContentHash covers. Four decimals exceed Figma's percent field.
   const opacity = typeof node.opacity === 'number' && node.opacity !== 1
     ? Math.round(node.opacity * 10000) / 10000
     : undefined;
 
-  // --- Text metrics (TEXT nodes only) ---
-  // `fontSize`/`fontName` come back as figma.mixed (a symbol) when a TEXT node's
-  // range isn't uniform; the typeof checks below keep that symbol from slipping
-  // through as a bogus number or object.
+  // The typeof checks keep figma.mixed out.
   let text: { fontSize?: number; fontWeight?: number } | undefined;
   if (node.type === 'TEXT') {
     const size = typeof node.fontSize === 'number' ? node.fontSize : undefined;
@@ -289,7 +236,6 @@ export async function serializeNode(node: RawNode, resolver: NodeResolver): Prom
     }
   }
 
-  // --- componentPropertyDefinitions ---
   let propertyDefinitions: Record<string, PropertyDefinition> | undefined;
   try {
     if (node.componentPropertyDefinitions) {
@@ -304,17 +250,16 @@ export async function serializeNode(node: RawNode, resolver: NodeResolver): Prom
       if (Object.keys(defs).length > 0) propertyDefinitions = defs;
     }
   } catch {
-    // Figma throws on variant children — silently skip.
+    // Figma throws on variant children.
   }
 
-  // --- mainComponent (INSTANCE nodes) ---
   let mainComponent: { name: string; key: string } | undefined;
   if (node.type === 'INSTANCE') {
     const mc = await resolver.mainComponent(node);
     if (mc) mainComponent = mc;
   }
 
-  // --- layout (auto-layout values + corner radius; only positive numbers) ---
+  // Positive numbers only.
   let layout: LayoutInfo | undefined;
   if (node.layoutMode === 'HORIZONTAL' || node.layoutMode === 'VERTICAL') {
     layout = { mode: node.layoutMode };
@@ -328,22 +273,16 @@ export async function serializeNode(node: RawNode, resolver: NodeResolver): Prom
     layout = { ...(layout ?? {}), cornerRadius: node.cornerRadius };
   }
 
-  // --- visibility bound to a component property ---
-  // Figma exposes the binding as `componentPropertyReferences.visible` on the
-  // layer itself. Null on nodes outside a component; wrapped like
-  // componentPropertyDefinitions above in case a node type rejects the read.
+  // Null outside a component; wrapped in case a node type rejects the read.
   let visibleProperty: string | undefined;
   try {
     const ref = node.componentPropertyReferences?.visible;
     if (typeof ref === 'string' && ref.length > 0) visibleProperty = ref;
   } catch {
-    // Not a property-bearing node — leave it absent.
+    // Not a property-bearing node.
   }
 
-  // --- Description and documentation links (component roots only) ---
-  // Figma exposes both on COMPONENT and COMPONENT_SET. A variant inside a set
-  // shares the set's description, and findComponent() already resolves the
-  // selection to the set, so reading the root is reading the right node.
+  // Component roots only; findComponent() already resolves a variant to its set.
   const description = (node.type === 'COMPONENT' || node.type === 'COMPONENT_SET')
     && typeof node.description === 'string' && node.description.trim() !== ''
     ? node.description.trim()
@@ -355,7 +294,6 @@ export async function serializeNode(node: RawNode, resolver: NodeResolver): Prom
         .filter((uri) => uri !== '')
     : [];
 
-  // --- Recurse children ---
   const children = node.children
     ? await Promise.all(node.children.map(c => serializeNode(c, resolver)))
     : undefined;

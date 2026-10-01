@@ -2,13 +2,10 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 /**
- * What the repository the CLI runs in looks like, read from the top level of
- * the working directory only. Nothing here walks the tree, follows imports, or
- * guesses from file contents beyond package.json's dependency names, so the
- * result is the same on every machine and every run, and every conclusion
- * names the file that supports it. A codebase this cannot read reports
- * nothing rather than a plausible default; `spec-layer skill --platform`
- * overrides the target when the repo gives no signal.
+ * What the repository looks like, from the top level of the working directory
+ * only: no tree walk, no imports, no file contents beyond package.json's
+ * dependency names. Deterministic, and every conclusion names its file. An
+ * unreadable codebase reports nothing rather than a plausible default.
  */
 
 export type Platform = 'web' | 'ios' | 'android' | 'flutter';
@@ -17,7 +14,6 @@ export type AgentHost = 'claude' | 'cursor' | 'copilot' | 'windsurf' | 'gemini' 
 export interface Evidence {
   /** What the file proves, in a short phrase, e.g. "react dependency". */
   signal: string;
-  /** The file at the repository root that carries the signal. */
   file: string;
 }
 
@@ -45,9 +41,7 @@ export const AGENT_HOSTS: readonly AgentHost[] = ['claude', 'cursor', 'copilot',
 
 const uniq = <T,>(xs: T[]): T[] => [...new Set(xs)];
 
-/** A JSON file's top-level object, or `null` if it does not exist, is not
- *  valid JSON, or does not parse to an object. Shared by every reader below
- *  that only cares about package.json's own fields. */
+/** A JSON file's top-level object, or null when missing, invalid, or not an object. */
 function readJsonObject(path: string): Record<string, unknown> | null {
   if (!existsSync(path)) return null;
   let parsed: unknown;
@@ -202,82 +196,49 @@ export function isAgentHost(value: string): value is AgentHost {
 }
 
 /**
- * Whether the repository around a pull actually loads a font family the
- * tokens name -- and, unlike everything above, this does read file contents,
- * not just names and dependency ranges. A family with nothing loading it
- * renders as the browser default: on a real pull, every button rendered in
- * Times, `--typography-font-family-primary: "Open Sans"` measured
- * byte-identical in the browser to a bogus family name and to `serif`, and
- * four rounds of human visual review signed it off because color and size
- * were both fine. `missingFontSources` is the check that would have caught
- * it; `missingFontSourcesInRepo` (below) is the entry point that runs it
- * against an actual repository root.
+ * Whether the repository loads a font family the tokens name; unlike the rest
+ * of this file, this reads file contents. An unloaded family silently renders
+ * as the browser default, which visual review misses.
  *
- * The asymmetry that governs every match below: a false "missing" costs a
- * developer one glance at a report; a false "present" ships the Times-button
- * failure again. So each check is deliberately narrower than a bare
- * substring search -- a family that is itself a substring of a different,
- * real family (`"Sans"` inside `"Open Sans"`, `"Inter"` inside `"Inter
- * Tight"`, `"Open Sans"` inside `"Open Sans Condensed"`) must not read as
- * found. Case is intentionally NOT folded for the CSS and Google Fonts
- * routes: a differently-cased family in the repository is left unproven
- * rather than guessed at, which only ever costs the safe direction (one more
- * "missing" a developer can dismiss at a glance).
+ * A false "missing" costs one glance; a false "present" ships the wrong font.
+ * So every match is narrower than a substring search (`"Inter"` must not match
+ * `"Inter Tight"`), and case is not folded for the CSS and Google Fonts routes.
  */
 export interface RepoSignals {
-  /** package.json's own dependency maps, read raw -- not detect.ts's merged
-   *  `deps` above, so a caller can keep dependencies and devDependencies
-   *  apart if it ever needs to. */
+  /** package.json's raw dependency maps, not the merged `deps` above. */
   packageJson: { dependencies?: Record<string, string>; devDependencies?: Record<string, string> };
-  /** Concatenated text of whatever CSS was read. `readFontRepoSignals` below
-   *  fills this from the repository root; a caller that already has the
-   *  text some other way (a test, a different source) can still build this
-   *  object by hand. */
+  /** Concatenated CSS text; `readFontRepoSignals` fills it from the root. */
   cssText: string;
-  /** Concatenated text of whatever HTML was read. Same note as `cssText`. */
+  /** Concatenated HTML text. */
   htmlText: string;
 }
 
-/** No regex: a fixed, cheap string transform over a short, known family
- *  name, not a scan over arbitrary repository content. */
 function fontPackageSlug(family: string): string {
   return family.toLowerCase().split(' ').join('-');
 }
 
-/** A fontsource-style package naming exactly this family:
- *  `@fontsource/<slug>`, `@fontsource-variable/<slug>`, or a bare `<slug>`.
- *  Deliberately not a plain `.includes(slug)`: that would also match
- *  `@fontsource/open-sans-condensed` for the family "Open Sans" -- a real,
- *  differently-named font on the same registry. */
+/**
+ * `@fontsource/<slug>`, `@fontsource-variable/<slug>`, or a bare `<slug>`. Not
+ * `.includes(slug)`, which matches `open-sans-condensed` for "Open Sans".
+ */
 function dependencyNamesFamily(dependencyName: string, slug: string): boolean {
   const lower = dependencyName.toLowerCase();
   return lower === slug || lower.endsWith(`/${slug}`);
 }
 
-/** An `@font-face` rule naming this exact family. CSS requires quotes around
- *  a multi-word `font-family` value, so requiring the quoted form is what
- *  keeps "Inter" from matching inside a rule that only names "Inter
- *  Tight". */
+/** An `@font-face` naming this exact family, quoted, so "Inter" never matches "Inter Tight". */
 function cssNamesFamily(cssText: string, family: string): boolean {
   if (!cssText.includes('@font-face')) return false;
   return cssText.includes(`"${family}"`) || cssText.includes(`'${family}'`);
 }
 
-/** A Google Fonts `css2?family=` parameter naming this exact family.
- *
- *  The host is compared after parsing rather than searched for as a
- *  substring: a link to any other host can carry `fonts.googleapis.com` in
- *  its own path or query, and a bare `includes` reads that as a match. A
- *  false "present" is the expensive direction here, because it tells a
- *  developer a font is loaded when nothing loads it. Parsing also retires
- *  the hand-rolled terminator list the substring form needed, since
- *  `searchParams` already ends a value at `&` and decodes `+` to a space,
- *  which is what keeps "Open+Sans" from matching a link that loads only
- *  "Open+Sans+Condensed".
- *
- *  An HTML attribute value is quoted, so splitting on both quote characters
- *  yields each candidate URL as its own fragment. Still no regex: this runs
- *  over whatever HTML a repository happens to contain. */
+/**
+ * A Google Fonts `family=` parameter naming this exact family. The host is
+ * compared after parsing, since another host can carry `fonts.googleapis.com`
+ * in its path. `searchParams` ends a value at `&` and decodes `+`, so
+ * "Open+Sans" never matches "Open+Sans+Condensed". Splitting on quotes yields
+ * each attribute URL; no regex, since this runs over arbitrary repository HTML.
+ */
 function googleFontsLinkNamesFamily(htmlText: string, family: string): boolean {
   for (const quoted of htmlText.split('"')) {
     for (const fragment of quoted.split("'")) {
@@ -300,10 +261,8 @@ function googleFontsLinkNamesFamily(htmlText: string, family: string): boolean {
 }
 
 /**
- * The families with no loader found in `repo`. Three routes, checked in
- * order, no fourth: a font package in package.json, an `@font-face` rule, or
- * a Google Fonts link. When a family matches none of the three, it is
- * reported missing -- never assumed present.
+ * The families with no loader in `repo`: no font package, no `@font-face`, no
+ * Google Fonts link. Unmatched means missing, never assumed present.
  */
 export function missingFontSources(families: string[], repo: RepoSignals): string[] {
   const dependencyNames = Object.keys({ ...repo.packageJson.dependencies, ...repo.packageJson.devDependencies });
@@ -316,10 +275,7 @@ export function missingFontSources(families: string[], repo: RepoSignals): strin
   });
 }
 
-/** One dependency field of package.json's top-level object, or `{}` if the
- *  file, the field, or the field's values are not there to read. Never
- *  throws: an absent or malformed package.json answers "no dependencies",
- *  not an error. */
+/** One package.json dependency field, or `{}` when absent or malformed. Never throws. */
 function dependencyField(record: Record<string, unknown> | null, field: string): Record<string, string> {
   const block = record?.[field];
   if (typeof block !== 'object' || block === null) return {};
@@ -330,12 +286,7 @@ function dependencyField(record: Record<string, unknown> | null, field: string):
   return out;
 }
 
-/** Every `*.css` file that is an immediate child of `cwd`, concatenated.
- *  Root only, matching this file's "never look below the root" rule for
- *  everything else it detects: `readdirSync` lists names, it is not a
- *  recursive walk. A repository whose font-loading CSS lives under `src/`
- *  or `public/` reads as having none here -- the safe direction, since that
- *  only ever reports a present family as missing, never the reverse. */
+/** Root-level `*.css` files, concatenated. CSS under `src/` reads as none, the safe direction. */
 function readRootCssText(cwd: string): string {
   let names: string[] = [];
   try { names = readdirSync(cwd); } catch { names = []; }
@@ -347,11 +298,7 @@ function readRootCssText(cwd: string): string {
   return chunks.join('\n');
 }
 
-/** The two conventional HTML entry points a font `<link>` actually lives in:
- *  `index.html` at the root (Vite) and `public/index.html` (create-react-app).
- *  Two fixed, named paths, not a walk of the tree: a repository whose entry
- *  HTML lives somewhere else reads as having none, the same safe direction
- *  as `readRootCssText` above. */
+/** `index.html` (Vite) and `public/index.html` (create-react-app); elsewhere reads as none. */
 function readEntryHtmlText(cwd: string): string {
   const chunks: string[] = [];
   for (const path of [join(cwd, 'index.html'), join(cwd, 'public', 'index.html')]) {
@@ -361,11 +308,8 @@ function readEntryHtmlText(cwd: string): string {
 }
 
 /**
- * `RepoSignals` read from an actual repository root: package.json's raw
- * `dependencies`/`devDependencies`, every root-level `*.css` file, and the
- * two conventional HTML entry points. A missing or unreadable file
- * contributes an empty string, never an error -- a pull must not fail
- * because a repository happens to have no `index.html`.
+ * `RepoSignals` from a repository root. A missing or unreadable file adds an
+ * empty string, never an error: a pull must not fail for lack of `index.html`.
  */
 export function readFontRepoSignals(cwd: string): RepoSignals {
   const record = readJsonObject(join(cwd, 'package.json'));
@@ -379,12 +323,7 @@ export function readFontRepoSignals(cwd: string): RepoSignals {
   };
 }
 
-/**
- * The entry point a caller with a repository root actually needs: the
- * families from `fonts.json` that nothing at `cwd` loads. Reads
- * `RepoSignals` off disk with `readFontRepoSignals` and hands them to
- * `missingFontSources`, so a caller never assembles `RepoSignals` by hand.
- */
+/** The families from `fonts.json` that nothing at `cwd` loads. */
 export function missingFontSourcesInRepo(families: string[], cwd: string): string[] {
   return missingFontSources(families, readFontRepoSignals(cwd));
 }

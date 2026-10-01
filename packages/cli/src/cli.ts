@@ -63,8 +63,7 @@ async function main(): Promise<number> {
       },
     }));
   } catch {
-    // util.parseArgs throws (e.g. ERR_PARSE_ARGS_UNKNOWN_OPTION) on a bad flag.
-    // Surface usage, not the exception, and exit nonzero.
+    // parseArgs throws on a bad flag: show usage, not the exception.
     io.err(USAGE);
     return 1;
   }
@@ -73,8 +72,7 @@ async function main(): Promise<number> {
 
   const cwd = process.cwd();
   try {
-    // Inside the try, so a stdin failure resolveKeyFromStdin did not turn
-    // into a sentence itself still gets the last-resort net below.
+    // Inside the try, so an unexpected stdin failure reaches the net below.
     const stdinKey = await resolveKeyFromStdin(command, values.key, process.stdin);
     if (stdinKey.error !== null) {
       io.err(stdinKey.error);
@@ -93,10 +91,8 @@ async function main(): Promise<number> {
     io.err(USAGE);
     return 1;
   } catch (err) {
-    // Last-resort net: any error that escapes a command (fs failure, etc.)
-    // is printed as plain text, never as a stack trace. Commands are expected
-    // to handle their own known-failure paths and return a code directly;
-    // this only catches what they didn't anticipate.
+    // Last-resort net: an error a command did not anticipate prints as plain
+    // text, never a stack trace.
     io.err(err instanceof Error ? err.message : String(err));
     return 1;
   }

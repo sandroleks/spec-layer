@@ -1,15 +1,9 @@
 /**
- * v2.ts: the structured prose contract the canvas renders.
- *
- * ProseDrafts (v1) is markdown blobs; ProseV2 is arrays and pairs, so a name
- * the model uses can be checked against the spec before it is drawn, and a
- * card, table row or bullet can be rebuilt from stored data without parsing
- * markdown again. The v9 prompt produces v2 directly, so `upgradeProseV1`
- * now serves only the read-back of prose an earlier build stored, and
- * `proseToLegacy` hands the brief and the v5 artifact the v1 shape they
- * still read.
- *
- * No Figma, no DOM: this file is imported by the plugin's main thread.
+ * The structured prose contract the canvas renders. Unlike the v1 markdown
+ * blobs (ProseDrafts), every name can be checked against the spec before it is
+ * drawn. `upgradeProseV1` reads back stored v1 prose; `proseToLegacy` gives the
+ * brief and the v5 artifact the v1 shape they still read. Imported by the main
+ * thread: no DOM.
  */
 import type { IntermediateSpec } from '../extract';
 import type { ProseDrafts } from './prompt';
@@ -34,12 +28,9 @@ export interface ProseV2 {
   semantics?: string[];
   content?: string[];
   guidelines?: GuidelinePair[];
-  /**
-   * The keys whose content a person typed on the canvas into a placeholder,
-   * so the export can say who wrote them. Not a prose key: it is metadata
-   * about the keys above, never counted as content, never sent to or asked of
-   * the model, and omitted when empty. Read through `normalizeAuthored`.
-   */
+  /** Keys a person typed on the canvas, so the export can say who wrote them.
+   *  Metadata, never content and never sent to the model; omitted when empty.
+   *  Read through `normalizeAuthored`. */
   authored?: ProseV2Key[];
 }
 
@@ -51,15 +42,13 @@ export const PROSE_V2_KEYS: readonly ProseV2Key[] = [
   'pointer', 'semantics', 'content', 'guidelines',
 ];
 
-/** A stored `authored` value as the known prose keys it names, each once, in
- *  PROSE_V2_KEYS order. Anything else (an unknown entry, a non-array) is
- *  dropped, never thrown on. */
+/** Known keys once each, in PROSE_V2_KEYS order; anything else is dropped. */
 export function normalizeAuthored(value: unknown): ProseV2Key[] {
   if (!Array.isArray(value)) return [];
   return PROSE_V2_KEYS.filter((key) => value.includes(key));
 }
 
-/** The keyboard vocabulary. A row whose key is not one of these is dropped. */
+/** A row whose key is not one of these is dropped. */
 export const KEYBOARD_KEYS: readonly string[] = [
   'Tab', 'Shift+Tab', 'Enter', 'Space', 'Escape', 'Arrow Up', 'Arrow Down',
   'Arrow Left', 'Arrow Right', 'Home', 'End', 'Page Up', 'Page Down', 'Delete', 'Backspace',
@@ -68,16 +57,10 @@ export const KEYBOARD_KEYS: readonly string[] = [
 const ARROWS = ['Arrow Up', 'Arrow Down', 'Arrow Left', 'Arrow Right'];
 
 /**
- * Bare `up`/`down`/`left`/`right`/`return` are deliberately absent: those are
- * ordinary English words ("Down the list, focus wraps.", "Return focus to
- * the trigger.") and accepting them as keys fabricates a binding table row
- * out of plain prose that `validateProseV2` cannot catch afterwards, because
- * a fabricated row still names a real vocabulary key. An arrow or Enter must
- * be spelled out as a key: "Arrow Down", "Down Arrow", "Down Key", or the
- * glyph. `Space`, `Home`, `End`, `Enter`, `Tab`, `Escape`, `Delete`,
- * `Backspace`, `Page Up` and `Page Down` keep their bare forms: those words
- * do not open ordinary sentences about component behaviour the way the
- * directional words and "return" do.
+ * Bare `up`/`down`/`left`/`right`/`return` are absent: they open ordinary
+ * sentences ("Return focus to the trigger."), and reading them as keys
+ * fabricates a row `validateProseV2` cannot catch. Spell them as keys ("Arrow
+ * Down", "Down Key", the glyph).
  */
 const KEY_ALIASES: Record<string, string[]> = {
   tab: ['Tab'], shifttab: ['Shift+Tab'], enter: ['Enter'], returnkey: ['Enter'], space: ['Space'],
@@ -91,8 +74,7 @@ const KEY_ALIASES: Record<string, string[]> = {
   delete: ['Delete'], del: ['Delete'], backspace: ['Backspace'],
 };
 
-/** Canonical key names for one spelling, or null when it is not in the
- *  vocabulary. "Arrow keys" expands to the four arrows. */
+/** Canonical key names for one spelling, or null. "Arrow keys" gives all four. */
 export function normalizeKey(raw: string): string[] | null {
   const folded = raw.toLowerCase().replace(/[\s+_-]+/g, '');
   const direct = KEY_ALIASES[folded];
@@ -103,15 +85,12 @@ export function normalizeKey(raw: string): string[] | null {
 
 const KEY_SEPARATOR = /\s*(?:\bor\b|\band\b|\/|,)\s*/i;
 
-/**
- * Read a v1 keyboard bullet as a table row. The sentence must open with one or
- * more vocabulary keys joined by "or", "and", a slash or a comma; the rest is
- * the action, capitalised. Anything else is not a keyboard row.
- */
+/** A v1 keyboard bullet as a table row: it must open with vocabulary keys
+ *  joined by "or", "and", a slash or a comma; the rest is the action. */
 export function parseKeyboardBullet(text: string): { keys: string[]; action: string } | null {
   const line = text.replace(/^[-*]\s+/, '').trim();
   const words = line.split(/\s+/);
-  // Try the longest key prefix first (up to six words covers "Tab / Shift+Tab move").
+  // Longest key prefix first; six words covers "Tab / Shift+Tab move".
   for (let n = Math.min(words.length - 1, 6); n >= 1; n -= 1) {
     const head = words.slice(0, n).join(' ');
     const parts = head.split(KEY_SEPARATOR).map((p) => p.trim()).filter(Boolean);
@@ -131,8 +110,7 @@ export function parseKeyboardBullet(text: string): { keys: string[]; action: str
   return null;
 }
 
-/** Split a paragraph into its first sentence and the remainder. A sentence
- *  ends at the first `.`, `!` or `?` followed by whitespace and a capital or
+/** A sentence ends at `.`, `!` or `?` followed by whitespace and a capital or
  *  `(`, so "e.g. a Toggle" and "3.5 items" do not end it. */
 export function firstSentence(text: string): { sentence: string; remainder: string } {
   const t = text.trim();
@@ -142,22 +120,14 @@ export function firstSentence(text: string): { sentence: string; remainder: stri
   return { sentence: t.slice(0, end).trim(), remainder: t.slice(end).trim() };
 }
 
-/**
- * The characters `.` never matches without the `s` flag. The two line matchers
- * below replaced regexes whose tail was `(.*)$`, and that tail fails, rather
- * than matching, when one of these sits after the first non-space character.
- * The scans keep that answer so they return exactly what the regexes did.
- */
+/** What `.` never matches without `s`. The matchers below keep the `(.*)$`
+ *  tails' failure on these, to equal the regexes they replaced. */
 const LINE_TERMINATOR = /[\n\r\u2028\u2029]/;
 
 /**
- * A v1 variants-guide bullet, `- **Name**: guidance`, as its two parts, or
- * null when the line is not one. Replaces
- * `/^[-*]\s+\*\*([^*]+)\*\*\s*:?\s*(.*)$/`, whose `\s*:?\s*(.*)` tail could
- * split a run of spaces three ways and so ran in polynomial time when the
- * anchor failed (CodeQL alert 65). The prefix is still a regex because nothing
- * in it overlaps; the tail is a trim, one optional colon, and a second trim,
- * which is what the greedy quantifiers always resolved to.
+ * A v1 variants-guide bullet, `- **Name**: guidance`, or null. The tail is a
+ * trim, an optional colon and a trim, because the old `\s*:?\s*(.*)$` regex
+ * tail was polynomial; the result is the same.
  */
 export function variantBullet(line: string): { name: string; guidance: string } | null {
   const m = /^[-*]\s+\*\*([^*]+)\*\*/.exec(line);
@@ -169,12 +139,9 @@ export function variantBullet(line: string): { name: string; guidance: string } 
 }
 
 /**
- * The text of a markdown heading line (`#` to `######`, whitespace, text), or
- * null when the line is not one. Replaces `/^#{1,6}\s+(.+)$/`, where `\s+` and
- * `.+` both match a space and so shared a run of them in polynomial time when
- * the anchor failed (CodeQL alert 66). Callers pass a trimmed line, which is
- * what makes the greedy `\s+` and this slice agree: the text after the
- * whitespace is then never empty.
+ * The text of a markdown heading line, or null. Replaces the polynomial
+ * `/^#{1,6}\s+(.+)$/`. Callers pass a trimmed line, which is what makes this
+ * slice agree with the greedy `\s+`.
  */
 export function headingText(line: string): string | null {
   const m = /^#{1,6}\s+/.exec(line);
@@ -183,8 +150,7 @@ export function headingText(line: string): string | null {
   return text === '' || LINE_TERMINATOR.test(text) ? null : text;
 }
 
-/** A v1 guideline string as rule and reason: the first bold run is the rule;
- *  without one, the first sentence is. */
+/** The first bold run is the rule; without one, the first sentence is. */
 export function splitRuleReason(text: string): GuidelineCard {
   const t = text.trim();
   const bold = /^\*\*([^*]+)\*\*\s*(.*)$/s.exec(t);
@@ -194,36 +160,21 @@ export function splitRuleReason(text: string): GuidelineCard {
 }
 
 /**
- * Cheap discriminator: true when `value` is an object with `v === 2`. It does
- * not validate any sub-shape — a value can pass this check and still be
- * missing `overview.body`, a keyboard row's `keys`, or any other nested
- * field a caller assumes is there. Callers still need `validateProseV2` to
- * turn a value shaped like this into one whose fields can be trusted; that is
- * also why every reader below (`validateProseV2`, `proseToLegacy`,
- * `hasProseContent`) treats each field defensively instead of assuming the
- * declared `ProseV2` type holds at runtime.
+ * Checks `v === 2` only, no sub-shape. Only `validateProseV2` makes a value
+ * trustworthy, which is why every reader here treats each field defensively.
  */
 export function isProseV2(value: unknown): value is ProseV2 {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
     && (value as { v?: unknown }).v === 2;
 }
 
-/** An unknown value as an array of `T`, or `[]` when it is missing or not an
- *  array. AI-authored `ProseV2` values are only shaped like the type, not
- *  guaranteed to satisfy it, so every reader below normalises through this
- *  instead of trusting a declared array field is actually an array. */
+/** AI-authored values are only shaped like `ProseV2`, so readers normalise here. */
 const asArray = <T>(value: unknown): T[] => (Array.isArray(value) ? (value as T[]) : []);
 
-/** An unknown value as a string, or `''` when it is missing or not a string. */
 const asStr = (value: unknown): string => (typeof value === 'string' ? value : '');
 
-/**
- * The one fold used to match an AI-written name against a name the spec
- * carries: trimmed, lower-cased, nothing else. Exported because a renderer
- * has to re-check a stored name against the live spec with exactly this
- * comparison. A second spelling of the fold would let a name pass validation
- * and fail at render, or the reverse.
- */
+/** The one fold matching an AI-written name to a spec name. Exported so a
+ *  renderer re-checks with exactly this comparison, never a second one. */
 export const foldName = (s: string): string => s.trim().toLowerCase();
 
 const bulletLines = (md: string | undefined): string[] =>
@@ -231,21 +182,15 @@ const bulletLines = (md: string | undefined): string[] =>
     .map((l) => l.replace(/^[-*]\s+/, ''));
 
 /**
- * Split model-authored markdown into paragraphs on a blank line, then collapse
- * any single line-wrap left inside a paragraph to one space. The inner join is
- * a plain line split rather than a global `\s*\n\s*` replace: that pattern is
- * quadratic on a long run of horizontal whitespace that never reaches a `\n`
- * (measured through `upgradeProseV1`: 2.9s at 40k spaces, quadrupling on every
- * doubling), the same class of bug `normalizeDashes` below was already fixed
- * for. This runs on model output, which nobody in this repository controls
- * the length of.
+ * Paragraphs on a blank line, inner line-wraps collapsed to one space. A line
+ * split, not a `\s*\n\s*` replace, which is quadratic on model output.
  */
 const paragraphs = (md: string | undefined): string[] =>
   (md ?? '').split(/\n\s*\n/)
     .map((p) => p.split('\n').map((l) => l.trim()).filter(Boolean).join(' '))
     .filter(Boolean);
 
-/** Upgrade a v1 draft. Deterministic; see spec section 8.1 for the table. */
+/** Deterministic; see spec section 8.1 for the table. */
 export function upgradeProseV1(v1: ProseDrafts): ProseV2 {
   const out: ProseV2 = { v: 2 };
 
@@ -318,10 +263,9 @@ const cardToLegacy = (c: GuidelineCard | null | undefined): string => {
 };
 
 /**
- * Each field of the brief's `guidelines` block that `proseToLegacy` fills, in
- * the block's own field order, with its ProseDrafts name and the v2 keys it
- * is built from. `design_considerations` has no v2 source, so no person can
- * have written it.
+ * Each brief `guidelines` field `proseToLegacy` fills, in block order: its
+ * ProseDrafts name and the v2 keys it is built from. `design_considerations`
+ * has no v2 source, so no person can have written it.
  */
 const LEGACY_SOURCES: readonly (readonly [string, 'definition' | 'accessibility' | 'interactions'
   | 'variantsSummary' | 'anatomySummary' | 'contentConsiderations' | 'dos' | 'donts', readonly ProseV2Key[]])[] = [
@@ -336,10 +280,7 @@ const LEGACY_SOURCES: readonly (readonly [string, 'definition' | 'accessibility'
 ];
 
 /** Flatten v2 to the v1 shape the brief and the v5 artifact still consume.
- *  `p` is only shaped like a validated `ProseV2` (see `isProseV2`'s doc
- *  comment), so every field is read through `asArray`/`asStr` rather than
- *  trusted outright — a caller that skips `validateProseV2` still gets a v1
- *  shape back instead of a thrown `TypeError`. */
+ *  Defensive (see `isProseV2`), so an unvalidated `p` never throws. */
 export function proseToLegacy(p: ProseV2): ProseDrafts {
   const guidelines = asArray<GuidelinePair>(p.guidelines);
   const overviewBody = p.overview ? asArray<unknown>(p.overview.body).map(asStr) : [];
@@ -367,10 +308,8 @@ export function proseToLegacy(p: ProseV2): ProseDrafts {
   if (anatomyParts.length) out.anatomyParts = anatomyParts.map((a) => ({ name: asStr(a.name), description: asStr(a.role) }));
   const content = asArray<unknown>(p.content).map(asStr).filter(Boolean);
   if (content.length) out.contentConsiderations = content.map((s) => `- ${s}`).join('\n');
-  // A field reads as written by a person only when every v2 key it is built
-  // from that carries content was typed on the canvas: a Keyboard table a
-  // person filled beside AI-written Pointer bullets is not a person's
-  // Interactions section, so a mixed field is never listed.
+  // A field is a person's only when every contentful v2 key behind it was
+  // typed on the canvas; a mixed field is never listed.
   const authored = new Set(normalizeAuthored(p.authored));
   if (authored.size) {
     const names = LEGACY_SOURCES.filter(([, field, keys]) => {
@@ -383,8 +322,7 @@ export function proseToLegacy(p: ProseV2): ProseDrafts {
   return out;
 }
 
-/** True when `p[key]` has something to show. Defensive like every reader
- *  here: `p` is only shaped like a ProseV2. */
+/** Defensive: `p` is only shaped like a ProseV2. */
 function proseKeyHasContent(p: ProseV2, key: ProseV2Key): boolean {
   const value = p[key];
   if (typeof value === 'string') return value.trim() !== '';
@@ -396,23 +334,20 @@ function proseKeyHasContent(p: ProseV2, key: ProseV2Key): boolean {
   return false;
 }
 
-/** True when any prose key has content. `authored` is not a prose key and
- *  never counts. */
+/** `authored` is not a prose key and never counts. */
 export function hasProseContent(p: ProseV2 | null | undefined): boolean {
   if (!p) return false;
   return PROSE_V2_KEYS.some((key) => proseKeyHasContent(p, key));
 }
 
-/** Em dashes and spaced en dashes become commas; same rule as prompt.ts, and
- *  the same shared, redos-tested `replaceAround` implementation. Exported so
- *  `redos.test.ts` can pin it against the regexes it replaced. */
+/** Em dashes and spaced en dashes become commas. Exported so `redos.test.ts`
+ *  can pin it against the regexes it replaced. */
 export function normalizeDashes(value: string): string {
   return replaceAround(replaceAround(value, '—', ', ', false), '–', ', ', true);
 }
 
-/** True when any line of `value` opens with a level-one or level-two markdown
- *  heading. Level three and below are allowed; `#` inside a sentence is not a
- *  heading. Tested one character class at a time, so no run can backtrack. */
+/** Any line opening with a level-one or level-two heading; level three and
+ *  below are allowed. No regex, so nothing can backtrack. */
 export function hasHeading(value: string): boolean {
   for (const line of value.split('\n')) {
     if (line.startsWith('# ') || line === '#' || line.startsWith('## ') || line === '##') return true;
@@ -421,9 +356,8 @@ export function hasHeading(value: string): boolean {
 }
 
 export interface ValidateProseOptions {
-  /** Every component name in the Figma file, when the caller has it. Lets the
-   *  `whenNotToUse` rule drop a bullet naming a component that exists but is
-   *  not related. Absent: the bullet is left alone (spec 5.3). */
+  /** Lets `whenNotToUse` drop a bullet naming an unrelated component. Absent:
+   *  the bullet is left alone (spec 5.3). */
   fileComponents?: readonly string[];
 }
 
@@ -432,22 +366,19 @@ export interface ProseValidation {
   dropped: Partial<Record<ProseV2Key, number>>;
 }
 
-/** The one string cleaner: dashes to commas, trimmed, and empty when it carries
- *  a level-one or level-two heading (rejected, per spec 5.3). */
+/** Dashes to commas, trimmed, and empty when it carries a level-one or
+ *  level-two heading (spec 5.3). */
 const clean = (value: unknown): string => {
   const text = normalizeDashes(asStr(value)).trim();
   return hasHeading(text) ? '' : text;
 };
 
-/** True when `sentence` contains `name` as whole words, case-insensitively.
- *  Built with indexOf and boundary checks rather than a regex over `name`,
- *  which would need escaping and could backtrack on a long name. */
+/** Whole words, case-insensitive. indexOf, not a regex over `name`, which
+ *  would need escaping and could backtrack. */
 function namesComponent(sentence: string, name: string): boolean {
   const hay = sentence.toLowerCase();
   const needle = name.toLowerCase();
-  // An empty needle matches at every offset including the end, and the
-  // advance-by-one loop below never terminates on it. The caller filters
-  // blank names, so this is unreachable today and is here to keep it that way.
+  // An empty needle would loop forever; the caller filters blanks anyway.
   if (!needle) return false;
   let from = 0;
   for (;;) {
@@ -463,15 +394,9 @@ function namesComponent(sentence: string, name: string): boolean {
 
 /**
  * Enforce never-fabricate on the AI lane: every name must exist in the spec,
- * every key must be in the vocabulary, every string must be non-empty. Dropped
- * items are counted per key; a key with no survivors is omitted.
- *
- * `prose` is only shaped like a validated `ProseV2` (see `isProseV2`'s doc
- * comment) — this function is what makes it trustworthy, not a precondition
- * of calling it — so every field is read through `asArray`/`asStr` rather
- * than assumed present: a missing or wrong-typed sub-field (a keyboard row
- * with no `keys`, an `overview` with no `body`) is treated as empty and
- * dropped like any other empty value, instead of throwing.
+ * every key must be in the vocabulary, every string must be non-empty. Drops
+ * are counted per key; a key with no survivors is omitted. A missing or
+ * wrong-typed sub-field is dropped as empty, never thrown on.
  */
 export function validateProseV2(
   spec: IntermediateSpec, prose: ProseV2, opts: ValidateProseOptions = {},
@@ -497,9 +422,7 @@ export function validateProseV2(
   };
 
   if (prose.overview) {
-    // One count per item actually removed: a rejected lede is one, each
-    // rejected body bullet is one. The lede used to be counted twice when the
-    // body was empty as well, and a rejected bullet was never counted at all.
+    // One count per item removed: the lede, and each rejected body bullet.
     const rawLede = asStr(prose.overview.lede).trim();
     const rawBody = asArray<unknown>(prose.overview.body);
     const lede = clean(prose.overview.lede);
@@ -507,10 +430,7 @@ export function validateProseV2(
     if (rawLede && !lede) drop('overview');
     drop('overview', rawBody.length - body.length);
     if (lede || body.length) out.overview = { lede, body };
-    // An overview the model sent with nothing in it at all: no item was
-    // removed, but the key was asked for and produced none, so it still counts
-    // once. Without this a present-but-empty overview would be indistinguishable
-    // from one that was never requested.
+    // Present but entirely empty still counts once, unlike an unrequested one.
     else if (!rawLede && !rawBody.length) drop('overview');
   }
   strings('whenToUse');

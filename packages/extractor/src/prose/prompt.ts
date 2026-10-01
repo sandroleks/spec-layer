@@ -1,23 +1,13 @@
 /**
- * prompt.ts: the frozen v8 contract bytes, plus the text helpers the v9 path
- * shares.
+ * The frozen v8 contract bytes, plus text helpers the v9 path shares.
  *
- * Everything named `LEGACY_*` here is the request the 5.1.0 plugin still
- * sends. The proxy validates those bytes so installed 5.1.0 plugins keep
- * working after the 6.0.0 release; nothing in the plugin imports them any
- * more. Delete them together with the proxy's legacy branch once 5.1.0
- * traffic has stopped.
- *
- * What is not legacy is shared: `replaceAround` (dash normalisation, behind
- * `v2.ts`'s `normalizeDashes`), `fencedBlock` (code-fence extraction, behind
- * `promptV2.ts`'s parser), and the `ProseDrafts` shape, which the brief, the
- * v5 component context, and stored documents still read.
- *
- * Pure: no Figma, no DOM.
+ * Every `LEGACY_*` is the request the 5.1.0 plugin still sends, which the
+ * proxy validates byte for byte; the plugin no longer imports them. Delete them
+ * with the proxy's legacy branch once 5.1.0 traffic has stopped. `replaceAround`,
+ * `fencedBlock` and `ProseDrafts` are live.
  */
 
-/** One anatomy part's AI-supplied role description, keyed by the part name the
- *  model was shown (matched back to the extracted part by name, case-insensitive). */
+/** Keyed by the part name the model was shown, matched back case-insensitively. */
 export interface AnatomyPartProse { name: string; description: string }
 
 export interface ProseDrafts {
@@ -31,19 +21,13 @@ export interface ProseDrafts {
   interactions?: string;
   designConsiderations?: string;
   contentConsiderations?: string;
-  /** The brief's `guidelines` field names (snake_case, as the brief spells
-   *  them) whose whole content a person typed on the Figma canvas. Absent
-   *  when there are none. Set by `proseToLegacy`; never model output. */
+  /** The brief's snake_case `guidelines` fields a person typed on the canvas.
+   *  Absent when none. Set by `proseToLegacy`, never by the model. */
   authored?: string[];
 }
 
-/**
- * The v8 system prompt, frozen. The 5.1.0 plugin sends these exact
- * bytes and the proxy compares them byte for byte, so this is a wire contract
- * rather than a style document: editing one character stops that build
- * generating. Nothing in the plugin imports it. Delete it, the exemplar below,
- * the two caps, and the proxy's legacy branch once 5.1.0 traffic has stopped.
- */
+/** The v8 system prompt: a wire contract, so editing one character stops 5.1.0
+ *  generating. */
 export const LEGACY_PROSE_SYSTEM_PROMPT = [
   'You write component guideline prose for a design-system specification tool.',
   "Your output fills three spec sections: Definition, Accessibility, and Do's & Don'ts,",
@@ -94,8 +78,7 @@ export const LEGACY_PROSE_SYSTEM_PROMPT = [
   'JSON.',
 ].join('\n');
 
-/** The v8 exemplar turns, frozen for the same reason as the system prompt
- *  above: the proxy compares them byte for byte against what 5.1.0 sends. */
+/** The v8 exemplar turns, frozen like the system prompt. */
 const LEGACY_FEW_SHOT_PROMPT = [
   'Component: Button',
   '',
@@ -198,20 +181,13 @@ export function legacyProseFewShot(): Array<{ role: 'user' | 'assistant'; conten
   ];
 }
 
-/** The v8 output caps, frozen alongside the bytes above. */
+/** The v8 output caps, frozen. */
 export const LEGACY_PROSE_MAX_TOKENS = 3000;
 export const LEGACY_GROUP_MAX_TOKENS = 1200;
 
-/**
- * The v8 foundation group system prompt, frozen. The 5.1.0 plugin
- * sends these exact bytes under a `prose:v1:groups:` key and the proxy
- * compares them byte for byte, so this is a wire contract rather than a style
- * document: editing one character stops that build generating its group
- * descriptions. `FOUNDATION_SYSTEM_PROMPT` in `foundationPrompt.ts` has since
- * gained the collection-overview rule and is what the v9 client sends;
- * nothing in the plugin imports the copy below. Delete it together with the
- * proxy's legacy branch once 5.1.0 traffic has stopped.
- */
+/** The v8 foundation group system prompt, sent by 5.1.0 under a
+ *  `prose:v1:groups:` key; a frozen wire contract. The v9 client sends
+ *  `FOUNDATION_SYSTEM_PROMPT`. */
 export const LEGACY_FOUNDATION_SYSTEM_PROMPT = [
   'You write short descriptions of design-token groups for a design-system reference.',
   'Each description sits under a group heading in a generated documentation frame.',
@@ -236,29 +212,18 @@ export const LEGACY_FOUNDATION_SYSTEM_PROMPT = [
   'No prose outside the JSON, no code fence.',
 ].join('\n');
 
-/** One character's worth of `[ \t]`. Horizontal only, so a line break between
- *  bullets survives, which is the whole reason the classes are not `\s`. */
+/** Horizontal only, not `\s`, so a line break between bullets survives. */
 const isHorizontalSpace = (ch: string): boolean => ch === ' ' || ch === '\t';
 
 /**
- * Replace every `separator`, together with the horizontal whitespace hugging
- * it, with `replacement`. `requireSpace` demands at least one space or tab on
- * BOTH sides, which is the only thing that distinguished the en-dash rule
- * (`[ \t]+–[ \t]+`) from the em-dash one (`[ \t]*—[ \t]*`).
+ * Replace every `separator` and the horizontal whitespace hugging it with
+ * `replacement`. `requireSpace` demands a space or tab on BOTH sides (the
+ * en-dash rule's `+`; the em-dash rule used `*`).
  *
- * One left-to-right pass, because both of those regexes are quadratic on a run
- * of horizontal whitespace that never reaches a dash: 40k spaces measured 2.5
- * seconds for the en-dash rule. This runs on model output, which is the one
- * input here nobody in this repository controls.
- *
- * `from` is the boundary of what a previous replacement already consumed, and
- * the left scan will not cross it. That is what `lastIndex` did for the `g`
- * regexes, and it is what makes two adjacent dashes collapse the same way.
- *
- * Exported so `prose/v2.ts`'s `normalizeDashes` can call this implementation
- * instead of keeping its own copy: one algorithm, and `redos.test.ts`'s
- * fuzz and timing coverage (pinned on `normalizeDashes`) backs both callers
- * instead of only this one.
+ * One linear pass, because those `g` regexes are quadratic on whitespace runs
+ * and this runs on model output. The left scan never crosses `from`, as
+ * `lastIndex` never did, so adjacent dashes collapse the same way.
+ * `redos.test.ts` pins it through `normalizeDashes` in `v2.ts`.
  */
 export function replaceAround(
   value: string, separator: string, replacement: string, requireSpace: boolean,
@@ -275,8 +240,7 @@ export function replaceAround(
     let right = afterSeparator;
     while (right < value.length && isHorizontalSpace(value[right])) right++;
     if (requireSpace && (left === at || right === afterSeparator)) {
-      // The `+` on one side saw nothing, so the pattern does not match here.
-      // Leave this separator and its neighbours exactly as they are.
+      // The `+` on one side saw nothing: no match, leave it as is.
       cursor = afterSeparator;
       continue;
     }
@@ -288,22 +252,13 @@ export function replaceAround(
 }
 
 /**
- * The contents of the first ```json … ``` fence, or null when the text carries
- * no closed fence.
+ * The contents of the first ```json … ``` fence, or null with no closed fence.
  *
- * Replaces `text.match(/```(?:json)?\s*([\s\S]*?)```/)`, whose greedy `\s*`
- * ahead of a lazy `[\s\S]*?` is quadratic on an opened fence followed by a
- * long whitespace run that never closes: the engine gives back one whitespace
- * character at a time and rescans the rest for a closing fence each time.
- * This is model output, so an unclosed fence is a thing that actually happens.
- *
- * Deliberately the same answer the regex gave, position for position. Leftmost
- * opener, because the pattern was unanchored; `json` consumed when present,
- * because `(?:json)?` is greedy; the whitespace run consumed whole, because
- * `\s*` is greedy and is tried at its longest first; and the content ending at
- * the NEXT fence, because `[\s\S]*?` is lazy. A later opener can never win
- * where the first one loses: the first one only loses when no fence follows it
- * at all, and `json` and whitespace contain no backticks to hide one behind.
+ * Replaces the quadratic `/```(?:json)?\s*([\s\S]*?)```/` and gives the same
+ * answer position for position: leftmost opener, `json` and the whitespace run
+ * consumed greedily, content ending at the NEXT fence (lazy). A later opener
+ * never wins where the first loses, since `json` and whitespace hide no
+ * backticks.
  */
 export function fencedBlock(text: string): string | null {
   const open = text.indexOf('```');
@@ -315,6 +270,5 @@ export function fencedBlock(text: string): string | null {
   return close === -1 ? null : text.slice(start, close);
 }
 
-/** One character's worth of `\s`, for the same reason `cleanPartName` keeps
- *  its own: a per-character test cannot be made to backtrack. */
+/** A per-character test cannot backtrack. */
 const FENCE_WHITESPACE = /\s/;

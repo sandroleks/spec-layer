@@ -1,8 +1,6 @@
 /**
- * Shared work-in-progress presentation for vNext screens.
- *
- * The sparkle, shimmer, and cycling phase copy come from the original plugin
- * loader. A determinate bar is added only when the host has real counts.
+ * Shared work-in-progress presentation for the screens; a determinate bar
+ * shows only when the host has real counts.
  */
 
 import { esc } from '../escape';

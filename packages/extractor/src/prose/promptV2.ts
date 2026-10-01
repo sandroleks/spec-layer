@@ -1,14 +1,8 @@
 /**
- * promptV2.ts: the v9 prose prompt. One structured call per component that
- * returns a `ProseV2` object (see `./v2.ts`).
- *
- * The model sees only parsed, derived facts: names, kinds, axes, states,
- * bindings and layout summaries. Never a node id, a file key, a variant
- * instance id, raw node JSON, or a hash. `promptV2.test.ts` guards that, and
- * `proseCacheKey` hashes exactly this text, so anything that reaches the
- * prompt moves the key and anything that does not cannot.
- *
- * Pure: no Figma, no DOM. Bundled into the plugin main thread and UI.
+ * The v9 prose prompt: one structured call per component returning a `ProseV2`.
+ * The model sees only derived facts, never a node id, file key, variant
+ * instance id, raw node JSON or hash (`promptV2.test.ts` guards that).
+ * `proseCacheKey` hashes exactly this text.
  */
 import { extract, type IntermediateSpec } from '../extract';
 import type { AnatomyPart } from '../anatomy';
@@ -22,10 +16,7 @@ import { fencedBlock } from './prompt';
 /** The proxy anchors its final-message check on this exact string. */
 export const PROMPT_RETURN_ANCHOR = '\nReturn ONLY a JSON object with these keys: ';
 
-/**
- * A part's kind in words, from its Figma type. The model reasons better about
- * "text" and "nested component Icon" than about `TEXT` and `INSTANCE`.
- */
+/** In words: the model reasons better about "text" than `TEXT`. */
 export function partKind(part: AnatomyPart): string {
   if (part.nested) return `nested component ${part.component ?? 'component'}`;
   switch (part.type) {
@@ -37,11 +28,8 @@ export function partKind(part: AnatomyPart): string {
   }
 }
 
-/**
- * Per-key output-contract fragments. Only the requested keys are emitted, so
- * an unchecked section costs no output tokens. Every fragment names the exact
- * shape and the honesty rule for that key.
- */
+/** Per-key output contracts; only requested keys are emitted, so an unchecked
+ *  section costs no output tokens. */
 export const PROSE_KEY_INSTRUCTIONS: Record<ProseV2Key, string> = {
   overview:
     'overview ({ lede, body }: lede is one sentence saying what the component is and what a person does with it; body is at most one short paragraph, one or two sentences, on where it appears and what it holds; describe, never explain or justify; no option names)',
@@ -61,10 +49,7 @@ export const PROSE_KEY_INSTRUCTIONS: Record<ProseV2Key, string> = {
     'properties ({ name, description }[] with name exactly as listed under Options, State axis or Properties above and description one sentence on what the property controls and when to change it)',
   states:
     'states ({ name, whenItApplies }[] with name exactly as listed under States above and whenItApplies one sentence on when the state applies)',
-  // The vocabulary is read from KEYBOARD_KEYS rather than written out again:
-  // `validateProseV2` drops a row whose key is not in that list, so a literal
-  // here could ask for a key the validator then throws away, or leave out one
-  // it would have accepted.
+  // From KEYBOARD_KEYS, the list `validateProseV2` filters on, never a copy.
   keyboard:
     `keyboard ({ keys: string[], action }[] with each key one of ${KEYBOARD_KEYS.join(', ')}, and action one sentence; include only bindings this component really has, and leave the key out for a non-interactive component)`,
   pointer:
@@ -77,25 +62,18 @@ export const PROSE_KEY_INSTRUCTIONS: Record<ProseV2Key, string> = {
     'guidelines ({ do: { rule, reason }, dont: { rule, reason } }[], 3 pairs about using this component once chosen; each pair covers one topic drawn from its options, states or text parts, the dont mirrors the do, and no pair repeats a When to use or When not to use bullet; each rule one sentence, each reason one sentence)',
 };
 
-/** Default value of a variant axis, from its component property. */
 function axisDefault(spec: IntermediateSpec, axis: string): string | undefined {
   const prop = spec.props.find((p) => p.name === axis && p.kind === 'variant');
   return typeof prop?.default === 'string' ? prop.default : undefined;
 }
 
-/** One character's worth of `\s`. A per-character test cannot backtrack. */
+/** A per-character test cannot backtrack. */
 const WHITESPACE = /\s/;
 
 /**
- * Collapse every whitespace run that contains a line break into one space, and
- * leave every other whitespace run alone. This is exactly what a global
- * replace of `\s*\n\s*` with one space did: the greedy `\s*` on either side of
- * the `\n` always swallowed the whole run. That regex is quadratic on a long run of
- * spaces that never reaches a line break, because every position in the run
- * retries the whole run looking for one, and the description it ran over is
- * typed by the designer, so its length is not this repository's to control
- * (CodeQL alert 67, `js/polynomial-redos`). One pass, pinned against the regex
- * in `redos.test.ts`.
+ * Collapse each whitespace run containing a line break into one space; leave
+ * other runs alone. Equal to replacing `\s*\n\s*` with a space, but linear:
+ * that regex is quadratic on designer-typed text. Pinned in `redos.test.ts`.
  */
 export function collapseLineBreaks(text: string): string {
   let out = '';
@@ -114,10 +92,7 @@ export function collapseLineBreaks(text: string): string {
   return out;
 }
 
-/**
- * Build the user message for one component. Only the requested keys are asked
- * for (default: every key, in `PROSE_V2_KEYS` order).
- */
+/** The user message for one component; default asks for every key. */
 export function buildProsePrompt(spec: IntermediateSpec, requested?: ReadonlySet<ProseV2Key>): string {
   const lines: string[] = [];
 
@@ -215,27 +190,23 @@ export function buildProsePrompt(spec: IntermediateSpec, requested?: ReadonlySet
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   Boolean(v) && typeof v === 'object' && !Array.isArray(v);
 
-/** A string, or a string[] with every item a string; a lone string becomes a
- *  one-item list. Anything else is null (the field is dropped). */
+/** A lone string becomes a one-item list; anything else non-list is null. */
 function asStringList(value: unknown): string[] | null {
   if (typeof value === 'string') return [value];
   if (Array.isArray(value) && value.every((x) => typeof x === 'string')) return value as string[];
   return null;
 }
 
-/** An array of plain objects; anything else is null. Item shapes are left to
- *  `validateProseV2`, which checks names against the spec and drops the rest. */
+/** Item shapes are left to `validateProseV2`. */
 function asRecordList(value: unknown): Record<string, unknown>[] | null {
   if (!Array.isArray(value) || !value.every(isRecord)) return null;
   return value as Record<string, unknown>[];
 }
 
 /**
- * Parse the model's text into a `ProseV2` shaped object. Strips a code fence
- * and preamble, requires a JSON object, keeps only the fourteen contract keys
- * with their declared shapes, and adds `v: 2`. Names, vocabulary, dashes,
- * headings and empties are `validateProseV2`'s job; this only decides what is
- * a string, a list or a keyed list.
+ * Parse the model's text into a `ProseV2` shape: strips a code fence, keeps
+ * only the contract keys with their declared shapes. Names, vocabulary, dashes
+ * and empties are `validateProseV2`'s job.
  */
 export function parseProseResponse(text: string): ProseV2 {
   const fenced = fencedBlock(text);
@@ -278,21 +249,17 @@ export function parseProseResponse(text: string): ProseV2 {
   return out;
 }
 
-/** Cap on the component call. About three exemplar responses, plus the
- *  thinking tokens Sonnet 5 spends at low effort, which count against it. */
+/** About three exemplar responses, plus Sonnet 5's low-effort thinking tokens,
+ *  which count against it. */
 export const PROSE_MAX_TOKENS = 6000;
 
-/** Filler the spec bans by name. The system prompt quotes each one; tests
- *  scan the exemplar and the prompt's own prose for them. */
+/** Filler the spec bans; tests scan the exemplar and the prompt for them. */
 export const BANNED_PHRASES: readonly string[] = [
   'familiar', 'essential', 'intuitive', 'seamless', 'engage with the interface',
   'clear, easy to identify', 'gives people a way to', 'plays a key role',
 ];
 
-/**
- * The v9 system prompt. Billed on every call, so it is short and every line
- * is a rule the parser or the validator cannot enforce alone.
- */
+/** Billed on every call: each line is a rule the validator cannot enforce alone. */
 export const PROSE_SYSTEM_PROMPT = [
   'You write component documentation for a design system, in the voice of a senior designer explaining their own component to a colleague.',
   '',
@@ -320,8 +287,7 @@ export const PROSE_SYSTEM_PROMPT = [
 ].join('\n');
 
 // ---------------------------------------------------------------------------
-// The exemplar: a Text field, extracted from a synthetic node tree so its
-// prompt is produced by the real builder and can never drift from it.
+// The exemplar: a synthetic Text field run through the real builder.
 // ---------------------------------------------------------------------------
 
 function exemplarVariant(state: string): SerializedNode {
@@ -350,8 +316,7 @@ function exemplarVariant(state: string): SerializedNode {
   };
 }
 
-/** The synthetic component set the exemplar is extracted from. Exported so a
- *  test can prove the exemplar's names are real. */
+/** Exported so a test can prove the exemplar's names are real. */
 export function exemplarNode(): SerializedNode {
   return {
     id: 'x:0', name: 'Text field', type: 'COMPONENT_SET', visible: true, key: 'exemplar-text-field',
@@ -373,13 +338,10 @@ export function exemplarSpec(): IntermediateSpec {
   return extract(exemplarNode(), { figmaFile: 'exemplar' });
 }
 
-/** The exemplar's user turn: the real builder over the real extraction. */
 export const EXEMPLAR_PROMPT = buildProsePrompt(exemplarSpec());
 
-/** The exemplar's answer, in the house voice. Complete on purpose: it is the
- *  one demonstration of every key, and it is billed on every call, so every
- *  sentence has to earn its place. `promptV2.test.ts` validates it against the
- *  exemplar spec with zero drops and scans it for the banned phrases. */
+/** The one demonstration of every key, billed on every call. `promptV2.test.ts`
+ *  validates it with zero drops and scans it for banned phrases. */
 export const EXEMPLAR_RESPONSE: ProseV2 = {
   v: 2,
   overview: {
@@ -472,12 +434,10 @@ export type ProseContentBlock = { type: 'text'; text: string; cache_control?: { 
 export interface ProseRequestMessage { role: 'user' | 'assistant'; content: string | ProseContentBlock[] }
 
 /**
- * The two prior turns every request carries. The assistant turn is a content
- * block array so it can hold the one prompt-cache breakpoint: everything up to
- * and including it (system prompt, exemplar prompt, exemplar answer) is the
- * stable prefix, and the component's own message follows it uncached. Sonnet 5
- * caches prefixes from 1,024 tokens; Haiku 4.5 needs 4,096 and this prefix is
- * about 2,200, so free requests simply do not cache. That costs nothing.
+ * The two prior turns every request carries. The assistant turn holds the one
+ * prompt-cache breakpoint ending the stable prefix (about 2,200 tokens). Sonnet
+ * 5 caches from 1,024 tokens; Haiku 4.5 needs 4,096, so free requests do not
+ * cache.
  */
 export function proseFewShot(): [ProseRequestMessage, ProseRequestMessage] {
   return [

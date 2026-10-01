@@ -7,10 +7,9 @@ import type { Platform } from './detect';
 import { visibleDirProblem } from './visibleDir';
 
 /**
- * Platform outputs: the directories the team's build compiles, written in place at a
- * declared path outside the swapped output directory. Spec:
- * 2026-09-09-css-token-directory-design.md.
- * One format exists today; the registry is where the next one is added.
+ * Platform outputs: directories the team's build compiles, written in place
+ * outside the swapped output directory. Spec:
+ * 2026-09-09-css-token-directory-design.md. A new format joins the registry.
  */
 
 export type OutputFormat = 'css';
@@ -117,11 +116,9 @@ export function renderOutput(
 }
 
 /**
- * The part files an output's index.css imports, in order, or null when
- * index.css is missing or unreadable. index.css is the authoritative list of
- * what the last pull wrote: the record map names only the file that first
- * declares each token, which for a two-mode collection is always the default
- * mode's file, so a non-default mode file never appears in the map.
+ * The part files index.css imports, in order, or null when it is missing or
+ * unreadable. This is the authoritative list: the record map names only the
+ * file that first declares each token, never a non-default mode file.
  */
 export function readIndexImports(cwd: string, o: OutputConfig): string[] | null {
   const path = resolve(cwd, o.path, CSS_INDEX_FILE);

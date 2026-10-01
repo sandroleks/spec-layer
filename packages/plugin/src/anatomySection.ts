@@ -1,15 +1,11 @@
 /// <reference types="@figma/plugin-typings" />
 /**
- * anatomySection.ts: the numbered callout diagram and its legend.
- *
- * Every depth-0 part is outlined where it draws, and its numbered pin's leader
- * ends on that outline, so a pin never points at empty space: a fill-width
- * text layer is outlined around its glyphs, not its layout box. Instances
- * render at true size. A small component therefore has parts closer together
- * than a pin is wide, so pins fan out along the callout zone and an elbow
- * leader connects each one to its outline, the way a printed spec does. A
- * component wider than the column is scaled down and the caller draws the
- * scale note the returned factor describes.
+ * The numbered callout diagram and its legend. Each depth-0 part is outlined
+ * where it draws (a fill-width text layer around its glyphs, not its layout
+ * box) and its pin's leader ends on that outline, so no pin points at empty
+ * space. Instances render at true size, so crowded pins fan out along the
+ * callout zone with elbow leaders; a component wider than the column is scaled
+ * down and the caller draws the scale note.
  */
 import type { AnatomyPartBlock } from './ui/docModel';
 import { palette, solidFill, vstack, hstack, makeText, radius, font, createInstanceFor, nodeById } from './frameKit';
@@ -27,21 +23,14 @@ const OUTLINE_OUTSET = 2; // how far a part's outline sits outside what it draws
 function clamp01(n: number): number { return n < 0 ? 0 : n > 1 ? 1 : n; }
 
 /**
- * Pin positions along one axis. Pins that already clear each other by
- * `pinSize + gap` stay put. A run of crowded pins is spread evenly at that
- * step, centred on the run's mean, in input order, so the numbers still read
- * left to right (or top to bottom) and a far-away pin is not dragged along.
- * Pure, so it can be tested without Figma.
+ * Pin positions along one axis. Pins already `pinSize + gap` apart stay put; a
+ * crowded run is spread evenly at that step, centred on its mean, in input
+ * order, so numbers still read in order and a far pin is not dragged along.
+ * Pure, so testable without Figma.
  *
- * Pool adjacent violators, not a single grouping pass. A single pass grouped
- * runs by the ORIGINAL centres and so could spread one run straight into the
- * next pin: `fanOutPins([10, 14, 40], 18, 6)` returned `[0, 24, 40]`, whose
- * last two pins are 16 apart against a 24 step. Pooling merges a block with
- * its neighbour whenever the spread would crowd it and re-centres over the
- * merged block, which reaches a fixed point in one left-to-right sweep. On
- * every input the single pass got right, this returns the same answer: a
- * block of one keeps its exact centre, and a block of several is the same
- * "evenly at `step`, centred on the mean" placement.
+ * Pools adjacent violators: grouping by the original centres would spread one
+ * run into the next pin (`[10, 14, 40]` to `[0, 24, 40]`). Merging a block with
+ * a neighbour it would crowd and re-centring reaches a fixed point in one sweep.
  */
 export function fanOutPins(centers: number[], pinSize: number, gap: number): number[] {
   const step = pinSize + gap;
@@ -74,9 +63,8 @@ export function fanOutPins(centers: number[], pinSize: number, gap: number): num
   return out;
 }
 
-/** `Shown at 60% of actual size` under a diagram that had to shrink; null at
- *  true size. Floored, not rounded: 0.996 is not true size, and "Shown at
- *  100%" would say it was. */
+/** `Shown at 60% of actual size` under a shrunk diagram; null at true size.
+ *  Floored, not rounded: 0.996 is not true size, so it must not read 100%. */
 export function scaleNote(scale: number): TextNode | null {
   if (scale >= 1) return null;
   return makeText(`Shown at ${Math.floor(scale * 100)}% of actual size`, 'Regular', 12, palette.muted, 145);
@@ -108,10 +96,9 @@ function anatomyPin(n: string): FrameNode {
 }
 
 /**
- * Legend row: badge, then "Display name: role", or the display name alone,
- * with the nested note and the "Shown when" note as before. The type and the
- * token list moved to the table view (Round 1). The tag keeps the RAW name so
- * read-back and the prompt still match on it.
+ * Legend row: badge, then "Display name: role" or the display name alone, plus
+ * the nested and "Shown when" notes. The tag keeps the raw name so read-back
+ * and the prompt still match on it.
  */
 function anatomyLegendRow(part: AnatomyPartBlock): FrameNode {
   const row = hstack(12);
@@ -153,11 +140,10 @@ export function buildAnatomyLegend(parts: AnatomyPartBlock[]): FrameNode {
 }
 
 /**
- * The diagram card: a live instance at true size, an outline around each
- * part, pins in a callout zone on the side the parts are least spread along,
- * elbow leaders from pin to outline, then the legend. Null when the component
- * cannot be instanced. `scale` is 1 unless the instance was wider than
- * `contentWidth` minus the card padding.
+ * The diagram card: a live instance at true size, part outlines, pins on the
+ * side the parts are least spread along, elbow leaders, then the legend. Null
+ * when the component cannot be instanced. `scale` is 1 unless the instance was
+ * wider than `contentWidth` minus the card padding.
  */
 export async function buildAnatomyDiagram(
   componentId: string, parts: AnatomyPartBlock[], includeHidden: boolean, contentWidth: number,
@@ -167,12 +153,10 @@ export async function buildAnatomyDiagram(
   const ib = inst.absoluteBoundingBox;
   if (!ib || ib.width <= 0 || ib.height <= 0) { try { inst.remove(); } catch { /* gone */ } return null; }
 
-  // Each part as the box it DRAWS, normalized to the instance. Figma's render
-  // bounds are the glyphs of a text layer or the painted area of a frame; the
-  // layout box of a fill-width text layer spans its container while the word
-  // sits at one end, so that box's centre can point at nothing. The layout box
-  // is the fallback for a layer Figma has not rendered (render bounds null) or
-  // a host that lacks the field.
+  // Each part as the box it draws, normalized to the instance: a fill-width
+  // text layer's layout box spans its container, so its centre can point at
+  // nothing, while render bounds are the glyphs. The layout box is the fallback
+  // when render bounds are null or missing.
   const pins: { n: string; x0: number; y0: number; x1: number; y1: number }[] = [];
   const topParts = parts.filter((part) => part.depth === 0);
   // One batch: each lookup is a round trip, and none depends on another.
@@ -196,10 +180,8 @@ export async function buildAnatomyDiagram(
   const cx = (p: { x0: number; x1: number }): number => (p.x0 + p.x1) / 2;
   const cy = (p: { y0: number; y1: number }): number => (p.y0 + p.y1) / 2;
 
-  // Which side the callouts sit on depends only on the parts' normalized
-  // spread, never on the render size, so it can be settled before the scale
-  // below: a side callout zone widens the box, and that width has to come out
-  // of the same column budget the instance itself is fit to.
+  // The callout side depends only on the normalized spread, so it is settled
+  // before scaling: a side zone widens the box out of the same column budget.
   const xs = pins.map(cx);
   const ys = pins.map(cy);
   const xRange = xs.length ? Math.max(...xs) - Math.min(...xs) : 0;
@@ -207,10 +189,8 @@ export async function buildAnatomyDiagram(
   const sideCallouts = yRange > xRange;
   const ZONE = pins.length ? PIN_SIZE + RAIL_GAP + 24 : 0;
 
-  // True size, unless wider than the column. Never taller-than-cap shrinking.
-  // A side callout zone sits beside the instance and widens the box by ZONE,
-  // so that much comes off the instance's own budget up front; a top callout
-  // zone only adds height, which this diagram never caps.
+  // True size unless wider than the column; height is never capped, so only a
+  // side zone's ZONE comes off the instance's budget.
   const maxW = Math.max(1, contentWidth - ANATOMY_PAD * 2 - (sideCallouts ? ZONE : 0));
   const scale = Math.min(1, maxW / inst.width);
   if (scale < 1) inst.rescale(scale);
@@ -224,11 +204,8 @@ export async function buildAnatomyDiagram(
   card.strokes = solidFill(palette.border);
   card.strokeWeight = 1;
   card.counterAxisAlignItems = 'CENTER';
-  // Fixed to the column width — only the height hugs. A hugging WIDTH card
-  // shrinks to whatever the (possibly tiny) diagram box measures, which then
-  // leaves the legend inside it nothing real to FILL against; fixing the
-  // width here gives a small component's box room to sit centred, and the
-  // legend below a real inner width to stretch to.
+  // Width fixed to the column, height hugs: a hugging width would shrink to a
+  // tiny diagram and leave the legend nothing real to FILL against.
   card.resize(contentWidth, 1);
   card.primaryAxisSizingMode = 'AUTO';
 
@@ -236,11 +213,9 @@ export async function buildAnatomyDiagram(
   const natural = pins.map((p) => Math.round(sideCallouts ? cy(p) * renderedH : cx(p) * renderedW));
   let fanned = fanOutPins(natural, PIN_SIZE, PIN_GAP);
   if (!sideCallouts) {
-    // A crowded top row can fan past the instance's own left/right edges,
-    // which would otherwise widen the box past the column budget the scale
-    // above already fit the instance to. Clamp back inside when that would
-    // happen; pins may then touch, which only occurs when more pins exist
-    // than physically fit across the column.
+    // A crowded top row can fan past the instance's edges and widen the box
+    // past the column; clamp back inside, so pins touch only when more exist
+    // than fit across the column.
     const spanMin = Math.min(0, ...fanned.map((c) => c - PIN_SIZE / 2));
     const spanMax = Math.max(renderedW, ...fanned.map((c) => c + PIN_SIZE / 2));
     if (spanMax - spanMin > maxW) {
@@ -282,9 +257,8 @@ export async function buildAnatomyDiagram(
     right: Math.round(pin.x1 * renderedW), bottom: Math.round(pin.y1 * renderedH),
   });
 
-  // Outlines first, under the leaders and pins: a thin accent rectangle a
-  // little outside what each part draws. The outline is what a pin points at,
-  // so no connect dot is needed at the anchor.
+  // Outlines first, under leaders and pins, a little outside what each part
+  // draws; the outline is what a pin points at, so no anchor dot is needed.
   for (const pin of pins) {
     const e = edges(pin);
     const outline = figma.createFrame();

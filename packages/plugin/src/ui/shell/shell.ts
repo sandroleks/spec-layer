@@ -1,9 +1,6 @@
 /**
- * shell.ts — the vNext plugin frame: rail, header, screen.
- *
- * The shell owns chrome and nothing else. Screens render into `refs.screen`
- * and never touch the rail or header directly; they change the active view
- * through setActiveView so selection state has exactly one owner.
+ * The plugin frame: rail, header, screen. The shell owns chrome only; screens
+ * render into `refs.screen` and change the view through setActiveView.
  */
 
 import type { PluginView } from '../viewModel/contracts';
@@ -28,9 +25,8 @@ export interface ShellRefs {
 }
 
 /**
- * .sl-plugin-shell is a two-column, two-row grid and each region is placed
- * explicitly, so the header, the rail, and the screen must all be direct
- * children. Wrapping any of them breaks the layout silently.
+ * .sl-plugin-shell places each grid region explicitly, so header, rail and
+ * screen must be direct children; wrapping any breaks the layout silently.
  */
 export function shellMarkup(active: PluginView): string {
   return (
@@ -59,10 +55,8 @@ export function mountShell(active: PluginView = 'component'): ShellRefs {
   const sidebar = document.querySelector<HTMLElement>('.sl-sidebar');
   if (!root || !header || !sidebar) throw new Error('Shell failed to mount');
 
-  // Pointer activation leaves Chromium buttons focused, which keeps the
-  // adjacent tooltip open after the pointer leaves the rail. Release pointer
-  // focus after activation; keyboard focus is untouched, so Tab users still
-  // get the same tooltip and focus ring.
+  // Pointer activation leaves Chromium buttons focused, keeping the rail tooltip
+  // open, so blur after a pointer press. Keyboard focus is untouched.
   sidebar.addEventListener('pointerup', (event) => {
     const target = event.target;
     if (!(target instanceof Element)) return;
@@ -92,12 +86,9 @@ export function setActiveView(refs: ShellRefs, view: PluginView): void {
 }
 
 /**
- * Wire the header's theme control. Detection and application stay in theme.ts;
- * the shell only owns the button. applyThemeMode sets `title`, so the
- * accessible name is copied from it rather than left to go stale.
- *
- * `initial` exists so callers outside Figma (the dev harness) can seed the
- * mode without re-implementing the wiring and drifting from it.
+ * Wire the header's theme control; theme.ts owns detection and application.
+ * The accessible name is copied from the `title` applyThemeMode sets. `initial`
+ * lets the dev harness seed the mode.
  */
 export function wireShellTheme(refs: ShellRefs, initial: ThemeMode = detectFigmaTheme()): void {
   let mode: ThemeMode = initial;

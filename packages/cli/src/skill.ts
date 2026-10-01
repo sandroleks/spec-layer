@@ -14,15 +14,11 @@ import { readIndexImports } from './outputs';
 import { GLOBAL_FLAGS, KEY_RESOLUTION, TOOLS } from './tools';
 
 /**
- * The guide a coding agent reads before it touches the pulled files. It is
- * built from three things the CLI can see, and nothing else: the tool
- * catalogue, what the repository root says about the codebase, and what the
- * last pull wrote. Every component name, collection, mode, and file path in
- * it comes from manifest.json and tokens/resolver.json; when there is no pull
- * yet the guide says so and stops short of naming anything. The stack advice
- * is keyed to detected signals and names the file each one came from, and a
- * codebase with no signal gets the generic paragraph plus the flag that
- * overrides it, never a guessed platform.
+ * The guide a coding agent reads before touching the pulled files, built only
+ * from the tool catalogue, the repository root, and the last pull. Every name
+ * and path comes from manifest.json and tokens/resolver.json; with no pull the
+ * guide names nothing, and with no stack signal it gives generic advice plus
+ * the overriding flag, never a guessed platform.
  */
 
 export interface PullSummary {
@@ -30,9 +26,9 @@ export interface PullSummary {
   libraryId: string;
   publishedAt: string;
   pluginVersion: string | null;
-  /** Where the last pull wrote the briefs; DEFAULT_COMPONENT_SPECS_DIR when the manifest predates the field. */
+  /** DEFAULT_COMPONENT_SPECS_DIR when the manifest predates the field. */
   componentSpecsDir: string;
-  /** How the last pull wrote the briefs; 'yaml' when the manifest predates the field. */
+  /** 'yaml' when the manifest predates the field. */
   componentSpecsFormat: ComponentFormat;
   components: Array<{ name: string; path: string | null }>;
   foundation: {
@@ -40,21 +36,28 @@ export interface PullSummary {
     sets: string[];
     modifiers: Array<{ name: string; contexts: string[]; default: string | null }>;
     tokenFiles: string[];
-    /** Distinct tokens exported as `$type: "number"` whose Figma scopes state nothing at all -- not a length, and not `OPACITY`/`FONT_WEIGHT` either (those already state a unit, namely "none", and are excluded). Deduplicated by DTCG path across every mode file, so a token in a two-mode collection counts once, which is what "N tokens" has to mean to a reader about to go narrow N variables in Figma. */
+    /**
+     * Distinct `$type: "number"` tokens whose Figma scopes state nothing
+     * (`OPACITY`/`FONT_WEIGHT` state "none" and are excluded). Deduplicated by
+     * DTCG path across mode files, so a two-mode token counts once.
+     */
     unitlessNumbers: number;
     reportCounts: Record<string, number>;
-    /** Whether `<outDir>/fonts.json` could be read: 'ok' (parsed as an array, possibly empty), 'missing' (no such file -- expected when the Foundation was excluded from this pull, or a real gap when it predates this file), or 'unreadable' (present but not a JSON array). */
+    /** 'ok' (an array, possibly empty), 'missing' (no file), or 'unreadable' (not a JSON array). */
     fontsStatus: 'ok' | 'missing' | 'unreadable';
-    /** The families and weights this library's typography styles need, from `fonts.json`. Only meaningful when `fontsStatus` is 'ok'; `[]` otherwise. An 'ok' empty array does not prove the library names no font either: `fontRequirements` silently skips a style whose font family never resolved. */
+    /**
+     * From `fonts.json`; `[]` unless 'ok'. An empty 'ok' array does not prove the
+     * library names no font: `fontRequirements` skips a style whose family never resolved.
+     */
     fonts: FontRequirement[];
-    /** The families in `fonts` that nothing in this repository loads, per `missingFontSourcesInRepo`. Computed only when `fontsStatus` is 'ok' and `fonts` is non-empty. */
+    /** Families in `fonts` nothing in this repository loads; computed only when 'ok' and non-empty. */
     missingFontFamilies: string[];
   } | null;
   outputs: Array<{
     platform: string; format: string; path: string; case: string; modeSelector: string; modes: Record<string, string>;
-    /** Whether `<outDir>/outputs/<platform>-<format>.map.json` exists: the on-disk proof the file was rendered. */
+    /** Whether the map file exists: the on-disk proof the output was rendered. */
     written: boolean;
-    /** True when the map exists but index.css is missing or unreadable, so the file list in `files` cannot be trusted; false whenever `written` is true, and false when the map itself is missing (the Foundation was never written). */
+    /** The map exists but index.css does not, so `files` cannot be trusted. False when `written` or when the map is missing. */
     indexMissing: boolean;
     /** The part files index.css imports, in import order, then index.css; empty when not written. */
     files: string[];
@@ -79,23 +82,10 @@ export interface SkillInput {
 const RESERVED = new Set(['resolver.json', 'spec-layer.meta.json', 'report.json']);
 
 /**
- * `path` accumulates the DTCG path segments seen so far (the projected token
- * file's own nesting mirrors it exactly: `{"Primitives": {"number": {"unknown-scope":
- * {"$type": "number", ...}}}}` reaches this leaf with `path` equal to
- * `['Primitives', 'number', 'unknown-scope']`, the same string
- * `spec-layer.meta.json` keys itself with). `legitimatelyUnitless` names every
- * path whose own Figma scopes already state it is a unitless number
- * (`OPACITY`, `FONT_WEIGHT`): those are excluded here, because a `$type:
- * "number"` leaf alone cannot tell "nobody scoped this" from "Figma states
- * this has no unit", and only the first is what this count is for.
- *
- * Paths, not a count, because the caller walks one file per (collection,
- * mode) and every mode file of a collection carries every token of that
- * collection: a summed count reports a token in a two-mode collection twice,
- * and the sentence it feeds says "tokens" and tells the reader to go narrow
- * that many variables in Figma. A DTCG path is the same string in every mode
- * file of its collection, and is what `spec-layer.meta.json` keys a variable
- * by, so collecting into one set across files counts each variable once.
+ * Collects the dotted DTCG path (the key `spec-layer.meta.json` uses) of every
+ * `$type: "number"` leaf not in `legitimatelyUnitless`, the paths whose Figma
+ * scopes state no unit. Paths, not a count: every mode file of a collection
+ * carries every token, so one set across files counts each variable once.
  */
 function collectNumberTokenPaths(
   tree: unknown, path: string[], legitimatelyUnitless: Set<string>, out: Set<string>,
@@ -119,14 +109,9 @@ function readJson(path: string): unknown | null {
 }
 
 /**
- * The DTCG paths `spec-layer.meta.json` (the only pulled file carrying a
- * token's own Figma scopes) says are a unitless number by scope, not by
- * silence: `OPACITY` and `FONT_WEIGHT` state "no unit" exactly as
- * `CORNER_RADIUS` states "px" (`scopesStateNumber`, `@spec-layer/extractor`).
- * `[]` when the file is missing or unreadable -- the caller then simply
- * excludes nothing, which is the safe direction (a token that is actually
- * scoped unitless still gets counted rather than one that is not getting
- * wrongly excluded).
+ * The DTCG paths `spec-layer.meta.json` says are unitless by scope, not by
+ * silence (`scopesStateNumber`). Empty when the file is missing or unreadable,
+ * which excludes nothing: the safe direction.
  */
 function unitlessScopedPaths(tokensDir: string): Set<string> {
   const meta = readJson(join(tokensDir, 'spec-layer.meta.json'));
@@ -140,9 +125,7 @@ function unitlessScopedPaths(tokensDir: string): Set<string> {
   return out;
 }
 
-/** A minimal shape check on one `fonts.json` entry: untrusted disk content,
- *  not the extractor's own output, so a malformed entry is dropped rather
- *  than crashing the guide. */
+/** A minimal shape check: `fonts.json` is untrusted disk content, so a malformed entry is dropped. */
 function isFontRequirement(v: unknown): v is FontRequirement {
   if (typeof v !== 'object' || v === null) return false;
   const r = v as Record<string, unknown>;
@@ -179,13 +162,9 @@ export function summarizePull(cwd: string, outDir: string, manifest: Manifest | 
         if (typeof entry?.code === 'string') reportCounts[entry.code] = (reportCounts[entry.code] ?? 0) + 1;
       }
     }
-    // fonts.json sits at the pull root next to bundle.json, not under tokens/,
-    // and is written whenever the Foundation is selected. Its three readable
-    // states are kept apart rather than collapsed to "empty": a genuine empty
-    // array (a library with no typography styles, or none whose font family
-    // resolved) is not an error, but a MISSING file is -- every pull taken
-    // before this file existed would otherwise render a confident "this
-    // library needs no font" that is not backed by anything.
+    // fonts.json sits at the pull root, not under tokens/. Its three states stay
+    // apart: an empty array is not an error, but a missing file must never read
+    // as "this library needs no font".
     const fontsPath = join(absOut, 'fonts.json');
     let fontsStatus: 'ok' | 'missing' | 'unreadable' = 'missing';
     let fonts: FontRequirement[] = [];
@@ -215,12 +194,8 @@ export function summarizePull(cwd: string, outDir: string, manifest: Manifest | 
     componentSpecsFormat: manifest.componentSpecsFormat ?? DEFAULT_COMPONENT_FORMAT,
     components, foundation,
     outputs: (manifest.outputs ?? []).map((o) => {
-      // manifest.outputs records the configured list regardless of whether the
-      // Foundation was written; the map file exists only when it was actually
-      // rendered, so it is the on-disk proof a sentence can point to. The file
-      // list itself comes from index.css's own imports, not the map: a map
-      // entry names only the file that first declares a token, so a
-      // non-default mode file never appears there.
+      // manifest.outputs is the configured list; the map file proves rendering.
+      // The file list comes from index.css, not the map; see readIndexImports.
       const mapPath = join(absOut, 'outputs', `${o.platform}-${o.format}.map.json`);
       const map = readJson(mapPath) as Record<string, { file?: string }> | null;
       const imports = map ? readIndexImports(cwd, o) : null;
@@ -228,14 +203,9 @@ export function summarizePull(cwd: string, outDir: string, manifest: Manifest | 
       return {
         platform: o.platform, format: o.format, path: o.path, case: o.case,
         modeSelector: o.modeSelector ?? '[data-theme="{mode}"]', modes: o.modes ?? {},
-        // index.css must be readable, not just the map, or a deleted index.css
-        // (with the map still on disk from an interrupted pull) would report
-        // written with an empty file list, a sentence that claims files exist.
+        // index.css must be readable too, or a stale map would claim files that are gone.
         written: map !== null && imports !== null,
-        // Distinguishes "the map is on disk but index.css is gone" from "the
-        // map itself never existed" (the Foundation was excluded), so the
-        // guide can name the actual cause instead of always blaming the
-        // Foundation.
+        // "index.css gone" versus "map never written", so the guide names the real cause.
         indexMissing: map !== null && imports === null,
         files,
       };
@@ -280,21 +250,13 @@ function stackSection(input: SkillInput): string[] {
     lines.push(`Target platform${platforms.length > 1 ? 's' : ''} (${label}): ${platforms.join(', ')}.`, '');
   }
 
-  // Ahead of every platform section, not after them: a token with no unit
-  // breaks every platform's build the same way, and burying this after a long
-  // per-platform walkthrough is exactly how it went unread on a real pull --
-  // an agent built a component whose height, padding, gap, and border-radius
-  // were all invalid CSS and silently dropped, and four rounds of visual
-  // review signed it off.
+  // Ahead of every platform section: a token with no unit breaks every
+  // platform's build alike, and buried after the walkthroughs it goes unread.
   const tokensDir = `${input.outDir}/tokens/`;
   if (pull?.foundation && pull.foundation.unitlessNumbers > 0) {
     const n = pull.foundation.unitlessNumbers;
-    // The only report file that actually enumerates these is the per-output
-    // one (`unitless_number`, css.ts) -- `tokens/report.json`'s own codes
-    // (`unit_derived_from_usage`, `unit_override_conflicts_with_scope`,
-    // `unit_not_expressible`) name a different condition each, none of them
-    // "this token was left with no unit at all". Only web/css is a real
-    // output format today, so this is the only one that can exist.
+    // Only the per-output report enumerates these (`unitless_number`, css.ts);
+    // tokens/report.json's unit codes name other conditions. Only web/css exists.
     const cssReport = pull.outputs.find((o) => o.platform === 'web' && o.format === 'css' && o.written) ?? null;
     lines.push(
       `**${n} token${n === 1 ? ' has' : 's have'} no unit.** `
@@ -322,16 +284,10 @@ function stackSection(input: SkillInput): string[] {
     const key = CODE_SYNTAX_KEY[platform];
     if (platform === 'web') {
       lines.push('### Web', '');
-      // cssOut only ever names a file the on-disk map proves was rendered;
-      // manifest.outputs (and so pull.outputs) can carry a configured entry
-      // that the last pull never wrote, and the guide must not imply that one exists.
-      // Computed before the font block below so that block can name the
-      // actual generated CSS an agent would edit, not the DTCG JSON directory.
+      // cssOut names only a file the on-disk map proves was rendered, since
+      // pull.outputs can carry a configured entry the last pull never wrote.
       const cssOut = pull?.outputs.find((o) => o.platform === 'web' && o.format === 'css' && o.written) ?? null;
-      // Before anything about importing token files: a missing or
-      // under-loaded font fails silently and every label renders in the
-      // browser default, which is the other half of the same real incident
-      // the unit caveat above is named for.
+      // Fonts before imports: a missing font fails silently into the browser default.
       if (pull?.foundation?.written) {
         const { fontsStatus, fonts, missingFontFamilies } = pull.foundation;
         if (fontsStatus === 'ok' && fonts.length > 0) {
@@ -346,12 +302,8 @@ function stackSection(input: SkillInput): string[] {
               + 'or every component that uses it renders in the browser default.',
             );
           }
-          // cssOut.path is the generated CSS an agent would actually open and
-          // edit (it holds the literal `font-family: "..."` declaration);
-          // tokensDir is the DTCG JSON source, which is not CSS and is not
-          // where anyone would add a fallback. When no CSS was written, the
-          // warning falls back to the whole pull directory, which is still
-          // true and still replaced wholesale by the next pull.
+          // Name the generated CSS an agent would edit, not the DTCG source; with
+          // no CSS, the pull directory, which the next pull also replaces.
           const fallbackTarget = cssOut ? `${cssOut.path}/` : `${input.outDir}/`;
           lines.push(
             `The token holds a family name and no fallback stack. Never write ${code('font-family')} from a token without `
@@ -365,13 +317,9 @@ function stackSection(input: SkillInput): string[] {
             '',
           );
         } else {
-          // What to do here has to be an instruction that can actually
-          // succeed. `pull` re-projects rather than reporting no change when
-          // the CLI has moved since the last pull, or when a file it writes
-          // alongside the Foundation is gone -- fonts.json is one of those --
-          // so telling a reader with no fonts.json to pull again is sound. A
-          // file that is present but unparseable is not the missing case and
-          // does not trip that check, so that branch says to remove it first.
+          // The instruction must be able to succeed: pull re-projects when
+          // fonts.json is gone, but an unparseable file does not trip that check,
+          // so that branch says to delete it first.
           lines.push(
             fontsStatus === 'missing'
               ? `${code('fonts.json')} is missing, so the font requirement for this library is unknown here. `
@@ -679,12 +627,9 @@ export const BLOCK_END = '<!-- spec-layer:end -->';
 
 /**
  * A shared instruction file (AGENTS.md, GEMINI.md) belongs to the repository,
- * so the guide lives between two markers and only that region is ever
- * replaced. A file without the markers gets the block appended; a missing
- * file is created holding just the block. A file with one marker but not the
- * other, or with the end before the begin, is refused: appending a block to
- * it would make the next run replace everything from the first begin to the
- * new end, deleting the reader's own text in between.
+ * so only the region between the markers is replaced; without markers the
+ * block is appended. One marker alone, or end before begin, is refused: the
+ * next run would replace the reader's own text between them.
  */
 export function upsertBlock(existing: string | null, guide: string): string {
   const block = `${BLOCK_BEGIN}\n${guide.trimEnd()}\n${BLOCK_END}\n`;
@@ -707,18 +652,15 @@ export function upsertBlock(existing: string | null, guide: string): string {
 export type InstallOutcome = {
   path: string;
   result: 'created' | 'updated' | 'unchanged';
-  /** Folders and files from a downloaded snapshot left beside the file this
-   *  install replaced. The plugin's download and this command both write
-   *  `.claude/skills/spec-layer/`, so a guide that points at the pulled files
-   *  can end up sitting next to a snapshot's data that it never mentions.
-   *  Reported so the command can say so; never deleted here, since the CLI
-   *  does not own files it did not write. */
+  /**
+   * Snapshot entries beside the replaced file, since the plugin's download also
+   * writes `.claude/skills/spec-layer/`. Reported, never deleted: the CLI does
+   * not own files it did not write.
+   */
   staleSnapshot: string[];
 };
 
-/** What a downloaded snapshot writes beside its SKILL.md: two folders and
- *  `fonts.json`, the list the snapshot's own SKILL.md tells a reader to
- *  delete once this command has replaced it. */
+/** What a downloaded snapshot writes beside its SKILL.md, the list its own SKILL.md says to delete. */
 const SNAPSHOT_ENTRIES = ['components', 'tokens', 'fonts.json'];
 
 function staleSnapshotEntries(cwd: string, target: InstallTarget): string[] {

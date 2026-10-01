@@ -1,9 +1,6 @@
 /**
- * component.ts — the "Create component docs" screen.
- *
- * Owns presentation and the user's section choice. Everything that touches the
- * document, the proxy, or the canvas stays in actions.ts: this module hands it
- * a selection and a presenter and gets on with drawing.
+ * The "Create component docs" screen: presentation and the user's section
+ * choice. Anything touching the document, proxy or canvas stays in actions.ts.
  */
 
 import type { SectionId, GroupId } from '../docModel';
@@ -56,11 +53,7 @@ const MEASURE_CHIPS: { id: 'size' | 'padding' | 'spacing'; label: string }[] = [
   { id: 'spacing', label: 'Gaps between items' },
 ];
 
-/**
- * The tooltip on the one measurement chip still on, which cannot be turned
- * off. ui-vnext.ts repaints the chips in place and sets the same title, so it
- * should read this constant rather than carry its own copy of the words.
- */
+/** The tooltip on the last measurement chip still on; ui-vnext.ts reuses it when patching. */
 export const MEASURE_LAST_VIEW_TITLE =
   'Keep at least one on, or clear Measurements to leave the diagram out.';
 
@@ -70,8 +63,7 @@ const GROUP_ICONS: Record<GroupId, IconName> = {
   a11y: 'accessible',
 };
 
-/** Labels come from ALL_SECTIONS now; this map exists for a UI-only override
- *  and is empty on purpose. */
+/** UI-only label overrides; labels come from ALL_SECTIONS, so this is empty. */
 const DISPLAY_LABELS: Partial<Record<SectionId, string>> = {};
 
 const AI_HELP =
@@ -79,24 +71,13 @@ const AI_HELP =
   'states, and tokens always come from Figma. On the free plan, each draft ' +
   'takes 1 free AI writing use.';
 
-/**
- * The explanation the switch's own label cannot carry.
- *
- * This text shipped as a caption under the control, set in an uppercase
- * micro-caps style built for two-word labels, which made two sentences of it
- * unreadable. The information was never the problem, so it moved to the same
- * tooltip pattern the AI writing switch already uses rather than being cut.
- */
+/** The explanation the switch's own label cannot carry, shown as a tooltip. */
 const HIDDEN_HELP =
   'Some layers in this component stay hidden until a property shows them. ' +
   'With this on, the docs include them, and the Anatomy section names that ' +
   'property for each one.';
 
-/**
- * States what was detected, a leading dot in the name, rather than asserting
- * the component is an atom: the dot is a naming convention, not a fact the
- * plugin can check.
- */
+/** States the detected leading dot, a naming convention, rather than asserting an atom. */
 const ATOM_NOTICE =
   'This component’s name starts with a dot, so it’s likely a building block ' +
   'for larger ones. You can still document it on its own.';
@@ -107,10 +88,8 @@ const CHECK_GLYPH =
   '<path d="M20 6L9 17l-5-5"/></svg>';
 
 /**
- * A small drawing of the act the screen is waiting for: a cursor selects a
- * component on the canvas and a doc sheet comes out of it. Decorative only,
- * so it is hidden from assistive tech; the heading carries the message. The
- * motion is CSS, and prefers-reduced-motion stills it.
+ * A cursor selects a component and a doc sheet comes out of it. Decorative, so
+ * aria-hidden; the CSS motion stills under prefers-reduced-motion.
  */
 const EMPTY_ILLUSTRATION =
   '<svg class="sl-select-illustration" viewBox="0 0 160 112" width="160" height="112" ' +
@@ -143,12 +122,8 @@ const EMPTY_ILLUSTRATION =
   '</svg>';
 
 /**
- * The centered state shown when Figma has nothing usable selected.
- *
- * This is the first screen a new user meets, so it teaches the one move that
- * starts everything and offers the two starts that need no selection:
- * foundations, and the Library of docs already made. The buttons navigate
- * through the same views the rail does and start nothing.
+ * Shown when nothing usable is selected; a new user's first screen, so it
+ * teaches the one move and offers the two starts that need no selection.
  */
 function emptyMarkup(): string {
   return (
@@ -167,9 +142,8 @@ function emptyMarkup(): string {
 }
 
 /**
- * Shown from the moment the panel opens until the main thread reports the
- * first selection. Without it the panel said "Select a component" for a beat
- * even when one was already selected, then swapped to the picker.
+ * Shown until main reports the first selection, so the panel never says
+ * "Select a component" while one is already selected.
  */
 function waitingMarkup(): string {
   return (
@@ -221,12 +195,7 @@ function chipMarkup(chip: VariantChip): string {
   );
 }
 
-/**
- * The variant picker, shown under the Tokens row.
- *
- * With Tokens off the rows stay discoverable but inert, and the header says
- * which switch turns them back on.
- */
+/** The variant picker, shown under the Tokens row. */
 function variantPickerMarkup(facts: ComponentFacts, selection: ComponentSelection): string {
   if (facts.variants.length === 0) return '';
   const variantIds = facts.variants.map((variant) => variant.nodeId);
@@ -280,16 +249,9 @@ function variantPickerMarkup(facts: ComponentFacts, selection: ComponentSelectio
 }
 
 /**
- * The document-wide hidden-elements switch.
- *
- * It sits above "Sections to include" rather than under the Anatomy row,
- * because the flag it sets feeds Anatomy, States, Variants, the per-variant
- * token pane and Measurements alike. Nesting it under one section said it
- * applied to that section only, and made it look like it should disarm when
- * that section did.
- *
- * Only drawn when the component actually has such layers: on every other
- * component the switch would be a control with nothing to control.
+ * The document-wide hidden-elements switch, above "Sections to include"
+ * because its flag feeds Anatomy, States, Variants, tokens and Measurements
+ * alike. Drawn only when the component has such layers.
  */
 function hiddenElementsMarkup(selection: ComponentSelection, facts: ComponentFacts): string {
   if (!facts.hasHiddenParts) return '';
@@ -468,16 +430,14 @@ export function componentHeaderMarkup(state: ComponentScreenState): string {
 }
 
 /**
- * `hasDoc`: the selected component already has a doc, so the button replaces
- * it rather than creating one, and says so. Unknown counts as no doc: "Create
+ * `hasDoc` makes the button say Replace. Unknown counts as no doc: "Create
  * docs" is never false, since Create also replaces.
  */
 export function componentFooterMarkup(state: ComponentScreenState, hasDoc = false): string {
   if (state.kind === 'empty') return '';
   const busy = state.kind === 'reading' || state.kind === 'building';
   const progress = componentStatusMarkup(state);
-  // Both busy labels take the ellipsis. "Creating docs" without one read as a
-  // second, differently-worded action rather than the same button working.
+  // Both busy labels take the ellipsis: the same button working, not a new action.
   const createLabel = state.kind === 'building'
     ? (hasDoc ? 'Replacing docs…' : 'Creating docs…')
     : (hasDoc ? 'Replace docs' : 'Create docs');
@@ -486,8 +446,7 @@ export function componentFooterMarkup(state: ComponentScreenState, hasDoc = fals
   return (
     (progress ? `<div class="sl-footer-progress">${progress}</div>` : '') +
     '<div class="sl-footer-actions">' +
-    // Copy needs no canvas doc, only the extracted spec, so it shares Create
-    // docs' disabled rule.
+    // Copy needs only the extracted spec, so it shares Create docs' disabled rule.
     `<button class="sl-button" data-tone="secondary" id="sl-copy-component" type="button"` +
     `${busy ? ' disabled' : ''}>${icon('copy', 15)}` +
     '<span>Copy for AI</span></button>' +
@@ -511,9 +470,7 @@ export function componentStatusMarkup(state: ComponentScreenState): string {
         label: 'Reading the selected component',
       });
     case 'building':
-      // The phase is always set: startComponentProgress in ui-vnext.ts is the
-      // only way in, and every caller passes a phase list, so no fallback
-      // label is needed here.
+      // Always set: every startComponentProgress caller passes a phase list.
       return progressMarkup({ label: state.phase });
     case 'empty':
     case 'ready':
@@ -532,14 +489,8 @@ export function renderComponentScreen(
   hasDoc = false,
   allowance: AllowanceState = { kind: 'loading' },
 ): void {
-  // Replace, never add. Every other screen assigns the full class here, and this
-  // one adding to it meant the previous screen's class stayed on the element:
-  // coming back from Settings or License left `sl-settings-screen` alongside
-  // `sl-component-screen`, and since the two `.sl-screen-scroll` padding rules
-  // have equal specificity, the one later in the stylesheet won. The component
-  // screen silently picked up Settings' 16px horizontal padding and header
-  // indent. Going to Library or Foundations appeared to fix it only because
-  // their padding is 0, the same as this screen's.
+  // Replace, never add: a previous screen's class left on the element would win
+  // the equal-specificity `.sl-screen-scroll` padding rules.
   refs.screen.className = 'sl-screen sl-component-screen';
   refs.pageHeader.innerHTML = componentHeaderMarkup(state);
   refs.pageHeader.hidden = state.kind === 'empty';

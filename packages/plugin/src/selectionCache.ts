@@ -1,15 +1,13 @@
 /**
- * selectionCache.ts: whether a selection change needs a fresh serialization.
+ * Whether a selection change needs a fresh serialization.
  *
- * findComponent resolves a selection to its component set, so clicking from
- * one layer to the next inside one set resolves to the same component every
- * time, and serializing a large set holds the main thread for seconds. A
- * selection that resolves to the component the panel already shows, or to one
- * already being read, sends nothing while nothing has changed: no layer edit
- * on the current page, no style edit, and the same variable fingerprint
- * (variables fire no event, and a rename moves the names a serialization
- * carries). Layer edits on other pages are not seen, the same limit the
- * Library's re-check has.
+ * findComponent resolves a selection to its component set, so clicking between
+ * layers of one set resolves to the same component, and serializing a large
+ * set holds the main thread for seconds. A selection that resolves to the
+ * component already shown, or already being read, sends nothing while nothing
+ * changed: no layer edit on the current page, no style edit, and the same
+ * variable fingerprint (variables fire no event). Layer edits on other pages
+ * are not seen, the same limit the Library's re-check has.
  */
 
 /** The dirty flag this reads, and the only reader of it. DocumentDirtyFlag satisfies it. */

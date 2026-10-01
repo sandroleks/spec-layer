@@ -1,25 +1,19 @@
 /**
- * publishPill.ts: the publish record a doc Section carries and the pill state
- * it renders as. Pure and Figma-free so the state table is testable in Node;
- * pillNode.ts draws it.
+ * The publish record a doc Section carries and its pill state; pure, so the
+ * state table tests in Node, and pillNode.ts draws it.
  *
- * The pill answers "does this doc's source still match what was published".
- * It compares the canvas drift hash the plugin already computes on Generate
- * and Update (specContentHash for a component doc, foundationContentHash for
- * a foundation unit) against the same hash taken from the live source at
- * publish time. The v5 artifact hash is not used here: it is computed only on
- * publish and Copy for AI, and depends on the Foundation dependency slice, so
- * the plugin cannot recompute it on Generate to compare.
+ * The pill compares the canvas drift hash (specContentHash or
+ * foundationContentHash) against the same hash taken at publish time. Not the
+ * v5 artifact hash: that depends on the Foundation slice and cannot be
+ * recomputed on Generate.
  *
- * The pill enters no hash. Its text is skipped by collectGeneratedText through
- * PILL_KEY, so a stamped version never reads as a hand edit; it is not part of
- * any projection, so it cannot move a drift hash; and it never reaches the
- * extractor, so it cannot move an artifact hash.
+ * The pill enters no hash: collectGeneratedText skips it through PILL_KEY, so
+ * it never reads as a hand edit, and it is in no projection.
  */
 
 /** Section plugin data key holding a serialized DocPublishRecord. */
 export const PUBLISH_RECORD_KEY = 'specLayerPublish';
-/** Set to '1' on the pill frame and its text node, so hashing and repainting can find them by data, not by name. */
+/** '1' on the pill frame and its text, found by data, never by name. */
 export const PILL_KEY = 'specLayerPill';
 export const PILL_NODE_NAME = 'Spec Layer publish status';
 
@@ -38,10 +32,8 @@ export type PillState =
   | { kind: 'changed'; version: string }
   | { kind: 'unpublished' };
 
-/**
- * `currentSourceHash` null means the plugin could not compute one. That reads
- * as changed, never as published: the pill states only what it can prove.
- */
+/** A null `currentSourceHash` reads as changed, never published: the pill
+ *  states only what it can prove. */
 export function pillState(record: DocPublishRecord | null, currentSourceHash: string | null): PillState {
   if (record === null) return { kind: 'unpublished' };
   if (currentSourceHash !== null && currentSourceHash === record.sourceHash) {

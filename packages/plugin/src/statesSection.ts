@@ -20,15 +20,10 @@ export type MatrixLayout =
   | { kind: 'stacked' };
 
 /**
- * How the cells are laid out for the widest instance the matrix shows. Pure
- * (no Figma API) so the sizing math stays unit-testable.
- *
- * An instance is never scaled. A cell is at least MIN_CELL_W and at least the
- * widest instance plus its slot padding; as many cells as fit sit per band
- * beside the row label and share the band's width (a small component keeps
- * the CELL_MAX_W cap, so a checkbox is not drawn in a 300px cell). When not
- * even one cell fits beside the label, the grid goes down: one axis value
- * per band, and a slot spanning the whole column per row.
+ * Cell layout for the widest instance; pure, so it stays unit-testable.
+ * Instances are never scaled: a cell fits the widest one plus slot padding,
+ * as many as fit share each band (small components keep the CELL_MAX_W cap),
+ * and when none fits beside the label the matrix stacks one value per band.
  */
 export function matrixLayout(columnCount: number, contentWidth: number, widestInstance: number): MatrixLayout {
   const usable = contentWidth - LABEL_W;
@@ -40,8 +35,7 @@ export function matrixLayout(columnCount: number, contentWidth: number, widestIn
   return { kind: 'grid', colsPerBand, cellW };
 }
 
-/** The "No variant" cell for a combination the component has no variant for.
- *  A word, never a dash glyph: an empty cell says why it is empty. */
+/** A word, never a dash: an empty cell says why it is empty. */
 function emptyCell(width: number): FrameNode {
   const empty = vstack(0);
   empty.resize(width, 40);
@@ -55,14 +49,9 @@ function emptyCell(width: number): FrameNode {
 }
 
 /**
- * The shared preview matrix: live instances keyed by row label x column. Used
- * by both the States and Variants sections. Every instance is created first,
- * so the grid is sized to what it has to hold, and none is ever scaled: cells
- * widen to the widest instance, fewer fit per band, and a component too wide
- * for any cell gets one axis value per band with a slot spanning the column
- * (see matrixLayout). Per-cell failures fall back to the slot's own
- * placeholder; callers hide the section at the model level when there is
- * nothing to show, so the block is assumed well-formed.
+ * The live-instance matrix behind States and Variants. Instances are created
+ * first so the layout fits them (matrixLayout). A failed cell falls back to
+ * the slot's placeholder; the model hides empty sections.
  */
 export async function buildMatrixSection(
   block: MatrixBlockData,
@@ -71,7 +60,6 @@ export async function buildMatrixSection(
 ): Promise<FrameNode> {
   const wrap = vstack(BAND_GAP);
 
-  // One instance per cell, created before any layout is decided.
   const created: (InstanceNode | null)[][] = [];
   let widest = 0;
   for (const row of block.rows) {
@@ -116,8 +104,7 @@ function buildGrid(
     wrap.appendChild(band);
     band.layoutSizingHorizontal = 'HUG';
 
-    // Header row: corner spacer + column names. The corner carries the axis
-    // name only for single-row matrices (where no row labels carry it).
+    // The corner names the axis only when no row labels do.
     const head = hstack(GRID_GAP);
     band.appendChild(head);
     head.counterAxisAlignItems = 'MAX'; // baseline-align headers to the cells below
@@ -127,8 +114,7 @@ function buildGrid(
     corner.textAlignVertical = 'BOTTOM';
     head.appendChild(corner);
     for (const column of block.columns.slice(start, end)) {
-      // As typed: a column name is an axis value the designer wrote
-      // ("isInvalid: true"), not plugin copy, so it is never re-cased.
+      // As typed: a designer's axis value is never re-cased.
       const h = makeText(column, 'Medium', 10, palette.muted, 130, 6);
       h.textAutoResize = 'NONE';
       h.resize(cellW, HEADER_H);
@@ -150,10 +136,8 @@ function buildGrid(
   }
 }
 
-/** One band per axis value: the value as the band's heading, then per row a
- *  label line (when there is more than one row) over a slot that spans the
- *  column. This is where a component too wide for a grid cell lands, at true
- *  size. */
+/** One band per axis value, each row's slot spanning the column, for a
+ *  component too wide for a grid cell. */
 function buildStacked(wrap: FrameNode, block: MatrixBlockData, contentWidth: number, cellFor: CellFor): void {
   wrap.resize(contentWidth, 1);
   wrap.primaryAxisSizingMode = 'AUTO';

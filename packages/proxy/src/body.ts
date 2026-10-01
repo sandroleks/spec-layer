@@ -1,9 +1,8 @@
 /**
- * A request body read in chunks and dropped the moment the running total
- * passes `maxBytes`, so an oversized body is never held whole in memory.
- * `size` on refusal is the declared Content-Length when the header says so up
- * front, else the byte count at the chunk that crossed the cap: at least
- * `maxBytes + 1`, and never a guess at what the rest would have been.
+ * A request body read in chunks and dropped once the total passes `maxBytes`,
+ * so an oversized body is never held whole. `size` on refusal is the declared
+ * Content-Length, else the count at the chunk that crossed the cap, never a
+ * guess at the rest.
  */
 export type CappedBody =
   | { kind: 'ok'; bytes: Uint8Array }
@@ -23,8 +22,7 @@ export async function readBodyCapped(req: Request, maxBytes: number): Promise<Ca
       if (done) break;
       total += value.byteLength;
       if (total > maxBytes) {
-        // Fire-and-forget: a rejected cancel is not this request's problem, and
-        // must never turn an already-decided `too_large` into `unreadable`.
+        // A rejected cancel must never turn a decided `too_large` into `unreadable`.
         void reader.cancel().catch(() => {});
         return { kind: 'too_large', size: total };
       }

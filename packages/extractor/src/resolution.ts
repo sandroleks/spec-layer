@@ -1,10 +1,7 @@
 /**
- * resolution.ts — why a reference could not be resolved, stated as a fact.
- *
- * Absence from local foundation data has several causes, and a name-only
- * lookup collapses them into one bare `{}`. Every status here is decided from
- * something Figma or this codebase RECORDED, never inferred from a lookup that
- * found nothing:
+ * Why a reference could not be resolved, stated as a fact. Every status is
+ * decided from something Figma or this codebase RECORDED, never inferred from
+ * a lookup that found nothing:
  *
  * | status           | decided by                                          |
  * |------------------|-----------------------------------------------------|
@@ -14,9 +11,8 @@
  * | unavailable      | serializeFoundation recorded that read as failed.   |
  * | not-in-snapshot  | Local, not remote, absent from the cached dump.     |
  *
- * There is deliberately no `missing`. A reference's name comes from Figma
- * resolving a real id, so a name pointing at nothing is unreachable, and this
- * codebase does not emit findings that cannot occur (see validate.ts).
+ * No `missing`: a reference's name comes from Figma resolving a real id, so a
+ * name pointing at nothing cannot occur (see validate.ts).
  */
 import type { FoundationSpec, FoundationRead } from './foundation';
 import type { RefIdentity, RefKind } from './tree';
@@ -27,8 +23,7 @@ export type ResolutionStatus =
 
 export interface Resolution { status: ResolutionStatus; reason: string }
 
-/** Which foundation read backs each kind. Paint styles have none: that is the
- *  whole content of `not-extracted`. */
+/** Which foundation read backs each kind; paint styles have none. */
 const READ_OF: Record<RefKind, FoundationRead | null> = {
   variable: 'variables',
   'text-style': 'textStyles',
@@ -48,13 +43,10 @@ const READ_WORD: Record<FoundationRead, string> = {
 };
 
 /**
- * Why this reference has no definition in `foundation`.
- *
- * Only ever called once a lookup has already come back empty. The ORDER of the
- * checks is the design: kind-determined causes first, so every paint style gets
- * one answer whatever its remoteness; then Figma's own stated facts; then what
- * this codebase recorded about its own reads; and only last the residual
- * "local, present in the file, absent from the dump we cached".
+ * Why this reference has no definition in `foundation`, called once a lookup
+ * came back empty. The ORDER is the design: kind-determined causes first, then
+ * Figma's stated facts, then recorded read failures, and last the residual
+ * "local but absent from the cached dump".
  */
 export function resolutionOf(
   foundation: FoundationSpec | undefined,

@@ -1,16 +1,11 @@
 /// <reference types="@figma/plugin-typings" />
 /**
- * brandHeader.ts — the branded header band shared by every generated document.
+ * The branded header band every generated document opens with: header colour,
+ * uppercase eyebrow, captured logo, large title, optional subtitle. One shared
+ * band, so component and foundation docs cannot drift apart.
  *
- * Component docs and foundation docs both open with the same band: the brand
- * header colour, an uppercase eyebrow, the captured logo on the right, a large
- * title, and an optional subtitle. It lives here rather than in docFrame.ts
- * because two callers now need it, and a copy in each would drift the moment
- * either one is restyled. "Foundation frames follow the component style" is only
- * true for as long as there is one band, not two that currently agree.
- *
- * Reads the theme through frameKit's palette and font state, so the caller must
- * have applied the theme (buildDocFrames' preamble or applyThemeToKit) first.
+ * Reads frameKit's palette and font state, so the caller must apply the theme
+ * (buildDocFrames' preamble or applyThemeToKit) first.
  */
 import { palette, solidFill, makeText, vstack, hstack, headingFont } from './frameKit';
 import { buildPillNode } from './pillNode';
@@ -24,34 +19,23 @@ const LOGO_HEIGHT = 28;
 export interface BrandHeaderOptions {
   /** Small uppercase overline: the doc group for components, "Foundations" here. */
   eyebrow: string;
-  /** The large title line. */
   title: string;
   /** Optional one-line subtitle in muted ink. Pass plain text, not markdown. */
   subtitle?: string | null;
   /** Base64 PNG of the user's captured logo, if they have one. */
   logoBase64?: string | null;
-  /**
-   * Publish pill on the eyebrow row, right-aligned, left of the logo when one
-   * is shown. Null or absent draws no pill and leaves every existing document
-   * byte-identical to what it rendered before pills existed.
-   */
+  /** Publish pill on the eyebrow row, right-aligned, left of any logo. Absent
+   *  draws none, so documents without a pill render byte-identical. */
   pill?: PillState | null;
-  /**
-   * Hook to restyle the subtitle node (docFrame applies bold runs to its lifted
-   * definition lead). Called after the node is appended and before the FILL
-   * pass, which is the order the component header has always used.
-   */
+  /** Restyles the subtitle (docFrame's bold runs), after it is appended and
+   *  before the FILL pass. */
   styleSubtitle?: (node: TextNode) => void;
 }
 
 /**
- * Build the header band. The caller appends it and then sets
- * `layoutSizingHorizontal = 'FILL'`, which requires the parent to be FIXED on
- * that axis already.
- *
- * A logo that fails to decode is dropped and the rest of the band still
- * renders: a corrupt capture should cost the user their logo, not their
- * document.
+ * The caller appends the band, then sets `layoutSizingHorizontal = 'FILL'`,
+ * which needs a parent already FIXED on that axis. A logo that fails to decode
+ * is dropped; the band still renders.
  */
 export async function buildBrandHeader(opts: BrandHeaderOptions): Promise<FrameNode> {
   const band = vstack(14);
@@ -62,9 +46,8 @@ export async function buildBrandHeader(opts: BrandHeaderOptions): Promise<FrameN
   band.paddingLeft = HEADER_PAD_X;
   band.paddingRight = HEADER_PAD_X;
 
-  // We append children, then set FILL, then style text — order matters for FILL.
-  // Nodes in `tmp` get FILL after all appends. When the eyebrow sits inside a
-  // logo row, the ROW is what FILLs (the eyebrow FILLs within it, set inline).
+  // FILL only works after append, so nodes in `tmp` get it after every append.
+  // With a logo row, the row FILLs and the eyebrow FILLs within it.
   const tmp: (TextNode | FrameNode)[] = [];
 
   const eyebrowNode = makeText(opts.eyebrow.toUpperCase(), 'Medium', 12, palette.onHeaderMuted);
@@ -89,7 +72,7 @@ export async function buildBrandHeader(opts: BrandHeaderOptions): Promise<FrameN
         /* corrupt logo → header renders without it */
       }
     }
-    tmp.push(row); // the row FILLs; the eyebrow already FILLs within it
+    tmp.push(row);
   } else {
     band.appendChild(eyebrowNode);
     tmp.push(eyebrowNode);

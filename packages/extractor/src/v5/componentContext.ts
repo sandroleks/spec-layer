@@ -1,15 +1,8 @@
 /**
- * Component Context v5.
- *
- * The component extractor already owns the difficult Figma work: one part
- * namespace, minimized variant conditions, inline effects, hardcoded gaps,
- * and deterministic component findings. This module is the new clipboard
- * boundary over that mature `IntermediateSpec`. It joins every Foundation
- * reference by stable id, selects only the transitive Foundation closure the
- * component needs, validates those joins, and hashes the semantic result.
- *
- * The legacy component brief remains exported for compatibility and canvas
- * hashes remain untouched. Nothing in here feeds `specContentHash`.
+ * Component Context v5: the clipboard boundary over `IntermediateSpec`. Joins
+ * every Foundation reference by stable id, selects only the transitive
+ * Foundation closure the component needs, validates those joins, and hashes
+ * the semantic result. Nothing here feeds `specContentHash`.
  */
 import { sha256 } from 'js-sha256';
 import { knownFileKey } from '../fileKey';
@@ -73,8 +66,8 @@ export interface ComponentBindingV5 {
 
 type ComponentAiBindingFactsV5 = Omit<ComponentBindingV5, 'path'>;
 
-/** Clipboard-only binding shape. Canonical artifacts always retain one exact
- * `path` per binding; the AI profile groups only otherwise-identical bindings. */
+/** Clipboard only: canonical artifacts keep one `path` per binding; the AI
+ * profile groups otherwise-identical bindings. */
 export type ComponentAiBindingV5 = ComponentAiBindingFactsV5 & (
   | { path: string; paths?: never }
   | { paths: string[]; path?: never }
@@ -83,9 +76,8 @@ export type ComponentAiBindingV5 = ComponentAiBindingFactsV5 & (
 export interface ComponentReferenceSetV5 {
   used: ComponentReferenceV5[];
   bindings: ComponentBindingV5[];
-  /** Canonical Foundation dependency payload. It deliberately excludes the
-   * whole-file Foundation hash, so an unrelated token cannot move this
-   * component's semantic hash. */
+  /** Excludes the whole-file Foundation hash, so an unrelated token cannot move
+   * this component's semantic hash. */
   foundation?: SemanticPayload;
 }
 
@@ -118,11 +110,8 @@ export type ComponentContextDiagnosticCode =
   | 'UNRESOLVED_REFERENCE'
   | 'INCONSISTENT_REFERENCE';
 
-/** Row shape shared by the component's own facts-derived findings
- *  (`componentValidation`, from `validateComponentFacts`) and its
- *  diagnostics-derived findings (`componentDiagnosticRows`, from
- *  `artifact.diagnostics`) -- the same `{ id, severity, path?, property?,
- *  message }` vocabulary as `unbound-value`. */
+/** Shared by facts-derived (`componentValidation`) and diagnostics-derived
+ *  (`componentDiagnosticRows`) findings, in the `unbound-value` vocabulary. */
 export interface ComponentValidationRow {
   id: string;
   severity: 'error' | 'warning';
@@ -142,8 +131,8 @@ export interface ComponentContextDiagnostic {
 
 export interface ComponentArtifactV5 extends ComponentSemanticPayloadV5 {
   spec_layer: ComponentEnvelopeV5;
-  /** Whole-file Foundation identity for matching against a Foundation context
-   * already present in a conversation. Outside the component semantic hash. */
+  /** Whole-file Foundation identity, to match a Foundation context already in a
+   * conversation. Outside the component semantic hash. */
   foundation_content_hash?: string;
   /** Hash of `references.foundation`, repeated for cheap comparison. */
   foundation_dependency_hash?: string;
@@ -200,8 +189,7 @@ const referenceKey = (reference: Pick<RefIdentity, 'kind' | 'id'>): string =>
 
 const bindingKey = (binding: ComponentBindingV5): string => canonicalJson(binding);
 
-/** The Foundation's entity ids by kind, built once per copy so every
- *  reference is a set lookup rather than a scan of the token list. */
+/** Built once per copy, so every reference is a set lookup. */
 interface FoundationIndex { tokens: Set<string>; typography: Set<string>; effects: Set<string> }
 
 function indexFoundation(foundation: FoundationArtifactV5): FoundationIndex {
@@ -321,24 +309,17 @@ function dedupeFoundationDiagnostics(findings: Diagnostic[]): Diagnostic[] {
 }
 
 /**
- * Diagnostic codes that, carried on a collection or token id, state that part
- * of that entity's source did not reach the artifact. The Foundation's own
- * `completeness.collections` turns partial on the same facts, so the embedded
- * slice must read the same set or the two disagree and the component hash
- * moves. `METADATA_UNAVAILABLE` carries an unreadable publication status,
- * `EXPORT_SCOPED` carries the requested collection of a scoped export, and
- * `SOURCE_PARTIALLY_UNAVAILABLE` stays because its read-failure sites use
- * `ROOT` today but are not required to.
+ * Codes that, on a collection or token id, say part of its source did not
+ * reach the artifact. Must match the set the Foundation's
+ * `completeness.collections` reads, or the component hash moves.
+ * SOURCE_PARTIALLY_UNAVAILABLE stays though its sites use `ROOT` today.
  */
 const PARTIAL_SOURCE_CODES: ReadonlySet<string> = new Set([
   'SOURCE_PARTIALLY_UNAVAILABLE', 'METADATA_UNAVAILABLE', 'EXPORT_SCOPED',
 ]);
 
-/**
- * Select exactly the Foundation entities needed by these component references.
- * Entity arrays retain their source artifact order; closure discovery order
- * cannot make two exports differ.
- */
+/** Exactly the Foundation entities these references need, in source artifact
+ *  order, so closure discovery order cannot make two exports differ. */
 export function componentFoundationDependencies(
   foundation: FoundationArtifactV5,
   references: ComponentReferenceV5[],
@@ -473,7 +454,7 @@ interface AnatomyNodeV5 extends YamlObject {
   part: string;
   path: string;
   type: string;
-  /** Present only on a part hidden by default: the boolean property that shows it. */
+  /** Only on a part hidden by default: the boolean property that shows it. */
   shown_by?: string;
   children?: YamlValue[];
 }
@@ -551,9 +532,7 @@ function componentValidation(
       if (token === undefined) continue;
       const collection = collections.get(token.collection_id);
       if (collection === undefined) continue;
-      // A default mode the collection does not declare is a Level 2 finding
-      // on the Foundation (UNRESOLVED_REFERENCE), not a reason for the
-      // component copy to throw: the rule simply has no resolved number.
+      // An undeclared default mode is a Foundation finding, not a throw here.
       const canonical = token.values[collection.default_mode_id];
       if (canonical === undefined) continue;
       const value = resolvedValueOf(canonical);
@@ -583,7 +562,6 @@ function statusMessage(reference: ComponentReferenceV5): string {
   }
 }
 
-/** Referential checks over the finished component artifact. */
 export function validateComponentArtifactV5(
   artifact: ComponentArtifactV5,
 ): ComponentContextDiagnostic[] {
@@ -644,18 +622,10 @@ function kebab(code: string): string {
   return code.toLowerCase().replace(/_/g, '-');
 }
 
-/** Projects the component's own reference diagnostics into the same
- *  `{ id, severity, path?, property?, message }` vocabulary `unbound-value`
- *  already uses, so a bare `issue_counts: { error: { UNRESOLVED_REFERENCE: N
- *  } } }` is never the only thing a consumer of the copied YAML sees. Every
- *  field comes from the diagnostic itself -- nothing here is derived or
- *  guessed. `path` prefers the most specific real identifier already on the
- *  finding: the human-readable name the reference carries
- *  (`UNRESOLVED_REFERENCE`'s `details.name`), else the broken binding's own
- *  source id (`INCONSISTENT_REFERENCE`'s `details.source_id`), else the
- *  diagnostic's `entity_id` -- which for one `INCONSISTENT_REFERENCE` shape
- *  is the component's own node id, not the broken reference, so it is tried
- *  last rather than first. */
+/** Reference diagnostics as validation rows, so a bare `issue_counts` is never
+ *  all a consumer sees. Every field comes from the diagnostic. `path` prefers
+ *  `details.name`, then `details.source_id`, then `entity_id`, which can be the
+ *  component's own node id. */
 function componentDiagnosticRows(
   diagnostics: readonly ComponentContextDiagnostic[],
 ): ComponentValidationRow[] {
@@ -680,17 +650,13 @@ function componentDiagnosticRows(
     || compareCodeUnits(a.message, b.message));
 }
 
-/** Build the canonical component artifact. */
 export function buildComponentArtifactV5(
   rawSpec: IntermediateSpec,
   meta: ComponentExportV5Meta,
 ): ComponentArtifactV5 {
-  // Same filter, and the same reason, as `componentBrief` applies to its own
-  // copy: a v5 token rule has no field in which to say it only applies once a
-  // boolean component property is on, so a rule for a hidden-by-default part
-  // cannot be emitted honestly yet. Applied once here so every helper below
-  // sees one list, and so every existing artifact and its semanticContentHash
-  // stay byte-identical.
+  // As in `componentBrief`: a v5 token rule cannot say it applies only once a
+  // boolean property is on, so hidden-part rules are dropped, keeping every
+  // existing semanticContentHash byte-identical.
   const spec: IntermediateSpec = {
     ...rawSpec,
     tokens: tokensFor(rawSpec.tokens, { includeHidden: false }),
@@ -767,12 +733,8 @@ export function buildComponentArtifactV5(
     ...(validation !== undefined ? { validation: validation as unknown as YamlValue } : {}),
     ...(projected.guidelines !== undefined ? { guidelines: projected.guidelines } : {}),
   };
-  // `diagnostics` can only be computed from the finished provisional artifact
-  // (it checks bindings against references, and references against the
-  // dependency slice), so the diagnostics-derived validation rows are merged
-  // in here, AFTER componentValidation's facts-derived rows above rather than
-  // resorted together with them: those rows' order is reviewed and golden-
-  // tested, and a shared comparator would silently reshuffle it.
+  // Diagnostics need the finished provisional artifact. Their rows go AFTER
+  // the facts-derived rows, never resorted with them: that order is golden.
   const diagnostics = validateComponentArtifactV5(provisional);
   const mergedValidation = [...(validation ?? []), ...componentDiagnosticRows(diagnostics)];
   return {
@@ -801,9 +763,8 @@ function componentIssueCounts(
   ));
 }
 
-/** Group repeated clipboard rules without changing their meaning or the
- * canonical artifact. Group order follows the first binding occurrence and
- * path order follows canonical binding order. */
+/** Group order follows first binding occurrence; path order follows canonical
+ * binding order. */
 function compactComponentBindings(
   bindings: ComponentBindingV5[],
 ): ComponentAiBindingV5[] {
@@ -826,10 +787,8 @@ function compactComponentBindings(
     : { paths, ...facts });
 }
 
-/** The Foundation dependency slice, projected exactly as the AI profile
- * projects it. Lifted out of `componentAiContext` so the Markdown projection
- * reuses one tested rendering of modes, values and aliases rather than a
- * second interpretation of them. Never feeds a hash. */
+/** The Foundation dependency slice as the AI profile projects it, shared with
+ * the Markdown projection. Never feeds a hash. */
 export interface ComponentFoundationSlice {
   dependency_hash: string;
   compact: FoundationAiContext;
@@ -844,8 +803,7 @@ export function componentFoundationAiSlice(
     ...payload,
     spec_layer: {
       kind: 'foundation',
-      // The Foundation schema's own version, since this slice is a Foundation
-      // artifact: the two happen to agree today and need not tomorrow.
+      // The Foundation schema's version: this slice is a Foundation artifact.
       schema_version: SCHEMA_VERSION,
       schema_uri: 'https://spec-layer.com/schemas/foundation-context/v5.json',
       extractor: artifact.spec_layer.extractor,
@@ -873,8 +831,8 @@ export function componentFoundationAiSlice(
   };
 }
 
-/** The `spec_layer` + `source` envelope both component projections open with.
- * Shared so a field added to one profile cannot be forgotten in the other. */
+/** The envelope both component projections open with, shared so neither
+ * profile can miss a field. */
 export function componentEnvelope(
   artifact: ComponentArtifactV5,
   profile: 'ai' | 'markdown',

@@ -1,20 +1,11 @@
 /**
- * The fonts a library's typography styles require.
+ * The fonts a library's typography styles require: each family with its used
+ * weights, since a page that loads 400 and asks for 600 gets a synthesised
+ * bold. Read from the typography styles only; nothing is inferred.
  *
- * A family name alone is not enough to render a design system: a page that
- * loads a family at 400 and asks for 600 gets a synthesised bold that matches
- * nothing in the file. Every value here is read from the artifact's
- * typography styles; nothing is inferred, and a family no style references
- * does not appear.
- *
- * `TypographyStyleV5` (`v5/entities.ts`) carries no italic signal: Figma's
- * text style exposes a human font-style label ("SemiBold", "Regular
- * Italic", ...), but the direct v5 exporter (`fromFoundation.ts`) reduces
- * that label to a numeric `font_weight` and drops the label itself — no
- * `font_style` or comparable field survives into the artifact. A style's
- * `text_case` and `text_decoration` are the only other style-level strings,
- * and neither encodes slant. So `FontRequirement` carries no `styles` field:
- * a "normal" or "italic" value here would be invented, not read.
+ * No `styles` (normal/italic) field: `TypographyStyleV5` carries no slant
+ * signal, because `fromFoundation.ts` reduces Figma's font-style label to a
+ * numeric `font_weight` and drops the label, so a slant here would be invented.
  */
 import { compareCodeUnits } from './diagnostics';
 import type { FoundationArtifactV5 } from './canonical';

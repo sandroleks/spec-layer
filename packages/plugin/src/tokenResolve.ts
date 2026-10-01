@@ -1,20 +1,13 @@
 /// <reference types="@figma/plugin-typings" />
 import { collectionById } from './frameKit';
 
-// ---------------------------------------------------------------------------
-// Token resolution: a token name from the spec to a swatch colour, a number,
-// or a typography summary, for docFrame's token chips. Every lookup is one
-// bridge round trip, and a doc repeats the same few tokens in every variant
-// card, so each answer is cached for the build: reset per build by
-// resetTokenResolveCaches, collections through frameKit's per-build cache.
-// ---------------------------------------------------------------------------
+// Token names to swatch colours, numbers or typography summaries for docFrame's
+// chips. Each lookup is a bridge round trip and a doc repeats the same tokens
+// in every variant card, so answers are cached per build
+// (resetTokenResolveCaches; collections through frameKit's per-build cache).
 
-// Index items by name, but DROP any name that appears in more than one item.
-// A spec token is only a name string with no collection context, so if two
-// variables/styles in different collections share a name we cannot know which
-// one was bound — resolving to either would be a confident guess that is wrong
-// half the time. Leaving ambiguous names unresolved (no swatch/suffix) is the
-// honest choice; unique names (the common case) resolve exactly as before.
+// Drop any name that appears more than once: a spec token has no collection
+// context, so resolving an ambiguous name would be a confident guess.
 function indexByUniqueName<T extends { name: string }>(items: readonly T[]): Map<string, T> {
   const map = new Map<string, T>();
   const ambiguous = new Set<string>();
@@ -146,9 +139,8 @@ export function resolveTokenDisplay(token: string): Promise<TokenDisplay> {
   return hit;
 }
 
-/** Drop every resolved-value cache. Called at the top of each doc-frame
- *  build so a rebuild after the user edits variables/text styles resolves
- *  fresh values instead of stale, previously-cached ones. */
+/** Called at the top of each doc-frame build, so edited variables and text
+ *  styles resolve fresh. */
 export function resetTokenResolveCaches(): void {
   colorVars = null;
   floatVars = null;

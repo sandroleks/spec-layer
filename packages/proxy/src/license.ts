@@ -5,7 +5,7 @@ export const LICENSE_GRACE_MS = 5 * 864e5;
 
 export const LICENSE_KEY_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** 30 days — comfortably past the 5-day grace window, so grace reads never miss. */
+/** 30 days, past the 5-day grace window, so grace reads never miss. */
 export const LICENSE_CACHE_KV_TTL_S = 30 * 86400;
 
 const LS_BASE = 'https://api.lemonsqueezy.com/v1/licenses';
@@ -16,10 +16,9 @@ export interface KVLike {
   delete(key: string): Promise<void>;
 }
 
-/** Library storage additionally lists owned libraries by key prefix and can hand a value back as a stream. */
 export interface LibraryStore extends KVLike {
   list(opts: { prefix: string }): Promise<{ keys: Array<{ name: string }> }>;
-  /** The value as a byte stream, so a pull never holds the bundle as one string. */
+  /** So a pull never holds the bundle as one string. */
   getStream(key: string): Promise<ReadableStream | null>;
 }
 
@@ -58,14 +57,10 @@ type RawLsData = Record<string, unknown> & { license_key?: { status?: unknown };
 type LsOutcome = { kind: 'verdict'; reportedStatus: string; data: RawLsData } | { kind: 'transient' };
 
 /**
- * Fetches an LS endpoint and classifies the response as a verdict or a
- * transient failure. LS rate limits (429) and server errors (5xx) return
- * JSON error bodies that would otherwise read as 'invalid' and poison the
- * cache for 24h — those are transient, as is any 200 body missing the
- * endpoint's own verdict flag (`valid` for /validate, `activated` for
- * /activate, `deactivated` for /deactivate — each success payload lacks the
- * other endpoints' flags, so checking for `valid` there would misclassify
- * every real activation/deactivation as transient).
+ * Classifies an LS response as a verdict or transient. 429 and 5xx JSON
+ * error bodies would otherwise read as 'invalid' and poison the cache for
+ * 24h, so they are transient, as is a body missing this endpoint's own
+ * verdict flag (each success payload lacks the other endpoints' flags).
  */
 async function callLs(path: string, body: unknown, deps: LicenseDeps, verdictKey: 'valid' | 'activated' | 'deactivated'): Promise<LsOutcome> {
   let res: Response;
@@ -88,10 +83,8 @@ async function callLs(path: string, body: unknown, deps: LicenseDeps, verdictKey
 }
 
 /**
- * Defense-in-depth: a reported 'active' status paired with `valid !== true`
- * never grants pro, even in the status we cache — it maps to 'invalid'.
- * Every other reported status (expired/inactive/whatever LS sends) passes
- * through unchanged, since it's already a non-pro verdict.
+ * Defense-in-depth: 'active' with `valid !== true` maps to 'invalid', even in
+ * the cache, so it never grants pro. Other statuses are already non-pro.
  */
 function effectiveStatus(reportedStatus: string, valid: boolean): string {
   if (valid) return 'active';
@@ -120,13 +113,10 @@ export async function checkLicense(
 }
 
 /**
- * Confirm a license (optionally a specific already-activated instance) without
- * consuming a device slot. Writes the cache on a definitive verdict so a
- * renewal seen here is immediately visible to checkLicense (quota/prose).
- * Throws LsUnreachable when LS gives no verdict. The returned `status` is
- * LS's raw reported status (callers may want to know it claimed 'active'
- * even when `valid` says otherwise); the *cached* status is the demoted one,
- * so a bad verdict can never be replayed as pro from the cache.
+ * Confirm a license without consuming a device slot, caching a definitive
+ * verdict so checkLicense sees a renewal at once. Throws LsUnreachable with no
+ * verdict. Returns LS's raw status, but caches the demoted one, so a bad
+ * verdict can never be replayed as pro.
  */
 export async function validateLicense(
   key: string, instanceId: string | null, deps: LicenseDeps,
@@ -147,18 +137,15 @@ export async function activateLicense(
   const activated = Boolean(out.data.activated);
   const instanceId = typeof out.data.instance?.id === 'string' ? out.data.instance.id : undefined;
   if (activated) {
-    // Cache under the instance-qualified key so it matches the bearer the
-    // plugin will send on the very next request (`KEY:instanceId`).
+    // Keyed to match the `KEY:instanceId` bearer the plugin sends next.
     await writeCache(deps, key, instanceId ?? null, { status: out.reportedStatus, validatedAt: deps.now() });
   }
   return { valid: activated, status: out.reportedStatus, instanceId };
 }
 
 /**
- * Frees a device slot at LS. On success, drops both the instance-qualified
- * and bare-key cache entries so the next check revalidates against LS
- * instead of replaying a stale pro verdict for a device that no longer holds
- * a slot. Throws LsUnreachable when LS gives no verdict.
+ * Frees a device slot at LS and drops both cache entries, so a device without
+ * a slot never replays a stale pro verdict. Throws LsUnreachable with no verdict.
  */
 export async function deactivateLicense(
   key: string, instanceId: string, deps: LicenseDeps,

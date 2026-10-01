@@ -13,33 +13,22 @@ import { parseBundle, type BundleV1 } from './bundle';
 import { DEFAULT_SELECTION, selectComponents, type Selection } from './selection';
 import { cliVersion } from './version';
 
-// Re-exported so existing callers (selection.ts, commands.ts) keep importing
-// it from here; the rule itself now lives in @spec-layer/extractor so the
-// plugin's downloadable snapshot can share it.
+// Re-exported for existing callers; the rule lives in the extractor so the plugin shares it.
 export { slugify };
 
-/**
- * The first two lines of every component brief the extractor emits, defined
- * in the extractor beside the Markdown projection's marker. Nothing is
- * prepended to a brief; the marker is what the plugin already writes, so the
- * file stays byte-identical to Copy for AI.
- */
+/** The first two lines of every brief. Nothing is prepended, so the file stays byte-identical to Copy for AI. */
 const COMPONENT_SPEC_MARKER = COMPONENT_YAML_MARKER;
 
 /**
- * The visible component-specs/ directory is owned by either format's opening
- * bytes, whichever this pull writes: files that begin with one are ours to
- * replace or remove, anything else stops the pull. Owning both is what makes
- * a format switch remove the other format's files through the ordinary
- * replace-or-remove rule.
+ * component-specs/ is owned by either format's opening bytes: a file that begins
+ * with one is ours to replace or remove, anything else stops the pull. Owning
+ * both lets a format switch remove the other format's files.
  */
 export const COMPONENT_SPEC_MARKERS: readonly string[] = [COMPONENT_YAML_MARKER, COMPONENT_MARKDOWN_MARKER];
 
 /**
- * One component's Markdown page, projected from its published artifact. The
- * bundle's envelope check never looked inside the artifact, so a render can
- * fail on a malformed one; that is one plain sentence, never a stack trace or
- * a page with a gap papered over.
+ * One component's Markdown page. The envelope check never looked inside the
+ * artifact, so a malformed one fails here in one plain sentence.
  */
 export function componentMarkdownPage(component: { name: string; artifact: unknown }): string {
   const failed = () => new Error(
@@ -56,11 +45,9 @@ export function componentMarkdownPage(component: { name: string; artifact: unkno
 }
 
 /**
- * Every artifact in the bundle; path is null when the selection left it
- * unwritten, relative to the working directory: `.speclayer/tokens/resolver.json`
- * for the foundation, `component-specs/<slug>.yaml` or `.md` for a component. A
- * manifest written by CLI 0.6.0 or earlier carries paths relative to outDir;
- * the next pull rewrites them.
+ * `path` is relative to the working directory (`component-specs/<slug>.yaml`),
+ * or null when the selection left it unwritten. CLI 0.6.0 and earlier wrote
+ * paths relative to outDir; the next pull rewrites them.
  */
 export interface ManifestArtifact {
   kind: 'foundation' | 'component'; name: string; contentHash: string; path: string | null;
@@ -69,41 +56,26 @@ export interface Manifest {
   libraryId: string;
   publishedAt: string;
   bundleHash: string;
-  /** The library's semantic version from `X-Library-Version`. Absent when the
-   *  proxy sent none: a library published before versioning, or a pull made
-   *  by a CLI before this field. Never invented. */
+  /** From `X-Library-Version`; absent when the proxy sent none. Never invented. */
   version?: string;
   pluginVersion: string | null;
   extractorVersion: string;
   /**
-   * The CLI that projected this pull. Absent in every manifest written by a
-   * release up to and including 0.8.2, since 0.9.0 is the first to write the
-   * field, and part of the freshness comparison for a reason the bundle hash
-   * cannot cover: the projection lives here, not in the bundle, so a CLI
-   * upgrade changes what a pull writes from bytes that did not move. A
-   * repository on a new CLI whose manifest carries a different version (or
-   * none) must re-project rather than be told it is already up to date.
-   *
-   * `extractorVersion` above answers the other half and needs no comparison of
-   * its own: it is the publisher's, it travels inside the bundle, and a bump
-   * moves the bundle hash, which the `ETag` already catches.
+   * The CLI that projected this pull; absent before 0.9.0. Part of the
+   * freshness check because the projection lives in the CLI, not the bundle.
+   * `extractorVersion` needs none: it travels in the bundle, so the ETag covers it.
    */
   cliVersion?: string;
   /** Absent in manifests written by CLI 0.1.0, which always wrote everything. */
   selection?: Selection;
-  /**
-   * The dtcg options the tokens/ directory was projected with; absent for
-   * defaults. Part of the freshness comparison, since a config change must
-   * re-project even when the bundle did not move.
-   */
+  /** The dtcg options tokens/ was projected with; absent for defaults. Part of the freshness check. */
   dtcg?: DtcgOptions;
-  /** The targets this pull was made for, when known. */
   platforms?: Platform[];
-  /** The outputs this pull wrote or was told to write; part of the freshness comparison. */
+  /** Written or configured outputs; part of the freshness check. */
   outputs?: OutputConfig[];
-  /** Where the briefs were written; absent in manifests before 0.7.0. Part of the freshness comparison. */
+  /** Absent before 0.7.0. Part of the freshness check. */
   componentSpecsDir?: string;
-  /** How the briefs were written; absent in manifests before 0.10.0, which always wrote yaml. Part of the freshness comparison. */
+  /** Absent before 0.10.0, which always wrote yaml. Part of the freshness check. */
   componentSpecsFormat?: ComponentFormat;
   artifacts: ManifestArtifact[];
 }
@@ -127,11 +99,9 @@ const isStoredOutput = (v: unknown): boolean => isRecord(v)
   && optional(v.modes, (m) => isRecord(m) && Object.values(m).every(isString));
 
 /**
- * The fields every CLI since 0.1.0 wrote, and the artifact rows. Each optional
- * field a later read uses is checked for its type when present, so a hand edit
- * reads as no pull rather than crashing `pull`, `list`, or `skill`; absence is
- * fine for all of them, since no CLI before 0.7.0 wrote the newer ones. `path`
- * may be absent (0.5.0 wrote `aiPath`), null (not written), or a string.
+ * The fields every CLI since 0.1.0 wrote, plus a type check on each optional
+ * field present, so a hand edit reads as no pull instead of a crash. `path` may
+ * be absent (0.5.0 wrote `aiPath`), null (not written), or a string.
  */
 function isManifestShape(v: unknown): v is Manifest & { artifacts: StoredArtifact[] } {
   if (!isRecord(v)) return false;
@@ -160,13 +130,9 @@ export function readManifest(outDir: string): Manifest | null {
   } catch {
     return null;
   }
-  // Not the shape this CLI writes: treat it as no pull. Every reader then
-  // says "run spec-layer pull", and the next pull rewrites the file. Reading
-  // fields off an arbitrary object let list print undefined and pull compare
-  // against a hash that was not a string.
+  // Not the shape this CLI writes: treat it as no pull, which the next pull rewrites.
   if (!isManifestShape(parsed)) return null;
-  // CLI 0.5.0 and earlier wrote the field as aiPath. Read it as path so
-  // list, skill, and status keep working until the next pull rewrites it.
+  // CLI 0.5.0 and earlier wrote aiPath; read it as path until the next pull.
   const artifacts: ManifestArtifact[] = (parsed.artifacts as StoredArtifact[])
     .map(({ aiPath, ...rest }) => ({ ...rest, path: rest.path ?? aiPath ?? null }));
   return { ...parsed, artifacts };
@@ -184,11 +150,9 @@ export function readLocalBundle(outDir: string): BundleV1 | null {
 }
 
 /**
- * The swap below deletes outDir wholesale, so refuse anything that is not a
- * directory of our own: the working directory or one of its parents, a file,
- * or an existing non-empty directory that holds no manifest from a previous
- * pull. resolveOutDir in config.ts already refused the first case for every
- * command; this is the last line of defence, with the same sentence.
+ * The swap deletes outDir wholesale, so refuse anything not our own: the
+ * working directory or a parent, a file, or a non-empty directory with no
+ * manifest. resolveOutDir already refuses the first; this is the last defence.
  */
 function assertReplaceable(outDir: string, cwd: string): void {
   const root = resolve(cwd);
@@ -197,9 +161,7 @@ function assertReplaceable(outDir: string, cwd: string): void {
   // lstat, not existsSync: a link, dangling or not, is the link itself here.
   const stat = lstatSync(abs, { throwIfNoEntry: false });
   if (!stat) return;
-  // The swap renames a fresh directory onto outDir, which would replace a
-  // link rather than write through it (0.10.0 did exactly that), so refuse
-  // and say what is there.
+  // The swap's rename would replace a link rather than write through it.
   if (stat.isSymbolicLink()) {
     throw new Error(
       `${outDir} is a symbolic link, and spec-layer pull replaces its output directory rather than writing through a link. `
@@ -232,9 +194,7 @@ export function writeBundleFiles(opts: {
   // Manifest paths are relative to the working directory and always use `/`.
   const outDirRel = relative(resolve(opts.cwd), resolve(opts.outDir)).split(sep).join('/');
 
-  // Every visible directory and every brief is checked before anything is
-  // staged, so a refusal leaves the record and the team's tree exactly as
-  // they were.
+  // Check every visible directory and brief before staging, so a refusal changes nothing.
   const outputPaths = outputs.map((o) => o.path);
   const specsProblem = visibleDirProblem(opts.cwd, outDirRel, componentSpecsDir, COMPONENT_SPEC_MARKERS, outputPaths, 'componentSpecsDir');
   if (specsProblem) throw new Error(specsProblem);
@@ -255,17 +215,12 @@ export function writeBundleFiles(opts: {
     briefs[`${slugs[i]}.yaml`] = component.ai;
   });
 
-  // A directory this call creates, so the cleanup below only ever removes
-  // what this call made. A fixed `<outDir>.partial` was deleted recursively
-  // whether or not spec-layer had put it there. The parent must exist first:
-  // `--out build/spec` on a fresh checkout has no `build/` yet.
+  // A directory this call creates, so cleanup removes only what it made. The
+  // parent must exist first: `--out build/spec` on a fresh checkout has no `build/`.
   mkdirSync(dirname(resolve(opts.outDir)), { recursive: true });
   const staging = mkdtempSync(`${resolve(opts.outDir)}.partial-`);
-  // mkdtempSync always creates its directory at mode 0700 (Node applies that
-  // regardless of umask, to keep a temp directory private by default), but
-  // this one is renamed onto opts.outDir, so it must come out with the same
-  // mode a plain mkdirSync would have given: readable by whoever the umask
-  // allows, not owner-only. chmod it to what mkdirSync's default would be.
+  // mkdtempSync creates at 0700 regardless of umask, but this directory becomes
+  // outDir, so give it mkdirSync's default mode.
   chmodSync(staging, 0o777 & ~process.umask());
   const written: string[] = [];
   const deliverables: Array<{ output: OutputConfig; files: Record<string, string> }> = [];
@@ -282,22 +237,16 @@ export function writeBundleFiles(opts: {
     if (opts.bundle.foundation) {
       let path: string | null = null;
       if (selection.foundation) {
-        // A shape check on the wire, so a malformed artifact fails in one
-        // sentence rather than deep inside the projection. This does not
-        // re-derive v5 output; the projection reads the artifact as published.
+        // A shape check only, so a malformed artifact fails in one sentence.
         const artifact: unknown = opts.bundle.foundation.artifact;
         if (validateLevel1(artifact).some((d) => d.severity === 'error')) {
           throw new Error('The published Foundation context did not pass schema validation. Republish from the plugin, then pull again.');
         }
-        // The families and weights the library's typography styles actually
-        // reference, so a repository can load exactly those instead of a bare
-        // family name that leaves every weight to synthesise.
+        // The families and weights typography styles reference, so a repo loads exactly those.
         put('fonts.json', json(fontRequirements(artifact as FoundationArtifactV5)));
-        // The evidence for a unit no scope states is split across the bundle:
-        // the scopes live in the Foundation and the bindings in the component
-        // artifacts, and the projection sees only the first. The pull is the
-        // first place both are in hand, so it is where the pass runs. Every
-        // unit it derives is written to the projection's own report.
+        // Unit evidence is split: scopes in the Foundation, bindings in the
+        // components. The pull holds both, so the pass runs here; every unit it
+        // derives goes to the projection's report.
         const exp = foundationDtcg(
           artifact as FoundationArtifactV5, opts.dtcg ?? {}, usageUnits(opts.bundle),
         );
@@ -341,10 +290,8 @@ export function writeBundleFiles(opts: {
   }
   rmSync(opts.outDir, { recursive: true, force: true });
   renameSync(staging, opts.outDir);
-  // Visible directories go last and in place: the record is complete before
-  // the team's tree changes. Briefs are written (and stale ones removed)
-  // whenever a pull runs; tokens/ is touched only when the Foundation was
-  // written, so a components-only pull leaves it exactly as it was.
+  // Visible directories go last, after the record is complete. Briefs are
+  // rewritten on every pull; tokens/ only when the Foundation was written.
   const componentSpecs = { path: componentSpecsDir, files: writeVisibleDir(opts.cwd, componentSpecsDir, COMPONENT_SPEC_MARKERS, briefs) };
   const outputResults: Array<{ path: string; files: string[] }> = [];
   for (const d of deliverables) {

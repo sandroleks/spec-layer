@@ -1,14 +1,8 @@
 /**
- * displayNames.ts: the names a reader sees, derived from the names Figma has.
- *
- * Display only. Every identity the plugin keys on (Section names, layer names,
- * editorial tags, hashes, prompt matching) keeps the raw name. These helpers
- * are applied at the last moment before text lands on canvas.
- *
- * No Figma, no DOM: imported by the prose prompt builder and by plugin
- * renderers on both threads (docFrame.ts on the main thread, the UI's
- * re-export in the iframe), so it has to stay free of browser and Figma
- * globals.
+ * displayNames.ts: the names a reader sees, derived from Figma's. Display only:
+ * every identity (Section and layer names, tags, hashes, prompt matching) keeps
+ * the raw name. Runs on both plugin threads, so it stays free of browser and
+ * Figma globals.
  */
 
 /** A fully lowercase component name gets a capital; a leading atom marker
@@ -28,7 +22,6 @@ export function displayPartName(raw: string): string {
   if (!name || name.includes(' ')) return name;
   if (/[_-]/.test(name)) {
     const segments = name.split(/[_-]+/).filter(Boolean);
-    // If any segment has an uppercase after its first character, leave as-typed
     if (segments.some((seg) => /[A-Z]/.test(seg.slice(1)))) {
       return name;
     }

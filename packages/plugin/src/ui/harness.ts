@@ -1,22 +1,15 @@
 /**
- * harness.ts — development entry point. Never shipped.
- *
- * Mounts the vNext shell outside Figma and drives it from the URL so any
- * screen in any state can be opened at 480 x 680 and compared against the
- * archived prototype screenshots in docs/plugin-ui-vnext/prototype/.
+ * Development entry point, never shipped. Mounts the vNext shell outside Figma
+ * and drives it from the URL, so any screen in any state opens at 480 x 680
+ * (prototype screenshots: docs/plugin-ui-vnext/prototype/).
  *
  *   ui-harness.html?view=library&allowance=exhausted&theme=light
- *   ui-harness.html?view=library&pane=publish&publish=published
  *   ui-harness.html?view=library&pane=publish&publish=published&format=md
- *   ui-harness.html?view=library&pane=publish&publish=proposal
- *   ui-harness.html?view=library&pane=publish&publish=checking
  *   ui-harness.html?view=library&pane=history&history=ready
- *   ui-harness.html?view=settings&tab=about
  *   ui-harness.html?view=settings&tab=export&format=md
  *
- * It feeds the same shapes the real UI receives. It must never gain behavior
- * of its own: anything it can do that the plugin cannot is a lie about the
- * thing we are verifying.
+ * It feeds the shapes the real UI receives and must never gain behavior of its
+ * own: anything it can do that the plugin cannot is a lie about what we verify.
  */
 
 import type { FoundationSpec, FoundationSelection, VersionLog } from '@spec-layer/extractor';
@@ -81,12 +74,8 @@ import {
   variantCountLabel,
 } from './viewModel/componentScreen';
 
-/**
- * Each fixture must actually render the tone it is named after. LOW_REMAINING
- * is 5, so a "normal" fixture needs more than 5 remaining: 4 of 5 would render
- * amber and quietly invalidate every visual check made against it. Limits track
- * the real free tier, MONTHLY_LIMIT = 20.
- */
+/** Each fixture must render the tone it is named after: LOW_REMAINING is 5, so
+ *  "normal" needs more than 5. Limits track the free tier, MONTHLY_LIMIT = 20. */
 const ALLOWANCES: Record<string, AllowanceState> = {
   loading: { kind: 'loading' },
   normal: { kind: 'free', remaining: 16, limit: 20, resetsAt: '2026-08-01T00:00:00Z' },
@@ -106,22 +95,19 @@ const view = param('view', 'component') as PluginView;
 const refs = mountShell(VIEWS.includes(view) ? view : 'component');
 
 const theme = param('theme', 'dark') as ThemeMode;
-// The real wiring, seeded from the URL instead of from Figma. Re-implementing
-// it here would leave the harness's theme button inert and its accessible name
-// out of step with the plugin's, which is its own kind of lie.
+// The real wiring, seeded from the URL, so the theme button behaves as shipped.
 wireShellTheme(refs, theme === 'light' ? 'light' : 'dark');
 
 setActiveView(refs, VIEWS.includes(view) ? view : 'component');
 renderAllowance(refs.header, ALLOWANCES[param('allowance', 'normal')] ?? ALLOWANCES.normal);
 
-/** The component screen's states, keyed for `?state=`. */
+/** Keyed for `?state=`. */
 const COMPONENT_STATES: Record<string, ComponentScreenState> = {
   empty: { kind: 'empty' },
   waiting: { kind: 'empty', waiting: true },
   reading: { kind: 'reading', componentName: 'buttonPrimary' },
   ready: { kind: 'ready', componentName: 'buttonPrimary' },
-  // One of generatingMessages' phases (actions.ts): the shipped build always
-  // sets one, so the harness shows what a user sees.
+  // A generatingMessages phase: the shipped build always sets one.
   building: { kind: 'building', componentName: 'buttonPrimary', action: 'create', phase: 'Composing sections' },
   success: { kind: 'success', componentName: 'buttonPrimary', replaced: false },
   error: {
@@ -184,16 +170,14 @@ const FACTS: Record<string, ComponentFacts> = {
 if (view === 'component') {
   const screen = COMPONENT_STATES[param('state', 'ready')] ?? COMPONENT_STATES.ready;
   const selection = createComponentSelection(param('ai', 'on') !== 'off');
-  // The harness paints once and wires nothing, so which groups are open has to
-  // come from the URL rather than from clicking: ?expand=usage,specs
+  // Open groups come from the URL: ?expand=usage,specs
   const expand = param('expand', 'usage').split(',').filter(Boolean);
   selection.expanded = new Set(expand as GroupId[]);
   selection.variantsExpanded = param('variants', 'collapsed') === 'expanded';
   const fallbackFacts = screen.kind === 'reading' ? 'unknown' : 'none';
   const facts = FACTS[param('facts', fallbackFacts)] ?? FACTS[fallbackFacts];
   selection.variantIds = new Set(facts.defaultVariantIds);
-  // The harness seeds the same per-component default the real screen does, so
-  // a visual check shows the switch in the state a user would actually meet.
+  // The same per-component default the real screen seeds.
   selection.includeHidden = defaultIncludeHidden(facts);
   const renderComponentFixture = () => renderComponentScreen(
     refs, screen, selection, facts, false,
@@ -439,12 +423,8 @@ if (view === 'foundations') {
   });
 }
 
-/**
- * The connected documents both the Library screen and the search palette read,
- * the way ui-vnext.ts has one `libraryEntries` behind both. One fixture on
- * purpose: a palette listing documents the Library does not have could not
- * show what activating a result actually does.
- */
+/** One fixture behind both the Library and the search palette, as ui-vnext.ts
+ *  has one `libraryEntries`, so a palette result always has a row to open. */
 const LIBRARY_NAMES = [
   'buttonPrimary',
   'buttonText',
@@ -470,8 +450,7 @@ const LIBRARY_ENTRIES: LibraryEntry[] = LIBRARY_NAMES.map((name, index) => ({
   label: name,
   componentName: name,
   pageName: name.startsWith('Foundations') ? 'Foundations' : 'Documentation',
-  // Page-only for components, collection name for foundations — the shape
-  // main.ts actually sends (see its sourceLabel comment).
+  // The shape main.ts sends.
   sourceLabel: name.startsWith('Foundations')
     ? name.replace('Foundations · ', '')
     : 'Components',
@@ -490,16 +469,12 @@ const LIBRARY_ENTRIES: LibraryEntry[] = LIBRARY_NAMES.map((name, index) => ({
     : {}),
 }));
 
-/**
- * Set by the Library fixture so the search palette can hand off to a row the
- * way ui-vnext.ts does. It stays null on every other screen, matching the
- * plugin, which cannot reveal a row on a screen it is not showing.
- */
+/** Set by the Library fixture so the palette can hand off to a row; null on
+ *  every other screen, as in the plugin. */
 let revealLibraryFixtureRow: ((docId: string) => void) | null = null;
 
 if (view === 'library') {
-  // `?rebuild=N` turns the N rows after the drifted ones stale, which is the
-  // only way to see the rebuild banner outside an EXTRACTOR_VERSION bump.
+  // `?rebuild=N` marks the N rows after the drifted ones stale.
   const rebuildRows = Number(param('rebuild', '0')) || 0;
   const drift = new Map<string, LibraryDriftState>(
     LIBRARY_ENTRIES.map((entry, index) => [
@@ -508,9 +483,7 @@ if (view === 'library') {
     ]),
   );
   let libraryFilter: LibraryFilter = param('filter', 'all') as LibraryFilter;
-  // The change list the first drifted row shows when expanded: the shape
-  // componentChangeGroups returns for one rebound fill plus a swapped icon
-  // token across a variant set, so the two-line item can be looked at.
+  // The shape componentChangeGroups returns, including a two-line item.
   const changes = new Map<string, LibraryChangeResult>([
     [LIBRARY_ENTRIES[0].docId, { state: 'ready', groups: [
       { label: 'Tokens', items: [
@@ -532,20 +505,15 @@ if (view === 'library') {
     param('state', 'expanded') === 'expanded' ? LIBRARY_ENTRIES[0].docId : null;
   let menuDocId: string | null =
     param('menu', 'closed') === 'open' ? LIBRARY_ENTRIES[0].docId : null;
-  // `?reveal=1` marks the row the global search palette would have opened,
-  // which is the only way to look at that state outside a real search.
+  // `?reveal=1` marks the row the search palette would have opened.
   let revealedDocId: string | null = param('reveal', '0') === '1'
     ? LIBRARY_ENTRIES[LIBRARY_ENTRIES.length - 1].docId
     : null;
   let refreshing = param('state', 'expanded') === 'refreshing';
   let updatingAll = param('state', 'expanded') === 'updating';
-  // `?state=checking` replays a source check the way ui-vnext.ts paints one:
-  // every component row starts pending, one settles every 400ms in display
-  // order after a 1.5s pause (time to start watching), and the last-checked
-  // stamp takes over the check line when the last one lands. `?checked=1`
-  // starts from a Library that was checked before. A `?rebuild=N` row is
-  // never pending: like the plugin (initialLibraryDrift), it reads "Rebuild
-  // needed" from the start, with no check to wait for.
+  // `?state=checking` replays a source check: component rows start pending and
+  // one settles every 400ms after a 1.5s pause. `?checked=1` starts from a
+  // checked Library. A `?rebuild=N` row is never pending (initialLibraryDrift).
   const replayCheck = param('state', 'expanded') === 'checking';
   let checkedLabel: string | null = param('checked', '0') === '1' ? 'Checked 4 min ago' : null;
   const pendingDocs = new Set<string>(replayCheck
@@ -556,12 +524,8 @@ if (view === 'library') {
   const pendingTotal = pendingDocs.size;
 
   /*
-   * The Library's publish screen.
-   *
-   * Synthetic id and key, in the real formats (`lib_` + 24 hex, `sl_` + 48
-   * hex) so the setup command has the real shape and width. Never a live key:
-   * fixtures are synthetic or explicitly publishable, and a pull key in a
-   * dev-only file is still a pull key.
+   * Synthetic id and key in the real formats (`lib_` + 24 hex, `sl_` + 48
+   * hex). Never a live key: a pull key in a dev-only file is still a pull key.
    */
   const PUBLISHED_BASE: PublishState = {
     ...createPublishState(),
@@ -574,8 +538,7 @@ if (view === 'library') {
   const IDLE_BASE: PublishState = { ...createPublishState() };
 
   const PUBLISH_FIXTURES: Record<string, PublishState> = {
-    // Before the file's identity has arrived: pill, version block and primary
-    // all read "Checking…". The only fixture that keeps infoKnown false.
+    // The only fixture with infoKnown false.
     checking: { ...IDLE_BASE },
     collecting: { ...IDLE_BASE, infoKnown: true, status: 'collecting' },
     uploading: {
@@ -587,10 +550,8 @@ if (view === 'library') {
       lastPublishedAt: '2026-08-30T09:12:00.000Z',
       version: '1.4.2',
     },
-    // Success is a toast, so a published screen carries no message of its
-    // own. Carries the unchanged proposal a real publish leaves behind (see
-    // onPublishSources' 'created'/'updated' cases): no dry run has run since,
-    // so the block reads "Nothing changed" rather than a failed dry run.
+    // No message (success is a toast), and the proposal a real publish leaves
+    // behind (publishedProposal).
     published: {
       ...PUBLISHED_BASE,
       status: 'done',
@@ -614,8 +575,7 @@ if (view === 'library') {
       status: 'error',
       message: 'Couldn’t reach Spec Layer. Check your connection and try again.',
     },
-    // A failed republish on a library with setup blocks: the tall body the
-    // error used to sit under.
+    // A failed republish under the setup blocks.
     publishedError: {
       ...PUBLISHED_BASE,
       status: 'error',
@@ -653,8 +613,7 @@ if (view === 'library') {
     dryRunFailed: { ...PUBLISHED_BASE, status: 'idle', proposalStatus: 'failed' },
   };
 
-  // Two records: the same shape historyScreen.test.ts's LOG uses, so the
-  // fixture and the covering test never drift apart.
+  // The same shape as historyScreen.test.ts's LOG.
   const HISTORY_LOG: VersionLog = { v: 1, records: [
     {
       version: '2.0.0', publishedAt: '2026-09-12T10:00:00.000Z', bump: 'major', minimumBump: 'minor',
@@ -676,8 +635,7 @@ if (view === 'library') {
   ] };
 
   const HISTORY_FIXTURES: Record<string, HistoryState> = {
-    // The newest record starts expanded, so the grouped change list is
-    // visible without a click.
+    // The newest record starts expanded.
     ready: { status: 'ready', log: HISTORY_LOG, etag: null, message: null, expanded: '2.0.0' },
     loading: { status: 'loading', log: null, etag: null, message: null, expanded: null },
     empty: { status: 'ready', log: { v: 1, records: [] }, etag: null, message: null, expanded: null },
@@ -696,10 +654,8 @@ if (view === 'library') {
     param('pane', 'list') === 'history' ? 'history' : param('pane', 'list') === 'publish' ? 'publish' : 'list';
   const publishFixture =
     PUBLISH_FIXTURES[param('publish', 'published')] ?? PUBLISH_FIXTURES.published;
-  // `?pane=publish&plan=free` shows the free plan's updates line. Its own
-  // param rather than a PUBLISH_FIXTURES entry, since the allowance crosses
-  // every publish state: a lapsed license still holds a key, and that pairing
-  // is the one worth looking at.
+  // `?plan=free` shows the free plan's updates line. Its own param, since the
+  // allowance crosses every publish state.
   const publishAllowanceFixture: PublishAllowance =
     param('plan', 'pro') === 'free'
       ? { kind: 'free', remaining: 3, limit: 10, resetsAt: '2026-10-01T00:00:00.000Z' }
@@ -726,8 +682,7 @@ if (view === 'library') {
       expandedDocId,
       now: LIBRARY_NOW,
     });
-    // Boolean, not a count. The plugin also holds it steady while checks
-    // resolve; this fixture has no in-flight checks to hold it across.
+    // Boolean, not a count.
     setRailBadge(refs.sidebar, 'library', model.counts.updates > 0);
     renderLibraryScreen(refs, {
       ...model,
@@ -736,8 +691,7 @@ if (view === 'library') {
       refreshing: checking,
       checkedLabel,
       updatingAll,
-      // As in ui-vnext.ts: an Update run floats in the footer card, a
-      // source check fills the check line under the filters.
+      // As in ui-vnext.ts.
       progress: updatingAll
         ? {
             label: 'Updating docs',
@@ -910,8 +864,7 @@ if (view === 'settings') {
     theme: { ...fixtureTheme },
     customMode: frameTheme === 'custom',
     logoAttached: param('logo', 'empty') === 'attached',
-    // Fixture, not a real build: `?version=` with no value shows the
-    // unstamped branch, the way `?logo=` flips the logo one.
+    // `?version=` with no value shows the unstamped branch.
     pluginVersion: param('version', '5.0.0') || null,
     tab: isSettingsTab(tabParam) ? tabParam : 'frames',
     componentFormat: storedComponentFormat(param('format', 'yaml')),
@@ -1155,11 +1108,8 @@ if (view === 'license') {
   });
 }
 
-// The same projection ui-vnext.ts's currentSearchModel builds from
-// libraryEntries: docId, kind, label, source, and the generation time the
-// palette's default recent list is ordered by. Re-derived per render, not
-// captured once, so removing a doc in the Library fixture also takes it out
-// of the palette.
+// The projection ui-vnext.ts's currentSearchModel builds, re-derived per
+// render so a doc removed in the Library fixture leaves the palette too.
 const searchDocuments = (): SearchDocument[] => LIBRARY_ENTRIES.map((entry) => ({
   docId: entry.docId,
   kind: entry.kind,
@@ -1171,8 +1121,8 @@ let harnessSearchOpen = param('search', 'closed') === 'open';
 let harnessSearchQuery = param('query', '');
 let harnessSearchIndex = Number(param('active', '0')) || 0;
 
-// Mount once, patch after, exactly as ui-vnext.ts does: replacing the layer
-// per keystroke restarts the panel's entry animation.
+// Mount once, patch after, as ui-vnext.ts does: replacing the layer per
+// keystroke restarts the entry animation.
 const renderHarnessSearch = (focusInput = false) => {
   const mounted = refs.root.querySelector('[data-global-search-dialog]');
   if (!harnessSearchOpen) {
@@ -1203,8 +1153,7 @@ const closeHarnessSearch = () => {
   requestAnimationFrame(() => refs.searchButton.focus());
 };
 
-// Mirrors ui-vnext.ts: the pointer move is the same in-place patch as typing,
-// so the input keeps its focus and caret.
+// An in-place patch, as for typing, so the input keeps focus and caret.
 const setHarnessSearchIndex = (index: number) => {
   harnessSearchIndex = index;
   renderHarnessSearch();

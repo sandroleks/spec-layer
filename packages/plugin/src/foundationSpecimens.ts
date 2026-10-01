@@ -1,13 +1,8 @@
 /// <reference types="@figma/plugin-typings" />
 /**
- * foundationSpecimens.ts: the list layouts for text styles and effect styles.
- *
- * A style is shown, not tabulated: a text style sets a sentence in itself at
- * true size, an effect style casts its shadow on a card. Under each specimen a
- * line names the metrics or layers, with a chip for every value that is bound
- * to a token. The pure halves (`metricsLine`, `layerLines`, `figmaEffectsFor`)
- * are tested; the drawing is verified on canvas by the Figma matrix.
- *
+ * The list layouts for text and effect styles. A style is shown, not
+ * tabulated: a text style sets a sentence in itself at true size, an effect
+ * style casts its layers on a card, and a chip marks every token-bound value.
  * Runs on the main thread: ECMAScript and the figma API only.
  */
 import type {
@@ -60,36 +55,18 @@ export function metricsLine(m: FoundationTextMetrics): LinePart[] {
   return parts;
 }
 
-/**
- * Alpha as a percentage, to whatever precision the extractor kept.
- *
- * Not `Math.round(alpha * 100)`: effects.ts rounds alpha to FOUR decimals
- * precisely because Figma's own percent field can express 0.125, and whole
- * percent would print that and 0.13 identically. Scaling by 10000 and dividing
- * by 100 trims the binary-float tail without inventing or losing a digit, and
- * String() drops trailing zeros on its own.
- */
+/** Alpha as a percentage at the extractor's four-decimal precision (Figma's
+ *  percent field can express 0.125), trimming the binary-float tail. */
 const pct = (alpha: number): string => `${Math.round(alpha * 10000) / 100}%`;
 const colorLabel = (c: { hex: string; alpha: number }): string => `${c.hex.toUpperCase()} ${pct(c.alpha)}`;
 const num = (n: number): string => String(n);
 
 /**
- * One line per layer, in layer order, as parts with a chip for every bound field.
- *
- * The field names below are the SERIALIZER's vocabulary, not Figma's:
- * serializeFoundation.ts renames `radius` to `blur` and `offsetX`/`offsetY` to
- * `offset_x`/`offset_y` on the way out (EFFECT_BINDING_FIELDS), and unitContent
- * copies that key verbatim into `boundTokens`. Looking a chip up under Figma's
- * own name finds nothing, which is a token that is hashed but never drawn.
- *
- * The extractor filters effect bindings to `DRAWN_EFFECT_FIELDS` in
- * packages/extractor/src/foundation.ts, which lists exactly the layer types and
- * fields drawn below. If a branch here starts drawing a new bound field, add its
- * layer type and field name to that hand-kept list too: otherwise the binding
- * never reaches `boundTokens`, `tok` finds nothing, and the chip simply never
- * appears. Exported documents are unaffected either way, since Copy for AI and
- * the DTCG projection read the style's bindings off the spec rather than through
- * this projection.
+ * One line per layer, in layer order, with a chip for every bound field. Field
+ * names are the SERIALIZER's (`blur`, `offset_x`, `offset_y`; see
+ * EFFECT_BINDING_FIELDS), not Figma's. A newly drawn bound field must also be
+ * added to DRAWN_EFFECT_FIELDS in packages/extractor/src/foundation.ts, or its
+ * chip never appears.
  */
 export function layerLines(layers: EffectLayer[], boundTokens: Record<string, string>): LinePart[][] {
   return layers.map((layer, i) => {
@@ -132,10 +109,8 @@ export function layerLines(layers: EffectLayer[], boundTokens: Record<string, st
           part(`dispersion ${num(layer.dispersion)}`)];
         break;
       case 'unknown':
-        // Listed, never guessed at: a shape this build of the plugin has no
-        // model for has no numbers to report and nothing to apply. The Figma
-        // type name is the one fact the extractor DID keep, and it is hashed,
-        // so it is named here rather than dropped.
+        // Listed, never guessed at. The Figma type name is the one fact the
+        // extractor kept, and it is hashed, so it is named, not dropped.
         return [part(`Unsupported effect (${layer.figma_type})`)];
     }
     if ('visible' in layer && !layer.visible) parts.push(part('hidden'));
@@ -147,13 +122,9 @@ function rgba(c: { hex: string; alpha: number }): RGBA {
   return { ...hex(c.hex), a: c.alpha };
 }
 
-/**
- * The Figma effects a card applies for a style: visible layers only, each in
- * the shape the Plugin API declares. Hidden layers are listed, not applied;
- * an `unknown` layer has no shape to apply. Noise, texture and glass are
- * built to their typings; whether a given Figma build accepts them on a plain
- * rectangle is decided at apply time, per layer.
- */
+/** The Figma effects a card applies: visible, known layers only, in their
+ *  Plugin API shapes. Whether a Figma build accepts noise, texture or glass on
+ *  a rectangle is decided per layer at apply time. */
 export function figmaEffectsFor(layers: EffectLayer[]): Effect[] {
   const out: Effect[] = [];
   for (const layer of layers) {
@@ -166,14 +137,10 @@ export function figmaEffectsFor(layers: EffectLayer[]): Effect[] {
           color: rgba(layer.color), offset: layer.offset, radius: layer.radius,
           ...(layer.spread !== undefined ? { spread: layer.spread } : {}),
         };
-        // showShadowBehindNode is hashed, and a shadow drawn behind translucent
-        // pixels looks different from one that is not, so it has to reach the
-        // card. DROP_SHADOW only, though: Figma's InnerShadowEffect declares no
-        // such field, and sending an undeclared key risks the layer being
-        // refused, which the per-layer guard would answer by dropping the whole
-        // shadow to carry one boolean. effectLayerOf can only put it on an inner
-        // shadow from a malformed or legacy dump, never from a real file, so the
-        // gap this leaves is unreachable. Do not widen it.
+        // showShadowBehindNode is hashed and changes the drawing, so it reaches
+        // the card, on DROP_SHADOW only: InnerShadowEffect declares no such
+        // field, and an undeclared key risks the whole layer being refused. A
+        // real file never puts it on an inner shadow. Do not widen it.
         out.push(layer.type === 'drop-shadow'
           ? { type: 'DROP_SHADOW', ...shared,
             ...(layer.showShadowBehindNode !== undefined
@@ -240,9 +207,7 @@ export function partsRow(parts: LinePart[], contentWidth: number): FrameNode {
   row.layoutSizingHorizontal = 'FIXED';
   row.layoutSizingVertical = 'HUG';
   parts.forEach((part, i) => {
-    // A separate node, not a "· " prefix baked into the label: keeps each part's
-    // own text exactly what it says, so a reader (and a test) can find "paragraph
-    // spacing 16" as its own string rather than a substring of "· paragraph spacing 16".
+    // A separate node, so each part's text is exactly its own string.
     if (i > 0) {
       const sep = makeText('·', 'Regular', 10, palette.muted);
       sep.textAutoResize = 'WIDTH_AND_HEIGHT';
@@ -411,9 +376,7 @@ export function buildEffectSpecimenList(
   rows: FoundationEffectRow[], contentWidth: number, showDescriptions: boolean,
 ): FrameNode {
   const paneWidth = CARD_W + PANE_PAD * 2;
-  // The lines sit beside the pane, not under it: a 208px pane column cannot
-  // hold "Drop shadow · 0, 4 · blur 12 · spread 0 · #0F172A 16%" on any
-  // sensible number of lines.
+  // Beside the pane, not under it: a 208px column cannot hold a shadow's line.
   const textWidth = contentWidth - paneWidth - 24;
   const list = groupedList(rows, 14, (row, i) => {
     const line = hstack(24);

@@ -1,11 +1,7 @@
 /**
- * history.ts: state and fetch for the version history pane. Same shape as
- * publish.ts's controller: module state, a host for repaint, and pure fetch
- * helpers that take a fetcher for tests.
- *
- * The log is fetched with the pull key, like a pull, and cached by ETag for
- * the session: reopening the pane sends If-None-Match and keeps what it has
- * on a 304.
+ * State and fetch for the version history pane, shaped like publish.ts's
+ * controller. Fetched with the pull key and cached by ETag for the session:
+ * a reopen sends If-None-Match and keeps its log on a 304.
  */
 import type { VersionLog } from '@spec-layer/extractor';
 import { PROXY_URL, isLibraryId } from './proxy';
@@ -42,8 +38,7 @@ export async function fetchVersionLog(opts: {
   | { kind: 'error'; message: string }
 > {
   const doFetch = opts.fetcher ?? fetch;
-  // The id goes into the path and the pull key into the header, so an id that
-  // is not the shape the proxy issues never becomes a request.
+  // The id goes into the path with the key in a header; see LIBRARY_ID_RE.
   if (!isLibraryId(opts.libraryId)) return { kind: 'error', message: BAD_LIBRARY_ID };
   let res: Response;
   try {

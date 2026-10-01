@@ -1,9 +1,7 @@
 /**
- * Direct FoundationSpec -> Foundation Context v5 export.
- *
- * This is the production contract boundary. It consumes the stable identities,
- * source scopes, and already-resolved alias provenance built in foundation.ts;
- * it never reconstructs v5 by round-tripping through the lossy v4 brief.
+ * Direct FoundationSpec -> Foundation Context v5 export, the production contract
+ * boundary. It consumes the identities, scopes and resolved alias provenance
+ * built in foundation.ts and never round-trips through the lossy v4 brief.
  */
 import { knownFileKey } from '../fileKey';
 import type {
@@ -96,9 +94,8 @@ function styleProperty(
       };
 }
 
-/** Numeric font weights are not a Figma style property; the API exposes a
- * human font-style label. Convert only labels with an established CSS weight
- * meaning. Unknown labels remain null and receive a diagnostic. */
+/** Figma exposes a font-style label, not a numeric weight. Only labels with an
+ * established CSS weight convert; unknown ones stay null with a diagnostic. */
 function fontWeightOf(fontStyle: string): number | null {
   const numeric = fontStyle.match(/(?:^|[^0-9])([1-9]00)(?:[^0-9]|$)/)?.[1];
   if (numeric !== undefined) return Number(numeric);
@@ -153,8 +150,6 @@ function typographyStyleOf(
   ) {
     diagnostics.push(diagnostic('INCONSISTENT_VALUE_SHAPE', {
       entity_id: style.id,
-      // typographyBinding keeps `fontWeight` for `font_weight`, so the
-      // `fontStyle` binding is the one that does not survive.
       message: 'The typography style binds `fontWeight` and `fontStyle` to different variables; `font_weight` keeps the `fontWeight` binding, and the `fontStyle` binding is not exported.',
       details: {
         font_weight_token_id: style.bindingIds.fontWeight,
@@ -236,8 +231,7 @@ function typographyStyleOf(
     for (const snapshot of snapshots as TypedValue[]) {
       unique.set(canonicalJson(snapshot), snapshot);
     }
-    // Text styles expose no consuming mode. As with effects, compare only
-    // when every source mode states one identical value.
+    // No consuming mode: compare only when every mode agrees, as for effects.
     if (unique.size !== 1) continue;
     const tokenValue = [...unique.values()][0];
     if (typedValuesAgree(tokenValue, property.resolved)) continue;
@@ -468,9 +462,8 @@ function unresolvedReason(reason: FoundationUnresolvedReason): UnresolvedReason 
     case 'type_mismatch': return 'type_mismatch';
     case 'target_mode_unresolvable': return 'target_mode_unresolvable';
     case 'target_mode_value_missing': return 'target_mode_value_missing';
-    // The target exists but its source value cannot inhabit the declared type.
-    // v5 has no separate alias-resolution reason for corrupt source literals;
-    // the target token carries the specific INVALID_SOURCE_COLOR diagnostic.
+    // The target's source value cannot inhabit the declared type. v5 has no alias
+    // reason for that; the target token carries INVALID_SOURCE_COLOR.
     case 'invalid_source_value': return 'type_mismatch';
     default: {
       const exhaustive: never = reason;
@@ -955,10 +948,7 @@ export function buildFoundationArtifactV5(
           variable, type, mode.modeId, normalizedPaths, diagnostics,
         );
       }
-      // Once per token, not once per mode: the scopes that would state a
-      // unit belong to the VARIABLE, not to any one mode's value, so a
-      // finding that repeats per declared mode would just restate the same
-      // fact about the same token N times.
+      // Once per token, not per mode: unit-stating scopes belong to the variable.
       if (variable.resolvedType === 'FLOAT'
         && numericValue(0, variable.provenance.scopes) === null) {
         diagnostics.push(diagnostic('UNIT_METADATA_UNAVAILABLE', {

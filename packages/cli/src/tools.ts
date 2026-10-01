@@ -1,17 +1,13 @@
 /**
- * The one list of what this CLI can do. The usage banner, `spec-layer tools`,
- * the agent skill, and the README all draw on it, so a command cannot exist
- * in one place and be missing from another. Every entry states what the
- * command touches: an agent deciding whether a call is safe to run needs to
- * know whether it reaches the network, whether it needs the pull key, and
- * what it writes, before it knows anything else.
+ * The one list of what this CLI can do, drawn on by the usage banner, `spec-layer
+ * tools`, the agent skill, and the README. Every entry states its network, key,
+ * and write footprint, which an agent needs before deciding a call is safe.
  */
 
 export interface Tool {
   name: string;
   /** The full invocation shape, flags included. */
   usage: string;
-  /** One sentence: what it does. */
   summary: string;
   /** When an agent should reach for it. */
   when: string;
@@ -19,7 +15,6 @@ export interface Tool {
   needsKey: boolean;
   /** Paths written, relative to the working directory; empty when read-only. */
   writes: string[];
-  /** Exit codes and their meaning. */
   exits: Record<string, string>;
 }
 

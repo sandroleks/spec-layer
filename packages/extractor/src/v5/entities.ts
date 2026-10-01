@@ -1,19 +1,14 @@
 /**
- * The artifact's typed entities — spec §6, §7, §8, §11, §12, §13.
- *
- * Concrete types, not `unknown[]`. The schema, the validator, the normalizer
- * and every consumer share exactly these declarations, which is the only way
- * the four can be kept in agreement by the compiler rather than by discipline.
- *
- * Typography and effect entities are populated by the direct Foundation
- * exporter. The optional metadata stays absent when Figma exposes no truthful
- * value for it.
+ * The artifact's typed entities (spec §6, §7, §8, §11, §12, §13). The schema,
+ * validator, normalizer and every consumer share these declarations, so the
+ * compiler keeps them in agreement. Optional metadata stays absent when Figma
+ * exposes no truthful value.
  */
 import type {
   CanonicalValue, ColorValue, DimensionValue, TokenType, TypedValue,
 } from './value';
 
-/** §6 — id is identity, name and path are source text, and a generated code
+/** §6: id is identity, name and path are source text, and a generated code
  *  name may sit beside them but never replace them. */
 export interface EntityIdentity {
   id: string;
@@ -50,8 +45,8 @@ export interface TokenV5 extends EntityIdentity {
    *  description" from "the field was not exported". */
   description: string;
   scopes: string[];
-  /** Figma's per-platform code syntax, keyed by platform (`WEB`, `ANDROID`,
-   *  `iOS`). Absent when the variable declares none. A cross-check for a code
+  /** Figma's per-platform code syntax keyed by platform (`WEB`, `ANDROID`,
+   *  `iOS`), absent when none is declared. A cross-check for a code
    *  identifier, never the source of a name. Schema 5.1.0. */
   code_syntax?: Record<string, string>;
   publication?: PublicationState;
@@ -60,9 +55,8 @@ export interface TokenV5 extends EntityIdentity {
   values: Record<string, CanonicalValue>;
 }
 
-/** §11 — a style property keeps its binding AND its resolved value, so a
- *  consumer can generate from the resolved value while a differ can still see
- *  that the binding moved. */
+/** §11: a style property keeps its binding and its resolved value, so a
+ *  consumer generates from the value while a differ still sees a binding move. */
 export interface StyleProperty {
   source:
     | { kind: 'literal' }
@@ -103,14 +97,13 @@ export interface EffectV5 {
   show_behind_node?: boolean;
 }
 
-/** §12 — the explicit relationship between a scalar variable and the composite
- *  property it drives. `property` is a path like `effects[0].offset_y`. */
+/** §12: a scalar variable and the composite property it drives. `property` is
+ *  a path like `effects[0].offset_y`. */
 export interface StyleBinding { property: string; token_id: string }
 
 export interface EffectStyleV5 extends EntityIdentity {
-  /** The mode this style's values were read under, or null for a file with no
-   *  variable modes. Stated rather than implied, for the same reason token
-   *  values are keyed by mode id. */
+  /** The mode the values were read under, or null for a file with no variable
+   *  modes. Stated, not implied, as token values are keyed by mode id. */
   mode_id: string | null;
   effects: EffectV5[];
   bindings?: StyleBinding[];
@@ -119,37 +112,25 @@ export interface EffectStyleV5 extends EntityIdentity {
   lifecycle?: LifecycleState;
 }
 
-/** `styles` is `complete` only for a file with no typography or effect
- *  styles at all. Otherwise `partial` or `unavailable`, for any of three
- *  distinct causes (`fromFoundation.ts`, `completenessOf`), each named by its
- *  own diagnostic on the artifact root: styles exist but Figma exposes no
- *  publication state, lifecycle or consuming mode for them
- *  (METADATA_UNAVAILABLE, always `partial`); one style kind failed to read
- *  while the artifact still carries the other (SOURCE_PARTIALLY_UNAVAILABLE,
- *  `partial`, or `unavailable` when both failed); or the export was
- *  deliberately scoped to one collection or one style family, which excludes
- *  the other style kind outright (EXPORT_SCOPED, `unavailable` for a
- *  collection scope, `partial` or `unavailable` for a style-family scope
- *  depending on whether that family's own read succeeded). The published
- *  schema carries the same sentence on `completeness.styles`. */
+/** `styles` is `complete` only for a file with no typography or effect styles.
+ *  Otherwise `partial` or `unavailable` (`completenessOf` in
+ *  `fromFoundation.ts`), each cause named by a root diagnostic:
+ *  METADATA_UNAVAILABLE (Figma exposes no publication state, lifecycle or
+ *  consuming mode for existing styles; always `partial`),
+ *  SOURCE_PARTIALLY_UNAVAILABLE (one style kind failed to read; `partial`, or
+ *  `unavailable` when both failed), or EXPORT_SCOPED (a collection scope is
+ *  `unavailable`; a style-family scope is `partial` or `unavailable` by whether
+ *  that family's read succeeded). The schema's `completeness.styles` agrees. */
 export type Completeness = 'complete' | 'partial' | 'unavailable';
 
 /**
- * What this export was actually able to read — and the reason the content hash
- * covers more than the payload.
- *
- * A read failure, an unavailable library, or a permission error is NOT
- * derivable from the data that survived: an export that silently failed to read
- * a library and one that read it and found nothing produce the same
- * `collections`, `tokens` and `styles`, and would hash identically. Hashing
- * this block is what makes those two exports different artifacts.
- *
- * Machine-readable on purpose. The prose diagnostic that accompanies a failure
- * stays OUT of the hash -- rewording a message must not change an artifact's
- * identity -- so the fact has to be carried in a form a reword cannot touch.
- *
- * `unavailable_sources` holds stable ids or library names, sorted by code unit,
- * so two exports failing on the same library agree byte for byte.
+ * What this export was able to read, and why the content hash covers more than
+ * the payload: a silent read failure and a read that found nothing yield the
+ * same collections, tokens and styles, so hashing this block keeps them apart.
+ * Machine-readable because the prose diagnostic stays out of the hash (a reword
+ * must not change identity). `unavailable_sources` holds stable ids or library
+ * names sorted by code unit, so two exports failing on one library agree byte
+ * for byte.
  */
 export interface ExtractionCompleteness {
   collections: Completeness;

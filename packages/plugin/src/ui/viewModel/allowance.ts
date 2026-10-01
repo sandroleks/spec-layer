@@ -1,16 +1,9 @@
 /**
- * allowance.ts — the two allowance readouts, as pure functions: the header's
- * AI writing control (`allowanceState` / `allowanceCopy`) and the publish
- * screen's monthly free publishes line (`publishAllowance` /
- * `publishAllowanceCopy`), plus the UTC date formatter both share with the
- * publish error copy.
- *
- * The header shows its control on every screen, so it has to survive every
- * quota shape the proxy can return without changing height or lying about the
- * plan. Two states the server cannot distinguish for us are separated here by
- * the `fetched` flag: "we have not asked yet" (loading) and "we asked and got
- * nothing" (unknown). Reporting the second as the first would spin forever;
- * reporting it as free would demote a Pro user who is briefly offline.
+ * The two allowance readouts as pure functions: the header's AI writing control
+ * and the publish screen's free publishes line, plus their shared date formats.
+ * `fetched` separates "not asked yet" (loading) from "asked, got nothing"
+ * (unknown): the second shown as loading would spin forever, and shown as free
+ * would demote a briefly offline Pro user.
  */
 
 import type { ProxyQuota } from '@spec-layer/extractor';
@@ -18,9 +11,8 @@ import type { AllowanceState } from './contracts';
 import { assertNever } from './contracts';
 
 /**
- * Matches the `lowThreshold` default in proxy.ts, so the header and the
- * license page's quota meter agree on what "low" means. Do not retune this
- * to make a test pass — fix the test's fixture instead.
+ * Matches proxy.ts's `lowThreshold` default, so the header and the license
+ * meter agree on "low". Fix a failing test's fixture, never this value.
  */
 export const LOW_REMAINING = 5;
 
@@ -57,12 +49,10 @@ export function allowanceCopy(state: AllowanceState): AllowanceCopy {
         ariaLabel: 'AI writing: checking your plan. Open License.',
       };
 
-    // The one state with no quantity to report, so it reports the plan instead
-    // and the header hides the ring. `Pro plan active` is the reference string
-    // in docs/plugin-voice-and-copy.md; the old "Unlimited uses" also overstated
-    // things, since PRO_SOFT_THRESHOLD and the per-minute rate limit both still
-    // apply to Pro. The empty detail is load-bearing: the header collapses the
-    // copy row to one line on it.
+    // No quantity to report, so it reports the plan and the header hides the
+    // ring. `Pro plan active` is the reference string in
+    // docs/plugin-voice-and-copy.md (not "unlimited": PRO_SOFT_THRESHOLD and the
+    // rate limit still apply). The empty detail collapses the copy row to one line.
     case 'pro':
       return {
         tone: 'pro', title: 'Pro plan active', detail: '',
@@ -84,10 +74,7 @@ export function allowanceCopy(state: AllowanceState): AllowanceCopy {
         return {
           tone: 'exhausted', title: TITLE, detail: 'No free uses left',
           showUpgrade: true,
-          // A full ring, not an empty one: at 0 remaining a "remaining" gauge
-          // has nothing to show regardless of stroke color, so the amber tone
-          // on [data-state="exhausted"] would render but never be visible. A
-          // brimming amber ring is what carries the urgency instead.
+          // A full ring: an empty gauge would hide the exhausted amber tone.
           fillPct: 100,
           ariaLabel: 'AI writing: no free uses left. Open License.',
         };
@@ -98,8 +85,7 @@ export function allowanceCopy(state: AllowanceState): AllowanceCopy {
         detail: `${remaining} of ${limit} free uses left`,
         showUpgrade: true,
         fillPct,
-        // The visible detail's own words ("left"), so a screen reader hears
-        // what a sighted reader sees.
+        // The visible detail's own words, so a screen reader hears what is seen.
         ariaLabel: `AI writing: ${remaining} of ${limit} free uses left. Open License.`,
       };
     }
@@ -114,16 +100,13 @@ export type PublishAllowance =
   | { kind: 'free'; remaining: number; limit: number; resetsAt: string };
 
 /**
- * The publish screen's free publishes line, from the publish snapshot of a quota
- * fetch or of a publish response. Pro and "not told yet" both hide it: the
- * server is the authority, and the publish result carries the answer when the
- * meter could not.
+ * The free publishes line, from a quota fetch's or a publish response's
+ * snapshot. Pro and "not told yet" both hide it; the server is the authority.
  */
 export function publishAllowance(publish: ProxyQuota['publish'] | null): PublishAllowance {
   if (!publish || publish.tier === 'pro') return { kind: 'hidden' };
-  // A free plan whose limit the server did not state is not a plan with no
-  // publishes left. Hiding the line says nothing; a `0 of 0` line would say
-  // something false.
+  // An unstated limit is not zero publishes left: hiding says nothing, while
+  // `0 of 0` would say something false.
   if (publish.limit === null) return { kind: 'hidden' };
   const limit = publish.limit;
   const remaining = publish.remaining ?? Math.max(0, limit - publish.used);
@@ -141,12 +124,9 @@ export function formatResetDate(iso: string): string {
 }
 
 /**
- * The moment a publish happened, in the user's local time: "8 Sept 2026,
- * 14:32". Local, not UTC, because this is when the user pressed Publish, not
- * a server boundary; `formatResetDate` keeps its UTC rule for the month reset.
- * `locale` exists for deterministic tests; the plugin passes none. Null for
- * anything unparsable, so the caller can say "Not recorded" instead of
- * inventing a date.
+ * When a publish happened, in local time ("8 Sept 2026, 14:32"), since it is a
+ * user action, not a server boundary. Null when unparsable, so the caller says
+ * "Not recorded" rather than inventing a date. `locale` is for tests.
  */
 export function formatPublishedAt(iso: string, locale?: string): string | null {
   if (!iso) return null;

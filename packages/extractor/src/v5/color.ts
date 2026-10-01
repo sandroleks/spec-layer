@@ -1,36 +1,25 @@
 /**
- * Colour canonicalization — spec §9.6.
+ * Colour canonicalization (spec §9.6). Figma gives float RGBA in 0..1, and 8-bit
+ * hex is lossy (0.5 returns as 0.50196), so the float channels sit beside the
+ * hex only when they carry something it does not.
  *
- * Figma hands out float RGBA in 0..1. v4 discarded the floats at extraction and
- * kept `{ hex, alpha }`, which is lossy by construction: 0.5 is 127.5 in 8 bits
- * and returns as 0.50196. For CSS that is invisible; for a system round-tripping
- * values back into Figma it is drift from nowhere. So the hex is the portable
- * form and the channels sit beside it WHEN, and only when, they carry something
- * the hex does not.
- *
- * This module REJECTS rather than repairs. An earlier draft clamped and padded,
- * which turned a corrupt channel into a plausible colour and a truncated `#ff`
- * into `#ff0000` -- fabrication, and in direct conflict with the rule that a
- * value not stated by the file is never invented. The caller turns a rejection
- * into `kind: missing` plus an INVALID_SOURCE_COLOR diagnostic, so the fact
- * survives in a form a consumer can act on.
+ * REJECTS rather than repairs: clamping or padding would invent a plausible
+ * colour. The caller turns a rejection into `kind: missing` plus an
+ * INVALID_SOURCE_COLOR diagnostic.
  */
 import { canonicalNumber } from './precision';
 import type { ColorValue } from './value';
 
-/** A rejection's `reason` is a fixed code from `canonicalColor`, whose only
- *  caller reads `ok` alone, and a sentence from `colorFromHex`, which reaches
- *  an INVALID_SOURCE_COLOR diagnostic's `details.reason`. */
+/** `reason` is a code from `canonicalColor`, and a sentence from `colorFromHex`
+ *  (it reaches the diagnostic's `details.reason`). */
 export type ColorResult =
   | { ok: true; value: ColorValue }
   | { ok: false; reason: string };
 
-/** Three or six hex digits, with or without a leading `#`. Case-insensitive on
- *  input; output is always lowercase and six digits. */
+/** Input is case-insensitive; output is always lowercase and six digits. */
 export const HEX_PATTERN = /^#?(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
 
-/** One unit of the precision policy. A channel within this of the boundary is
- *  float noise from Figma's own arithmetic, not corrupt data. */
+/** Within this of the boundary is Figma float noise, not corrupt data. */
 const EPSILON = 1e-6;
 
 function snap(channel: number): number | null {
@@ -43,9 +32,8 @@ function snap(channel: number): number | null {
 const toByte = (channel: number): number => Math.round(channel * 255);
 const hex2 = (byte: number): string => byte.toString(16).padStart(2, '0');
 
-/** True when the 8-bit round trip does not return the source number, compared
- *  after the precision policy is applied to both sides so a difference below
- *  the policy's resolution is not treated as a loss. */
+/** The 8-bit round trip loses the source number, compared under the precision
+ *  policy so sub-resolution differences do not count. */
 function lossy(channel: number): boolean {
   return canonicalNumber(toByte(channel) / 255) !== canonicalNumber(channel);
 }
@@ -58,9 +46,7 @@ export function canonicalColor(
   const b = snap(rgba.b);
   const a = snap(rgba.a);
   if (r === null || g === null || b === null || a === null) {
-    // A code, not a sentence: the one caller (foundation.ts) reads `ok` and
-    // discards the reason, and the INVALID_SOURCE_COLOR diagnostic it leads
-    // to carries its own message. Covers a non-finite channel too.
+    // A code: the caller reads `ok` only. Covers a non-finite channel too.
     return { ok: false, reason: 'channel_out_of_range' };
   }
   const value: ColorValue = {
@@ -77,13 +63,8 @@ export function canonicalColor(
   };
 }
 
-/**
- * A colour already stored as a hex string — the v4 migration path.
- *
- * No `channels` is emitted, because there are none to emit: v4 threw the floats
- * away. Claiming the hex IS the source precision would be a fabrication, and so
- * would claiming it is not; the absence is the honest statement.
- */
+/** A colour already stored as hex (the v4 migration path). No `channels`: v4
+ *  discarded the floats, and the absence is the honest statement. */
 export function colorFromHex(hex: string, alpha: number): ColorResult {
   const trimmed = hex.trim();
   if (!HEX_PATTERN.test(trimmed)) {

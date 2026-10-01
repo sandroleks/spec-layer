@@ -2,15 +2,9 @@
 import { palette, solidFill, vstack, hstack, makeText, hex, radius, nodeById, createInstanceFor } from './frameKit';
 import { measureKey, type MeasureView } from './ui/docModel';
 
-// Spectral "DesignDoc" measure language: ONE unified diagram overlaid on a
-// single live component instance. Four rails surround the artwork (top/left =
-// total sizes, bottom = padding+gap flow, right = padding+cross-size), and
-// translucent bands mark padding/gap regions over the artwork itself. The
-// user's lens toggles (block.views) simply hide whichever categories they
-// turn off on this ONE diagram — there is no per-lens diagram anymore, and
-// overlap between categories is acceptable by design (the toggles are the
-// decluttering mechanism, not layout collision avoidance). Three fixed
-// semantic colors carry meaning:
+// One measure diagram over a live instance: four rails around the artwork and
+// translucent bands over it. The lens toggles (block.views) hide categories;
+// overlap between categories is accepted, since the toggles declutter.
 const SIZE_RED: RGB = hex('#f24822'); // sizes: total height, child widths, child cross-height
 const PAD_BLUE: RGB = hex('#2979ff'); // padding
 const GAP_PINK: RGB = hex('#ec4899'); // gaps
@@ -18,10 +12,8 @@ const WHITE: RGB = hex('#ffffff'); // badge text
 
 const CARD_PAD = 24;
 
-// Initial placement offsets for the scaled image inside the (oversized) box.
-// After all rails/bands are drawn, the box is re-normalized to the TRUE
-// bounding box of its contents (see buildDiagram), so these are only starting
-// room for the top/left rails — the final margins come from that pass.
+// Starting room for the top/left rails; buildDiagram normalizes the box to its
+// contents afterwards, which sets the final margins.
 const M_TOP = 44;
 const M_LEFT = 64;
 
@@ -47,16 +39,13 @@ interface MeasureBlockData {
   views: MeasureView[];
 }
 
-/** A measured value with its optional bound token. `value` is the raw px string
- *  shown in badges; `token` (when present) drives both the badge's inline short
- *  form (padding/gap) and the quiet bindings line (radius, and any full path a
- *  badge abbreviated). */
+/** `value` is the rounded px string a badge shows; `token` its binding, shown
+ *  on the bindings line. */
 type MeasureLabel = { value: string; token: string | null };
 
 const round = (n: number): number => Math.round(n * 10) / 10;
 
-/** Resolve a measured property to its value + bound token. The first matching
- *  candidate key wins; `value` is always the rounded px, `token` its binding. */
+/** The first candidate key with a bound token wins. */
 function measureLabel(
   tokens: Record<string, string>,
   part: string,
@@ -70,9 +59,8 @@ function measureLabel(
   return { value: String(round(px)), token: null };
 }
 
-/** `radius rounded-8 · 8` / `spacing/size-12 · 8` — full token path, for the
- *  bindings line only. All rail badges show plain numbers; token names live on
- *  this bindings line, so badges stay narrow and glued to the spans they mark. */
+/** `spacing/size-12 · 8`, for the bindings line only: badges show plain numbers
+ *  so they stay narrow and glued to their spans. */
 function bindingText(label: MeasureLabel): string {
   return label.token ? `${label.token} · ${label.value}` : label.value;
 }
@@ -81,7 +69,6 @@ function bindingText(label: MeasureLabel): string {
 // Primitive builders
 // ---------------------------------------------------------------------------
 
-/** A solid rounded value badge: fill = color, white 11 Bold text, hug-sized. */
 function badge(text: string, color: RGB): FrameNode {
   const chip = hstack(0);
   chip.paddingTop = chip.paddingBottom = 3;
@@ -94,7 +81,6 @@ function badge(text: string, color: RGB): FrameNode {
   return chip;
 }
 
-/** A translucent full-span band rect (fills only, no stroke), free-positioned. */
 function band(x: number, y: number, w: number, h: number, color: RGB): FrameNode {
   const f = figma.createFrame();
   f.resize(Math.max(w, 1), Math.max(h, 1));
@@ -104,7 +90,6 @@ function band(x: number, y: number, w: number, h: number, color: RGB): FrameNode
   return f;
 }
 
-/** A 1px dashed line as a stroked frame (horizontal when h<=1, else vertical). */
 function dashedLine(x: number, y: number, w: number, h: number, color: RGB, opacity: number): FrameNode {
   const f = figma.createFrame();
   f.resize(Math.max(w, 1), Math.max(h, 1));
@@ -117,7 +102,6 @@ function dashedLine(x: number, y: number, w: number, h: number, color: RGB, opac
   return f;
 }
 
-/** A 1px solid hairline / tick as a filled rect, free-positioned. */
 function line(x: number, y: number, w: number, h: number, color: RGB): FrameNode {
   const f = figma.createFrame();
   f.resize(Math.max(w, 1), Math.max(h, 1));
@@ -127,7 +111,6 @@ function line(x: number, y: number, w: number, h: number, color: RGB): FrameNode
   return f;
 }
 
-/** A dashed outline rect (no fill) marking a child's scaled bounds. */
 function outline(x: number, y: number, w: number, h: number): FrameNode {
   const f = figma.createFrame();
   f.resize(Math.max(w, 1), Math.max(h, 1));
@@ -140,10 +123,6 @@ function outline(x: number, y: number, w: number, h: number): FrameNode {
   return f;
 }
 
-// ---------------------------------------------------------------------------
-// Legend (first-level parts) — unchanged.
-// ---------------------------------------------------------------------------
-
 interface LegendEntry {
   caption: string;
   label: MeasureLabel;
@@ -153,7 +132,7 @@ interface LegendEntry {
 // Diagram geometry
 // ---------------------------------------------------------------------------
 
-/** A visible child's scaled box-local bounds (main-axis start, cross start, w, h). */
+/** A visible child's scaled, box-local bounds. */
 interface Child {
   x1: number;
   y1: number;
@@ -161,16 +140,12 @@ interface Child {
   h: number;
 }
 
-/** Everything the rail placement needs: rail items with their desired centers.
- *  `node` only needs the geometry fields a rail actually reads/writes, so a
- *  test can drive it with a plain object instead of a real FrameNode. */
+/** `node` takes only the geometry fields, so a test can pass a plain object. */
 export interface RailItem {
   node: { x: number; y: number; width: number; height: number };
   center: number; // desired center along the axis (y for right/left, x for top/bottom)
 }
 
-/** Geometry for the single shared instance: scaled image edges, padding,
- *  layout mode, children, and gap spans. */
 interface ViewGeom {
   imgLeft: number; imgTop: number; imgRight: number; imgBottom: number;
   imgW: number; imgH: number;
@@ -185,11 +160,9 @@ interface ViewGeom {
   gaps: { start: number; end: number }[];
 }
 
-/** Structural surface `computeGeom` reads. Both `ComponentNode` and
- *  `InstanceNode` satisfy it: when `includeHidden` is on, `buildMeasureSection`
- *  passes the revealed instance here instead of the source component, so the
- *  overlay measures what is actually drawn rather than the frozen source box
- *  (see the reveal call below for why they can differ). */
+/** What `computeGeom` reads; a ComponentNode or an InstanceNode. With
+ *  `includeHidden` the revealed instance is passed, so the overlay measures
+ *  what is drawn rather than the source component's box. */
 interface GeometrySource {
   width: number;
   height: number;
@@ -202,7 +175,7 @@ interface GeometrySource {
   children: readonly SceneNode[];
 }
 
-/** Compute the view geometry for an instance already placed at (M_LEFT, M_TOP). */
+/** Geometry for an instance placed at (mLeft, mTop). */
 function computeGeom(
   source: GeometrySource,
   scale: number,
@@ -261,10 +234,8 @@ function computeGeom(
   };
 }
 
-/** Place a top-to-bottom rail: badges left-aligned at `railX`, each centred on
- *  its region, pushed down so each clears the previous. Instances render at
- *  true size now, so a short component's badges would otherwise stack on top
- *  of one another; spreading along the rail keeps every number readable. */
+/** Badges at `railX`, each centred on its region and pushed down to clear the
+ *  previous, so a short component's badges never stack. */
 export function placeRightRail(items: RailItem[], railX: number): void {
   let prevBottom = -Infinity;
   for (const item of items) {
@@ -276,8 +247,8 @@ export function placeRightRail(items: RailItem[], railX: number): void {
   }
 }
 
-/** Place a left-to-right rail: badges top-aligned at `railY`, horizontally
- *  centered under their span, pushed right so each clears the previous. */
+/** Badges at `railY`, each centred under its span and pushed right to clear
+ *  the previous. */
 export function placeBottomRail(items: RailItem[], railY: number, imgRight: number): { maxRight: number; maxBottom: number } {
   let prevRight = -Infinity;
   let maxBottom = railY;
@@ -295,21 +266,15 @@ export function placeBottomRail(items: RailItem[], railY: number, imgRight: numb
 }
 
 // ---------------------------------------------------------------------------
-// The single unified diagram.
+// The diagram
 // ---------------------------------------------------------------------------
 
 /**
- * Build the ONE Spectral 4-rail measure diagram. `views` filters which
- * categories draw:
- *  - 'size'    -> top+left total-dimension rails, red child-size badges (top
- *                 rail for horizontal main axis / left rail for vertical main
- *                 axis), and the red child cross-size badge on the opposite
- *                 cross rail.
- *  - 'padding' -> blue translucent padding bands + blue pad badges on the
- *                 main-axis flow rail (bottom/right) and the cross rail.
- *  - 'spacing' -> pink translucent gap bands + dashed red child outlines
- *                 (>1 child) + pink gap badges on the main-axis flow rail.
- * With no auto-layout root, only total width/height (size) ever draw.
+ * `views` filters what draws:
+ *  - 'size'    -> total-dimension rails, child main-axis sizes, cross size.
+ *  - 'padding' -> padding bands and badges.
+ *  - 'spacing' -> gap bands and badges, plus child outlines (>1 child).
+ * With no auto-layout root, only total width and height draw.
  */
 function buildDiagram(
   g: ViewGeom,
@@ -331,9 +296,7 @@ function buildDiagram(
   inst.x = M_LEFT;
   inst.y = M_TOP;
 
-  // -------------------------------------------------------------------
-  // Over-artwork bands (padding + gaps), drawn above the instance.
-  // -------------------------------------------------------------------
+  // Bands over the artwork.
   if (showPadding && g.hasAutoLayout) {
     if (g.padTs > 0) {
       box.appendChild(band(g.imgLeft, g.imgTop, g.imgW, g.padTs, PAD_BLUE));
@@ -365,34 +328,25 @@ function buildDiagram(
         box.appendChild(dashedLine(g.imgLeft, gp.end, g.imgW, 1, GAP_PINK, EDGE_OPACITY));
       }
     }
-    // Dashed child outlines (SPACING owns gaps + outlines).
     if (g.kids.length > 1) {
       for (const k of g.kids) box.appendChild(outline(k.x1, k.y1, k.w, k.h));
     }
   }
 
-  // -------------------------------------------------------------------
-  // TOP / LEFT rails — total dimensions (SIZE), plus main-axis child sizes on
-  // whichever of top/left carries the main axis.
-  // -------------------------------------------------------------------
+  // Top and left rails: total dimensions, or child sizes on the main axis.
   if (showSize) {
-    // Top rail: total-width hairline + centered badge (or per-child badges
-    // when the main axis is horizontal).
     const topLineY = g.imgTop - RAIL_TOP_OFF;
     box.appendChild(line(g.imgLeft, topLineY, g.imgW, 1, SIZE_RED));
     box.appendChild(line(g.imgLeft, topLineY - TICK / 2, 1, TICK, SIZE_RED));
     box.appendChild(line(g.imgRight - 1, topLineY - TICK / 2, 1, TICK, SIZE_RED));
 
     if (g.hasAutoLayout && g.horizontal && g.kids.length > 0) {
-      // Main axis horizontal: one red width badge per visible child.
       const rail: RailItem[] = [];
       for (const k of g.kids) {
         const b = badge(String(round(k.w / g.scale)), SIZE_RED);
         box.appendChild(b);
         rail.push({ node: b, center: k.x1 + k.w / 2 });
       }
-      // Badges sit above the hairline, centered on each child, nudged right to
-      // clear the previous one.
       let prevRight = -Infinity;
       for (const item of rail) {
         let x = Math.round(item.center - item.node.width / 2);
@@ -402,22 +356,18 @@ function buildDiagram(
         prevRight = x + item.node.width;
       }
     } else {
-      // Main axis vertical (or no auto-layout): single centered total-width badge.
       const widthBadge = badge(measureLabel(tokens, part, ['width'], g.rawW).value, SIZE_RED);
       box.appendChild(widthBadge);
       widthBadge.x = Math.round((g.imgLeft + g.imgRight) / 2 - widthBadge.width / 2);
       widthBadge.y = Math.round(topLineY - LINE_GAP - widthBadge.height);
     }
 
-    // Left rail: total-height hairline + centered badge (or per-child badges
-    // when the main axis is vertical).
     const leftLineX = g.imgLeft - RAIL_LEFT_OFF;
     box.appendChild(line(leftLineX, g.imgTop, 1, g.imgH, SIZE_RED));
     box.appendChild(line(leftLineX - TICK / 2, g.imgTop, TICK, 1, SIZE_RED));
     box.appendChild(line(leftLineX - TICK / 2, g.imgBottom - 1, TICK, 1, SIZE_RED));
 
     if (g.hasAutoLayout && !g.horizontal && g.kids.length > 0) {
-      // Main axis vertical: one red height badge per visible child.
       const rail: RailItem[] = [];
       for (const k of g.kids) {
         const b = badge(String(round(k.h / g.scale)), SIZE_RED);
@@ -433,7 +383,6 @@ function buildDiagram(
         prevBottom = y + item.node.height;
       }
     } else {
-      // Main axis horizontal (or no auto-layout): single centered total-height badge.
       const heightBadge = badge(measureLabel(tokens, part, ['height'], g.rawH).value, SIZE_RED);
       box.appendChild(heightBadge);
       heightBadge.x = Math.round(leftLineX - LINE_GAP - heightBadge.width);
@@ -441,10 +390,7 @@ function buildDiagram(
     }
   }
 
-  // -------------------------------------------------------------------
-  // BOTTOM rail — horizontal main axis: pad-left, gaps, pad-right (flow).
-  // Vertical main axis: pad-left, content width, pad-right (cross flow).
-  // -------------------------------------------------------------------
+  // Bottom rail: pad-left, gaps or content width, pad-right.
   if (g.hasAutoLayout && g.horizontal && (showPadding || showSpacing)) {
     const railBottomY = g.imgBottom + RAIL_BOTTOM_OFF;
     const rail: RailItem[] = [];
@@ -467,9 +413,7 @@ function buildDiagram(
     }
     placeBottomRail(rail, railBottomY, g.imgRight);
   } else if (g.hasAutoLayout && !g.horizontal && (showPadding || showSize)) {
-    // Vertical main axis: bottom rail shows pad-left, content width (red,
-    // SIZE), pad-right. Gaps live on the right rail alongside the vertical
-    // flow, not here.
+    // Vertical main axis: gaps go on the right rail with the flow.
     const railBottomY = g.imgBottom + RAIL_BOTTOM_OFF;
     const rail: RailItem[] = [];
     if (showPadding && g.pads.left > 0) {
@@ -493,10 +437,7 @@ function buildDiagram(
     placeBottomRail(rail, railBottomY, g.imgRight);
   }
 
-  // -------------------------------------------------------------------
-  // RIGHT rail — padding + cross-size when horizontal main axis; padding +
-  // vertical flow (pad-top, gaps, pad-bottom) when vertical main axis.
-  // -------------------------------------------------------------------
+  // Right rail: pad-top, cross size or gaps, pad-bottom.
   if (g.hasAutoLayout && g.horizontal && (showPadding || showSize)) {
     const railRightX = g.imgRight + RAIL_RIGHT_OFF;
     const rail: RailItem[] = [];
@@ -506,8 +447,7 @@ function buildDiagram(
       rail.push({ node: b, center: g.imgTop + g.padTs / 2 });
     }
     if (showSize && g.kids.length > 0) {
-      // Cross-axis child height: collapse to one representative badge centered
-      // on the content band (children share the cross size in practice).
+      // One badge: children share the cross size in practice.
       const contentTop = g.imgTop + g.padTs;
       const contentBottom = g.imgBottom - g.padBs;
       const crossH = round((g.rawH - g.pads.top - g.pads.bottom));
@@ -543,15 +483,9 @@ function buildDiagram(
     }
     placeRightRail(rail, railRightX);
   }
-  // No auto-layout root: right rail carries nothing extra — total width/height
-  // on the top/left rails are the only SIZE measurements available.
 
-  // -------------------------------------------------------------------
-  // Normalize to the TRUE bounding box of everything placed, with uniform
-  // slack. A rail badge centered on a narrow span (left-padding, a gap) can
-  // extend left of / above the image; the earlier min/max tracking only ever
-  // grew rightward/downward, so that overflow spilled outside the box and made
-  // the centered card look offset. This pass wraps whatever actually got drawn.
+  // Normalize to the true bounding box of what was drawn: a badge centred on
+  // a narrow span can extend left of or above the image.
   const S = 8; // uniform slack around the content bounding box
   let bbL = Infinity;
   let bbT = Infinity;
@@ -580,13 +514,7 @@ function buildDiagram(
   return box;
 }
 
-// ---------------------------------------------------------------------------
-// Bindings line
-// ---------------------------------------------------------------------------
-
-/** Build the quiet bindings line beneath the diagram: radius (always, when
- *  present) plus any full padding/gap token path — kept minimal since the
- *  abbreviated short form already appears inline on the badges. */
+/** The line beneath the diagram naming padding, gap and radius tokens. */
 function buildBindingsRow(component: ComponentNode, tokens: Record<string, string>, part: string): FrameNode | null {
   const pads = {
     top: component.paddingTop ?? 0,
@@ -598,9 +526,7 @@ function buildBindingsRow(component: ComponentNode, tokens: Record<string, strin
   const gap = hasAutoLayout ? component.itemSpacing : 0;
 
   const bindings: LegendEntry[] = [];
-  // Padding tokens live here now: the rail badges show only the number (matching
-  // the reference), so their token names surface on this quiet line. Uniform
-  // padding collapses to one `padding`, else symmetric x/y pairs.
+  // Uniform padding collapses to one `padding`, else symmetric x/y pairs.
   if (hasAutoLayout) {
     if (
       pads.top === pads.bottom &&
@@ -648,10 +574,8 @@ function buildBindingsRow(component: ComponentNode, tokens: Record<string, strin
 // Main
 // ---------------------------------------------------------------------------
 
-// Remove the topmost on-canvas frame that `node` lives inside (or `node` itself)
-// so a partially built diagram/card is never left orphaned when a Figma-API call
-// throws mid-build. Walks up to just below the page, since createFrame/
-// createInstance auto-append to the page and each build frame is nested.
+// Remove the topmost frame holding `node` (just below the page, where
+// createFrame/createInstance append), so a throw never orphans a half build.
 function removeCanvasSubtree(node: SceneNode): void {
   try {
     let top: SceneNode = node;
@@ -663,22 +587,9 @@ function removeCanvasSubtree(node: SceneNode): void {
 }
 
 /**
- * Build the token-aware measure section as ONE unified Spectral 4-rail
- * diagram: a screenshot-scale live instance with the artwork left untouched,
- * translucent bands (blue padding, pink gap) with dashed inner edges layered
- * over it, dashed red child outlines, and solid colored value badges (red =
- * size, blue = padding, pink = gap) arranged in rails OUTSIDE the artwork —
- * top = child sizes / total width, left = total height / child sizes,
- * bottom = padding+gap flow, right = padding + cross-size. `block.views`
- * (the lens toggles) filters which categories draw on this single diagram;
- * overlap between categories is expected and acceptable — the toggles are
- * the decluttering mechanism. Beneath the diagram, a quiet bindings line
- * carries the token names (padding / gap / radius).
- *
- * Returns null when the diagram can't be built (component missing, not a
- * COMPONENT, or any layout error) so the caller falls back to a plain table.
- * Any created instance is removed before returning null so the canvas is
- * never left with an orphaned node.
+ * The measure card: the diagram plus a bindings line. Null when it cannot be
+ * built (component missing or any layout error), so the caller falls back to
+ * a table; any created instance is removed first.
  */
 export async function buildMeasureSection(
   block: MeasureBlockData, includeHidden = false, contentWidth = 880 - 56 * 2,
@@ -698,17 +609,13 @@ export async function buildMeasureSection(
   const inst = await createInstanceFor(block.componentId, includeHidden);
   if (!inst) return null;
 
-  // Everything after the instance exists is wrapped so any Figma-API throw
-  // (resize/rescale/layout) cleans up the instance and falls back to the table.
   try {
-    // True size unless the artwork is wider than the column can hold beside
-    // its left rail; never taller-than-cap shrinking, and never upscaling.
+    // True size unless too wide for the column beside its left rail; never
+    // upscaled.
     const innerMax = contentWidth - CARD_PAD * 2 - (M_LEFT + 160);
     const scale = Math.min(1, innerMax / inst.width);
-    // Read geometry from the reveal-following source BEFORE rescale mutates
-    // width/height/children in place. computeGeom's own arithmetic multiplies
-    // these raw values by scale, so reading them after rescale would apply
-    // that factor twice.
+    // Read before rescale mutates the instance in place: computeGeom applies
+    // `scale` itself, so reading after would apply it twice.
     const geometrySource: GeometrySource = includeHidden ? inst : component;
     const g = computeGeom(geometrySource, scale, M_LEFT, M_TOP);
     if (scale !== 1) inst.rescale(scale);
@@ -717,14 +624,12 @@ export async function buildMeasureSection(
     try {
       box = buildDiagram(g, inst, block.tokens, part, views);
     } catch {
-      // Diagram build failed: buildDiagram may have created its frame and
-      // parented inst into it, so remove the whole subtree (not just inst,
-      // which would leave the frame orphaned on the canvas).
+      // inst may already sit inside the diagram frame: remove the whole subtree.
       removeCanvasSubtree(inst);
       return null;
     }
 
-    // Card (same visual language as the anatomy card).
+    // Same visual language as the anatomy card.
     const card = vstack(20);
     card.paddingTop = card.paddingBottom = card.paddingLeft = card.paddingRight = CARD_PAD;
     card.fills = solidFill(palette.paneBg);
@@ -739,9 +644,6 @@ export async function buildMeasureSection(
 
     return { card, scale };
   } catch {
-    // Unexpected throw during composition (card/bindings): tear down the whole
-    // subtree inst now lives in (box, or the card wrapping it) so the canvas is
-    // never littered with a half-built diagram.
     removeCanvasSubtree(inst);
     return null;
   }

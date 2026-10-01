@@ -1,16 +1,9 @@
 /// <reference types="@figma/plugin-typings" />
 /**
- * docFrame.ts — the component document: three frames, in reading order.
- *
- * This module is the dispatch: it owns the frame chrome (card, header band,
- * content column) and routes every block kind the doc model
- * emits to the module that draws it. The blocks themselves live in
- * docBlocks.ts, anatomySection.ts, measureSection.ts and statesSection.ts;
- * the text and table primitives live in docText.ts. What stays here is the
- * per-variant token card, which nothing else needs.
- *
- * Runs on the main thread, in Figma's bare sandbox: ECMAScript built-ins and
- * the `figma` API only.
+ * The component document: three frames, in reading order. Owns the frame
+ * chrome and routes each doc-model block to the module that draws it; only the
+ * per-variant token card lives here. Runs on the main thread: ECMAScript
+ * built-ins and the `figma` API only.
  */
 import { parseRuns, groupSections } from './ui/docModel';
 import type {
@@ -43,9 +36,7 @@ import { SLOT_PART_KEY, type ProseSlot } from './canvasProse';
 // Design tokens for the generated doc frame
 // ---------------------------------------------------------------------------
 
-// Layout constants
-// Horizontal padding for header + content. Taken from the shared header so the
-// band's padding and the content column's padding cannot drift out of line.
+// Shared with the header, so the band and the content column stay in line.
 const PAD_X = HEADER_PAD_X;
 const VAR_LEFT_W = 240; // per-variant card: left pane (preview + properties)
 const VAR_PANE_PAD = 20; // per-variant card: pane padding
@@ -53,18 +44,16 @@ const TOKEN_KEY_COL_W = 120; // token tables: fixed width of the non-Token colum
 const CARD_PAD = 24; // diagram card padding (anatomySection's own ANATOMY_PAD)
 const CALLOUT_ZONE = 60; // room beside a diagram for its pins and leaders
 
-// The frame width is normally CARD_WIDTH_MIN, but token names can be long
-// slash-paths and their chips hug their text, and a component can be wider than
-// the column, so the frame widens on build (computed in fitFrameWidth()). These
-// are `let` because they're recomputed per build; CONTENT_WIDTH derives from it.
+// Long token chips and wide components widen the frame per build (see
+// fitFrameWidth), so these are `let`.
 const CARD_WIDTH_MIN = 880;
 const CARD_WIDTH_MAX = 1440; // safety cap so a pathological token can't run away
 let CARD_WIDTH = CARD_WIDTH_MIN;
 let CONTENT_WIDTH = CARD_WIDTH - PAD_X * 2;
 
 // ---------------------------------------------------------------------------
-// Prose — see canvasProse.ts. Anything tagged with a slot is text the designer
-// owns; an Update reads it back instead of regenerating it.
+// Prose: text tagged with a slot is the designer's, and an Update reads it
+// back instead of regenerating it (see canvasProse.ts).
 // ---------------------------------------------------------------------------
 
 /** Render markdown into a tagged slot container spanning the content column.
@@ -82,10 +71,8 @@ function buildProseSlot(text: string, slot: ProseSlot | null, spacing: number, l
   return holder;
 }
 
-/** One paragraph spanning the column, with the slot tag on the TEXT node
- *  itself. A single-string slot (anatomySummary, definitionLead) is read
- *  straight off the node it is tagged on, so tagging a container would read
- *  back as nothing. */
+/** One paragraph with the slot tag on the TEXT node itself: a single-string
+ *  slot is read straight off the tagged node, so a tagged container reads empty. */
 function buildTaggedParagraph(text: string, slot: ProseSlot, size = 15): FrameNode {
   const box = columnParagraph(text, CONTENT_WIDTH, size);
   const node = box.children[0];
@@ -94,10 +81,9 @@ function buildTaggedParagraph(text: string, slot: ProseSlot, size = 15): FrameNo
 }
 
 // ---------------------------------------------------------------------------
-// Per-variant tokens — live instance slot + a token table with color swatches
+// Per-variant tokens: a live instance slot beside a token table
 // ---------------------------------------------------------------------------
 
-/** A 12×12 rounded color chip. */
 function colorChip(color: RGB): FrameNode {
   const chip = figma.createFrame();
   chip.resize(12, 12);
@@ -108,11 +94,9 @@ function colorChip(color: RGB): FrameNode {
   return chip;
 }
 
-/** The Token cell: a rounded chip (like the web) holding an optional color
- *  swatch plus the token name. When `unbound`, the value is a raw hardcoded
- *  value (not a token): no color lookup, a dashed muted outline, and muted ink.
- *  A bound token with no swatch carries its resolved number or text-style
- *  summary as a separate muted node, so the chip stays single-line. */
+/** The Token cell: a chip with an optional swatch and the token name. An
+ *  `unbound` raw value gets a dashed muted outline and no colour lookup. A
+ *  bound token without a swatch shows its resolved value as a muted suffix. */
 function makeTokenCell(token: string, unbound: boolean, display: TokenDisplay | null): FrameNode {
   const cell = vstack(0);
   cell.paddingTop = 10;
@@ -134,7 +118,6 @@ function makeTokenCell(token: string, unbound: boolean, display: TokenDisplay | 
   chip.cornerRadius = radius(6);
 
   if (unbound) {
-    // Raw value: no swatch, no fill, dashed muted outline.
     chip.fills = [];
     chip.strokes = solidFill(palette.muted);
     chip.strokeWeight = 1;
@@ -144,9 +127,7 @@ function makeTokenCell(token: string, unbound: boolean, display: TokenDisplay | 
     if (display?.color) chip.appendChild(colorChip(display.color));
   }
 
-  // Chip and text both hug their content (single-line pill). The Token column is
-  // sized wide enough to hold the longest token (see fitFrameWidth), so the pill
-  // never overflows and gets clipped.
+  // A single-line pill; fitFrameWidth sizes the Token column so it never clips.
   const text = makeText(token, 'Medium', 13, unbound ? palette.muted : palette.heading, 140);
   text.textAutoResize = 'WIDTH_AND_HEIGHT';
   chip.appendChild(text);
@@ -161,12 +142,9 @@ function makeTokenCell(token: string, unbound: boolean, display: TokenDisplay | 
   return cell;
 }
 
-/** Token table for a single variant. Rows arrive as [part, property, token, …]
- *  already ordered by part; we drop the repeated Part column and instead start
- *  each part's rows with a bold group-header band, so the table reads as grouped
- *  sub-sections. The Token column (last) holds long, slash-delimited names, so it
- *  FILLs the remaining width while the short key columns stay fixed-narrow.
- *  Sized to FILL its parent (the table sits beside the instance slot). */
+/** One variant's token table. Rows arrive sorted by part; the Part column is
+ *  dropped for a bold band per part. The Token column FILLs, the short key
+ *  columns stay fixed. */
 async function buildTokenTable(
   columns: string[],
   rows: VariantRow[],
@@ -203,10 +181,8 @@ async function buildTokenTable(
     sizeCol(cell, i);
   }
 
-  // No "None" row. A variant card with no rows is a non-default variant
-  // whose tokens all match the default, and the "Identical to default (N
-  // tokens)" note the caller appends already says so; printing "None" under
-  // it would read as "this variant binds no tokens", which is the opposite.
+  // No "None" row: an empty card's tokens all match the default, which the
+  // caller's note says, and "None" would read as binding no tokens.
   if (rows.length === 0) return table;
 
   // Every distinct bound token resolved at once, before any row is drawn.
@@ -218,8 +194,7 @@ async function buildTokenTable(
   for (const r of rows) {
     const part = r.part ?? '';
     const cells = [r.property, r.token];
-    // Start a new group with a full-width, bold part band whenever the part
-    // changes (rows are pre-sorted by part). A blank part gets no band.
+    // A bold band whenever the part changes; a blank part gets none.
     if (part && part !== currentPart) {
       currentPart = part;
       const groupHead = hstack(0);
@@ -248,13 +223,11 @@ async function buildTokenTable(
     row.strokeBottomWeight = 0;
     row.strokeLeftWeight = 0;
     row.strokeRightWeight = 0;
-    // Diff rows (a token that changed from the default variant) get a faint
-    // accent tint and a stronger Property ink so they read as the delta.
+    // A token that differs from the default variant gets a faint accent tint.
     if (r.diff) row.fills = [{ type: 'SOLID', color: palette.accent, opacity: 0.06 }];
     for (let i = 0; i < dataCount; i++) {
       const value = cells[i] ?? '';
       const isToken = i === dataCount - 1;
-      // Property reads as a quiet label; the token value (chip) carries emphasis.
       const cell = isToken
         ? makeTokenCell(value, r.unbound, displays.get(value) ?? null)
         : makeCell(value, 'Medium', 13, r.diff ? palette.heading : palette.label);
@@ -266,8 +239,7 @@ async function buildTokenTable(
   return table;
 }
 
-/** The left-pane "Differs from default" list: a small heading + axis/value
- *  rows, only for the properties whose value differs from the default. */
+/** The left pane's "Differs from default" list of axis/value rows. */
 function buildPropertyList(props: { name: string; value: string }[]): FrameNode {
   const wrap = vstack(8);
   const heading = makeText('Differs from default', 'Medium', 10, palette.muted);
@@ -312,7 +284,6 @@ async function buildSection(section: SectionBlock, includeHidden: boolean): Prom
   const group = vstack(16);
   group.name = section.heading;
 
-  // Teal accent rule + heading (tightly grouped)
   const head = vstack(12);
   group.appendChild(head);
   head.layoutSizingHorizontal = 'FILL';
@@ -331,14 +302,12 @@ async function buildSection(section: SectionBlock, includeHidden: boolean): Prom
 
   switch (section.kind) {
     case 'prose': {
-      // An AI lede the description outranked opens the Overview as its own
-      // tagged paragraph, a SIBLING of the definition container: readCanvasProse
-      // stops at the first tagged node, so a definitionLead nested inside the
-      // definition slot would never be read back.
+      // An AI lede is its own tagged paragraph, a SIBLING of the definition
+      // slot: readCanvasProse stops at the first tagged node, so a nested one
+      // is never read back.
       if (section.lede) body.appendChild(buildTaggedParagraph(section.lede, 'definitionLead', 17));
-      // The description is generated-lane: it comes from the component, is
-      // hashed, and an Update re-reads it from Figma, so it is NOT tagged. An
-      // AI overview is editorial and is.
+      // A description is generated-lane (hashed, re-read on Update), so it is
+      // NOT tagged; an AI overview is editorial and is.
       const slot = section.source === 'ai' ? 'definition' : null;
       if (section.text) {
         body.appendChild(buildProseSlot(section.text, slot, bodySpacing, section.id === 'definition' && !section.lede));
@@ -366,12 +335,9 @@ async function buildSection(section: SectionBlock, includeHidden: boolean): Prom
     case 'table': fill(buildTable(section.columns, section.rows, CONTENT_WIDTH)); break;
     case 'anatomy': {
       if (section.summary) body.appendChild(buildTaggedParagraph(section.summary, 'anatomySummary'));
-      // The diagram is the only anatomy view: every doc link normalizes
-      // anatomyView to 'diagram'.
       const diagram = await buildAnatomyDiagram(section.componentId, section.parts, includeHidden, CONTENT_WIDTH);
       if (diagram) {
-        // Hug and centre: a small component sits in a card its own size, not
-        // in a column-wide field of white.
+        // Hug and centre: a small component gets a card its own size.
         const holder = vstack(8);
         holder.counterAxisAlignItems = 'CENTER';
         holder.appendChild(diagram.card);
@@ -387,8 +353,7 @@ async function buildSection(section: SectionBlock, includeHidden: boolean): Prom
       const defaultCard = section.variants.find((v) => v.isDefault);
       const defaultValues = new Map((defaultCard?.props ?? []).map((p) => [p.name, p.value]));
       for (const variant of section.variants) {
-        // A bordered card split into a left pane (preview + properties) and a
-        // right pane (token table), like the docs inspector.
+        // Left pane: preview and properties. Right pane: token table.
         const card = hstack(0);
         card.cornerRadius = radius(12);
         card.clipsContent = true;
@@ -414,9 +379,7 @@ async function buildSection(section: SectionBlock, includeHidden: boolean): Prom
         left.appendChild(slot);
         slot.layoutSizingHorizontal = 'FILL';
 
-        // The default card says so; every other card lists only the axes
-        // whose value differs from the default, so seven rows of "False"
-        // never appear again.
+        // Other cards list only the axes that differ from the default.
         const differing = variant.props.filter((p) => defaultValues.get(p.name) !== p.value);
         const propList = variant.isDefault || differing.length === 0
           ? labelBlock(variant.isDefault ? 'Default variant' : 'Same values as default')
@@ -424,8 +387,7 @@ async function buildSection(section: SectionBlock, includeHidden: boolean): Prom
         left.appendChild(propList);
         propList.layoutSizingHorizontal = 'FILL';
 
-        // Right pane — no padding so the token table sits flush with the divider
-        // and card edges; cell padding provides the text inset.
+        // No padding, so the table sits flush with the divider; cells inset the text.
         const right = vstack(0);
         card.appendChild(right);
         right.layoutSizingHorizontal = 'FILL';
@@ -435,9 +397,7 @@ async function buildSection(section: SectionBlock, includeHidden: boolean): Prom
         right.appendChild(table);
         table.layoutSizingHorizontal = 'FILL';
 
-        // Non-default cards suppress rows identical to the default; a summary
-        // line accounts for them so the card doesn't read as if those tokens
-        // are absent.
+        // Rows identical to the default are suppressed; this line accounts for them.
         if (!variant.isDefault && variant.sameAsDefault > 0) {
           const note = hstack(0);
           note.paddingTop = 10;
@@ -484,9 +444,8 @@ async function buildSection(section: SectionBlock, includeHidden: boolean): Prom
         list.resize(CONTENT_WIDTH, 1);
         list.primaryAxisSizingMode = 'AUTO';
         for (const g of section.guide) {
-          // One tagged row per option, keyed by the option value: the guide is
-          // editorial per option, not one blob, so an edit to one line survives
-          // an Update without the others duplicating.
+          // One tagged row per option, keyed by its value, so an edit to one
+          // line survives an Update without duplicating the others.
           const row = makeBulletRow({ runs: parseRuns(`**${g.name}**: ${g.guidance}`), text: `${g.name}: ${g.guidance}` });
           tagSlot(row, 'variantsGuide');
           row.setPluginData(SLOT_PART_KEY, g.name);
@@ -495,15 +454,12 @@ async function buildSection(section: SectionBlock, includeHidden: boolean): Prom
         }
         body.appendChild(list);
       }
-      // Combine the row-cap disclosure (when the first axis had >4 values) with
-      // any held-axis note, so a capped Variants matrix explains its truncation
-      // the same way the States matrix does.
+      // The row-cap disclosure plus any held-axis note, as the States matrix does.
       const capNote = section.capped ? 'Showing the first 4 values. The other values are not drawn.' : null;
       const note = [capNote, section.note].filter(Boolean).join(' ') || null;
       const grid = await buildMatrixSection({ columns: section.columns, rows: section.rows, note }, CONTENT_WIDTH, includeHidden);
       fill(grid);
-      // Extra breathing room between the guide and the preview matrix; the
-      // body's default spacing reads as cramped against the prose above.
+      // More room between the guide and the matrix than the body spacing gives.
       if (section.intro || section.guide.length) grid.paddingTop = 24;
       break;
     }
@@ -516,29 +472,21 @@ async function buildSection(section: SectionBlock, includeHidden: boolean): Prom
 // ---------------------------------------------------------------------------
 
 /**
- * The component doc header. The band itself is shared with foundation docs (see
- * brandHeader.ts); what stays here is the one component-specific part: the
- * subtitle is markdown lifted from the Overview, so its **bold** and `code`
- * runs are parsed out and re-applied to the text node.
- *
- * The `definitionLead` tag says "a person owns these words". An AI lede is
- * theirs to keep; a lede lifted from the component's own Figma description is
- * generated, re-read from the component on every Update, so it stays untagged.
+ * The component doc header. The band is shared (brandHeader.ts); the subtitle
+ * is Overview markdown, so its **bold** and `code` runs are re-applied. Only an
+ * AI lede is tagged `definitionLead`: a description lede is re-read on Update.
  */
 async function buildHeader(
   title: string, subtitleMd: string | null, subtitleSource: 'ai' | 'description' | null,
   eyebrow: string, logoBase64?: string | null, pill: PillState | null = null,
 ): Promise<FrameNode> {
-  // Parse the lead for **bold** / `code` runs and drop any leading list marker
-  // so no raw markdown shows in the subtitle.
+  // Drop a leading list marker so no raw markdown shows.
   const runs = subtitleMd ? parseRuns(subtitleMd.replace(/^[-*]\s+/, '')) : null;
   return buildBrandHeader({
     eyebrow, title, subtitle: runs ? runs.map((r) => r.text).join('') : null, logoBase64, pill,
     styleSubtitle: runs
       ? (node) => {
-          // The subtitle sits on the header band, not the page background, so
-          // a code span needs the on-header ink, not the default heading ink
-          // (which is the same colour as the band on the default theme).
+          // On the band, a code span needs the on-header ink, not heading ink.
           applyRuns(node, runs, 0, palette.onHeader);
           if (subtitleSource === 'ai') tagSlot(node, 'definitionLead');
         }
@@ -562,23 +510,16 @@ function measureTokenText(s: string): number {
 }
 
 /**
- * The shared frame width for this build.
- *
- * Token chips hug their text, so a long token can overflow the Token column and
- * get clipped. Rather than wrap or shrink the chip, we widen the whole frame:
- * find the longest token across any per-variant token table, measure its chip,
- * and grow CARD_WIDTH so the (FILL) Token column is at least that wide. A
- * component wider than the resulting column widens the frame again, because
- * instances render at true size and scaling one down is the last resort. Stays
- * at CARD_WIDTH_MIN when neither applies, and is capped at CARD_WIDTH_MAX. Must
- * run after fonts load (it measures text).
+ * The shared frame width for this build, between CARD_WIDTH_MIN and
+ * CARD_WIDTH_MAX: wide enough for the longest token chip and for the widest
+ * drawn component unscaled. Run after fonts load (it measures text).
  */
 async function fitFrameWidth(model: DocFrameModel): Promise<void> {
   CARD_WIDTH = CARD_WIDTH_MIN;
   CONTENT_WIDTH = CARD_WIDTH - PAD_X * 2;
 
   let longest = '';
-  let keyCols = 0; // rendered columns other than Token (Part is dropped — see buildTokenTable)
+  let keyCols = 0; // rendered columns other than Token
   for (const s of model.sections) {
     if (s.kind !== 'variantTokens') continue;
     const tokenCol = s.columns.length - 1;
@@ -587,8 +528,7 @@ async function fitFrameWidth(model: DocFrameModel): Promise<void> {
         const tk = row.token ?? '';
         if (tk.length > longest.length) {
           longest = tk;
-          // buildTokenTable drops the Part column, so the fixed-width key
-          // columns rendered are (all columns) minus Part minus Token.
+          // All columns minus Part (dropped) minus Token.
           keyCols = tokenCol - 1;
         }
       }
@@ -611,8 +551,7 @@ async function fitFrameWidth(model: DocFrameModel): Promise<void> {
     (s): s is Extract<SectionBlock, { kind: 'anatomy' | 'measure' }> => s.kind === 'anatomy' || s.kind === 'measure',
   );
   if (drawn) {
-    // Through the per-build cache: the anatomy and measure builders read this
-    // node again when they instance it.
+    // Through the per-build cache; the builders read this node again.
     const comp = await nodeById(drawn.componentId);
     if (comp && 'width' in comp) {
       const needed = (comp as SceneNode).width + CARD_PAD * 2 + PAD_X * 2 + CALLOUT_ZONE;
@@ -621,17 +560,14 @@ async function fitFrameWidth(model: DocFrameModel): Promise<void> {
     }
   }
 
-  // The widest variant in a matrix widens the frame too. The matrices never
-  // scale a preview; their last resort is one slot spanning the column, so
-  // the column has to hold the widest variant plus the slot's padding. The
-  // default variant the anatomy fitted may be narrower than, say, Large.
+  // Matrices never scale a preview, so the column must hold the widest
+  // variant plus slot padding, which may exceed the anatomy's default.
   const cellIds = new Set<string>();
   for (const s of model.sections) {
     if (s.kind !== 'statesMatrix' && s.kind !== 'variantsMatrix') continue;
     for (const row of s.rows) for (const id of row.cells) if (id) cellIds.add(id);
   }
-  // One batch, and each cell node stays cached for buildMatrixSection, which
-  // instances the same ids a moment later.
+  // One batch; the nodes stay cached for buildMatrixSection.
   const cellNodes = await Promise.all([...cellIds].map((id) => nodeById(id)));
   let widestCell = 0;
   for (const node of cellNodes) {
@@ -691,11 +627,9 @@ async function buildGroupFrame(
   return frame;
 }
 
-/** The Usage header subtitle, and the sections that still have a body to draw.
- *  The model decided whose words lead (see HeaderSubtitle); the source travels
- *  with them, so buildHeader tags an AI lede editorial and leaves a
- *  description untagged. An Overview whose whole text went into the header
- *  draws no empty heading. */
+/** The Usage header subtitle with its source (so buildHeader tags only an AI
+ *  lede), and the sections that still have a body. An Overview emptied into
+ *  the header draws no empty heading. */
 function liftHeaderSubtitle(
   sections: SectionBlock[],
 ): { subtitle: string | null; subtitleSource: 'ai' | 'description' | null; sections: SectionBlock[] } {
@@ -714,27 +648,21 @@ function inlineSubtitle(sections: SectionBlock[], lead: string): SectionBlock[] 
     : s));
 }
 
-/**
- * Build the on-canvas doc Section (Usage / Specifications / Accessibility
- * frames side by side) from a DocFrameModel. Returns the Section; the caller
- * positions it and appends it to the page.
- */
+/** Build the doc Section (Usage, Specifications and Accessibility frames side
+ *  by side). The caller positions it and appends it to the page. */
 export async function buildDocFrames(
   model: DocFrameModel, theme: ReturnType<typeof resolveTheme>,
   logoBase64?: string | null, pill: PillState | null = null,
 ): Promise<SectionNode> {
-  // Resolved-value caches (color/float variables, text styles) are module
-  // state in tokenResolve — reset them per build so a rebuild after the user
-  // edits variables/styles picks up fresh values instead of stale ones.
+  // tokenResolve's caches are module state: reset per build so edited
+  // variables and styles read fresh.
   resetTokenResolveCaches();
 
-  // Palette, corner style and fonts are module state in frameKit, so every
-  // field is set per build: a Default build after a themed one has to fully
-  // reset rather than inherit. foundationFrame.ts calls the same helper, which
-  // is what keeps the two frame families from drifting apart.
+  // frameKit's palette, corners and fonts are module state, so every field is
+  // set per build, by the same helper foundationFrame.ts uses.
   await applyThemeToKit(theme);
 
-  // Shared width across all frames — measured over the full (flat) model.
+  // One width for every frame, measured over the whole model.
   await fitFrameWidth(model);
 
   const includeHidden = model.includeHidden === true;
@@ -742,10 +670,8 @@ export async function buildDocFrames(
   let subtitle = lifted.subtitle;
   let subtitleSource = lifted.subtitleSource;
   let groups = groupSections(lifted.sections);
-  // The subtitle rides the Usage header, so lifting the lead must never be
-  // what removes that header: when the lift empties the Usage group (or the
-  // whole document), put those words back into the Overview body rather than
-  // losing the only line the component carries.
+  // Lifting the lead must never remove the Usage header that carries it: if
+  // the lift empties the Usage group, the words go back into the Overview.
   if (subtitle !== null && !groups.some((g) => g.id === 'usage')) {
     groups = groupSections(inlineSubtitle(model.sections, subtitle));
     subtitle = null;
@@ -769,11 +695,9 @@ export async function buildDocFrames(
       ));
     }
 
-    // A freshly created Section keeps its default (small) size — it does NOT
-    // auto-grow to contain appended children. Pin its origin to (0,0), lay the
-    // frames out inside at PAD offsets, then resize the Section to the frames'
-    // bounding box (+ padding) so it actually holds all three. Section children
-    // use section-relative coordinates, so a later section.x/y move carries them.
+    // A new Section does NOT grow to fit its children: lay the frames out at
+    // PAD offsets, then resize it to their bounds. Children are
+    // section-relative, so moving the Section carries them.
     section = figma.createSection();
     // The Section keeps the RAW name: the registry and findExistingDoc match on it.
     section.name = `${model.componentName}: Documentation`;

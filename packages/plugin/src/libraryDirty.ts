@@ -1,36 +1,16 @@
 /**
- * "Has the document changed since the Library last scanned it?"
+ * "Has the document changed since the Library last scanned it?" One coarse
+ * boolean, set by any current-page `nodechange` or any `stylechange` (the
+ * plugin's own writes included) and cleared when a scan starts.
  *
- * One boolean, set by any `nodechange` on the current page or any
- * `stylechange`, and cleared when a scan starts. Deliberately coarse: it
- * only ever errs toward re-checking after the user edited something, which
- * is when a check matters. The plugin's own canvas writes set it too; that
- * costs one re-check after a build, which is correct.
+ * `nodechange`, not `documentchange`: under dynamic-page access the latter
+ * needs every page loaded, so edits on other pages are not seen.
+ * `stylechange` is document-wide. Variables have no event: the foundation
+ * fingerprint covers renames and FLOAT edits, and a colour, string or boolean
+ * value edit waits for Refresh library.
  *
- * Why `nodechange` and not `documentchange`: under dynamic-page access
- * `figma.on('documentchange')` needs every page loaded, and it fires for
- * every edit anywhere. `PageNode.on('nodechange')` needs no page loading and
- * is scoped to the page the user can edit. The listener is on the current
- * page only, so edits by others on any other page are not seen, whether or
- * not you visited it this session.
- *
- * Styles are not page nodes. `figma.on('stylechange')` is the granular
- * event the Plugin API offers under dynamic-page access for them, and it is
- * document-wide: a rename, an addition, a deletion, or a paint, text,
- * effect or grid value edit sets the flag whichever page is open, so a
- * Foundation row that shows a style re-checks after the edit.
- *
- * Variables have no event. The Library probe's foundation fingerprint
- * catches renames, additions and deletions, and number (FLOAT) value edits,
- * since a component's layout summary carries the resolved padding, gap and
- * radius. A color, string or boolean variable value edit is not seen, and
- * no component row carries those values; the Foundation row that shows them
- * keeps its last result until the next change or Refresh library. The
- * last-checked caption and Refresh library are the recovery.
- *
- * Starts dirty so the first scan of a session always runs. `attach` throws
- * if either event cannot be subscribed; main.ts then treats the document as
- * unwatched and re-checks on every visit.
+ * Starts dirty. `attach` throws if it cannot subscribe; main.ts then
+ * re-checks on every visit.
  */
 export interface DirtyPageLike {
   on(event: 'nodechange', cb: () => void): void;

@@ -1,16 +1,16 @@
 import { sha256 } from 'js-sha256';
 
-/** Salted hash of a Figma user id — the only form the server ever stores. */
+/** Salted hash of a Figma user id, the only form the server ever stores. */
 export function hashFigmaId(figmaId: string, salt: string): string {
   return sha256(`${salt}:${figmaId}`);
 }
 
-/** Quota/DO identity for a license — hashed so the raw key never reaches DO names or logs. */
+/** Quota/DO identity for a license, hashed so the raw key never reaches DO names or logs. */
 export function licenseIdentityId(key: string): string {
   return `lic:${sha256(key)}`;
 }
 
-/** The bearer's key and instance id, or null when the header carries no non-empty bearer. */
+/** Null when there is no non-empty bearer. */
 function parseBearer(headers: Headers): { key: string; instanceId: string | null } | null {
   const auth = headers.get('Authorization') ?? '';
   const bearer = auth.startsWith('Bearer ') ? auth.slice(7).trim() : '';
@@ -21,7 +21,6 @@ function parseBearer(headers: Headers): { key: string; instanceId: string | null
     : { key: bearer.slice(0, sep), instanceId: bearer.slice(sep + 1) || null };
 }
 
-/** Salted hash of a non-empty X-Figma-User header, else null. */
 function figmaHashFrom(headers: Headers, salt: string): string | null {
   const figma = (headers.get('X-Figma-User') ?? '').trim();
   return figma ? hashFigmaId(figma, salt) : null;
@@ -32,9 +31,8 @@ export type Identity =
   | { kind: 'free'; id: string };
 
 /**
- * License wins when both headers are present. Null = unauthenticated.
- * Bearer is `KEY` (legacy clients, instanceId null) or `KEY:instanceId`
- * (current plugin builds, binding the token to one activated device).
+ * License wins when both headers are present; null is unauthenticated. Bearer
+ * is `KEY` (legacy, instanceId null) or `KEY:instanceId` (bound to one device).
  */
 export function identityFromHeaders(headers: Headers, salt: string): Identity | null {
   const bearer = parseBearer(headers);
@@ -50,10 +48,9 @@ export interface CallerProofs {
 }
 
 /**
- * Every identity a request can prove, side by side. `identityFromHeaders`
- * picks one for AI metering; library ownership needs all of them, because a
- * library created on a free plan is owned by the Figma identity and the same
- * person later publishes with a license key.
+ * Every identity a request can prove. AI metering picks one; library ownership
+ * needs all, because a library created on a free plan is owned by the Figma
+ * identity and its owner may later publish with a license key.
  */
 export function callerProofs(headers: Headers, salt: string): CallerProofs {
   return {

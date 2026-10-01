@@ -1,9 +1,6 @@
 /**
- * settings.ts — generated-frame appearance controls.
- *
- * This is presentation only. ui-vnext.ts owns persistence and host messages,
- * while brandColors.ts remains the single source of truth for presets,
- * validation, and resolved values.
+ * Settings screen markup, presentation only: ui-vnext.ts owns persistence and
+ * host messages, and brandColors.ts owns presets, validation and resolved values.
  */
 
 import { EXTRACTOR_VERSION } from '@spec-layer/extractor';
@@ -49,12 +46,7 @@ export interface SettingsScreenState {
   fontWarning?: string;
   /** Which font field has its list open, if any. */
   fontMenuField?: FontField | null;
-  /**
-   * The build's stamped plugin version, or null when the build did not stamp
-   * one. Passed in rather than read here: this module is presentation only,
-   * and ui-vnext.ts already owns the `__PLUGIN_VERSION__` define through
-   * pluginBuild().
-   */
+  /** The build's stamped plugin version, or null when unstamped; from pluginBuild(). */
   pluginVersion: string | null;
   /** The tab on show. Absent means Frames, where Settings opens. */
   tab?: SettingsTab;
@@ -77,13 +69,9 @@ export interface FontMenuPresentation {
 }
 
 /**
- * The font list, as an overlay rather than a child of the field.
- *
- * It renders into the shell root next to the global search palette, for the
- * same two reasons: the settings panel scrolls with `overflow`, which clips an
- * absolutely positioned child, and the list has to be free to flip above the
- * input when it is near the bottom of a short panel. ui-vnext.ts positions it
- * in viewport coordinates with computeMenuPlacement from fontPicker.ts.
+ * The font list, an overlay in the shell root: the panel's `overflow` would
+ * clip a child, and the list must be free to flip above the input. ui-vnext.ts
+ * positions it with computeMenuPlacement.
  */
 export function fontMenuMarkup(model: FontMenuPresentation): string {
   const rows = [
@@ -105,10 +93,8 @@ export function fontMenuMarkup(model: FontMenuPresentation): string {
       ? '<p class="sl-font-menu-note">No font matches that name.</p>'
       : '';
 
-  // No scrim. A combobox should not block the rest of the panel, and a scrim
-  // covering the field turns "click the input to place the caret" into a close,
-  // whose focus restore then reopens the list. ui-vnext.ts closes it on an
-  // outside click instead.
+  // No scrim: one over the field would turn "click to place the caret" into a
+  // close whose focus restore reopens the list. Outside clicks close it instead.
   return (
     '<div class="sl-font-menu" role="listbox" aria-label="Fonts" data-font-menu ' +
     `data-font-menu-field="${model.field}">` +
@@ -119,21 +105,15 @@ export function fontMenuMarkup(model: FontMenuPresentation): string {
 }
 
 /**
- * The open state of a font field's combobox, kept in sync when the list opens
- * or closes without a repaint. Typing opens the list through renderFontMenu,
- * which never set this, so a screen reader heard a closed combobox with a
- * list under it.
+ * Keeps a font field's `aria-expanded` in sync when the list opens or closes
+ * without a repaint (typing opens it through renderFontMenu).
  */
 export function syncFontFieldExpanded(root: ParentNode, field: FontField, open: boolean): void {
   root.querySelector<HTMLInputElement>(`[data-theme-font="${field}"]`)
     ?.setAttribute('aria-expanded', String(open));
 }
 
-/**
- * Writes the fallback warning under the font fields in place. The font list
- * usually arrives after Settings has painted, and re-checking a typed value
- * against it changed the state without changing the screen.
- */
+/** Writes the font fallback warning in place; the font list usually lands after Settings paints. */
 export function paintFontWarning(root: ParentNode, text: string): void {
   const hint = root.querySelector<HTMLElement>('[data-settings-font-hint]');
   if (hint) hint.textContent = text;
@@ -155,10 +135,9 @@ function fontField(field: FontField, label: string, value: string, open: boolean
 }
 
 /**
- * The swatch previews the generated frame's header band, so its colours must
- * come from the preset itself rather than a copy in CSS — a copy drifts, and a
- * preview that shows a colour the frame will not use is worse than no preview.
- * White matches `onHeader` in frameKit.ts, which every preset shares.
+ * The swatch previews the frame's header band, so its colours come from the
+ * preset itself, never a CSS copy that could drift. White matches `onHeader`
+ * in frameKit.ts, which every preset shares.
  */
 function themeChoice(
   name: string,
@@ -184,31 +163,20 @@ function themeChoice(
 }
 
 /**
- * The swatch is the picker.
- *
- * A native `type="color"` input is the whole feature, with the OS picker and no
- * custom eyedropper or wheel to maintain, and it keeps the field looking like a
- * swatch (see the CSS, which strips its default chrome).
- *
- * `value` must be a spec-valid lowercase `#rrggbb` or the control silently
- * sanitizes it to #000000 and the field would read as black. Everything here
- * comes through resolveTheme or parseBrandHex, both of which lowercase, so this
- * holds; it is the reason parseBrandHex's `.toLowerCase()` matters beyond tidiness.
+ * The swatch is a native `type="color"` input. Its `value` must be lowercase
+ * `#rrggbb` or the control silently shows #000000; resolveTheme and
+ * parseBrandHex both lowercase, which is why parseBrandHex's `.toLowerCase()` matters.
  */
 function colorField(field: ColorField, label: string, value: string): string {
   return (
     `<label class="sl-theme-color-field"><span>${esc(label)}</span>` +
     '<span class="sl-theme-color-input">' +
-    // The hex field comes FIRST in the DOM and the CSS puts the swatch back in
-    // column one. A label's control is its first labelable descendant, and an
-    // <input type="color"> is labelable where the inert <i> was not, so leading
-    // with the swatch quietly turned "click the field's label to type a hex"
-    // into "click the label to open the OS picker".
+    // The hex field comes first in the DOM (CSS puts the swatch back in column
+    // one): a label activates its first labelable control, so leading with the
+    // color input would make the label open the OS picker.
     `<input data-theme-field="${field}" aria-label="${esc(label)} color" ` +
     `value="${esc(value)}" spellcheck="false">` +
-    // tabindex -1 for the same reason as the font chevron: the hex field is the
-    // labelled, keyboard-complete way in, so this is a pointer affordance and
-    // must not add a second tab stop to all four fields.
+    // tabindex -1 like the font chevron: the hex field is the keyboard way in.
     `<input type="color" data-theme-swatch="${field}" tabindex="-1" ` +
     `aria-label="Pick ${esc(label)} color" value="${esc(value)}">` +
     '</span></label>'
@@ -256,11 +224,9 @@ function logoControls(state: SettingsScreenState): string {
 }
 
 /**
- * The Export tab: one choice, YAML or Markdown, for every way a component
- * leaves the plugin. The hint says what Markdown leaves out rather than
- * calling it the same facts, which it is not: the page drops the machine
- * fields the YAML carries. Foundations are named because the choice does not
- * reach them, and the setting would otherwise look half applied.
+ * The Export tab: YAML or Markdown for every way a component leaves the
+ * plugin. The hint says what Markdown leaves out, and names Foundations, which
+ * the choice does not reach.
  */
 function exportSection(format: ComponentFormat): string {
   const radios = COMPONENT_FORMATS.map((value) => {
@@ -286,23 +252,10 @@ function exportSection(format: ComponentFormat): string {
 }
 
 /**
- * The About section: two labelled versions and the way out to the docs.
- *
- * Both numbers carry their label. An unlabelled "Extractor 2" says neither
- * that it is a version nor what it counts, and the plugin version beside it
- * read as part of the product name.
- *
- * They answer different questions. The plugin version is what the release
- * gate in TESTING.md compares against the Figma listing, and what every
- * connected document already carries as `pluginVersion`. The extractor
- * version is what a Library asking for a rebuild on every row is reacting to,
- * which is why it says so in a line underneath rather than leaving the reader
- * to infer it.
- *
- * Plain text, no copy button. It is a dozen characters and the iframe already
- * lets you select them.
- *
- * The tab names the panel, so the section carries no heading of its own.
+ * The About section: two labelled versions and the way out to the docs. The
+ * plugin version is what the TESTING.md release gate compares against the
+ * Figma listing; the extractor version is what a Library-wide rebuild request
+ * reacts to. Plain text: the iframe already lets you select it.
  */
 function aboutSection(state: SettingsScreenState): string {
   // Never fabricate. An unstamped build knows no version, so the row is
@@ -316,8 +269,7 @@ function aboutSection(state: SettingsScreenState): string {
     plugin +
     `<div><dt>Extractor version</dt><dd>${esc(EXTRACTOR_VERSION)}</dd></div>` +
     '</dl>' +
-    // Same shape as the rail's outbound links, which is the plugin's one
-    // established way to leave the iframe.
+    // Shaped like the rail's outbound links, the plugin's way out of the iframe.
     `<a class="sl-about-docs" href="${DOCS_URL}" target="_blank" rel="noopener">` +
     `Read the guide${icon('externalLink', 14)}</a>` +
     '</section>'
@@ -325,14 +277,9 @@ function aboutSection(state: SettingsScreenState): string {
 }
 
 /**
- * The tab strip. It sits in the page header under the title, so it stays in
- * place while the panel scrolls. One panel serves every tab and only the
- * selected tab's content is drawn into it. The roving tabindex keeps the
- * strip a single Tab stop; ui-vnext.ts moves between tabs with the arrow keys.
- *
- * Underline tabs (`.sl-tabs`), not the `.sl-segmented` pill: the pill picks a
- * value, and the Export tab's format choice is one, so tabs drawn the same
- * way read as a second setting stacked above it.
+ * The tab strip, in the page header so it holds still while the panel scrolls.
+ * A roving tabindex keeps it one Tab stop. Underline tabs, not `.sl-segmented`,
+ * which picks a value and would read as a second setting above Export's.
  */
 function settingsTabsMarkup(selected: SettingsTab): string {
   const tabs = SETTINGS_TABS.map(({ id, label }) => {
@@ -347,8 +294,7 @@ function settingsTabsMarkup(selected: SettingsTab): string {
 }
 
 export function settingsHeaderMarkup(tab: SettingsTab = 'frames'): string {
-  // No subtitle. It said "Generated frame appearance", which the Frame theme
-  // heading directly below already says, and which About makes untrue.
+  // No subtitle: it would repeat the Frame theme heading and be untrue on About.
   return `<div class="sl-page-header-copy"><h1>Settings</h1>${settingsTabsMarkup(tab)}</div>`;
 }
 

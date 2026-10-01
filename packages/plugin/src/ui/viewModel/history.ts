@@ -1,11 +1,4 @@
-/**
- * history.ts (view model): turns a version record's change list into the
- * cards the history pane renders, and names a bump in plain words. Pure.
- *
- * One card per subject (each component by name, and Foundations), so an
- * item never repeats the component it belongs to. Inside a card, breaking
- * changes (removed, renamed) read first, then additions, then value changes.
- */
+/** History pane cards from a change list, one per component plus Foundations, and bump wording. */
 import type { ChangeKind, LibraryChange, VersionRecord } from '@spec-layer/extractor';
 
 export interface HistoryItem {
@@ -36,15 +29,11 @@ function valueSentence(id: string): string {
   return `${id} changed`;
 }
 
-/** "added" or "removed" for those kinds, else "changed"; renames are handled per entity. */
 const verbOf = (kind: ChangeKind): string => (kind === 'added' || kind === 'removed' ? kind : 'changed');
 
 /**
- * The sentence for one change and the scope line that should follow it.
- * Where the scope is part of the sentence (an option's axis, a mode's
- * collection, a token value's mode) the returned scope is null so the pane
- * never prints it twice. Values are never in the sentence: the pane renders
- * `from` struck through beside `to`.
+ * Scope is null when the sentence already carries it. Values never go in the
+ * sentence: the pane renders `from` struck through beside `to`.
  */
 export function describeChange(change: LibraryChange): { text: string; scope: string | null } {
   const { kind, name, scope } = change;
@@ -57,8 +46,7 @@ export function describeChange(change: LibraryChange): { text: string; scope: st
       if (kind === 'changed' || kind === 'renamed') return { text: `Default of ${name} changed`, scope };
       return { text: `Variant property ${name} ${kind}`, scope };
     case 'option':
-      // libraryDiff.ts diffs options as plain strings, so an option is only
-      // ever added or removed, and always carries its axis as the scope.
+      // libraryDiff.ts: an option is only added or removed, scoped to its axis.
       if (kind === 'added') return { text: `Value ${name} added to ${scope}`, scope: null };
       return { text: `Value ${name} removed from ${scope}`, scope: null };
     case 'property':
@@ -77,8 +65,7 @@ export function describeChange(change: LibraryChange): { text: string; scope: st
       if (kind === 'renamed') return { text: `Collection ${from} renamed to ${name}`, scope };
       return { text: `Collection ${name} ${verbOf(kind)}`, scope };
     case 'mode':
-      // A mode is only ever added, removed, or renamed, and always carries its
-      // collection's name as the scope (libraryDiff.ts diffFoundation).
+      // diffFoundation: a mode is added, removed or renamed, scoped to its collection.
       if (kind === 'renamed') return { text: `Mode ${from} renamed to ${name} in ${scope}`, scope: null };
       if (kind === 'added') return { text: `Mode ${name} added to ${scope}`, scope: null };
       return { text: `Mode ${name} removed from ${scope}`, scope: null };
@@ -107,10 +94,7 @@ export function groupChanges(changes: LibraryChange[]): HistoryCard[] {
     if (items) items.push(item);
     else cards.set(label, [item]);
   }
-  // Foundations first, then components in the change list's order (the proxy
-  // sorts changes foundation first, then by component name, so this only
-  // matters for a list that arrived unsorted). Within a card, rank first and
-  // the list's order second.
+  // Foundations first, then the list's order; within a card, rank then list order.
   const ordered = [...cards].sort(([a], [b]) => Number(b === FOUNDATIONS) - Number(a === FOUNDATIONS));
   return ordered.map(([label, items]) => ({
     label,
@@ -130,7 +114,7 @@ export function bumpTone(bump: VersionRecord['bump']): 'danger' | 'accent' | 'su
   }
 }
 
-/** The badge word. Plain, capitalized; the meaning is in bumpExplanation. */
+/** The badge word; the meaning is in bumpExplanation. */
 export function bumpLabel(bump: VersionRecord['bump']): string {
   switch (bump) {
     case 'major': return 'Major';
@@ -140,13 +124,12 @@ export function bumpLabel(bump: VersionRecord['bump']): string {
   }
 }
 
-/** One sentence for the badge's tooltip. Says what happened, not what semver calls it. */
+/** The badge tooltip: what happened, not what semver calls it. */
 export function bumpExplanation(bump: VersionRecord['bump']): string {
   switch (bump) {
     case 'major': return 'Something was removed or renamed. Code that used it may break.';
     case 'minor': return 'Something was added. Existing code keeps working.';
-    // Styles are structural (libraryDiff.ts STRUCTURAL): adding, removing or
-    // renaming one is never a patch, and a style's values are covered by "Values".
+    // Styles are STRUCTURAL in libraryDiff.ts, so a style add or removal is never a patch.
     case 'patch': return 'Values, bindings, or text changed. No component, property, variable, or mode was added or removed.';
     case 'initial': return 'The first publish. Nothing to compare against.';
   }

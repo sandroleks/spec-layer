@@ -3,10 +3,7 @@ import {
   type CommitOptions, type QuotaLimits, type QuotaSnapshot, type ReleaseOptions, type ReserveOptions, type ReserveResult, type Tier,
 } from './quota';
 
-/**
- * The slice of DurableObjectStorage the store uses. Structural, so the
- * Durable Object passes `ctx.storage` and tests pass a Map.
- */
+/** The slice of DurableObjectStorage used; the DO passes `ctx.storage`, tests a Map. */
 export interface DoStorageLike {
   get<T = unknown>(key: string): Promise<T | undefined>;
   put<T>(key: string, value: T): Promise<void>;
@@ -18,8 +15,8 @@ export interface DoStorageLike {
  *   engine            QuotaEngine JSON: counts, reservations, and a body-free
  *                     index of committed cache keys
  *   resp:<cacheKey>   the committed response body for that key
- * Before this split the engine value carried every body inline and a busy
- * identity could push it past the per-value limit, failing every quota op.
+ * Bodies stay out of `engine` so a busy identity cannot push it past the
+ * per-value limit and fail every quota op.
  */
 export const ENGINE_KEY = 'engine';
 export const responseKey = (cacheKey: string): string => `resp:${cacheKey}`;
@@ -28,10 +25,9 @@ export class QuotaStore {
   constructor(private readonly storage: DoStorageLike, private readonly limits: QuotaLimits) {}
 
   /**
-   * Loads the counter. A blob written before the split is migrated here,
-   * once: each live body moves under its own key, expired ones are not
-   * copied (the engine's next prune forgets their index entries), and the
-   * body-free record is written back.
+   * Loads the counter, migrating an inline-body blob once: live bodies move to
+   * their own keys, expired ones are dropped (the next prune forgets their
+   * index entries), and the body-free record is written back.
    */
   private async load(now: number): Promise<QuotaEngine> {
     const stored = await this.storage.get<string>(ENGINE_KEY);
@@ -46,7 +42,7 @@ export class QuotaStore {
     return engine;
   }
 
-  /** Persists the counter after deleting the body of every entry the engine dropped since the last save. */
+  /** Deletes the bodies of entries evicted since the last save, then persists. */
   private async save(engine: QuotaEngine): Promise<void> {
     for (const cacheKey of engine.takeEvicted()) await this.storage.delete(responseKey(cacheKey));
     await this.storage.put(ENGINE_KEY, engine.toJSON());
@@ -61,19 +57,18 @@ export class QuotaStore {
         await this.save(engine);
         return { kind: 'cached', body };
       }
-      // The index remembers a commit whose body is gone. Answering with
-      // nothing would be a fabricated response, so forget the entry and
-      // reserve afresh (this second attempt also counts against the
-      // per-minute attempt limit, which is the honest reading of it).
+      // The index remembers a commit whose body is gone. Answering would be
+      // a fabricated response, so forget it and reserve afresh (the retry
+      // counts against the per-minute attempt limit).
       engine.forgetResponse(cacheKey);
       out = engine.reserve(tier, cacheKey, now, opts);
     }
     await this.save(engine);
-    // `forgetResponse` removed the only entry that could answer `cached` again; fail closed if it somehow does.
+    // Nothing should answer `cached` after `forgetResponse`; fail closed if it does.
     return out.kind === 'cached' ? { kind: 'pending' } : out;
   }
 
-  /** Commits and returns the snapshot in the same hop, so a handler answers its headers without a second call. */
+  /** Returns the snapshot in the same hop, so the handler needs no second call for headers. */
   async commit(tier: Tier, cacheKey: string, body: string, now: number, opts?: CommitOptions): Promise<QuotaSnapshot> {
     const engine = await this.load(now);
     engine.commit(cacheKey, now, opts);

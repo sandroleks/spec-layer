@@ -1,15 +1,9 @@
 /// <reference types="@figma/plugin-typings" />
 /**
- * foundationScales.ts: the scale drawing a number cell shows above its value.
- *
- * A GAP token is a distance, a CORNER_RADIUS token is a curve, an OPACITY token
- * is a translucency, and a table of digits shows none of that. The extractor
- * decides WHICH drawing a row gets (FoundationVariableRow.glyph, from Figma's
- * scopes) and hashes it; this module only decides how big, from the value the
- * cell already draws. `glyphSpec` is pure and tested; `buildGlyph` is verified
- * on canvas by the Figma matrix.
- *
- * Runs on the main thread: ECMAScript and the figma API only.
+ * The scale drawing a number cell shows above its value. The extractor decides
+ * WHICH drawing a row gets (FoundationVariableRow.glyph) and hashes it; this
+ * module only sizes it from the value the cell already draws. Runs on the main
+ * thread: ECMAScript and the figma API only.
  */
 import type { FoundationGlyph, FoundationValue } from '@spec-layer/extractor';
 import { palette, solidFill, vstack, hstack, makeText, font } from './frameKit';
@@ -40,12 +34,9 @@ export function glyphValue(value: FoundationValue): number | null {
   return null;
 }
 
-/**
- * Size a glyph. Null draws nothing: negative and non-finite values have no
- * honest drawing, and an opacity outside 0..1 is not in the range Figma's own
- * `opacity` accepts, so it is left as its number rather than normalised by a
- * guess.
- */
+/** Size a glyph. Null draws nothing: negative and non-finite values have no
+ *  honest drawing, and an opacity outside 0..1 stays a number rather than
+ *  being normalised by a guess. */
 export function glyphSpec(glyph: FoundationGlyph, value: number, cellWidth: number): GlyphSpec | null {
   if (!Number.isFinite(value) || value < 0) return null;
   switch (glyph) {
@@ -56,16 +47,9 @@ export function glyphSpec(glyph: FoundationGlyph, value: number, cellWidth: numb
         : { kind: 'bar', length: value, clipped: false };
     }
     case 'radius': {
-      // The square grows with the value, like the bar, and stops at the same
-      // edge of the cell the bar stops at. A fixed 96px cap made every radius
-      // from 48 up draw the identical circle, since Figma clamps a corner
-      // radius to half the side: a 48, a 64 and a 200 were indistinguishable
-      // and none of them matched its own number.
-      //
-      // `clamped` says the curve Figma will actually draw is smaller than the
-      // stated radius, which is exactly when the square is a circle. The
-      // renderer marks it the way the bar marks a clip, so a reader is never
-      // shown a drawing that quietly disagrees with the value beside it.
+      // The square grows with the value up to the bar's edge. Figma clamps a
+      // corner radius to half the side, so `clamped` marks a drawn curve
+      // smaller than the stated radius, as the bar marks a clip.
       const side = Math.min(cellWidth - BAR_INSET, Math.max(RADIUS_MIN, 2 * value));
       return { kind: 'radius', side, radius: value, clamped: value > side / 2 };
     }
@@ -130,8 +114,7 @@ export function buildGlyph(spec: GlyphSpec, cellWidth: number): FrameNode {
       square.strokes = solidFill(palette.border);
       square.strokeWeight = 1;
       box.appendChild(square);
-      // Same tick the bar draws when it runs out of cell: the curve on screen
-      // is smaller than the number says, and saying so is the honest option.
+      // The bar's clip tick: the curve drawn is smaller than the number says.
       if (spec.clamped) box.appendChild(rect(TICK_W, spec.side, palette.heading));
       return box;
     }

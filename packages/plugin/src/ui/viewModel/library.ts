@@ -6,10 +6,7 @@ import { resolveStatus, type DocBaseline } from '../../docLink';
 import type { FoundationIconKind } from '../../foundationIcon';
 import type { DocSourceIntent, LibraryEntry } from '../../messages';
 
-/**
- * Drift is resolved independently from library enumeration. `unavailable`
- * means the check failed: it is deliberately distinct from `inSync`.
- */
+/** Resolved apart from enumeration. `unavailable` means the check failed, never `inSync`. */
 export type LibraryDriftState =
   | 'pending'
   | 'inSync'
@@ -33,28 +30,18 @@ export function isLibraryFilter(value: string): value is LibraryFilter {
 }
 
 /**
- * Which `requestDocSource` intent a queued Library update carries.
- *
- * Decided when the run starts, from the drift the row had then, and stored on
- * the queue entry: `libraryDrift` is cleared when a refresh's `library` reply
- * lands, so reading it at dispatch would turn a mid-batch rebuild into a
- * plain update and skip the AI top-up the banner promised.
+ * Decide at run start and store on the queue entry: `libraryDrift` is cleared
+ * when a refresh lands, so reading it at dispatch turns a rebuild into an update.
  */
 export function libraryUpdateIntent(drift: LibraryDriftState | undefined): DocSourceIntent {
   return drift === 'staleVersion' ? 'rebuild' : 'update';
 }
 
-/**
- * Where an expanded row's change list stands. `idle` is every row that is not
- * expanded. Expanding a drifted row sets `pending` and asks main for the
- * baseline; the reply resolves to `ready` (possibly with no groups) or
- * `unavailable` with the reason the UI knows.
- */
+/** `idle` for every unexpanded row; expanding is `pending` until main's baseline reply resolves. */
 export type LibraryChangeState = 'idle' | 'pending' | 'ready' | 'unavailable';
 
 export type LibraryChangeUnavailableReason =
-  /** Main sent no baseline: the doc predates baselines, its baseline was
-   *  over budget, or it no longer matches the link. An Update writes one. */
+  /** Main sent no baseline (none, over budget, or mismatched); an Update writes one. */
   | 'noBaseline'
   /** Anything else: no live side, or the diff itself failed. */
   | 'other';
@@ -67,11 +54,7 @@ export type LibraryChangeResult =
 export interface LibraryRowModel {
   docId: string;
   kind: LibraryEntry['kind'];
-  /**
-   * Which foundation source glyph this row gets, matching the Foundations
-   * picker row for the same source. `null` on component rows, and `mixed` on a
-   * foundation row from a main thread that could not read its scope.
-   */
+  /** Matches the Foundations picker glyph; `null` on component rows, `mixed` when scope is unreadable. */
   foundationIcon: FoundationIconKind | null;
   label: string;
   sourceLabel: string;
@@ -85,28 +68,14 @@ export interface LibraryRowModel {
   canDetach: boolean;
   canRemove: boolean;
   /**
-   * Whether this row offers Copy for AI. Copy never mutates anything, so it
-   * does not depend on drift or self-edit status the way canUpdate does:
-   * `updateAvailable` and `edited` rows stay copyable, since reading the live
-   * (drifted) source is exactly the point for those.
-   *
-   * Component rows: the source component still exists — the same condition the
-   * removed Download action used.
-   *
-   * Foundation rows: the doc's scope still resolves, and the main thread told
-   * us what that scope is. A foundation doc has no source node, so it can never
-   * satisfy the component condition and had no Copy at all until this became
-   * kind-aware.
-   *
-   * Both kinds exclude `unavailable`, which means the live read against this
-   * source failed. Copy re-reads that same source, so it would very likely fail
-   * too, and offering it would promise something that cannot be delivered.
+   * Copy never mutates, so drifted and edited rows stay copyable. Never on
+   * `unavailable`: Copy re-reads the source whose live read just failed.
    */
   canCopy: boolean;
   changeState: LibraryChangeState;
-  /** Populated only in the `ready` state. `null` otherwise. */
+  /** Set only in the `ready` state. */
   changeGroups: ChangeGroup[] | null;
-  /** Populated only in the `unavailable` state. `null` otherwise. */
+  /** Set only in the `unavailable` state. */
   changeUnavailableReason: LibraryChangeUnavailableReason | null;
 }
 
@@ -119,9 +88,8 @@ export interface LibraryCounts {
 export interface LibraryModel {
   filter: LibraryFilter;
   counts: LibraryCounts;
-  /** All rows, in registry order, before the selected filter is applied. */
+  /** Registry order, before the filter. */
   allRows: LibraryRowModel[];
-  /** Rows visible for the selected filter and optional search query. */
   rows: LibraryRowModel[];
 }
 
@@ -130,20 +98,12 @@ export interface BuildLibraryModelOptions {
   filter?: LibraryFilter;
   expandedDocId?: string | null;
   query?: string;
-  /** Injectable wall clock, primarily so relative age labels are deterministic. */
   now?: number;
-  /** Per-doc change results for the current refresh pass; a row not in the
-   *  map that is expanded reads as `pending`. */
+  /** This refresh pass's results; an expanded row missing here reads `pending`. */
   changes?: ReadonlyMap<string, LibraryChangeResult>;
 }
 
-/**
- * Compact relative time used by the fixed-width age column.
- *
- * A missing or invalid timestamp stays visibly unknown instead of pretending
- * the document was generated recently. Future timestamps are treated as
- * "just now" to tolerate small clock differences.
- */
+/** An invalid timestamp reads 'Unknown', never recent; a future one "just now" (clock skew). */
 export function formatLibraryAge(
   generatedAt: number | undefined,
   now = Date.now(),
@@ -162,13 +122,8 @@ export function formatLibraryAge(
 }
 
 /**
- * When the Library's source check last completed, as a caption.
- *
- * A skipped check is only honest if the screen says when the rows were
- * last checked, so this is what lets a Library visit send no work. Relative
- * under an hour, the clock time after, because "3 h ago" invites the wrong
- * question (was it before or after my edit) and the clock answers it. Null
- * with no stamp: no caption rather than a made-up time.
+ * The caption that makes a skipped check honest. Relative under an hour, then
+ * clock time ("before or after my edit?"). Null with no stamp, never made up.
  */
 export function formatLibraryCheckedAt(
   checkedAt: number | null,
@@ -185,12 +140,9 @@ export function formatLibraryCheckedAt(
 }
 
 /**
- * How long until formatLibraryCheckedAt reads differently, or null when it
- * never will again: no stamp, or an hour or more old, where the caption is
- * a clock time. The label moves on whole minutes counted from the check, so
- * a timer that sleeps this long flips it on time, where one ticking every
- * minute from whenever the list opened could leave "Checked just now" up
- * for almost two.
+ * Ms until formatLibraryCheckedAt reads differently, or null when it never
+ * will (no stamp, or a clock time). Minutes count from the check, not from
+ * when the list opened, so a timer sleeping this long flips the label on time.
  */
 export function libraryCheckedLabelChangesIn(
   checkedAt: number | null,
@@ -204,12 +156,8 @@ export function libraryCheckedLabelChangesIn(
 }
 
 /**
- * Status resolution preserves the domain priority:
- * orphaned > update available > edited > in sync.
- *
- * Pending checks stay pending so the UI never flashes a lower-priority claim.
- * A failed check is neutral unless the independently reliable self-edit fact is
- * already known.
+ * Priority: orphaned > update available > edited > in sync. Pending stays
+ * pending so the UI never flashes a lower claim; a failed check is neutral.
  */
 export function resolveLibraryRowStatus(
   entry: LibraryEntry,
@@ -218,9 +166,7 @@ export function resolveLibraryRowStatus(
   if (!entry.sourceExists) return 'orphaned';
   if (drift === 'pending') return 'pending';
   if (drift === 'unavailable') return entry.selfEdited ? 'edited' : 'unavailable';
-  // A pre-0.2 doc's hash was produced by a different projection, so its drift
-  // is meaningless as content drift: read it as "rebuild needed" rather than
-  // routing it through the drifted/inSync hash comparison below.
+  // Another extractor's hash projection says nothing about content drift.
   if (drift === 'staleVersion') return 'rebuildNeeded';
 
   return resolveStatus({
@@ -230,11 +176,7 @@ export function resolveLibraryRowStatus(
   });
 }
 
-/**
- * Foundation enumeration already carries its live content hash. Component
- * drift arrives asynchronously. Missing foundation extraction is unavailable,
- * not in sync.
- */
+/** Component drift arrives later; a foundation with no live hash is unavailable, not in sync. */
 export function libraryDriftForEntry(
   entry: LibraryEntry,
   drift: ReadonlyMap<string, LibraryDriftState>,
@@ -253,17 +195,9 @@ export function libraryDriftForEntry(
 }
 
 /**
- * Where a row stands the moment a scan lands, before any source check:
- * `'check'` when it needs one, the state it already has when it does not,
- * or null for a doc whose source is gone (its row reads orphaned, which
- * outranks any drift).
- *
- * A component doc built by another extractor is `staleVersion` right away.
- * Its hash projection differs from this build's, so its source check could
- * only ever answer "rebuild", and waiting for that answer put the rebuild
- * banner up mid-pass, over rows the user was already reading. It also
- * spares that doc's source read. A missing version (a link written before
- * the field existed) is another extractor too.
+ * A row's state when a scan lands: `'check'`, its known state, or null when
+ * the source is gone. A doc from another extractor version (or none) is
+ * `staleVersion` at once; waiting for its check would raise the rebuild banner mid-pass.
  */
 export function initialLibraryDrift(
   entry: LibraryEntry,
@@ -291,8 +225,7 @@ export function buildLibraryRow(
   return {
     docId: entry.docId,
     kind: entry.kind,
-    // An entry from an older main thread carries no icon; `mixed` is the same
-    // "claims nothing" fallback the derivation itself uses.
+    // An older main thread sends no icon; `mixed` claims nothing.
     foundationIcon: entry.kind === 'foundation'
       ? entry.foundationIcon ?? 'mixed'
       : null,
@@ -311,10 +244,8 @@ export function buildLibraryRow(
     canDetach: true,
     canRemove: true,
     canCopy: entry.kind === 'foundation'
-      // An entry from an older main thread carries no scope. Unlike
-      // foundationIcon, which falls back to `mixed`, there is no honest
-      // fallback for "which collection": copying the wrong one is worse than
-      // not offering, so the row withholds the action.
+      // No scope from an older main thread has no honest fallback: copying
+      // the wrong collection is worse than not offering Copy.
       ? entry.foundationScope !== undefined
         && status !== 'unavailable'
         && status !== 'orphaned'
@@ -331,13 +262,7 @@ export function buildLibraryModel(
 ): LibraryModel {
   const filter = options.filter ?? 'all';
   const allRows = entries.map((entry) => buildLibraryRow(entry, options));
-  // 'rebuildNeeded' counts alongside 'updateAvailable': both mean "this row
-  // needs action from the badge/filter's point of view", they just differ in
-  // WHY (content drift vs. a stale extractor format). Keeping them as
-  // distinct LibraryRowStatus values means a row's own copy still says
-  // "Rebuild needed", never "Update available". Only this aggregate view
-  // treats them the same, per the controller's call that the badge/filter
-  // exclusion was an oversight, not an intended distinction.
+  // Both need action for the badge and filter; the row's own copy keeps them distinct.
   const needsAction = (row: LibraryRowModel) =>
     row.status === 'updateAvailable' || row.status === 'rebuildNeeded';
   const counts: LibraryCounts = {
@@ -358,35 +283,20 @@ export function buildLibraryModel(
 }
 
 /**
- * Whether the Library rail badge should show, given a pass that may still be
- * running.
- *
- * `counts.updates` is not a fact until a check pass finishes:
- * `startLibraryDriftChecks` clears every result and marks each component row
- * `pending`, so reading it directly would drop the badge to zero on reload and
- * climb back one landed check at a time.
- *
- * A found update is true immediately, so it shows at once. A zero only means
- * "nothing to report" once nothing is still being checked; until then the
- * previous answer stands.
+ * A found update shows at once; a zero counts only once nothing is checking,
+ * since `startLibraryDriftChecks` resets rows to `pending` and the badge would dip.
  */
 export function libraryBadgeVisible(input: {
-  /** Updates known so far this pass. */
   updates: number;
   /** A refresh is in flight, or some row's source check has not landed. */
   checking: boolean;
-  /** The last answer shown, kept while `checking`. */
   previous: boolean;
 }): boolean {
   if (input.updates > 0) return true;
   return input.checking ? input.previous : false;
 }
 
-/**
- * Turn a `docBaseline` reply into the row's change result. Pure so every branch
- * is testable without the message loop. Every failure is `unavailable`, never
- * a partial list.
- */
+/** A `docBaseline` reply as the row's change result; any failure is `unavailable`, never a partial list. */
 export function resolveLibraryChanges(input: {
   baseline: DocBaseline | null;
   live?: FoundationUnitContent | null;

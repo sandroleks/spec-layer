@@ -1,9 +1,6 @@
 /**
- * Presentation contracts for the plugin UI redesign.
- *
- * These types do not replace the current plugin state or message protocol.
- * They define the exhaustive visual states that screens/* should map from
- * existing domain state.
+ * Presentation contracts: the exhaustive visual states screens/* map from
+ * domain state. They do not replace the plugin state or message protocol.
  */
 
 export type PluginView =
@@ -13,8 +10,7 @@ export type PluginView =
   | "settings"
   | "license";
 
-// ThemeMode is not declared here. theme.ts owns it, and the shell imports it
-// from there; a second declaration would be free to drift from the real one.
+// ThemeMode lives in theme.ts; do not redeclare it here.
 
 export type AllowanceState =
   | { kind: "loading" }
@@ -29,7 +25,7 @@ export type ComponentScreenState =
   | { kind: "ready"; componentName: string }
   /** `phase` is the progress line under the button, always set by the build. */
   | { kind: "building"; componentName: string; action: "create"; phase: string }
-  /** The outcome sentence is a native toast; this state carries no copy. */
+  /** The outcome sentence is a native toast, so no copy here. */
   | { kind: "success"; componentName: string; replaced: boolean }
   | { kind: "error"; componentName: string; message: string };
 
@@ -79,10 +75,7 @@ export interface SectionOption {
   aiCapable: boolean;
   selected: boolean;
   disabled?: boolean;
-  /**
-   * Why this row is disabled, shown as a muted suffix after the label. The
-   * label itself never changes, so it still matches the generated section.
-   */
+  /** Why the row is disabled, as a muted suffix; the label stays the section's name. */
   note?: string;
 }
 

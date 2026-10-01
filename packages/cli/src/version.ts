@@ -1,10 +1,8 @@
 import { readFileSync } from 'node:fs';
 
 /**
- * The published version, read from package.json one directory up. That holds
- * for the built bundle in dist/ and for the TypeScript sources under src/
- * during tests. A CLI that cannot find its own package.json says so rather
- * than guessing.
+ * The published version from package.json one directory up (true for dist/ and
+ * src/), or 'unknown' rather than a guess.
  */
 export function cliVersion(): string {
   try {

@@ -33,11 +33,7 @@ export function contrastRatio(a: string, b: string): number {
   return (hi + 0.05) / (lo + 0.05);
 }
 
-/**
- * Composite `fg` at `alpha` over an opaque `bg`. WCAG is defined on the colour
- * a user actually sees, and semi-transparent text is common in disabled and
- * muted styles, so ignoring alpha would report ratios nobody experiences.
- */
+/** Composite `fg` at `alpha` over an opaque `bg`: WCAG measures the colour a user actually sees. */
 export function blend(fg: string, alpha: number, bg: string): string {
   if (alpha >= 1) return fg;
   if (alpha <= 0) return bg;
@@ -52,8 +48,7 @@ export function blend(fg: string, alpha: number, bg: string): string {
 
 /**
  * The AA threshold for this text. "Large" is >= 24px, or >= 18.66px at weight
- * 700 or above (WCAG 2.1 SC 1.4.3). An unknown size is treated as normal text,
- * which is the stricter and therefore safer assumption.
+ * 700 or above (WCAG 2.1 SC 1.4.3). An unknown size is normal text, the stricter case.
  */
 export function requiredRatio(fontSize: number | undefined, fontWeight: number | undefined): 3 | 4.5 {
   if (fontSize === undefined) return 4.5;
@@ -62,8 +57,7 @@ export function requiredRatio(fontSize: number | undefined, fontWeight: number |
   return 4.5;
 }
 
-/** Follow an alias chain to the concrete colour it stands for. Exported because
- *  foundation contrast resolves variable values exactly the same way. */
+/** Follow an alias chain to its concrete colour; shared with foundation contrast. */
 export function concreteColor(v: FoundationValue): { hex: string; alpha: number } | null {
   if (v.kind === 'color') return { hex: v.hex, alpha: v.alpha };
   if (v.kind === 'alias' && v.resolved) return concreteColor(v.resolved);
@@ -71,16 +65,10 @@ export function concreteColor(v: FoundationValue): { hex: string; alpha: number 
 }
 
 /**
- * Look a token name up in the foundation and return its colour in the owning
- * collection's DEFAULT mode. The lookup spans every collection, which is what
- * component contrast needs: one component's text and background tokens
- * routinely live in different collections.
- *
- * That reach is also why it stays on the default mode. Two collections can carry
- * unrelated mode sets, so there is no correspondence that would pair Light in one
- * with Light in the other. Per-mode measurement is `colorContrast` in
- * colorContrast.ts, which earns a shared mode set by confining each pair to a
- * single collection, and therefore cannot serve a cross-collection lookup.
+ * A token's colour in its collection's DEFAULT mode, searched across every
+ * collection, since a component's text and background tokens often live in
+ * different ones. That reach is why it stays on the default mode: unrelated
+ * mode sets have no correspondence (per-mode measurement is `colorContrast`).
  */
 export function resolveTokenColor(
   foundation: FoundationSpec,

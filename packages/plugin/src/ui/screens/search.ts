@@ -1,13 +1,7 @@
 /**
- * search.ts — connected-document command palette.
- *
- * This is presentation only. The host owns query state, active-pointer
- * movement, activation, Escape/Cmd-K handling, the focus trap, scroll-into-
- * view, and returning focus to the header Search trigger.
- *
- * Rows are deliberately plain: one line, a quiet glyph, the document name, and
- * its source only when that adds something. The palette is a list to scan
- * quickly, so the list itself carries no tiles, chevrons, or accent frames.
+ * The search palette's markup, presentation only: the host owns query state,
+ * the active pointer, activation, keys, the focus trap and focus return. Rows
+ * stay plain (glyph, name, source when it adds something) so the list scans fast.
  */
 
 import { icon } from '../shell/icons';
@@ -22,13 +16,9 @@ function resultId(index: number): string {
 }
 
 /**
- * The source line, dropped when it adds nothing.
- *
- * Two cases. A foundation doc is labelled "Foundations · Mapped Radius" over a
- * source of "Mapped Radius", so showing both prints the same words twice on
- * one row. And when every result on screen comes from the same place, the
- * column is the same word down the whole list; a file that keeps its
- * components on one page, which is most files, read "Components" six times.
+ * The source line, dropped when it repeats the label (a foundation doc's
+ * "Foundations · Mapped Radius" over "Mapped Radius") or when every result
+ * shares one source.
  */
 function sourceDetail(result: SearchDocumentResult, sharedSource: boolean): string {
   if (sharedSource) return '';
@@ -66,10 +56,8 @@ function allShareSource(results: readonly SearchDocumentResult[]): boolean {
 }
 
 /**
- * The group heading names what the list actually is. Before typing it is the
- * recent component docs, not a search result, and saying so is the difference
- * between an empty palette reading as "nothing matched" and "nothing
- * documented yet".
+ * Before typing the list is the recent component docs, so an empty palette
+ * reads as "nothing documented yet", not "nothing matched".
  */
 function groupTitle(model: SearchModel): string {
   return model.recent ? 'Recent components' : 'Library';
@@ -94,15 +82,9 @@ function emptyMarkup(model: SearchModel): string {
 }
 
 /**
- * The Library's last (or only) read found nothing at all: it failed outright,
- * or stopped partway before collecting a single doc. Either way, "No
- * component docs yet" and "No matches for …" would both claim a fact this
- * file's read never established. Distinct from `emptyMarkup`'s two branches,
- * and from the loading state above it: nothing is in flight here, so this
- * points at the Library rather than promising the palette itself will
- * resolve it. Only for a read that produced nothing; see
- * `partialNoMatchesMarkup` for a read that did produce docs but cannot vouch
- * for the rest of the file.
+ * The Library's read found nothing at all (failed, or stopped before one doc),
+ * so "No component docs yet" or "No matches" would claim an unestablished
+ * fact. Nothing is in flight, so it points at the Library.
  */
 function unreadableMarkup(): string {
   return (
@@ -114,12 +96,9 @@ function unreadableMarkup(): string {
 }
 
 /**
- * A query matched none of the docs a failed or partial read did collect.
- * Plain "No matches for …" would claim the whole file was searched, which
- * this read cannot back: the doc that matches may be one the read never
- * reached. Only reached with `results.length === 0` and at least one doc on
- * screen (`libraryUnreadable` above takes the zero-doc case first), so this
- * never doubles up with it.
+ * No match among the docs a failed or partial read collected. Plain "No
+ * matches" would claim the whole file was searched; the match may be a doc
+ * the read never reached.
  */
 function partialNoMatchesMarkup(): string {
   return (
@@ -133,11 +112,8 @@ function partialNoMatchesMarkup(): string {
 }
 
 /**
- * The recent list is empty, but the read behind it failed or stopped early.
- * "No component docs yet" would claim the whole file was read; a component
- * doc may be one the read never reached. Only reached with at least one doc
- * on screen (`libraryUnreadable` takes the zero-doc case first). No Clear
- * button: nothing has been typed.
+ * The recent list is empty but its read failed or stopped early, so "No
+ * component docs yet" would overclaim. No Clear button: nothing was typed.
  */
 function partialNoRecentMarkup(): string {
   return (
@@ -149,10 +125,7 @@ function partialNoRecentMarkup(): string {
   );
 }
 
-/**
- * Just the results list, which is the only part that changes as the user
- * types. Exported for patchGlobalSearch.
- */
+/** Just the results list, the only part that changes while typing. */
 export function globalSearchResultsMarkup(
   model: SearchModel,
   options: {
@@ -180,29 +153,20 @@ export function globalSearchResultsMarkup(
       '</div></section>'
     );
   }
-  // A refresh already in flight (checked above) gets the benefit of the
-  // doubt; a read that failed or came up empty with nothing further running
-  // does not. `libraryUnreadable` is only set when the read produced no docs
-  // at all (the host guards it on `libraryEntries.length === 0`), so a file
-  // with docs on screen never hits this branch, however unreliable the read
-  // behind them is.
+  // A refresh in flight (above) gets the benefit of the doubt; a finished read
+  // with no docs does not. The host sets `libraryUnreadable` only with zero docs.
   if (options.libraryUnreadable === true) {
     return unreadableMarkup();
   }
-  // Docs exist, so the file is not "unreadable", but a query with no matches
-  // among them still cannot be reported as a complete negative when the read
-  // that produced those docs failed or stopped early: the doc that matches
-  // may be the one it never reached. The same goes for an empty recent list.
+  // Docs exist, but no match (or no recent doc) among them is not a complete
+  // negative when their read failed or stopped early.
   if (options.libraryReadUnreliable === true) {
     return model.recent ? partialNoRecentMarkup() : partialNoMatchesMarkup();
   }
   return emptyMarkup(model);
 }
 
-/**
- * Complete overlay markup. Host code can mount this as the last child of the
- * plugin shell and use the data attributes for event delegation.
- */
+/** Complete overlay markup, mounted as the last child of the plugin shell. */
 export function globalSearchMarkup(
   model: SearchModel,
   options: {
@@ -244,15 +208,9 @@ export function globalSearchMarkup(
 }
 
 /**
- * Updates a mounted palette in place, and returns whether one was there.
- *
- * Replacing the whole layer on every keystroke restarted the panel's entry
- * animation, so the palette flashed once per typed letter, and it also meant
- * rebuilding the input and putting the caret back by hand. Only the results
- * list and the input's pointer attribute actually change while typing, so
- * those are all this touches. The input's own value is left alone unless it
- * has genuinely diverged from the model, which happens when the host clears
- * the query rather than when the user types it.
+ * Updates a mounted palette in place (returns whether one was there):
+ * replacing the layer per keystroke restarts its entry animation and rebuilds
+ * the input. The input's value is reset only when the host cleared the query.
  */
 export function patchGlobalSearch(
   root: HTMLElement,
@@ -283,11 +241,7 @@ export function patchGlobalSearch(
   return true;
 }
 
-/**
- * Moves the active row without rebuilding the list. Hover and focus report an
- * index on every pointer move, so re-rendering the results for each one did
- * the whole list's work to change two attributes.
- */
+/** Moves the active row by toggling attributes; hover and focus report every pointer move. */
 export function setSearchActive(root: HTMLElement, activeIndex: number): void {
   const dialog = root.querySelector<HTMLElement>('[data-global-search-dialog]');
   if (!dialog) return;

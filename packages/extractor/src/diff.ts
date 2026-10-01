@@ -1,14 +1,11 @@
 /**
- * diff.ts: the semantic diff behind the Library's "Show changes".
+ * diff.ts: the semantic diff behind the Library's "Show changes". Two layers: a
+ * keyed-list core (diffKeyed) that `spec-layer diff` will reuse with v5 keys,
+ * and group builders that turn two hash projections into a row's ChangeGroup[].
  *
- * Pure and Figma-free. Two layers: a keyed-list core (diffKeyed) that the later
- * `spec-layer diff` command reuses with its own v5 keys, and group builders that
- * turn two hash projections into the ChangeGroup[] a Library row renders.
- *
- * The diff input is the hash input. componentChangeGroups takes two
- * SpecHashProjection values and foundationChangeGroups two FoundationUnitContent
- * values: exactly the objects specContentHash and foundationContentHash hash.
- * Comparing anything else could disagree with the "Update available" badge.
+ * The diff input is the hash input: the builders take exactly the objects
+ * specContentHash and foundationContentHash hash, so a list can never disagree
+ * with the "Update available" badge.
  */
 import { canonicalEqual, type SpecHashProjection } from './hash';
 import type {
@@ -27,13 +24,10 @@ export interface ListDiff<T> {
 }
 
 /**
- * Diff two lists by identity key.
- *
- * Output order follows the `after` list for added and changed and the `before`
- * list for removed, so a caller never sorts and no locale is involved.
- * Duplicate keys within one list are paired positionally; surplus items are
- * reported as added or removed, never silently merged. `equal` defaults to
- * canonical equality, so "changed" means "would hash differently".
+ * Diff two lists by identity key. Added and changed follow `after` order,
+ * removed follows `before`, so no sort or locale is involved. Duplicate keys
+ * pair positionally; surplus items are added or removed, never merged. `equal`
+ * defaults to canonical equality: "changed" means "would hash differently".
  */
 export function diffKeyed<T>(
   before: readonly T[],
@@ -49,8 +43,7 @@ export function diffKeyed<T>(
     else beforeByKey.set(k, [item]);
   }
 
-  // How many `after` items have claimed each key so far. The nth `after` item
-  // with a key pairs with the nth `before` item with that key.
+  // The nth `after` item with a key pairs with the nth `before` item with it.
   const consumed = new Map<string, number>();
   const added: T[] = [];
   const changed: { before: T; after: T }[] = [];
@@ -76,9 +69,7 @@ export function diffKeyed<T>(
     if (index >= (consumed.get(k) ?? 0)) removed.push(item);
   }
 
-  // With nothing added, removed or changed, every value is equal, so the only
-  // remaining difference is order. JSON.stringify rather than a joined string
-  // so no separator character can collide with a key.
+  // Only order can differ now. JSON.stringify, so no separator can collide with a key.
   const reordered = added.length === 0 && removed.length === 0 && changed.length === 0
     && JSON.stringify(before.map(key)) !== JSON.stringify(after.map(key));
 
@@ -103,12 +94,7 @@ type Draft = string | ChangeItem;
 /** The one line a group shows when only its order moved. */
 const REORDERED = 'Order changed, values unchanged';
 
-/**
- * A stored baseline is not validated past "projection is an object", so a
- * list may be missing or malformed. Treat anything that is not an array as an
- * empty list rather than throwing: a half-readable baseline still explains
- * what it can.
- */
+/** A stored baseline may hold a missing or malformed list; read it as empty, so a half-readable baseline still explains what it can. */
 function list<T>(value: readonly T[] | undefined | null): readonly T[] {
   return Array.isArray(value) ? value : [];
 }
@@ -151,9 +137,8 @@ function scalarItem(label: string, before: string | undefined, after: string | u
 // ---------------------------------------------------------------------------
 
 /**
- * One formatter per value kind so item copy is uniform. Nothing is invented:
- * an unresolved value names its reason and never a guessed number, and an
- * alias with no resolution shows only its reference.
+ * One formatter per value kind. Nothing is invented: an unresolved value names
+ * its reason, and an alias with no resolution shows only its reference.
  */
 export function formatFoundationValue(value: FoundationValue): string {
   switch (value.kind) {
@@ -223,11 +208,7 @@ function formatPart(part: FoundationUnitContent['part']): string | undefined {
   return part ? `${part.index + 1} of ${part.total}` : undefined;
 }
 
-/**
- * Groups, in order: Layout, Tokens, Descriptions, Modes, Part. Empty groups
- * are dropped; `[]` means nothing differs, which for two inputs that hash
- * differently should not happen.
- */
+/** Groups, in order: Layout, Tokens, Descriptions, Modes, Part. Empty groups are dropped. */
 export function foundationChangeGroups(
   before: FoundationUnitContent,
   after: FoundationUnitContent,
@@ -235,10 +216,8 @@ export function foundationChangeGroups(
   const tokens: Draft[] = [];
   const descriptions: Draft[] = [];
 
-  // A baseline written before Plan 3 has no codeSyntax/glyph/full text metrics
-  // at all, so diffing those fields against the current projection would
-  // report every row as changed. One Layout item explains the whole move
-  // instead, so the badge never shows "Update available" over an empty list.
+  // A pre-Plan 3 baseline lacks codeSyntax, glyph and full metrics, so one
+  // Layout item explains the move instead of every row reading as changed.
   const layout: Draft[] = [];
   const prePlan3 = isPrePlan3(before);
   if (prePlan3) {
@@ -257,13 +236,9 @@ export function foundationChangeGroups(
       // Comparing a colour to a number cell by cell says nothing.
       tokens.push(`${a.name}: type ${rowTypeLabel(b)} changed to ${rowTypeLabel(a)}`);
     } else if (b.kind === 'variable' && a.kind === 'variable') {
-      // Cells added or removed follow the mode set, which the Modes group
-      // already explains; only a value that moved is a token item. The cell
-      // reorder flag is ignored on purpose, not overlooked: unitContent builds
-      // `cells` and `modeNames` from one `modes` array in one order, so
-      // cells[i].modeName is always modeNames[i]. A cell-only reorder is
-      // therefore unreachable, and a reorder of the modes themselves reaches
-      // the user through the Modes group.
+      // Cells added or removed follow the mode set (the Modes group). The cell
+      // reorder flag is ignored: unitContent builds `cells` and `modeNames` from
+      // one array, so a cell-only reorder is unreachable.
       const cells = diffKeyed(list(b.cells), list(a.cells), (cell) => cell.modeName);
       for (const { before: cb, after: ca } of cells.changed) {
         tokens.push(`${a.name} in ${ca.modeName}: ${formatFoundationValue(cb.value)} changed to ${formatFoundationValue(ca.value)}`);
@@ -369,24 +344,15 @@ export function comboKey(values: Combo): string {
 }
 
 /**
- * The distinct tokens bound on one (part, property) in one variant: what
- * resolveTokensForVariant resolves for it, as a sorted set so two cells compare
- * by content. A set, not a list: several layers can share a part name, and the
- * minimizer's rules can overlap for one token, so the same name may resolve
- * more than once for a variant without that being a design fact.
- * `bindingCells` expands a projection's minimized rules back over its variant
- * instances, which is the shape the canvas Tokens table renders and the shape
- * a designer edits one variant at a time.
+ * The distinct tokens bound on each (part, property) per variant, as sorted
+ * sets: `bindingCells` expands minimized rules back over the variant instances,
+ * the shape the canvas Tokens table renders. A set, since shared part names and
+ * overlapping rules can resolve one name twice.
  *
- * Keyed on `part`, not `path`, because SpecHashProjection carries only `part`:
- * `path` stays out of the hash (see specHashProjection in hash.ts), and the
- * diff input is the hash input. So two same-named parts in different
- * subtrees share one cell here, and a change to either reads as a change to
- * the pair. Fixing that means adding `path` to the projection, which moves
- * specContentHash for every committed document, so it waits for the next
- * EXTRACTOR_VERSION bump. The same applies to ruleItems
- * below. libraryDiff.ts, which reads the v5 artifact rather than the
- * projection, already keys on `path`.
+ * Keyed on `part`, not `path`: `path` stays out of SpecHashProjection, and the
+ * diff input is the hash input, so same-named parts share a cell. Adding `path`
+ * moves specContentHash for every committed document, so it waits for the next
+ * EXTRACTOR_VERSION bump (ruleItems too). libraryDiff.ts already keys on `path`.
  */
 type CellsByProperty = Map<string, { part: string; property: string; cells: Map<string, string[]> }>;
 
@@ -412,11 +378,9 @@ function bindingCells(projection: SpecHashProjection): CellsByProperty {
 }
 
 /**
- * The axes of a variant grid and each axis's value order: the declared
- * `variants` axis order and option order where available, then anything else
- * the instances actually carry, in first-seen order. Only values some variant
- * carries are kept, so a declared option nobody uses is never named as changed.
- * Exported for libraryDiff.ts, which feeds it the v5 artifact's declared axes.
+ * A variant grid's axes and value order: declared order first, then whatever
+ * the instances carry, first-seen. Only carried values are kept, so an unused
+ * option is never named as changed. Also used by libraryDiff.ts.
  */
 export function axisModel(
   declared: readonly { prop: string; values: readonly string[] }[],
@@ -452,22 +416,18 @@ function variantDefaults(projection: SpecHashProjection): Map<string, string> {
 }
 
 /**
- * The fewest, widest conditions that select exactly `subset` out of
- * `universe`: a greedy cover. Each rule starts from one uncovered variant
- * pinned on every axis, then each axis in turn is freed entirely if every
- * variant that admits is in the subset, or else widened value by value under
- * the same test. A rule never admits a variant outside the subset, so no line
- * names a variant that did not change; a subset that is not one product of
- * axis values takes more than one line rather than an inaccurate one.
+ * The fewest, widest conditions selecting exactly `subset` out of `universe`,
+ * by greedy cover: each rule starts pinned on every axis of one uncovered
+ * variant, then frees or widens each axis while it admits only subset members.
+ * No line names an unchanged variant; a non-product subset takes several lines.
  */
 export function coverConditions(
   subset: readonly Combo[],
   universe: readonly Combo[],
   axes: Map<string, string[]>,
 ): { conditions: Record<string, string[]>; count: number }[] {
-  // Every combo's key once. The greedy below probes admissibility once per
-  // axis and once per axis value per rule, and each probe used to
-  // re-stringify the whole universe; the proxy runs this on every publish.
+  // Every combo's key once: the greedy probes many times per rule, and the
+  // proxy runs this on every publish.
   const universeKeys = universe.map(comboKey);
   const subsetKeys = subset.map(comboKey);
   const inSubset = new Set(subsetKeys);
@@ -519,11 +479,9 @@ export function coverConditions(
 
 /**
  * The scope line under a token item: "1 of 64 variants: type Primary · size
- * Large · others at default". Axes pinned to their Figma default collapse into
- * "others at default" once there are at least two of them and something else is
- * named; a scope pinned on every axis, all at default, is "the default
- * variant". An axis with no recorded default is always spelled out. No scope
- * at all when the conditions are empty: the change reaches every variant.
+ * Large · others at default". Two or more default-pinned axes collapse into
+ * "others at default" when something else is named; all at default is "the
+ * default variant". No scope when the change reaches every variant.
  */
 export function describeScope(
   conditions: Record<string, string[]>,
@@ -554,20 +512,14 @@ function setDifference(a: readonly string[], b: readonly string[]): string[] {
 }
 
 /**
- * Token items. Compared per variant, not per rule: a rule's conditions are
- * recomputed over the whole grid by extractTokens, so rebinding one variant
- * splits one general rule into several specific ones, and a diff keyed by
- * conditions reads that single edit as several rules added and one removed.
- * Both sides are expanded over their variant instances and compared cell by
- * cell; cells that moved the same way are described together, with the fewest
- * conditions that select exactly them on a second scope line. A cell that kept
- * some tokens and swapped others reports only the tokens that moved. Variants
- * present on one side only are the Variants group's story and are not
- * repeated here.
+ * Token items, compared per variant, not per rule: rebinding one variant splits
+ * a general rule into several, which a rule-keyed diff reads as many edits.
+ * Both sides expand over their instances and compare cell by cell; cells that
+ * moved alike share one item, scoped by the fewest conditions selecting them.
+ * Variants on one side only belong to the Variants group.
  *
- * Returns null when a side carries no variant instances, which a valid
- * projection never does; the caller then falls back to rule identity so a
- * half-readable baseline still explains what it can.
+ * Returns null when a side has no variant instances; the caller then falls back
+ * to rule identity.
  */
 function tokenItems(before: SpecHashProjection, after: SpecHashProjection): ChangeItem[] | null {
   const beforeVariants = list(before.variantInstances);
@@ -678,12 +630,9 @@ function formatValues(values: Record<string, string>): string {
 
 /**
  * Groups, in order: Name, Properties, Variants, Anatomy, States, Tokens,
- * Unbound values, Layout, Related. `description` is content, not identity,
- * and lands under Name alongside the component's own name. `figmaKey`,
- * `figmaFile`, `figmaNode` and `anatomyComponentId` are hashed identity, not
- * content, so a change in any of them is one "Source identity changed" line
- * under Name. The file name and the documentation links are not in the
- * projection, so they are not itemized: the diff input is the hash input.
+ * Unbound values, Layout, Related. Hashed identity (`figmaKey`, `figmaFile`,
+ * `figmaNode`, `anatomyComponentId`) is one "Source identity changed" line under
+ * Name. File name and documentation links are not in the projection, so not itemized.
  */
 export function componentChangeGroups(
   before: SpecHashProjection,
@@ -745,8 +694,7 @@ export function componentChangeGroups(
   for (const part of parts.removed) anatomy.push(`Part ${part.name} removed`);
   for (const { before: b, after: a } of parts.changed) {
     if (b.name !== a.name) anatomy.push(`Part ${b.name} renamed to ${a.name}`);
-    // `nested` is derived from the type (anatomy.ts: type === 'INSTANCE'), so
-    // the type line already reports every change to it; no line of its own.
+    // `nested` derives from the type, so the type line covers it.
     if (b.type !== a.type) {
       anatomy.push(`Part ${a.name}: type ${formatLayerType(b.type)} changed to ${formatLayerType(a.type)}`);
     }

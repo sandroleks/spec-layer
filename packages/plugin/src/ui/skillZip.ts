@@ -1,14 +1,8 @@
 /**
- * skillZip.ts — the downloadable snapshot skill, as files.
- *
- * Every byte comes from extractor code that already ships: each component
- * file is the YAML publish produces or the Markdown page `componentMarkdown`
- * renders from the same artifact, which is what Copy for AI and
- * `spec-layer pull` write, and the token files are the ones `spec-layer pull`
- * writes. Nothing here is a second interpretation of v5.
- *
- * Pure by construction, so the whole payload is testable without a DOM or a
- * Figma file. `download.ts` turns the result into bytes.
+ * The downloadable snapshot skill, as files. Every byte comes from shipping
+ * extractor code (the YAML publish produces or `componentMarkdown`, and the
+ * token files `spec-layer pull` writes), never a second interpretation of v5.
+ * Pure, so the payload is testable without a DOM; `download.ts` makes the bytes.
  */
 import {
   componentMarkdown, componentSlugs, dtcgExportFiles, fontRequirements, foundationDtcg, usageUnits,
@@ -18,9 +12,7 @@ import { DEFAULT_COMPONENT_FORMAT, type ComponentFormat } from '../componentForm
 import type { PublishBundleV1 } from './publish';
 
 /** What SKILL.md describes, derived from the file set so it never presents a
- *  file the zip does not carry as present. A missing folder or `fonts.json`
- *  is still named where the guide says it is absent, or lists what a stale
- *  snapshot leaves behind for the reader to delete. */
+ *  missing file as present; one is named only as absent or as stale leftovers. */
 export interface SnapshotInventory {
   fileName: string | null;
   pluginVersion: string | null;
@@ -129,10 +121,8 @@ export function renderSnapshotSkill(inv: SnapshotInventory): string {
     lines.push('');
   }
   if (inv.tokens) {
-    // `fonts.json` is written whenever a foundation was read, empty or not
-    // (the CLI's pull does the same), so this section always runs alongside
-    // it and always names the file by path -- the one payload file that
-    // otherwise had no path printed anywhere in the guide.
+    // `fonts.json` is written whenever a foundation was read (as the CLI's pull
+    // does), so this section always runs with it and names its path.
     lines.push('## Fonts', '');
     if (inv.fonts.length > 0) {
       lines.push(
@@ -163,23 +153,18 @@ export function renderSnapshotSkill(inv: SnapshotInventory): string {
 const ROOT = 'spec-layer';
 
 /**
- * The whole snapshot as `path -> text`.
- *
- * The token files are produced exactly as `spec-layer pull` produces them,
- * including the `usageUnits` pass: the evidence for a unit no Figma scope
- * states is split between the Foundation and the component bindings, and the
- * projection alone sees only the first. Skipping it here would give a
- * downloaded `tokens/` directory that disagrees with a pulled one.
+ * The whole snapshot as `path -> text`. Token files go through the same
+ * `usageUnits` pass as `spec-layer pull`: unit evidence is split between the
+ * Foundation and component bindings, and skipping it would make a downloaded
+ * `tokens/` disagree with a pulled one.
  */
 export function buildSkillFiles(
   bundle: PublishBundleV1, generatedAt: string, format: ComponentFormat = DEFAULT_COMPONENT_FORMAT,
 ): Record<string, string> {
   const files: Record<string, string> = {};
 
-  // YAML is the bundle's `ai`, verbatim, as publish wrote it. Markdown is
-  // rendered here from the same bundle's artifact; an artifact that cannot be
-  // rendered throws, and the download reports that rather than saving a zip
-  // with a gap in it.
+  // YAML is the bundle's `ai` verbatim; Markdown is rendered from its artifact,
+  // and one that cannot render throws rather than leave a gap in the zip.
   const slugs = componentSlugs(bundle.components.map((c) => c.name));
   const components = bundle.components.map((component, i) => ({
     name: component.name,
@@ -204,10 +189,8 @@ export function buildSkillFiles(
     }
     tokens = { files: written };
     fonts = fontRequirements(artifact);
-    // Written whenever a foundation was read, empty list included -- the same
-    // as the CLI's pull (packages/cli/src/files.ts writes fonts.json whenever
-    // the Foundation is written). renderSnapshotSkill's Fonts section always
-    // runs alongside it and always names the path, honestly, either way.
+    // Written whenever a foundation was read, empty list included, as the CLI's
+    // pull does (packages/cli/src/files.ts).
     files[`${ROOT}/fonts.json`] = `${JSON.stringify(fonts, null, 2)}\n`;
   }
 
@@ -223,9 +206,8 @@ export function buildSkillFiles(
   return files;
 }
 
-/** `spec-layer-<file>-skill.zip`, or `spec-layer-skill.zip` when the file name
- *  carries nothing usable. `slugify` returns 'component' for such a name, which
- *  is meaningless here, so that case falls back instead. */
+/** `spec-layer-<file>-skill.zip`, or `spec-layer-skill.zip` when the name has
+ *  nothing usable (where `slugify` would return a meaningless 'component'). */
 export function skillZipFilename(fileName: string | null): string {
   if (!fileName) return 'spec-layer-skill.zip';
   const slug = fileName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');

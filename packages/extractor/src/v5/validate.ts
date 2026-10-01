@@ -1,28 +1,18 @@
 /**
- * Level 1 validation — spec §18 "Schema validity".
+ * Level 1 validation (spec §18 "Schema validity"): a hand-written mirror of
+ * `schema/foundation-5.1.1.json`, because the plugin sandbox cannot load
+ * `ajv`. `test/v5/schemaParity.test.ts` keeps the two from drifting.
  *
- * A hand-written mirror of `schema/foundation-5.1.1.json`, kept separate
- * because the plugin sandbox cannot load `ajv` (see the module comment on
- * that schema file). The published schema is for consumers; this is what the
- * plugin itself runs. `test/v5/schemaParity.test.ts` is what keeps the two
- * from drifting apart.
+ * Two codes carry its judgment:
+ *  - `INCONSISTENT_VALUE_SHAPE`: not the shape the union promises (a missing or
+ *    unknown discriminant such as `kind`, `type` or `status`, a bare primitive
+ *    for an object, a required structural key absent).
+ *  - `UNSUPPORTED_VALUE_TYPE`: a typed value of a known kind whose leaf field
+ *    cannot be represented (no unit, an unknown unit, a hex that is not six
+ *    lowercase digits, a non-finite number, an alpha outside 0..1).
  *
- * Two diagnostic codes carry the whole of this file's judgment, and they mean
- * different things:
- *
- *  - `INCONSISTENT_VALUE_SHAPE` — the JSON is not the shape the discriminated
- *    union promises: a missing or unrecognized discriminant (`kind`, a typed
- *    value's `type`, an alias resolution's `status`), a bare primitive where
- *    an object belongs, a required structural key absent (a resolution chain
- *    step with no `mode_id`, an alias with no `reference`).
- *  - `UNSUPPORTED_VALUE_TYPE` — the discriminant is fine and the object is a
- *    typed value of a KNOWN kind, but a leaf field inside it cannot be
- *    represented: no unit, a unit outside the vocabulary, a hex that is not
- *    six lowercase digits, a non-finite number, an alpha outside 0..1.
- *
- * `validateLevel1` never throws. Every field access below is preceded by a
- * `typeof` / `Array.isArray` guard, because a validator that crashes on
- * malformed input cannot report on the one input where reporting matters.
+ * `validateLevel1` never throws: every access is type-guarded, since a
+ * validator that crashes on malformed input cannot report on it.
  */
 import { compareCodeUnits, diagnostic } from './diagnostics';
 import type { Diagnostic } from './diagnostics';
@@ -50,10 +40,8 @@ const isStringArray = (v: unknown): v is string[] =>
 
 const HEX_RE = /^#[0-9a-f]{6}$/;
 
-/** `JSON.stringify(undefined)` is `undefined`, not a string, so splicing it
- *  into a template literal for an absent reason prints the bare word
- *  "undefined" with no quotes -- indistinguishable from a reason that is
- *  literally the string `"undefined"`. Named here instead. */
+/** Names an absent reason: `JSON.stringify(undefined)` would print a bare
+ *  `undefined`, indistinguishable from the string "undefined". */
 function describeReason(value: unknown): string {
   return value === undefined ? 'no reason at all' : JSON.stringify(value);
 }
@@ -75,9 +63,8 @@ function unsupported(
 }
 
 /**
- * A leaf-level typed value (§9), reached once its `type` discriminant is
- * already known to be one of `SUPPORTED_TOKEN_TYPES` — every failure from
- * here down is content the shape cannot carry, never a shape problem.
+ * A typed value (§9) whose `type` is already known valid, so every failure
+ * here is content the shape cannot carry, never a shape problem.
  */
 function validateTypedValue(
   type: TokenType, tv: Record<string, unknown>, entityId: string, out: Diagnostic[], modeId?: string,
@@ -132,9 +119,8 @@ function validateTypedValue(
       if (!isFiniteNumber(tv.number)) {
         out.push(unsupported(entityId, 'duration.number must be a finite number.', modeId));
       }
-      // Reads the runtime vocabulary rather than re-spelling 'ms'/'s' inline,
-      // so this check and the published schema's enum have one source that
-      // schemaParity.test.ts can assert them both against.
+      // The runtime vocabulary, so schemaParity.test.ts checks this and the
+      // schema's enum against one source.
       if (typeof tv.unit !== 'string' || !SUPPORTED_DURATION_UNITS.includes(tv.unit as 'ms' | 's')) {
         out.push(unsupported(entityId, 'duration.unit must be "ms" or "s".', modeId));
       }
@@ -154,8 +140,7 @@ function validateTypedValue(
       break;
     }
     default:
-      // Exhaustive over TokenType; unreachable when `type` was already
-      // checked against SUPPORTED_TOKEN_TYPES by the caller.
+      // Unreachable: the caller checked `type`.
       break;
   }
 }
@@ -369,9 +354,8 @@ function validateCollection(collection: unknown, index: number, out: Diagnostic[
   validateOptionalEntityMetadata(collection, entityId, out, true, false);
 }
 
-/** §8 — one token record. Structural checks only; cross-references (does
- *  `collection_id` resolve, is there a value for every declared mode) are
- *  Level 2/3, not this level. */
+/** §8: one token record, structurally. Cross-references (does `collection_id`
+ *  resolve, a value for every mode) are Level 2/3. */
 function validateToken(token: unknown, index: number, out: Diagnostic[]): void {
   if (!isRecord(token)) {
     out.push(shape(`tokens[${index}]`, 'A token must be an object.'));
@@ -549,11 +533,9 @@ function validateEffectStyle(style: unknown, index: number, out: Diagnostic[]): 
 }
 
 /**
- * §5.2 — the top-level sections every artifact must expose. This validates
- * their containers plus every nested field Level 2 dereferences.
- * That invariant is what makes "Level 1 accepted" a safe precondition for
- * Level 2 rather than a promise that malformed collections or styles can
- * violate at runtime.
+ * §5.2: the top-level sections every artifact must expose, validated with
+ * every nested field Level 2 dereferences, so "Level 1 accepted" is a safe
+ * precondition for Level 2.
  */
 const COMPLETENESS_VALUES = ['complete', 'partial', 'unavailable'];
 
@@ -610,12 +592,9 @@ function validateRootSections(artifact: Record<string, unknown>, out: Diagnostic
 }
 
 /**
- * Level 1 validation — never throws, on any input.
- *
- * Anchors every diagnostic to the entity it is about (`entity_id`, plus
- * `mode_id` when the fault lives inside one mode's value), so a caller can
- * join a finding back to the token that produced it without re-deriving
- * position from array indices.
+ * Level 1 validation; never throws. Each diagnostic is anchored to its entity
+ * (`entity_id`, plus `mode_id` for a fault in one mode's value), so a caller
+ * joins findings without re-deriving positions from array indices.
  */
 export function validateLevel1(artifact: unknown): Diagnostic[] {
   try {
@@ -636,9 +615,8 @@ export function validateLevel1(artifact: unknown): Diagnostic[] {
 
     return out;
   } catch (err) {
-    // A per-access type guard cannot prevent an exception from a throwing
-    // getter or Proxy trap — the throw happens during the read itself. The
-    // guarantee has to be enforced structurally here instead.
+    // A throwing getter or Proxy trap fires during the read, past any type
+    // guard, so the no-throw guarantee is enforced here.
     const message = err instanceof Error && err.message
       ? `The artifact could not be read; accessing its properties threw: ${err.message}`
       : 'The artifact could not be read; accessing its properties threw.';
@@ -650,14 +628,9 @@ export function validateLevel1(artifact: unknown): Diagnostic[] {
 }
 
 // ---------------------------------------------------------------------------
-// Level 2 — referential integrity (§18 Level 2, §10 "Alias graph", §7 modes,
-// §6 identity and paths).
-//
-// Unlike Level 1, `validateLevel2` takes a typed `FoundationArtifactV5`, not
-// `unknown`: it is only meaningful to run once Level 1 has already accepted
-// the shape, so the defensive `isRecord`/`typeof` guarding above has no
-// counterpart down here -- every field this section reads is already the
-// type it claims to be.
+// Level 2: referential integrity (§18 Level 2, §10 "Alias graph", §7 modes,
+// §6 identity and paths). Takes a typed artifact Level 1 already accepted, so
+// it carries no defensive guarding.
 // ---------------------------------------------------------------------------
 
 interface AliasNode { tokenId: string; modeId: string }
@@ -692,10 +665,8 @@ interface ValidationIndexes {
 type AliasValue = Extract<CanonicalValue, { kind: 'alias' }>;
 
 /**
- * Independently replays Figma's mode choice. It deliberately does not consult
- * either alias's recorded chain: a bad mode-selection implementation must not
- * be able to validate its own output merely because every nested record repeats
- * the same wrong choice.
+ * Independently replays Figma's mode choice without consulting a recorded
+ * chain, so a wrong mode selection cannot validate its own output.
  */
 function expectedTargetMode(
   sourceToken: TokenV5,
@@ -724,9 +695,8 @@ function expectedTargetMode(
 
 function aliasTypesCompatible(owner: TokenType, target: TokenType): boolean {
   if (owner === target) return true;
-  // Figma aliases enforce raw FLOAT/STRING compatibility. Scope evidence can
-  // specialize those sources into v5 dimension/font_family tokens; these are
-  // the only cross-v5-type pairs accepted here, not general coercion rules.
+  // Figma aliases enforce raw FLOAT/STRING compatibility, which scopes may
+  // specialize into dimension/font_family; the only cross-type pairs accepted.
   return (owner === 'number' && target === 'dimension')
     || (owner === 'dimension' && target === 'number')
     || (owner === 'string' && target === 'font_family')
@@ -741,17 +711,11 @@ function scalarOf(value: TypedValue): number | string | undefined {
 }
 
 /**
- * Whether two typed values state the same thing, allowing the two pairs of
- * v5 types that are one raw Figma type. A FLOAT reads as `number` when its
- * scopes state no unit and as `dimension` when they do, and a STRING reads
- * as `font_family` under the FONT_FAMILY scope, so `number 16` and
- * `dimension 16px` are one Figma value seen through two scopes, not a
- * disagreement. Two dimensions with different units ARE a disagreement, and
- * stay one: the same-type branch compares them whole.
- *
- * Shared by the Level 2 chain replay below and by the style-binding drift
- * check in `fromFoundation.ts`, so the two can never judge one pair
- * differently.
+ * Whether two typed values state the same thing, allowing the two v5 type
+ * pairs that are one raw Figma type: a FLOAT is `number` or `dimension` by its
+ * scopes, a STRING is `font_family` under FONT_FAMILY. Two dimensions in
+ * different units still disagree. Shared by the Level 2 chain replay and the
+ * style-binding drift check in `fromFoundation.ts`, so both judge alike.
  */
 export function typedValuesAgree(a: TypedValue, b: TypedValue): boolean {
   if (a.type === b.type) return canonicalJson(a) === canonicalJson(b);
@@ -771,9 +735,8 @@ function snapshotMatchesTerminal(
   terminal: TypedValue,
   owner: TokenV5,
 ): boolean {
-  // A dimension snapshot over a bare-number terminal must be the OWNER's own
-  // specialization of that number: the unit came from the owner's scopes, so
-  // those scopes have to reproduce exactly this dimension.
+  // A dimension over a bare-number terminal must be the owner's own
+  // specialization: its scopes must reproduce exactly this dimension.
   if (snapshot.type === 'dimension' && terminal.type === 'number') {
     const specialized = numericValue(terminal.value, owner.scopes);
     return specialized !== null && canonicalJson(snapshot) === canonicalJson(specialized);
@@ -976,9 +939,8 @@ function checkChainTruth(
       return;
     }
 
-    // An unresolved root may state only the honest prefix available before a
-    // depth/source failure. Validate every supplied adjacency, but do not
-    // invent or require a terminal it explicitly says it did not reach.
+    // An unresolved root may state only the honest prefix before a depth or
+    // source failure: check every supplied hop, never require a terminal.
     if (resolved.status === 'unresolved' && chainIndex >= resolved.chain.length) return;
 
     currentToken = targetToken;
@@ -988,10 +950,9 @@ function checkChainTruth(
 }
 
 /**
- * Verifies the alias metadata and the recorded resolution snapshot against the
- * artifact's stable identities, then independently replays every supplied
- * chain. This is deliberately separate from the graph walk: chain provenance
- * is validated as data, never used as the resolver's source of truth.
+ * Verifies alias metadata and resolution snapshots against the artifact's
+ * identities, then replays every chain. Separate from the graph walk: chain
+ * provenance is validated as data, never used as the resolver's truth.
  */
 function checkAliasProvenance(artifact: FoundationArtifactV5, out: Diagnostic[]): void {
   const indexes: ValidationIndexes = {
@@ -1137,10 +1098,8 @@ function checkAliasProvenance(artifact: FoundationArtifactV5, out: Diagnostic[])
   }
 }
 
-/** The ring node with the lowest (token_id, mode_id) by code-unit order, so a
- *  cycle is reported from the same node regardless of which token the walk
- *  happened to reach it from first -- entry order depends on array position,
- *  which §16 determinism forbids leaking into output. */
+/** The ring node with the lowest (token_id, mode_id) by code unit, so a cycle
+ *  is reported from one node whatever the walk's entry order (§16). */
 function lowestRingIndex(ring: AliasNode[]): number {
   let best = 0;
   for (let i = 1; i < ring.length; i += 1) {
@@ -1152,26 +1111,12 @@ function lowestRingIndex(ring: AliasNode[]): number {
 }
 
 /**
- * Walks the alias graph rooted at every (token, mode) pair holding an alias
- * value.
- *
- * ITERATIVE, with an explicit `path` array standing in for the call stack a
- * recursive walk would otherwise consume. A recursive depth-first walk blows
- * the JS call stack at a few thousand hops regardless of algorithmic
- * complexity -- exactly what `artifactWithChainOfLength(5000)` exists to
- * catch.
- *
- * MEMOIZED on (token_id, mode_id): once a node's outcome is known -- resolved
- * to a terminal value, unresolved, or part of an already-reported cycle -- it
- * is marked 'done' and is never walked again. That is what keeps whole-
- * artifact resolution linear instead of quadratic (§21.3): without it, every
- * node in an N-long chain would be re-walked from every one of its N
- * ancestors.
- *
- * The alias graph is a FUNCTIONAL graph: every node has out-degree at most 1
- * (one `reference` per alias value), so "does the walk return to a node
- * already on the CURRENT path" is the entire cycle test -- no branching DFS
- * is needed, only a path stack and an O(1) membership check on it.
+ * Walks the alias graph from every (token, mode) pair holding an alias.
+ * Iterative, with `path` as the stack, since recursion overflows at a few
+ * thousand hops. Memoized on (token_id, mode_id): a node with a known outcome
+ * is 'done' and never walked again, keeping whole-artifact resolution linear
+ * (§21.3). Every node has out-degree at most 1, so "back on the current path"
+ * is the whole cycle test.
  */
 function walkAliasGraph(artifact: FoundationArtifactV5, out: Diagnostic[]): void {
   const tokens = artifact.tokens;
@@ -1182,12 +1127,8 @@ function walkAliasGraph(artifact: FoundationArtifactV5, out: Diagnostic[]): void
   };
   const states = new Map<string, Map<string, NodeState>>();
 
-  /**
-   * The mode the walk continues under after a hop. Mode ids are
-   * collection-scoped and selected independently from source/target mode
-   * metadata. The recorded chain is evidence to validate, never an instruction
-   * used to make a bad chain self-consistent.
-   */
+  /** The mode after a hop, replayed from collection metadata; the recorded
+   *  chain is evidence to validate, never an instruction. */
   const modeAfterHop = (
     fromToken: TokenV5, toToken: TokenV5, curModeId: string,
     _value: Extract<TokenV5['values'][string], { kind: 'alias' }>,
@@ -1224,9 +1165,7 @@ function walkAliasGraph(artifact: FoundationArtifactV5, out: Diagnostic[]): void
 
       while (true) {
         if (getNodeState(states, curTokenId, curModeId) === 'done') {
-          // A prior walk already determined this node's outcome (and
-          // reported whatever that outcome warranted). The nodes THIS walk
-          // added leading up to it are new, though, and need marking.
+          // A prior walk settled this node; mark the nodes this walk added.
           markDone(path);
           break;
         }
@@ -1247,16 +1186,14 @@ function walkAliasGraph(artifact: FoundationArtifactV5, out: Diagnostic[]): void
         const curToken = tokensById.get(curTokenId);
         const value = curToken?.values[curModeId];
         if (!curToken || !value || value.kind !== 'alias') {
-          // Terminal: a literal, an explicit `missing` record, or simply no
-          // entry for this mode on this token. Nothing further to resolve.
+          // Terminal: a literal, a `missing` record, or no entry for this mode.
           markDone(path);
           break;
         }
 
         const { reference } = value;
         if (reference.external) {
-          // External resolution is checked by `checkAliasProvenance`; the
-          // local graph cannot walk into a library that is absent here.
+          // `checkAliasProvenance` checks externals; an absent library cannot be walked.
           markDone(path);
           break;
         }
@@ -1264,20 +1201,15 @@ function walkAliasGraph(artifact: FoundationArtifactV5, out: Diagnostic[]): void
         const targetId = reference.target_id;
         const targetToken = targetId === null ? undefined : tokensById.get(targetId);
         if (!targetToken) {
-          // `checkAliasProvenance` owns the actionable dangling-target
-          // diagnostic; this walker owns cycle detection only.
+          // `checkAliasProvenance` owns dangling targets; this walker owns cycles.
           markDone(path);
           break;
         }
 
-        // Which mode the walk continues under. See `modeAfterHop`; this is
-        // replayed from artifact collection metadata, not copied from the
-        // alias's own asserted provenance.
         const nextModeId = modeAfterHop(curToken, targetToken, curModeId, value);
         if (nextModeId === undefined) {
-          // No authoritative cross-collection mode was recorded. Provenance
-          // validation reports that; the graph must not guess one merely to
-          // keep walking.
+          // No authoritative mode: provenance validation reports it, and the
+          // walk never guesses one.
           markDone(path);
           break;
         }
@@ -1290,21 +1222,16 @@ function walkAliasGraph(artifact: FoundationArtifactV5, out: Diagnostic[]): void
 }
 
 /**
- * §7: every token must carry an entry for every mode its collection
- * declares -- either a value, or an explicit `{kind: 'missing'}` record
- * stating so. Omitting the key entirely is the ABSENT case ("An absent mode
- * value MUST be distinguishable from an explicit null value"); a `missing`
- * record is the token stating the fact itself, so it is not reported.
+ * §7: every token carries an entry for every mode its collection declares, a
+ * value or an explicit `{kind: 'missing'}`. Only an absent key is reported ("An
+ * absent mode value MUST be distinguishable from an explicit null value").
  */
 function checkModeCompleteness(artifact: FoundationArtifactV5, out: Diagnostic[]): void {
   const collectionsById = new Map(artifact.collections.map((c) => [c.id, c]));
   for (const token of artifact.tokens) {
     const collection = collectionsById.get(token.collection_id);
-    // A token whose collection is not in the artifact has no declared mode
-    // list to check against, so this check genuinely cannot run for it -- but
-    // it is NOT skipped silently: `checkReferences` reports the dangling
-    // `collection_id` as UNRESOLVED_REFERENCE. That fact has exactly one owner,
-    // there, which is why this does not report it a second time.
+    // No collection, no mode list; `checkReferences` owns the dangling
+    // `collection_id` (UNRESOLVED_REFERENCE).
     if (!collection) continue;
     for (const mode of collection.modes) {
       if (!(mode.id in token.values)) {
@@ -1318,11 +1245,8 @@ function checkModeCompleteness(artifact: FoundationArtifactV5, out: Diagnostic[]
   }
 }
 
-/**
- * §6: id is identity. Two entities -- of any kind -- sharing one stable id
- * makes that id useless as identity, since a consumer joining on it cannot
- * tell which entity it means.
- */
+/** §6: id is identity, so two entities of any kind sharing one cannot be told
+ *  apart by a consumer joining on it. */
 function checkDuplicateIds(artifact: FoundationArtifactV5, out: Diagnostic[]): void {
   const allIds = [
     ...artifact.collections.map((c) => c.id),
@@ -1345,9 +1269,8 @@ function checkDuplicateIds(artifact: FoundationArtifactV5, out: Diagnostic[]): v
     }
   }
 
-  // Mode ids are collection-scoped, so the same id in two collections is
-  // valid. Repeating one inside a collection is not: default_mode_id and
-  // resolution-chain references would identify two records at once.
+  // Mode ids are collection-scoped: one id in two collections is valid, but a
+  // repeat within one makes default_mode_id and chain references ambiguous.
   for (const collection of artifact.collections) {
     const modeCounts = new Map<string, number>();
     for (const mode of collection.modes) {
@@ -1367,11 +1290,9 @@ function checkDuplicateIds(artifact: FoundationArtifactV5, out: Diagnostic[]): v
 }
 
 /**
- * §6: a normalized-path collision, scoped to `(collection_id, NFC(path))`.
- * Two collections both holding the same path is the normal, intended shape of
- * a themed design system -- a collection IS the namespace -- so this is
- * deliberately NOT a global check; flagging the cross-collection case would
- * fire on nearly every real file.
+ * §6: a normalized-path collision, scoped to `(collection_id, NFC(path))`. A
+ * collection is the namespace, so one path in two collections is the normal
+ * themed shape and is not flagged.
  */
 function checkPathCollisions(tokens: TokenV5[], out: Diagnostic[]): void {
   const groups = new Map<string, TokenV5[]>();
@@ -1392,30 +1313,19 @@ function checkPathCollisions(tokens: TokenV5[], out: Diagnostic[]): void {
 }
 
 /**
- * §18 Level 2's OTHER four reference classes.
- *
- * The level requires that "collection, mode, alias, replacement, and binding
- * references resolve". `walkAliasGraph` covers aliases and
- * `checkModeCompleteness` covers per-token mode records; nothing covered the
- * rest, so an artifact with a `collection_id` naming no collection, a
- * `default_mode_id` naming no declared mode, and a `replacement_id` naming no
- * token passed BOTH levels clean. Worse, the dangling `collection_id` made
- * `checkModeCompleteness` skip that token entirely, so a broken reference
- * SUPPRESSED a check instead of producing a finding.
- *
- * Every finding here is `UNRESOLVED_REFERENCE`, never `UNRESOLVED_ALIAS`: see
- * that code's comment in diagnostics.ts for why the two must stay apart.
+ * §18 Level 2's other reference classes ("collection, mode, alias,
+ * replacement, and binding references resolve") beyond `walkAliasGraph` and
+ * `checkModeCompleteness`. A broken collection, mode, replacement or binding
+ * reference is `UNRESOLVED_REFERENCE`; a typography alias to a missing or
+ * mismatched token is `UNRESOLVED_ALIAS`, like any other alias (diagnostics.ts).
  */
 function checkReferences(artifact: FoundationArtifactV5, out: Diagnostic[]): void {
   const collectionsById = new Map(artifact.collections.map((collection) => [collection.id, collection]));
   const collectionIds = new Set(collectionsById.keys());
   const tokensById = new Map(artifact.tokens.map((token) => [token.id, token]));
   const tokenIds = new Set(artifact.tokens.map((t) => t.id));
-  // Replacement targets are resolved against EVERY entity id rather than
-  // against the same kind as the referrer. §18 requires only that a
-  // replacement "resolves"; requiring a token to be replaced by a token would
-  // be a stricter rule than the spec states, and would fire on the legitimate
-  // case of a token superseded by a composite style.
+  // Replacements resolve against every entity id: §18 only requires that one
+  // "resolves", and a token may be superseded by a composite style.
   const allEntityIds = new Set([
     ...collectionIds,
     ...tokenIds,
@@ -1424,10 +1334,8 @@ function checkReferences(artifact: FoundationArtifactV5, out: Diagnostic[]): voi
   ]);
 
   for (const collection of artifact.collections) {
-    // §7: "The default mode MUST reference a declared mode ID." Checked
-    // against the collection's OWN mode list, not a global mode set: mode ids
-    // are collection-scoped, so a default naming another collection's mode is
-    // just as dangling as one naming nothing.
+    // §7: "The default mode MUST reference a declared mode ID", from the
+    // collection's own modes, since mode ids are collection-scoped.
     if (!collection.modes.some((m) => m.id === collection.default_mode_id)) {
       out.push(diagnostic('UNRESOLVED_REFERENCE', {
         entity_id: collection.id,
@@ -1465,9 +1373,8 @@ function checkReferences(artifact: FoundationArtifactV5, out: Diagnostic[]): voi
     }
   }
 
-  // §11: typography properties carry their variable binding in `source`.
-  // These aliases are not TokenV5 values, so `walkAliasGraph` cannot see them;
-  // validate their stable target identity and path explicitly here.
+  // §11: typography bindings live in `source`, not in TokenV5 values, so
+  // `walkAliasGraph` never sees them.
   for (const style of artifact.styles.typography) {
     for (const propertyName of TYPOGRAPHY_STYLE_PROPERTIES) {
       const source = style.properties[propertyName].source;
@@ -1498,10 +1405,8 @@ function checkReferences(artifact: FoundationArtifactV5, out: Diagnostic[]): voi
     }
   }
 
-  // §12: an effect style's mode is a reference just like a token value key.
-  // Mode ids are collection-scoped, so an id repeated across collections is
-  // valid in isolation but ambiguous when a style carries no collection id to
-  // qualify it.
+  // §12: an effect style's mode is a reference. An id repeated across
+  // collections is ambiguous, since a style names no collection.
   const modeOwners = new Map<string, string[]>();
   for (const collection of artifact.collections) {
     for (const mode of collection.modes) {
@@ -1541,8 +1446,7 @@ function checkReferences(artifact: FoundationArtifactV5, out: Diagnostic[]): voi
     : [{ id: e.id, replacement_id: e.lifecycle.replacement_id }]));
 
   for (const { id, replacement_id: replacementId } of withLifecycle) {
-    // `null` is the stated "no replacement", which resolves trivially. Only a
-    // named replacement can dangle.
+    // `null` states "no replacement"; only a named one can dangle.
     if (replacementId !== null && !allEntityIds.has(replacementId)) {
       out.push(diagnostic('UNRESOLVED_REFERENCE', {
         entity_id: id,
@@ -1553,10 +1457,8 @@ function checkReferences(artifact: FoundationArtifactV5, out: Diagnostic[]): voi
     }
   }
 
-  // §12: a binding is the explicit link between a scalar token and the
-  // composite property it drives, so a binding naming no token makes the
-  // style's own provenance unreadable. Only effect styles carry `bindings`;
-  // typography's per-property aliases were checked above.
+  // §12: a binding naming no token makes the style's provenance unreadable.
+  // Only effect styles carry `bindings`.
   for (const style of artifact.styles.effects) {
     for (const binding of style.bindings ?? []) {
       const property = binding.property.match(
@@ -1588,10 +1490,8 @@ function checkReferences(artifact: FoundationArtifactV5, out: Diagnostic[]): voi
   }
 }
 
-/**
- * Level 2 validation — spec §18 "Referential integrity" and §10 "Alias
- * graph". Assumes `artifact` has already passed `validateLevel1`.
- */
+/** Level 2 validation (spec §18 "Referential integrity", §10 "Alias graph").
+ *  Assumes `artifact` already passed `validateLevel1`. */
 export function validateLevel2(artifact: FoundationArtifactV5): Diagnostic[] {
   try {
     const out: Diagnostic[] = [];
@@ -1603,10 +1503,8 @@ export function validateLevel2(artifact: FoundationArtifactV5): Diagnostic[] {
     checkReferences(artifact, out);
     return out;
   } catch (err) {
-    // The public API stays total even when a caller ignores the documented
-    // Level-1-first sequence and defeats the TypeScript boundary with unknown
-    // JSON. Valid Level 1 output should never reach this fallback; it is the
-    // final guard against hostile getters and unchecked casts.
+    // Total even when a caller skips Level 1 and casts unknown JSON: the last
+    // guard against hostile getters and unchecked casts.
     const message = err instanceof Error && err.message
       ? `Level 2 could not read the artifact: ${err.message}`
       : 'Level 2 could not read the artifact.';

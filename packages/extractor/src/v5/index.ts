@@ -1,9 +1,6 @@
 /**
- * Foundation Context v5 public surface.
- *
- * Keeping the versioned contract behind one barrel makes the package root the
- * supported import path while preserving `src/v5/` as the boundary between the
- * shipping v4 brief and the next contract.
+ * Context v5 public surface: one barrel for the versioned contract, so the
+ * package root is the supported import path.
  */
 export * from './value';
 export * from './entities';

@@ -1,8 +1,6 @@
 /**
- * ui-vnext.ts — the plugin UI's only entry point.
- *
- * Every screen renders through the shared shell: this module owns the state and
- * the message plumbing, and each `screens/*` module owns its own markup.
+ * The plugin UI's only entry point: this module owns the state and the message
+ * plumbing, and each `screens/*` module owns its own markup.
  */
 
 import {
@@ -188,19 +186,13 @@ let selectionSeq = 0;
 const operation = createOperationGate();
 type SelectionMessage = Extract<MainToUi, { type: 'selection' }>;
 let deferredSelection: SelectionMessage | null = null;
-/**
- * When the host last painted a failed build's `error` screen, for
- * selectionOutcome's toast window. 0 until a build fails.
- */
+/** When a failed build's `error` screen last painted, for selectionOutcome's toast window. */
 let failedBuildPaintedAt = 0;
 let foundationRequested = false;
 let foundationRefreshing = false;
 let foundationAiNote = '';
 let settingsCustomMode = false;
-/**
- * The Settings tab on show. On a fresh launch of the plugin Settings opens
- * on Frames; within a session it reopens on the last tab chosen.
- */
+/** A fresh launch opens Settings on Frames; within a session it reopens on the last tab. */
 let settingsTab: SettingsTab = 'frames';
 let settingsColorError = '';
 let settingsFontWarning = '';
@@ -208,9 +200,8 @@ let settingsLogoError = '';
 let settingsFonts: string[] = [];
 let settingsFontsRequested = false;
 /**
- * The open font list, or null. `query` is what has been typed since it opened,
- * kept separate from the field's committed value so opening the list shows every
- * family rather than pre-filtering down to the one already chosen.
+ * The open font list, or null. `query` is what was typed since it opened, kept
+ * apart from the committed value so opening the list shows every family.
  */
 let fontMenu: { field: FontField; query: string; activeIndex: number } | null = null;
 let settingsCustomDraft: BrandTheme | null = null;
@@ -220,10 +211,9 @@ let licenseRechecking = false;
 let licenseInput = '';
 let libraryEntries: LibraryEntry[] = [];
 /**
- * Whether each selected component already has a doc, as main reports after a
- * selection (`selectionDoc`). Keyed by component so an answer that arrives
- * while a build defers the selection is still there when it applies. A known
- * doc turns the footer's Create docs into Replace docs; unknown stays Create.
+ * Whether each selected component has a doc (`selectionDoc`), keyed by component
+ * so an answer that lands while a build defers the selection survives. Only a
+ * known doc turns Create docs into Replace docs.
  */
 const componentHasDoc = new Map<string, boolean>();
 const currentHasDoc = (): boolean => {
@@ -238,7 +228,6 @@ let driftPassCounter = 0;
 function newPassId(): string { return String(++driftPassCounter); }
 /** A `requestLibrary { ifChanged }` probe awaiting its reply. */
 let libraryProbeInFlight = false;
-/** When the last drift pass completed, or null before the first one. */
 let libraryCheckedAt: number | null = null;
 /** What the next `library` reply keeps instead of checking again; see libraryCarry. */
 let pendingLibraryCarry: LibraryCarry | null = null;
@@ -248,64 +237,44 @@ let libraryCarriedCheckedAt: number | null = null;
 let libraryCheckedTimer: ReturnType<typeof setTimeout> | null = null;
 /** The same `DRIFT_TIMING=1` build define main.ts reads; see build.mjs. */
 declare const __DRIFT_TIMING__: boolean;
-/**
- * `DRIFT_TIMING=1` only: every stretch over 100ms in which the iframe could
- * not run a timer, and what ran in it (see timing.ts). Plain strings, so a
- * copy out of Figma's console keeps every number.
- */
+// `DRIFT_TIMING=1` only: logs each timer stall over 100ms (see timing.ts) as a
+// plain string, so a copy out of Figma's console keeps every number.
 const uiBlocks = __DRIFT_TIMING__
   ? new BlockWatch(() => Date.now(), 100, (ms, during) => {
     console.log(`[Spec Layer] timing ui blocked ${ms}ms during ${during.join(', ')}`);
   })
   : null;
 if (__DRIFT_TIMING__ && uiBlocks) setInterval(() => uiBlocks.tick(50), 50);
-// docId → the EXTRACTOR_VERSION stamped on its doc link (undefined on blobs
-// written before the field existed). Checked before comparing hashes, since a
-// hash comparison against a doc built by an older extractor is meaningless.
+// docId → the EXTRACTOR_VERSION on its doc link (undefined on older blobs). Checked
+// first: a hash from a different extractor version cannot be compared.
 const libraryExtractorVersion = new Map<string, string | undefined>();
 /** Per doc: whether its baseline was hashed with hidden-by-default parts included. */
 const libraryIncludeHidden = new Map<string, boolean>();
-// docId → the live SpecHashProjection computed during this pass's drift check,
-// kept for every component row (not only drifted ones) so a row that drifts
-// on the next refresh needs no second round trip. A few kilobytes per row.
+// docId → this pass's live SpecHashProjection, kept for every component row so
+// a row that drifts on the next refresh needs no second round trip.
 const libraryLiveProjection = new Map<string, SpecHashProjection>();
-// docId → change result for the current refresh pass. Cleared with the other
-// library maps; a new pass starts every expansion from `pending` again.
+// docId → change result for this pass; a new pass starts every expansion at `pending`.
 const libraryChanges = new Map<string, LibraryChangeResult>();
 let libraryFilter: LibraryFilter = 'all';
 /**
- * Which of the Library's two screens is showing.
- *
- * Library-local rather than a sixth PluginView: the rail is a closed set of
- * five workflow destinations and sidebar.ts holds an exhaustive
- * Record<PluginView, IconName>, so a 'publish' view would have to claim a rail
- * slot beside Component, Foundations, and Library. Publishing is not their
- * peer, it is something you do to the library you are looking at. Keeping
- * `view` at 'library' also keeps the rail correctly highlighted for free.
+ * Which Library pane shows. Library-local, not a PluginView: the rail is a closed
+ * set of destinations (sidebar.ts maps every PluginView to an icon), and
+ * publishing is something you do to the library, not its peer.
  */
 let libraryPane: 'list' | 'publish' | 'history' = 'list';
 let libraryExpandedDocId: string | null = null;
 /**
- * The row the global search palette last opened, marked in the list until the
- * user refreshes, changes filter, or leaves the Library. Search now lists
- * documents rather than rail destinations, so activating a result has to land
- * the user on a specific row in a list of many, not just on the screen.
+ * The row the search palette last opened, marked until the user refreshes,
+ * changes filter, or leaves the Library.
  */
 let libraryRevealDocId: string | null = null;
 let libraryMenuDocId: string | null = null;
 let libraryMenuRestore: HTMLElement | null = null;
 let libraryRefreshing = false;
 let libraryRequested = false;
-/**
- * Why the last `requestLibrary` failed, or null. Cleared by the next
- * `library` reply and by `refreshLibrary` starting a new attempt.
- */
+/** Why the last `requestLibrary` failed; cleared by the next `library` reply or a refresh. */
 let libraryError: string | null = null;
-/**
- * Whether the scan behind `libraryEntries` stopped partway (a `library`
- * reply with `incomplete: true`). Cleared by the next complete `library`
- * reply.
- */
+/** Whether the scan behind `libraryEntries` stopped partway (`incomplete: true`). */
 let libraryReadIncomplete = false;
 let publishInfoRequested = false;
 let componentProgressTimer: ReturnType<typeof setInterval> | null = null;
@@ -324,21 +293,16 @@ type LibraryUpdateOperation = {
   batchId: string;
   /** The Section ids this run's component rebuilds placed. */
   rebuilt: string[];
-  /** Sections left out or drawn as placeholders across this run, deduplicated
-   *  by id and reason, so the completion message says which and why the way
-   *  Create's does. Collected per document as each one finishes, because
-   *  `state.lastOmitted` only ever holds the newest. */
+  /** Omitted or placeholder sections across the run, deduplicated by id and
+   *  reason; collected per doc because `state.lastOmitted` holds only the newest. */
   omitted: OmittedSection[];
-  /** Failed-generation notes from any stale-version rebuild in this run,
-   *  deduplicated by text, the way `omitted` is. Collected per document for
-   *  the same reason: `state.pendingAiNote` only ever holds the newest. */
+  /** Failed-generation notes from stale-version rebuilds, deduplicated by text;
+   *  collected per doc because `state.pendingAiNote` holds only the newest. */
   aiNotes: string[];
 };
 /**
- * Copy for AI. Unlike an update, this never writes anything, so it carries no
- * queue/batch bookkeeping — just the one row it is reading, and the prose it
- * fetched first (requestDocProse) before asking for the source
- * (requestDocSource). `prose` is undefined until that first reply lands.
+ * Copy for AI writes nothing, so it tracks only its row and the prose fetched
+ * by requestDocProse before requestDocSource; `prose` is undefined until then.
  */
 type LibraryCopyOperation = {
   kind: 'copy';
@@ -360,8 +324,6 @@ setFoundationHost({
   },
   startProgress: (messages) => {
     stopFoundationProgress();
-    // setFoundationGenerating always passes foundationBuildMessages, so the
-    // lines are used as given.
     const phases = messages;
     let index = 0;
     const current = foundationScreen.kind === 'generating'
@@ -372,8 +334,7 @@ setFoundationHost({
     if (phases.length > 1) {
       foundationProgressTimer = setInterval(() => {
         if (foundationScreen.kind !== 'generating') return;
-        // Hold on the last line: a slow AI build must not cycle back to
-        // "Reading this file’s variables and styles".
+        // Hold on the last line; a slow AI build must not cycle back to the first.
         const next = nextPhaseIndex(index, phases.length);
         if (next === null) {
           stopFoundationProgress();
@@ -393,10 +354,8 @@ setPublishHost({
     if (view === 'library') paint();
   },
   send,
-  // The publish response is the freshest statement of the updates allowance,
-  // and the only one until the next quota fetch. It says nothing about AI
-  // writing, so it never stands in for the quota the header reads: when no
-  // quota has arrived it is kept on its own and the real numbers are fetched.
+  // The freshest updates allowance, but silent on AI writing, so it never stands
+  // in for the header's quota: with no quota yet it is kept apart and one fetched.
   onPublishQuota: (snapshot) => {
     publishSnapshot = snapshot;
     if (state.quota) {
@@ -406,8 +365,7 @@ setPublishHost({
     }
     if (view === 'library') paint();
   },
-  // Publish and rotate successes are toasts; the screen itself shows only
-  // errors, which need to stay on view.
+  // Successes are toasts; the screen shows only errors, which must stay on view.
   notify: (message) => nativeNotify(message),
 });
 
@@ -418,22 +376,11 @@ setHistoryHost({
 });
 
 /**
- * Call after anything that could change what a publish would contain: a doc
- * created, updated, or rebuilt (including a render that fails after already
- * placing or replacing the doc on canvas); a Foundation build (including one
- * that fails partway, after some units already landed); a doc detached or
- * removed; a Library update batch finishing. Clears the stale proposal (see
- * `invalidatePublishProposal`'s own doc for the full invalidation contract,
- * including the in-flight generation guard) and, if the reader is looking at
- * the Publish screen right now, replaces the stale text with a fresh dry run
- * immediately instead of leaving it there until they happen to reopen
- * Publish (mirrors the re-entry `publishInfo` already does below). The one
- * exception is a screen showing an unread upload error (`status: 'error'`):
- * an unrelated change must not auto-start a dry run there, since that would
- * silently wipe the error message the reader has not acted on yet. The
- * proposal is still cleared either way, so a stale "Next version" cannot
- * survive under that error, but the fresh check itself waits for the
- * reader's own next action (Check again, or a publish).
+ * Call after anything that could change what a publish contains: a doc created,
+ * updated, rebuilt, detached or removed (even by a render that then fails), a
+ * Foundation build (even partial), a Library update batch. Clears the stale
+ * proposal (see invalidatePublishProposal) and re-runs the dry run if Publish
+ * shows, except over an unread upload error, which a dry run would wipe.
  */
 function invalidatePublishAfterChange(): void {
   invalidatePublishProposal();
@@ -442,17 +389,12 @@ function invalidatePublishAfterChange(): void {
 }
 
 /**
- * Whether the first quota request has settled. `state.quota` is null both
- * before we ask and when the answer never arrived, and the header has to tell
- * those apart: one is a spinner, the other is "plan status unavailable".
+ * Whether the first quota request settled: a null `state.quota` reads as a
+ * spinner before it and as "plan status unavailable" after.
  */
 let quotaFetched = false;
 
-/**
- * The updates allowance the last publish response stated. Read by the publish
- * screen when no quota fetch has landed (or the last one failed); a fetched
- * quota's own `publish` field wins once it exists.
- */
+/** The last publish response's updates allowance; a fetched quota's `publish` wins. */
 let publishSnapshot: PublishQuotaSnapshot | null = null;
 
 /** The component name to keep on screen when a state change does not carry one. */
@@ -478,8 +420,6 @@ function startComponentProgress(
   action: 'create',
 ): void {
   stopComponentProgress();
-  // createDocFrame always passes generatingMessages, so the lines are used as
-  // given.
   const phases = messages;
   let index = 0;
   screen = {
@@ -492,8 +432,7 @@ function startComponentProgress(
   if (phases.length > 1) {
     componentProgressTimer = setInterval(() => {
       if (screen.kind !== 'building') return;
-      // Hold on the last line: a slow AI build must not cycle back to
-      // "Looking at the component" after "Placing docs on the canvas".
+      // Hold on the last line; a slow AI build must not cycle back to the first.
       const next = nextPhaseIndex(index, phases.length);
       if (next === null) {
         stopComponentProgress();
@@ -514,8 +453,7 @@ function stopFoundationProgress(): void {
 
 function paintAllowance(): void {
   renderAllowance(refs.header, allowanceState(state.quota, quotaFetched));
-  // The component screen draws the exhausted note from the same state, so a
-  // quota reply repaints it too. No other screen reads the allowance.
+  // The component screen's exhausted note reads the same state; no other screen does.
   if (view === 'component') paint();
 }
 
@@ -575,8 +513,7 @@ function paint(): void {
         remaining,
         limit,
         resetsAt: quota?.resetsAt ?? '',
-        // A limit only the proxy can state: before its answer, offline, or
-        // with no limit in the answer, there is no count to show.
+        // Only the proxy can state a limit; without one there is no count to show.
         quotaKnown: quota !== null && quota.limit !== null,
         rechecking: licenseRechecking,
       });
@@ -594,14 +531,11 @@ function libraryPresentation(): LibraryScreenPresentation {
   const checkTotal = [...libraryDrift.values()].length;
   const checkDone = [...libraryDrift.values()]
     .filter((status) => status !== 'pending').length;
-  // An Update run floats its progress above the footer buttons it came
-  // from. A source check says its progress in the check line under the
-  // filters instead, the same line that says when the last one ran, so the
-  // start and the end of a check swap text in place and move no row.
+  // An Update run's progress floats above its footer buttons; a source check's
+  // goes in the check line under the filters, so its start and end move no row.
   const progress = update
     ? {
-        // The bar's count says "0 of 3" while the first doc runs; a label
-        // saying "doc 1 of 3" beside it read as a contradiction.
+        // No "doc 1 of 3": the bar already reads "0 of 3" while the first doc runs.
         label: update.batch ? 'Updating docs' : 'Updating this doc',
         current: update.completed,
         total: update.total,
@@ -631,10 +565,7 @@ function libraryPresentation(): LibraryScreenPresentation {
   };
 }
 
-/**
- * Repaint after one source check landed. Only the Library list shows it, so
- * the Publish and History panes keep their focus.
- */
+/** Repaint after a source check lands; list only, so Publish and History keep focus. */
 function paintLibraryDrift(): void {
   if (view !== 'library' || libraryPane !== 'list') return;
   if (!patchLibraryDrift(refs, libraryPresentation())) paint();
@@ -647,11 +578,8 @@ function paintLibraryCaption(): void {
 }
 
 /**
- * Keep "Checked 4 min ago" honest while the list sits on screen. One timeout,
- * set for the moment the label next reads differently and re-armed from
- * there, so it flips on the minute of the check and stops for good once the
- * label is a clock time. Runs only while the Library list is the visible
- * pane; anything else stops it. Called again whenever the stamp moves.
+ * Keep "Checked 4 min ago" honest while the list shows: one timeout for when the
+ * label next changes, re-armed until it is a clock time. Call when the stamp moves.
  */
 function syncLibraryCheckedTimer(): void {
   if (libraryCheckedTimer !== null) {
@@ -669,7 +597,6 @@ function syncLibraryCheckedTimer(): void {
   }, wait + 50);
 }
 
-/** A pass just finished: stamp it and re-arm the caption from the new stamp. */
 function stampLibraryChecked(): void {
   libraryCheckedAt = libraryCarriedCheckedAt ?? Date.now();
   libraryCarriedCheckedAt = null;
@@ -686,24 +613,15 @@ function navigateToView(
   if (view !== 'library') libraryRevealDocId = null;
   setActiveView(refs, view);
   if (view === 'foundations') requestFoundations();
-  // Arriving at the Library always lands on the list. Leaving the publish
-  // screen by the rail and coming back to a stale publish screen would hide
-  // the documents behind a screen the user did not ask for again.
+  // Arriving at the Library always lands on the list, never a stale Publish pane.
   if (view === 'library') libraryPane = 'list';
-  // Never while a Library operation runs: the reply to refreshLibrary()
-  // clears the drift maps a queued update was started from (and a Copy reads
-  // the row it started on). A component or Foundation build takes the same
-  // operation lock but reads none of that Library state, so it is no reason
-  // to skip the read: skipping it on a first visit left the Library on its
-  // loading skeleton with no request in flight to ever replace it.
+  // Never while a Library operation runs: the reply clears the drift maps a
+  // queued update started from (and the row a Copy reads). A build's lock is no
+  // reason to skip it, or a first visit stays on the loading skeleton.
   if (view === 'library' && options.refreshLibrary !== false && libraryOperation === null) checkLibrary();
-  // Any arrival that sends no probe (a search result, or a Library operation
-  // still running) must still resume a paused pass: its rows read
-  // "Checking…" and Refresh stays disabled, with nothing in flight to ever
-  // finish them. pumpDriftQueue sends nothing while a check is in flight.
-  // Only on arrival: re-selecting the Library while on it paused nothing,
-  // and a new pass id there would only throw away the main thread's
-  // resolver memo halfway through the pass.
+  // An arrival that sends no probe must still resume a paused pass, or its rows
+  // stay "Checking…" with nothing in flight. Only on arrival: a new pass id
+  // while already here would throw away main's resolver memo mid-pass.
   else if (arrived && view === 'library' && !driftQueue.done()) {
     driftQueue.resume(newPassId());
     pumpDriftQueue();
@@ -776,8 +694,7 @@ async function refreshQuota(syncLicense = true): Promise<void> {
   quotaFetched = true;
   if (syncLicense) licenseScreenState = resolvedLicenseState();
   paintAllowance();
-  // The publish screen paints its updates line from the plan, and the first
-  // quota answer usually lands after the panel has drawn a screen.
+  // Publish paints its updates line from the plan, which usually lands after first paint.
   if (view === 'license' || (view === 'library' && libraryPane === 'publish')) paint();
 }
 
@@ -843,8 +760,7 @@ async function recheckLicense(): Promise<void> {
     await refreshQuota();
   } finally {
     licenseRechecking = false;
-    // Back on the button when the check still could not finish; when it did,
-    // the button is gone and there is nothing to focus.
+    // Focus returns to the button if it still shows; otherwise there is none.
     paintAndFocus('[data-license-retry]');
   }
 }
@@ -863,18 +779,15 @@ function presenter(action: 'create'): BuildPresenter {
       }
     },
     error: (message) => {
-      // A failure before anything reaches the canvas (no section picked, or
-      // assembly throwing) stays on the panel as a banner, the same as a
-      // docFrameError. Only the build uses this presenter; copies use
-      // copyPresenter, which keeps toasting.
+      // A failure before the canvas stays on the panel as a banner, like a
+      // docFrameError; copies toast through copyPresenter instead.
       stopComponentProgress();
       screen = failedBuildScreen(currentName(), message);
       failedBuildPaintedAt = Date.now();
       paint();
     },
     info: (message) => {
-      // A download has no main-thread completion message, so the presenter
-      // reports it through Figma's native notification surface.
+      // A download has no completion message from main, so it toasts here.
       stopComponentProgress();
       nativeNotify(message);
       screen = { kind: 'ready', componentName: currentName() };
@@ -919,13 +832,8 @@ function requestFoundations(): void {
 }
 
 /**
- * requestFoundations() only ever fires once per session (its own guard
- * above) — a variable or collection added after that first load never
- * appears until the plugin is closed and reopened. This is the manual
- * re-fetch, wired to the footer's "Refresh sources" button the same way
- * refreshLibrary() backs Library's "Refresh library": it re-sends
- * requestFoundation without resetting the screen to a loading skeleton, so
- * the current list stays visible (and usable) while the button spins.
+ * The footer's Refresh sources: re-sends requestFoundation (otherwise once per
+ * session) without the loading skeleton, so the list stays usable meanwhile.
  */
 function refreshFoundations(): void {
   foundationRequested = true;
@@ -935,18 +843,11 @@ function refreshFoundations(): void {
 }
 
 /**
- * Ask for the foundation dump when Library opens, if nothing has fetched it
- * yet, so a foundation row's Copy can build its brief without a round trip.
- *
- * Copy needs the dump, and the two things that normally supply it may both be
- * absent here: the Foundations tab may never have been opened, and the
- * 'selection' message only carries a dump when a COMPONENT is selected, so
- * opening the plugin with nothing selected leaves the UI with no spec at all.
- *
- * Reuses foundationRequested rather than adding a second flag. On success the
- * 'foundation' reply sets the Foundations screen to 'ready' as well, so
- * skipping its own request later is correct; on failure 'foundationError'
- * clears the flag, so navigating there re-requests and resets to loading.
+ * When Library opens, fetch the foundation dump if nothing has, so a foundation
+ * row's Copy needs no round trip: the Foundations tab may never have opened, and
+ * `selection` carries a dump only when a component is selected. Shares
+ * foundationRequested: the `foundation` reply readies that screen too, and
+ * `foundationError` clears the flag so a visit there re-requests.
  */
 function prefetchFoundationsForCopy(): void {
   if (foundationRequested || currentFoundationSpec()) return;
@@ -965,9 +866,7 @@ async function buildFoundations(): Promise<void> {
   let collectionOverviews: Record<string, string> | undefined;
   const briefs = currentGroupBriefs();
 
-  // One brief per selected collection (Task 13), so a collection of only
-  // spacing tokens still gets its own overview even though it has no colour
-  // groups to describe.
+  // One brief per selected collection, so a spacing-only collection still gets an overview.
   if (briefs && foundationAiRequested(state, briefs)) {
     try {
       const draft = await generateGroupDescriptions(
@@ -990,9 +889,7 @@ async function buildFoundations(): Promise<void> {
         foundationAiNote = 'AI writing returned nothing usable, so the AI descriptions were left out.';
       }
     } catch (error) {
-      // The same notes a component build uses, worded for descriptions: the
-      // quota with its limit and reset date, a lapsed license (which also
-      // drops this session to the free plan), or the request's own failure.
+      // The component build's failure notes, worded for descriptions.
       foundationAiNote = aiFailureNote(state, error, 'foundation');
     }
   }
@@ -1003,14 +900,9 @@ async function buildFoundations(): Promise<void> {
     config: {
       includeDescriptions: true,
       aiNotes: Boolean(groupDescriptions && Object.keys(groupDescriptions).length > 0),
-      // No contrast toggle in this tab yet, so ask for the output an existing
-      // doc already renders. main.ts threads this through to
-      // buildFoundationFrame, so flipping it to true is all that is needed to
-      // render the matrix; what is missing is the control that lets a user
-      // choose. No task in the v2 plan added one, so this is the last mile of
-      // the contrast feature and it is a product decision, not an oversight to
-      // patch silently: turning it on unasked changes every foundation doc's
-      // output for every user.
+      // No contrast toggle exists yet. main.ts renders the matrix when this is
+      // true, but turning it on unasked would change every foundation doc, so
+      // it waits for a product decision and a control.
       includeContrast: false,
     },
     ...(groupDescriptions && Object.keys(groupDescriptions).length > 0
@@ -1034,12 +926,9 @@ function currentLibraryModel() {
 }
 
 /**
- * The badge's last settled answer.
- *
- * Source checks resolve one doc at a time and a refresh clears them all first,
- * so `counts.updates` is not a fact until a pass finishes: read straight, it
- * takes the badge away at the start of every reload and then counts back up.
- * This holds the answer across that gap.
+ * The badge's last settled answer. A refresh clears every check first, so
+ * `counts.updates` is not a fact until a pass finishes; read straight, the
+ * badge would vanish at each reload and count back up.
  */
 let libraryHasUpdates = false;
 
@@ -1070,22 +959,14 @@ function refreshLibrary(carry: LibraryCarry | null = null): void {
 }
 
 /**
- * Coming back to the Library from another rail tab.
- *
- * A first visit, or one after a failed read, loads the list the way it
- * always did. Otherwise the main thread is asked whether the document
- * changed since its last scan, so an unchanged file sends no extraction
- * work at all: `libraryUnchanged` resumes a pass that was paused by
- * leaving, and `library` restarts one from the fresh scan. An arrival that
- * skips this probe resumes a paused pass in navigateToView instead. Refresh
- * library never routes through here, so a forced re-check is always one
- * click away.
+ * Coming back to the Library from another rail tab. A first visit or a failed
+ * read loads the list; otherwise main is asked whether the document changed, so
+ * an unchanged file costs no extraction: `libraryUnchanged` resumes a paused
+ * pass and `library` restarts one. Refresh library never routes here.
  *
  * While the probe is out, Update, Update all and Refresh are disabled
- * (`probing` in libraryPresentation): a dirty file answers with a full scan,
- * and that must not land in the middle of an update. No paint here: the
- * only caller, navigateToView, paints right after this returns, with the
- * flag already set.
+ * (`probing`): a dirty file answers with a full scan, which must not land
+ * mid-update. No paint: the only caller, navigateToView, paints right after.
  */
 function checkLibrary(): void {
   if (!libraryRequested || libraryError !== null) {
@@ -1135,10 +1016,8 @@ function startLibraryDriftChecks(carry: LibraryCarry | null): void {
 }
 
 /**
- * Send the next source check, if the Library is showing and none is in
- * flight. Not sending while another view is up is the pause: the pending
- * ids stay in the queue and are resumed on return, by the probe's
- * `libraryUnchanged` reply or by navigateToView when no probe is sent.
+ * Send the next source check if the Library shows and none is in flight. Not
+ * sending while another view is up is the pause; the queue resumes on return.
  */
 function pumpDriftQueue(): void {
   if (view !== 'library') return;
@@ -1154,10 +1033,8 @@ function pumpDriftQueue(): void {
 }
 
 /**
- * One reply landed (a result or an error). False when it does not answer
- * the check in flight: a reply from a pass a newer scan replaced, which the
- * caller drops rather than letting a read from before that scan set a row.
- * True advances the pass and stamps its end.
+ * One reply (result or error) landed. False when it answers no check in flight,
+ * i.e. a pass a newer scan replaced, and the caller drops it. True advances the pass.
  */
 function settleDriftCheck(docId: string, passId: string): boolean {
   if (!driftQueue.settle(docId, passId)) return false;
@@ -1177,9 +1054,8 @@ function closeLibraryMenu(restoreFocus = false): void {
 }
 
 /**
- * Expand or collapse a row's change panel. Opening a row the pass has not
- * compared yet marks it pending and asks main for the stored baseline; the
- * `docBaseline` reply resolves it. Collapsing keeps the cached result.
+ * Expand or collapse a row's change panel. Opening an uncompared row asks main
+ * for its baseline (`docBaseline` resolves it); collapsing keeps the result.
  */
 function toggleLibraryReview(docId: string): void {
   const opening = libraryExpandedDocId !== docId;
@@ -1212,8 +1088,7 @@ function libraryEntry(docId: string): LibraryEntry | undefined {
 }
 
 /**
- * Copy for AI from the Selected component screen: the same brief a Library
- * row copies, built from the current selection. No document is read, so no
+ * Copy for AI from the Selected component screen. No document is read, so no
  * saved guidelines ride along and the caveat does not mention them.
  */
 function copyCurrentComponent(): void {
@@ -1228,13 +1103,7 @@ function copyCurrentComponent(): void {
   );
 }
 
-/**
- * Reports a Copy through Figma's native notification surface, same as any
- * other Library action. Unlike libraryPresenter, error() notifies directly
- * rather than routing through a caller-owned callback: Copy has no
- * "dispatched vs. not" distinction to resolve afterward, so there is nothing
- * for a callback to decide.
- */
+/** Reports a Copy through native toasts; unlike libraryPresenter, errors notify directly. */
 function copyPresenter(): BuildPresenter {
   return {
     clear: () => {},
@@ -1247,10 +1116,8 @@ function copyPresenter(): BuildPresenter {
 }
 
 /**
- * Copy one Foundations row: a collection with all of its modes, the text
- * styles, or the effect styles. Reuses the Library row's scoped copy, which
- * widens a collection to every mode and its local dependency closure. modeIds
- * is a frame-only limit the copy ignores, so it is passed empty.
+ * Copy one Foundations row through the Library's scoped copy, which widens a
+ * collection to every mode and its dependency closure; `modeIds` is frame-only.
  */
 function copyFoundationRow(id: string, kind: 'collection' | 'textStyles' | 'effectStyles'): void {
   if (kind === 'textStyles') {
@@ -1273,10 +1140,8 @@ function copyFoundationRow(id: string, kind: 'collection' | 'textStyles' | 'effe
 }
 
 /**
- * End the Library's update or copy and say how it went.
- *
- * `error` is why the run ended early, if it did. It shows as an error unless
- * `canceled` says the user chose to stop, which is not a failure.
+ * End the Library's update or copy and say how it went. `error` is why it ended
+ * early; `canceled` marks a user stop, which is not shown as a failure.
  */
 function finishLibraryOperation(error = '', canceled = false): void {
   const active = libraryOperation;
@@ -1292,16 +1157,12 @@ function finishLibraryOperation(error = '', canceled = false): void {
       : active.batch
         ? `Updated ${active.completed} ${active.completed === 1 ? 'doc' : 'docs'}.`
         : 'Doc updated.';
-    // Same sentences the Create path appends, so a section the Library left
-    // out, or drew as a placeholder, is reported rather than silently
-    // missing from the frame. An AI note follows and says why the
-    // placeholders were needed.
+    // Report omitted or placeholder sections the way Create does.
     if (!error && active.omitted.length) {
       omitted = active.omitted;
       message = omissionsMessage(message, omitted);
     }
-    // A failed rebuild top-up, reported the way Create reports its own
-    // pendingAiNote: appended after the outcome (and any omissions).
+    // A failed rebuild top-up, appended after any omissions as Create does.
     if (!error && active.aiNotes.length) {
       aiNotes = active.aiNotes;
       message = `${message} ${aiNotes.join(' ')}`;
@@ -1310,11 +1171,8 @@ function finishLibraryOperation(error = '', canceled = false): void {
     message = error;
   }
   state.lastOmitted = [];
-  // Mirrors lastOmitted: whatever a rebuild's top-up left here belongs to
-  // this operation and no other, so it must not survive to be misread by a
-  // later, unrelated Library action. The normal path already drains this
-  // slot per document (see the docSource handler below); this is the
-  // backstop for an operation that aborts before that drain runs.
+  // Backstop for an operation that aborted before the docSource handler drained
+  // this slot: a leftover note must not reach a later, unrelated action.
   state.pendingAiNote = '';
   if (message) {
     nativeNotify(
@@ -1324,9 +1182,7 @@ function finishLibraryOperation(error = '', canceled = false): void {
         : (omitted.length || aiNotes.length) ? { timeout: 5500 } : {},
     );
   }
-  // At least one doc actually changed (even a batch that then failed or was
-  // canceled partway reports "Updated X of Y docs" for the X that landed), so
-  // a proposal computed before this run started no longer describes the file.
+  // Any landed doc, even in a failed or canceled batch, outdates the proposal.
   if (active.kind === 'update' && active.completed > 0) invalidatePublishAfterChange();
   libraryOperation = null;
   completeOperation();
@@ -1365,14 +1221,11 @@ function dispatchNextLibraryUpdate(): void {
   if (view === 'library') paint();
 }
 
-/** The one-doc hand-edit confirm's title, shared by both places that ask. */
 const HAND_EDIT_TITLE = 'Replace your edits to generated content?';
 
 /**
  * The one-doc hand-edit confirm's body, shared by the row Update and the
- * docSource reply's own check so the two cannot drift. What survives an
- * Update is the writing sections, and only a component doc has them: a
- * foundation doc tags none, so there an Update replaces every edit.
+ * docSource check. Only a component doc has writing sections that survive.
  */
 function handEditBody(foundation: boolean): string {
   const replaced = 'You edited generated content in this doc by hand. Updating replaces those edits.';
@@ -1380,19 +1233,15 @@ function handEditBody(foundation: boolean): string {
 }
 
 /**
- * Update the given docs, one at a time.
- *
- * `batchLabel` is the label of the button that started a batch, so the
- * hand-edit confirm repeats the action the user chose: "Update all docs", or
- * "Rebuild docs" from the rebuild banner.
+ * Update the given docs one at a time. `batchLabel` names the button that
+ * started a batch, so the hand-edit confirm repeats the user's action.
  */
 async function startLibraryUpdates(
   docIds: string[],
   batch: boolean,
   batchLabel = 'Update all docs',
 ): Promise<void> {
-  // A probe's reply may be a full scan that restarts the pass; it must not
-  // land in the middle of an update. The buttons are disabled too.
+  // A probe's reply may be a full scan; it must not land mid-update.
   if (docIds.length === 0 || operation.active || libraryProbeInFlight) return;
   const edited = docIds.filter((docId) => libraryEntry(docId)?.selfEdited);
   if (edited.length > 0) {
@@ -1410,9 +1259,7 @@ async function startLibraryUpdates(
     if (!ok) return;
   }
   if (libraryProbeInFlight || !beginOperation(operation)) return;
-  // Start from nothing: a Create earlier in this session (or an aborted
-  // Library run) may have left a record behind, and it says nothing about
-  // these documents.
+  // Clear any record a Create or an aborted run left; it says nothing about these docs.
   state.lastOmitted = [];
   state.pendingAiNote = '';
   libraryOperation = {
@@ -1436,53 +1283,36 @@ function completeCurrentLibraryUpdate(): void {
   if (!active || active.kind !== 'update' || !active.currentDocId) return;
   active.completed += 1;
   active.currentDocId = null;
-  // Fold in what this document left out or drew as a placeholder and clear
-  // the slot, so the next document in the queue (a foundation, which never
-  // sets it) cannot inherit it. Deduplicated: a batch that draws Keyboard as
-  // a placeholder in every document says so once.
+  // Fold in this doc's omissions and clear the slot so the next doc cannot
+  // inherit them; deduplicated so a batch reports each once.
   for (const o of state.lastOmitted) {
     if (!active.omitted.some((prev) => prev.id === o.id && prev.reason === o.reason)) active.omitted.push(o);
   }
   state.lastOmitted = [];
-  // A stale-version rebuild's aiNotes entry, if any, was already taken from
-  // state.pendingAiNote (and the slot cleared) at the docSource handler's
-  // topUpProseForRebuild call site below, for exactly this document — not
-  // read here, where any document's docFrameDone (rebuild or not) would
-  // otherwise risk folding in a note left over from a different one.
+  // aiNotes are taken at the docSource handler's topUpProseForRebuild call, for
+  // exactly this doc; reading the slot here could fold in another doc's note.
   dispatchNextLibraryUpdate();
 }
 
 /**
- * Copy for AI.
+ * Copy for AI. A component row asks for its prose (stored blob merged with the
+ * canvas), then sends requestDocSource once docProse lands; the docSource
+ * handler builds the brief and clears the operation on every exit.
  *
- * Component rows need a round trip: the brief needs both the stored prose and
- * the doc's source, so this asks for prose first (the doc's guidelines: the
- * stored blob merged with the canvas) and only sends requestDocSource once
- * the docProse reply lands and is stashed on the operation. The docSource
- * handler reads that prose back off, builds the brief, and clears the
- * operation on every exit.
- *
- * Foundation rows need none of that. The whole file's variables are already in
- * memory (the Library view asks for them on entry), and the doc's scope rode in
- * on its LibraryEntry, so the copy is synchronous. It deliberately does NOT
- * take the operation lock: there is nothing to wait for, and holding the lock
- * would block an unrelated Update behind an act that has already finished.
+ * A foundation row copies synchronously from the in-memory variables and the
+ * entry's scope, without the operation lock: holding it would block an
+ * unrelated Update behind a copy that has already finished.
  */
 function startLibraryCopy(docId: string): void {
   const entry = libraryEntry(docId);
   if (!entry) return;
 
   if (entry.kind === 'foundation') {
-    // Withheld by canCopy, so this is a guard against a stale menu rather than
-    // a path a user can reach by clicking.
+    // canCopy withholds this; it guards a stale menu.
     if (!entry.foundationScope) return;
-    // Re-arm the fetch before delegating. A failed prefetch clears
-    // foundationRequested but leaves the spec null, and nothing else on this
-    // screen ever re-sends requestFoundation — without this, a failed read
-    // makes copyFoundationBriefForScope's "try again in a moment" error
-    // repeat forever. prefetchFoundationsForCopy's own guard makes this free
-    // on the happy path and during an in-flight race, so it only does work
-    // when there is actually nothing to retry with.
+    // Re-arm the fetch: a failed prefetch leaves the spec null and nothing else
+    // here re-sends requestFoundation, so "try again in a moment" would repeat
+    // forever. The prefetch's own guard makes this free otherwise.
     if (!currentFoundationSpec()) prefetchFoundationsForCopy();
     void copyFoundationBriefForScope(entry.foundationScope, copyPresenter());
     return;
@@ -1516,13 +1346,9 @@ function currentSearchModel(): SearchModel {
 
 function ensureLibraryLoaded(): void {
   if (libraryRefreshing) return;
-  // The same guard navigateToView uses: a read landing mid-run would clear
-  // the drift maps a running Library update was started from.
+  // As in navigateToView: a read mid-run would clear the update's drift maps.
   if (libraryOperation !== null) return;
-  // A prior request that came back with libraryError left libraryRequested
-  // true without ever establishing anything, so it is not "already loaded"
-  // in the sense this guard means: retry rather than leaving the palette
-  // stuck on a read that failed before this screen ever opened.
+  // A failed read is not "loaded": retry rather than leave the palette stuck.
   if (libraryRequested && libraryError === null) return;
   libraryRequested = true;
   libraryRefreshing = true;
@@ -1530,13 +1356,9 @@ function ensureLibraryLoaded(): void {
 }
 
 /**
- * Renders, or updates, the palette.
- *
- * Mounting is a one-shot insert; every render after that patches the mounted
- * DOM in place. The panel animates in, so replacing the layer on each
- * keystroke restarted that animation and the palette blinked once per typed
- * letter. Patching also means the live input element is never rebuilt, which
- * is what the caret and IME composition depend on.
+ * Renders the palette once, then patches it in place: the panel animates in, so
+ * replacing it per keystroke blinks it, and the caret and IME composition need
+ * the live input to survive.
  */
 function renderGlobalSearch(focusInput = false): void {
   const existing = refs.root.querySelector<HTMLElement>('[data-global-search-dialog]');
@@ -1548,8 +1370,7 @@ function renderGlobalSearch(focusInput = false): void {
   const unreliable = libraryError !== null || libraryReadIncomplete;
   const options = {
     libraryLoading: libraryRefreshing && libraryEntries.length === 0,
-    // Only when the read produced nothing at all: a file with docs on
-    // screen is not "unreadable", however unreliable the read behind them.
+    // Only when the read produced nothing; docs on screen are not "unreadable".
     libraryUnreadable: unreliable && libraryEntries.length === 0,
     libraryReadUnreliable: unreliable,
   };
@@ -1569,30 +1390,19 @@ function renderGlobalSearch(focusInput = false): void {
 // ---------------------------------------------------------------------------
 // Font picker
 //
-// The list is an overlay in the shell root, rendered and positioned here while
-// screens/settings.ts owns its markup. It follows the same shape as the global
-// search palette below: listeners live here rather than inside a self-contained
-// component, because every paint replaces the screen's DOM and anything bound
-// to its own elements would not survive that. fontPicker.ts keeps only
-// computeMenuPlacement, which is pure.
+// An overlay in the shell root whose markup settings.ts owns. Its listeners live
+// here because every paint replaces the screen's DOM.
 // ---------------------------------------------------------------------------
 
 /**
- * Applies a colour chosen from a swatch's native picker.
- *
- * Deliberately never repaints. The picker is anchored to the very element a
- * paint would replace, and `input` fires continuously while dragging, so a
- * repaint per event would tear the picker out from under the pointer. Nothing
- * needs one either: the swatch renders its own value and the only other views of
- * this colour are the hex field and the error hint, both updated here by hand.
- * State is committed, so the next natural paint agrees.
- *
- * `commit` separates the drag from the release: persisting on every `input`
- * would write clientStorage on the host once per pointer move.
+ * Applies a colour from a swatch's native picker without repainting: the picker
+ * is anchored to the element a paint would replace and `input` fires while
+ * dragging, so the hex field and hint are updated by hand. `commit` marks the
+ * release; persisting per `input` would write clientStorage per pointer move.
  */
 function applySwatchColor(field: ColorField, raw: string, commit: boolean): void {
   const parsed = parseBrandHex(raw);
-  if (!parsed) return; // A native picker cannot produce this, but it is free.
+  if (!parsed) return;
   const hex = document.querySelector<HTMLInputElement>(`[data-theme-field="${field}"]`);
   if (hex) hex.value = parsed;
   if (settingsColorError) {
@@ -1671,8 +1481,6 @@ function syncFontActiveRow(): void {
 }
 
 function openFontMenu(field: FontField): void {
-  // Opening on the committed value would filter the list down to that one
-  // family, leaving no way to reach another. An empty query lists everything.
   const committed = fontInput(field)?.value.trim() ?? '';
   const index = committed
     ? Math.max(0, filterFamilies(settingsFonts, '').indexOf(committed) + 1)
@@ -1705,9 +1513,8 @@ function commitFont(field: FontField, value: string): void {
 }
 
 /**
- * A family the host did not list will silently fall back to Inter in the frame,
- * so free-typed text still commits but says so. Only meaningful once the list
- * has arrived: before that, nothing can be checked against it.
+ * A family the host did not list falls back to Inter in the frame, so typed text
+ * commits but says so. Checked only once the list has arrived.
  */
 function fontFallbackWarning(value: string): string {
   const unknown =
@@ -1749,11 +1556,8 @@ function closeGlobalSearch(restoreFocus = true): void {
 }
 
 /**
- * Moves the active pointer. The model clamps the index to the list it would
- * render, so the clamped value is read from it rather than recomputed here.
- * Hover and focus call this for every row the pointer crosses, so the same
- * index returns at once and a new one toggles two attributes in place; the
- * input keeps its focus and caret either way.
+ * Moves the active pointer, clamped by the model. Hover and focus call this per
+ * row crossed, so it patches attributes in place and the input keeps its caret.
  */
 function setSearchActiveIndex(index: number): void {
   const next = buildSearchModel(searchDocuments(), searchQuery, index).activeIndex;
@@ -1764,13 +1568,8 @@ function setSearchActiveIndex(index: number): void {
 }
 
 /**
- * Opens the picked document in the Library.
- *
- * The Library is where a document can be read, updated, copied, and opened on
- * canvas, so search hands off to the row rather than jumping the canvas
- * straight to the frame: the row's own Open action still does that, and it is
- * one click away once the user is here. The filter is reset because a result
- * the palette matched must not land on a filter that hides it.
+ * Opens the picked document's row in the Library rather than jumping the canvas;
+ * the filter resets so it cannot hide the result.
  */
 function activateSearchResult(result: SearchResult | undefined): void {
   if (!result) return;
@@ -1779,9 +1578,7 @@ function activateSearchResult(result: SearchResult | undefined): void {
   libraryExpandedDocId = null;
   libraryRevealDocId = result.docId;
   navigateToView('library', { refreshLibrary: false });
-  // After the paint navigateToView just did: focus belongs on the row now,
-  // which is why closeGlobalSearch above was told not to restore it to the
-  // header Search button.
+  // Focus goes to the row, hence closeGlobalSearch(false) above.
   requestAnimationFrame(() => {
     if (view === 'library' && libraryPane === 'list') {
       revealLibraryRow(refs, result.docId);
@@ -1827,12 +1624,8 @@ function toggle<T>(set: Set<T>, value: T): void {
 }
 
 /**
- * Cross between the Library's list and its publish screen.
- *
- * Not paintAndFocus: that restores the scrollTop it captured, which belongs to
- * the pane being left, so the screen being opened would arrive already
- * scrolled by an unrelated amount. Any open row menu is dropped too, since it
- * is positioned against a list that is about to stop being rendered.
+ * Cross between the Library's panes. Not paintAndFocus: its saved scrollTop
+ * belongs to the pane being left. An open row menu goes with the list.
  */
 function setLibraryPane(next: 'list' | 'publish' | 'history', focusSelector: string): void {
   libraryPane = next;
@@ -1850,11 +1643,7 @@ function paintAndFocus(selector: string): void {
   document.querySelector<HTMLElement>(selector)?.focus({ preventScroll: true });
 }
 
-/**
- * Show one Settings tab and leave focus on it, where the click or the arrow
- * key already was. The panel starts at its top. Leaving Frames closes an open
- * font list, whose field is no longer drawn.
- */
+/** Leaving Frames closes an open font list, whose field is no longer drawn. */
 function selectSettingsTab(next: SettingsTab): void {
   if (next !== 'frames') closeFontMenu();
   settingsTab = next;
@@ -1863,8 +1652,6 @@ function selectSettingsTab(next: SettingsTab): void {
   document.querySelector<HTMLElement>(`[data-settings-tab="${next}"]`)?.focus({ preventScroll: true });
 }
 
-/** Take a component format from the Export tab, store it, and keep focus on
- *  the choice just made. Choosing the current one again changes nothing. */
 function chooseComponentFormat(value: ComponentFormat): void {
   if (value !== state.componentFormat) setComponentFormat(state, value);
   paintAndFocus(`[data-component-format="${value}"]`);
@@ -1964,23 +1751,18 @@ document.addEventListener('click', (event) => {
   const rail = target.closest<HTMLButtonElement>('[data-view]');
   const railView = rail?.dataset.view;
   if (railView && isPluginView(railView)) {
-    // Re-selecting the Library sends nothing. Arriving from another tab asks
-    // the main thread whether the document changed and re-checks only then;
-    // Refresh library sits beside the list for a forced re-check.
+    // Re-selecting the Library sends nothing; see checkLibrary.
     navigateToView(railView, { refreshLibrary: railView !== view });
     return;
   }
 
-  // The empty states' shortcuts, on any screen. Their own attribute, not
-  // data-view: setRailBadge finds the rail button by [data-view], and a second
-  // match in the screen would make that lookup depend on DOM order.
+  // Empty-state shortcuts use their own attribute: setRailBadge finds the rail
+  // button by [data-view], and a second match would depend on DOM order.
   const emptyNav = target.closest<HTMLButtonElement>('[data-empty-nav]');
   const emptyView = emptyNav?.dataset.emptyNav;
   if (emptyView && isPluginView(emptyView)) {
     navigateToView(emptyView);
-    // The button just clicked left with the screen it sat on, so focus would
-    // fall to the body. The destination's rail item names where the reader
-    // landed and survives every paint.
+    // The clicked button left with its screen; the rail item survives paints.
     refs.sidebar.querySelector<HTMLButtonElement>(`[data-view="${emptyView}"]`)?.focus({ preventScroll: true });
     return;
   }
@@ -2020,9 +1802,7 @@ document.addEventListener('click', (event) => {
       );
       return;
     }
-    // "Update all docs" takes both kinds of drift, the set the Updates count
-    // and the button's enabled state cover; the rebuild banner takes only the
-    // stale rows. dispatchNextLibraryUpdate picks each row's intent.
+    // Update all takes both kinds of drift; the rebuild banner only stale rows.
     const rebuildOnly = batchButton.matches('[data-library-rebuild-all]');
     void startLibraryUpdates(
       model.allRows
@@ -2055,10 +1835,8 @@ document.addEventListener('click', (event) => {
 
   if (target.closest('[data-publish-recheck]')) {
     onPublishRecheck();
-    // The button stays on screen while the check runs, marked aria-disabled
-    // rather than disabled so it can still hold focus, but paint() still
-    // replaces it with a fresh element, so focus needs restoring by selector
-    // rather than being left where it was.
+    // aria-disabled, not disabled, so it holds focus; paint replaces the
+    // element, so focus is restored by selector.
     paintAndFocus('[data-publish-recheck]');
     return;
   }
@@ -2092,8 +1870,7 @@ document.addEventListener('click', (event) => {
     return;
   }
 
-  // The download block's "Change this in Settings". The format is set there,
-  // so this goes to that tab rather than drawing a second control here.
+  // The download block's "Change this in Settings" opens the tab that owns the format.
   const openSettings = target.closest<HTMLButtonElement>('[data-open-settings]');
   if (openSettings) {
     const tab = openSettings.dataset.openSettings ?? '';
@@ -2133,9 +1910,8 @@ document.addEventListener('click', (event) => {
         publishAuth(state.licenseKey, state.licenseInstanceId, state.figmaUserId),
       );
     };
-    // With the key on this device the screen shows its setup commands and
-    // never states what rotating costs, so the confirm does. Without it, the
-    // screen's own note already says so beside the button.
+    // With the key here the screen never states what rotating costs, so the
+    // confirm does; without it, the screen's own note says so.
     if (!publishState().pullKey) {
       rotate();
       return;
@@ -2291,8 +2067,7 @@ document.addEventListener('click', (event) => {
     return;
   }
 
-  // Anything else outside the open list dismisses it, then falls through so the
-  // click still does whatever it was for.
+  // Any other click dismisses the list and still does what it was for.
   if (fontMenu) closeFontMenu();
 
   const settingsTabButton = target.closest<HTMLButtonElement>('[data-settings-tab]');
@@ -2345,8 +2120,7 @@ document.addEventListener('click', (event) => {
     return;
   }
 
-  // Component and Foundation controls are inert while an async build/download
-  // owns shared UiState.
+  // Component and Foundation controls are inert while a build owns UiState.
   if (operation.active) return;
 
   const group = target.closest<HTMLButtonElement>('[data-group]');
@@ -2366,8 +2140,7 @@ document.addEventListener('click', (event) => {
   const measure = target.closest<HTMLButtonElement>('[data-measure]');
   if (measure?.dataset.measure) {
     const id = measure.dataset.measure as 'size' | 'padding' | 'spacing';
-    // Measurements is an included section, so at least one diagram must stay
-    // selected. The final option declares that constraint before it is clicked.
+    // At least one diagram stays selected; the last one is aria-disabled.
     if (measure.getAttribute('aria-disabled') === 'true') return;
     toggle(selection.measureViews, id);
     state.measureViews = [...selection.measureViews];
@@ -2471,15 +2244,13 @@ document.addEventListener('change', (event) => {
     | 'bodyFont'
     | undefined;
   if (fontField) {
-    // Free-typed text commits here on blur or Enter, the same path a picked row
-    // takes. commitFont owns the fallback warning so both agree.
+    // Typed text commits on blur or Enter through commitFont, like a picked row.
     commitFont(fontField, input.value);
     return;
   }
 
-  // From here down the controls belong to the component screen and read the
-  // shared UiState an async build owns. Settings controls above are not
-  // gated: a theme or font change during a build touches nothing it reads.
+  // Below are component controls, which read the UiState a build owns; the
+  // Settings controls above touch nothing a build reads.
   if (operation.active) return;
 
   if (input.id === 'sl-ai-toggle') {
@@ -2544,9 +2315,7 @@ document.addEventListener('change', (event) => {
 
 document.addEventListener('input', (event) => {
   const target = event.target;
-  // The note is a textarea, so it never satisfies the HTMLInputElement guard
-  // below. It repaints nothing itself (see onNoteInput's own comment), so it
-  // is handled and returned before that guard narrows the type.
+  // The note is a textarea, so it is handled before the HTMLInputElement guard.
   if (target instanceof HTMLTextAreaElement && target.matches('[data-publish-note]')) {
     onNoteInput(target.value);
     return;
@@ -2561,8 +2330,7 @@ document.addEventListener('input', (event) => {
   }
   if (input.matches('[data-publish-initial-version]')) {
     onInitialVersionInput(input.value);
-    // Validity shows beside the field, patched in place: a repaint here
-    // rebuilt the <input> under the caret on every keystroke.
+    // Patched in place; a repaint would rebuild the <input> under the caret.
     patchInitialVersion(refs.scroll, input.value);
     return;
   }
@@ -2582,17 +2350,15 @@ document.addEventListener('input', (event) => {
     }
     return;
   }
-  // Dragging in a swatch's picker: mirror it into the hex field live, but do
-  // not persist until the picker closes (see applySwatchColor).
+  // A swatch drag mirrors live and persists on close; see applySwatchColor.
   const draggedSwatch = input.dataset.themeSwatch as ColorField | undefined;
   if (draggedSwatch) {
     applySwatchColor(draggedSwatch, input.value, false);
     return;
   }
 
-  // Typing filters the list rather than waiting for a commit on blur, which is
-  // what a searchable field is for. Only the menu subtree re-renders, so the
-  // caret stays where it is; the value itself still commits on change/Enter.
+  // Typing filters the list; only the menu re-renders, so the caret stays. The
+  // value still commits on change or Enter.
   const typedFont = input.dataset.themeFont as FontField | undefined;
   if (typedFont) {
     if (!fontMenu || fontMenu.field !== typedFont) {
@@ -2608,8 +2374,7 @@ document.addEventListener('input', (event) => {
   const colorField = input.dataset.themeField as ColorField | undefined;
   if (!colorField) return;
 
-  // Typing a valid hex repaints, which is what carries the new value back into
-  // the swatch beside it. Safe here: no picker is open while the field is typed.
+  // A valid hex repaints to update the swatch; no picker is open while typing.
   const parsed = parseBrandHex(input.value);
   if (!parsed) {
     settingsColorError = 'Enter a 6-digit hex color, e.g. #0d2436.';
@@ -2678,10 +2443,8 @@ document.addEventListener('keydown', (event) => {
     }
   }
 
-  // Font field. ArrowDown opens a closed list, so the whole control is reachable
-  // without a pointer. Enter takes the highlighted family; with nothing
-  // highlighted it falls through to the field's own change, which commits the
-  // typed text so an unlisted family stays possible.
+  // Font field: ArrowDown opens the list. Enter with no highlight falls through
+  // to change, which commits typed text so an unlisted family stays possible.
   if (event.target instanceof HTMLInputElement && event.target.dataset.themeFont) {
     const field = event.target.dataset.themeFont as FontField;
     if (event.key === 'Escape' && fontMenu) {
@@ -2721,8 +2484,7 @@ document.addEventListener('keydown', (event) => {
     if (event.key === 'Tab' && fontMenu) closeFontMenu();
   }
 
-  // Settings tab strip: the arrow keys move and select, Home and End jump to
-  // the ends. Tab is left alone, so it leaves the strip for the panel.
+  // Settings tabs: arrows move and select, Home and End jump; Tab leaves the strip.
   if (event.target instanceof HTMLElement && event.target.dataset.settingsTab) {
     const ids = SETTINGS_TABS.map((tab) => tab.id);
     const current = ids.indexOf(event.target.dataset.settingsTab as SettingsTab);
@@ -2770,15 +2532,8 @@ document.addEventListener('keydown', (event) => {
     return;
   }
 
-  /*
-   * Escape backs out of the publish screen.
-   *
-   * Last of the Escape handlers on purpose. The modal, global search, the font
-   * menu, and an open row menu each claim Escape first and return, so this
-   * only ever sees the key when nothing is layered over the screen. The row
-   * menu cannot be open here anyway (setLibraryPane drops it), but ordering
-   * this by luck rather than by structure is how that stops being true.
-   */
+  // Escape backs out of History and Publish. Last of the Escape handlers: every
+  // overlay claims Escape first, so this runs only with nothing layered over.
   if (event.key === 'Escape' && view === 'library' && libraryPane === 'history') {
     event.preventDefault();
     setLibraryPane('publish', '[data-publish-history]');
@@ -2806,9 +2561,8 @@ document.addEventListener('focusin', (event) => {
 });
 
 refs.scroll.addEventListener('scroll', () => {
-  // The font list is position: fixed against the input's viewport rect, so it
-  // has to follow the panel rather than be dismissed by it: the field stays
-  // visible while scrolling, unlike a row menu whose own row scrolls away.
+  // The fixed font list follows its field; a row menu, whose row scrolls away,
+  // is dismissed instead.
   if (fontMenu) positionFontMenu();
   if (!libraryMenuDocId) return;
   libraryMenuDocId = null;
@@ -2826,11 +2580,9 @@ refs.scroll.addEventListener('scroll', () => {
 function applySelection(msg: SelectionMessage): void {
   const seq = ++selectionSeq;
   const node = msg.node;
-  // A failed build's banner survives a reselection of the same component, and
-  // reaches the reader as a toast when another selection replaces it before
-  // the banner could be read. Decided here, the one place a selection
-  // replaces the screen, so the deferred selection completeOperation applies
-  // and the one main.ts replays after a build both get it.
+  // A failed build's banner survives reselecting the same component and toasts
+  // when another selection replaces it unread. Decided here, the one place a
+  // selection replaces the screen, so deferred and replayed ones agree.
   const outcome = selectionOutcome(
     screen.kind, state.currentNode?.id, node?.id, Date.now() - failedBuildPaintedAt,
   );
@@ -2841,8 +2593,7 @@ function applySelection(msg: SelectionMessage): void {
   const keptDraft = draftToKeep(state, node?.id);
   state.currentNode = node;
   state.currentFileKey = msg.fileKey;
-  // figma.root.name, readable only on the main thread, so it arrives on this
-  // message or not at all.
+  // figma.root.name is main-thread only, so it arrives here or not at all.
   state.currentFileName = msg.fileName ?? '';
   state.currentSpec = null;
   state.currentExtractedAt = '';
@@ -2851,24 +2602,18 @@ function applySelection(msg: SelectionMessage): void {
   state.pendingAiNote = '';
   facts = node ? componentFacts(null, node.name) : NO_FACTS;
   selection.variantIds.clear();
-  // Update the shared foundation as soon as this selection's dump arrives, so
-  // a later action for this component (Copy for AI, Update) reads the
-  // current selection's foundation rather than one left over from the
-  // previous selection. Absent when the main thread has no dump yet (or
-  // building one failed), or when the panel already holds this exact dump:
-  // the main thread sends a dump once per read, not on every selection (see
-  // foundationPost.ts). Extraction still proceeds either way, and the
-  // brief's token bindings simply omit resolved values until a foundation
-  // dump arrives.
+  // Take this selection's foundation dump at once, so a later Copy or Update
+  // reads it rather than the previous one. Absent when main has none or the
+  // panel holds this dump (sent once per read, see foundationPost.ts); until
+  // one arrives the brief's bindings omit resolved values.
   if (msg.foundation) onSelectionFoundation(msg.foundation);
   if (!node) {
     screen = { kind: 'empty' };
     paint();
     return;
   }
-  // Same component: the facts are re-read below (the component may have been
-  // edited meanwhile), but the error stays on screen rather than flashing
-  // `reading` and settling on `ready`.
+  // Same component: facts are re-read, but the error stays rather than
+  // flashing `reading` and settling on `ready`.
   screen = keepError && screen.kind === 'error'
     ? { ...screen, componentName: node.name }
     : { kind: 'reading', componentName: node.name };
@@ -2881,10 +2626,8 @@ function applySelection(msg: SelectionMessage): void {
       restoreDraft(state, keptDraft);
       facts = componentFacts(state.currentSpec, node.name);
       selection.variantIds = new Set(facts.defaultVariantIds);
-      // Per component, and only once facts exist: on when this component has
-      // parts a boolean property hides, off when it has none. Seeded here
-      // rather than in createComponentSelection because that runs before
-      // extraction, when there is nothing to reveal.
+      // On only when a boolean property hides parts; seeded here because
+      // createComponentSelection runs before extraction.
       selection.includeHidden = defaultIncludeHidden(facts);
       state.includeHidden = selection.includeHidden;
       if (facts.hasStates === true) selection.sections.add('states');
@@ -2903,9 +2646,8 @@ const handleMainMessage = (event: MessageEvent): void => {
 
   switch (msg.type) {
     case 'selection': {
-      // Keep an async build/download on the component it started with. Once it
-      // completes, apply the newest real selection message. The main thread
-      // suppresses its own generated-frame selection.
+      // A build keeps the component it started with; the newest selection
+      // applies when it completes. Main suppresses its own frame selection.
       if (deferSelection(operation)) {
         deferredSelection = msg;
         return;
@@ -2924,9 +2666,7 @@ const handleMainMessage = (event: MessageEvent): void => {
       {
         stopComponentProgress();
         const note = state.pendingAiNote;
-        // Every omission is listed: a writing section no model wrote is drawn
-        // as a placeholder and named as one, and the note (out of AI uses, or
-        // any other failed AI request) follows to say why.
+        // Every omission is named, placeholders included; the AI note says why.
         const outcome = omissionsMessage(resultOutcome(Boolean(msg.replaced)), state.lastOmitted);
         screen = {
           kind: 'success',
@@ -2944,12 +2684,8 @@ const handleMainMessage = (event: MessageEvent): void => {
       }
       paint();
       completeOperation();
-      // A build may have spent an AI use, so the header should stop showing a
-      // stale count.
+      // A build may have spent an AI use.
       void refreshQuota();
-      // This doc's content (created, updated, or rebuilt) is part of what a
-      // publish would send, so a proposal computed before this no longer
-      // describes the file.
       invalidatePublishAfterChange();
       return;
 
@@ -2959,24 +2695,15 @@ const handleMainMessage = (event: MessageEvent): void => {
         return;
       }
       stopComponentProgress();
-      // The failure stays on the panel until the next Create or selection
-      // replaces this state, the decision the Publish footer already took: a
-      // toast is gone before the reader looks up from the button. Controls
-      // stay enabled, so Create is the retry.
-      // A selection deferred during the build, or the one main.ts replays
-      // after it, goes through applySelection, which keeps this banner for the
-      // same component and toasts it for any other (see selectionOutcome).
+      // The failure stays on the panel until the next Create or selection: a
+      // toast is gone before the reader looks up. Create is the retry; a
+      // deferred or replayed selection goes through applySelection.
       screen = failedBuildScreen(currentName(), msg.message);
       failedBuildPaintedAt = Date.now();
       paint();
       completeOperation();
-      // main.ts's renderDocFrame can fail after already committing the doc
-      // to canvas (registering it and placing the Section, with only a
-      // cosmetic tail such as focus/zoom left to fail), in which case this
-      // is a real doc created or replaced, not a no-op, and this session
-      // cannot tell which happened from the message alone. Invalidate either
-      // way rather than risk a proposal computed before this now-changed
-      // doc surviving as if it still described the file.
+      // renderDocFrame can fail after committing the doc to canvas, and this
+      // message cannot say which, so invalidate either way.
       invalidatePublishAfterChange();
       return;
 
@@ -3016,15 +2743,12 @@ const handleMainMessage = (event: MessageEvent): void => {
 
     case 'fontList':
       settingsFonts = msg.families;
-      // The list is fetched on the first visit to Settings, so it usually
-      // arrives while the user is already looking at the fields. Re-render the
-      // open menu (it may have been showing the "no fonts" fallback) and
-      // re-check any value typed before the list existed.
+      // Usually arrives with Settings on show: re-check any typed value and
+      // re-render an open menu, which may show the "no fonts" fallback.
       settingsFontWarning = fontFallbackWarning(
         fontMenu ? fontInput(fontMenu.field)?.value.trim() ?? '' : '',
       );
-      // Settings may be on show already; the warning line is patched rather
-      // than repainted so an open list and a typed value are left alone.
+      // Patched, not repainted, so an open list and a typed value are left alone.
       paintFontWarning(refs.root, settingsFontWarning);
       if (fontMenu) renderFontMenu();
       return;
@@ -3087,12 +2811,9 @@ const handleMainMessage = (event: MessageEvent): void => {
       return;
 
     case 'foundationDone':
-      // Refresh the copy-time cache from what actually landed on canvas
-      // before branching: both the bulk build and a single row's Update
-      // (below) can change what the next Copy should carry.
+      // Refresh the copy cache from what landed, for a bulk build or a row Update.
       setFoundationGroupDescriptions(msg.groupDescriptions);
-      // A docId belongs to a Library row update. The Library migration handles
-      // that branch; this one owns only the bulk Foundation workflow.
+      // A docId means a Library row update; otherwise the bulk Foundation build.
       if (msg.docId) {
         if (
           libraryOperation?.kind === 'update' &&
@@ -3105,9 +2826,8 @@ const handleMainMessage = (event: MessageEvent): void => {
       }
       setFoundationGenerating(false);
       {
-        // Nothing created or updated means the file changed after the list
-        // was read: the selected sources are gone. Said even with an AI note,
-        // which alone would leave the empty result unexplained.
+        // Nothing landed means the selected sources are gone; said even with an
+        // AI note, which alone would leave the empty result unexplained.
         const outcome = [
           msg.created ? `Created ${msg.created} doc${msg.created === 1 ? '' : 's'}.` : '',
           msg.replaced ? `Updated ${msg.replaced} doc${msg.replaced === 1 ? '' : 's'}.` : '',
@@ -3123,10 +2843,6 @@ const handleMainMessage = (event: MessageEvent): void => {
       paint();
       completeOperation();
       void refreshQuota();
-      // A Foundation doc's content is part of what a publish would send, so a
-      // proposal computed before this build no longer describes the file.
-      // Nothing landing (the sources were gone) changed nothing, so nothing
-      // to invalidate.
       if (msg.created > 0 || msg.replaced > 0) invalidatePublishAfterChange();
       return;
 
@@ -3151,12 +2867,8 @@ const handleMainMessage = (event: MessageEvent): void => {
       foundationAiNote = '';
       paint();
       completeOperation();
-      // A build that stopped partway through may already have changed docs
-      // on canvas before it failed: `msg.created` counts the new ones, but a
-      // unit that rebuilt an existing doc replaced it without being counted
-      // here, so this message cannot tell a failed rebuild of existing docs
-      // from nothing landing. Invalidate either way, the way docFrameError
-      // does; the cost of a build that changed nothing is one extra dry run.
+      // A partial build may have replaced docs `msg.created` does not count, so
+      // invalidate either way; the cost is one extra dry run.
       invalidatePublishAfterChange();
       return;
 
@@ -3169,19 +2881,12 @@ const handleMainMessage = (event: MessageEvent): void => {
       libraryMenuDocId = null;
       startLibraryDriftChecks(pendingLibraryCarry);
       pendingLibraryCarry = null;
-      // A file with no component docs has no pass to wait for: this reply is
-      // the check.
+      // With no component docs there is no pass to wait for; this reply is the check.
       if (driftQueue.done()) stampLibraryChecked();
       libraryRefreshing = [...libraryDrift.values()].some((value) => value === 'pending');
       syncLibraryBadge();
-      // Fired from the reply rather than from navigateToView: requestLibrary
-      // already runs a live foundation extraction on the main thread (for
-      // drift) whenever a foundation doc exists, so a file with only
-      // component docs no longer pays for a second full read of nothing.
-      // This still lands well before a click: these are the same entries
-      // that populate the rows a user must see before they can Copy one, and
-      // prefetchFoundationsForCopy's own guard keeps it once-per-session
-      // across repeat library loads.
+      // Fired from the reply, not navigateToView: only a file with a foundation
+      // doc needs the dump, and the prefetch's guard keeps it once per session.
       if (msg.entries.some((entry) => entry.kind === 'foundation')) {
         prefetchFoundationsForCopy();
       }
@@ -3191,9 +2896,8 @@ const handleMainMessage = (event: MessageEvent): void => {
 
     case 'libraryUnchanged':
       libraryProbeInFlight = false;
-      // Nothing to reload. A pass paused by leaving the Library picks up
-      // where it stopped, under a new pass id so the main thread's resolver
-      // memo is not one from before the pause.
+      // A pass paused by leaving resumes under a new pass id, so main's
+      // resolver memo is not one from before the pause.
       if (!driftQueue.done()) {
         driftQueue.resume(newPassId());
         pumpDriftQueue();
@@ -3214,9 +2918,8 @@ const handleMainMessage = (event: MessageEvent): void => {
         try {
           const started = __DRIFT_TIMING__ ? Date.now() : 0;
           const spec = extract(msg.node, { figmaFile: msg.fileKey, ...(msg.fileName ? { figmaFileName: msg.fileName } : {}) });
-          // One projection serves both the hash and the later diff, so the
-          // live side of "Review detected changes" is the object that decided
-          // the badge.
+          // One projection serves the hash and the later diff, so "Review
+          // detected changes" shows the object that decided the badge.
           const projection = specHashProjection(spec, {
             includeHidden: libraryIncludeHidden.get(msg.docId) === true,
           });
@@ -3246,25 +2949,19 @@ const handleMainMessage = (event: MessageEvent): void => {
       return;
 
     case 'libraryError':
-      // The read failed, so nothing this pass would have established is
-      // known. The rows on screen are from the last successful read: their
-      // checks did not run, so each says so rather than keeping a badge
-      // this pass never confirmed, and the footer offers "Refresh to retry".
-      // Refresh comes back because `libraryRefreshing` is what disabled it.
+      // A failed read establishes nothing: each row says its check did not run
+      // rather than keeping an unconfirmed badge, and Refresh comes back.
       libraryRequested = true;
       libraryRefreshing = false;
-      // A failed read establishes nothing, so a paused pass has nothing to resume.
+      // So a paused pass has nothing to resume.
       driftQueue.clear();
       pendingLibraryCarry = null;
       libraryProbeInFlight = false;
       libraryError = msg.message;
-      // Not a partial success, so there is no honest "list may be missing
-      // some docs" note to layer under the failure banner.
+      // Not a partial success, so no "may be missing some docs" note.
       libraryReadIncomplete = false;
       for (const entry of libraryEntries) libraryDrift.set(entry.docId, 'unavailable');
-      // A driftSource/driftError reply still in flight from the pass that
-      // failed would otherwise find its baseline and set a real badge next
-      // to a banner that says this pass established nothing.
+      // A reply still in flight from the failed pass must not find a baseline.
       libraryBaseline.clear();
       libraryChanges.clear();
       syncLibraryBadge();
@@ -3273,8 +2970,7 @@ const handleMainMessage = (event: MessageEvent): void => {
       return;
 
     case 'docBaseline': {
-      // Only a reply this pass asked for and is still waiting on; a reply that
-      // outlived a refresh would otherwise revive a cleared row.
+      // Only a reply this pass still awaits; a stale one would revive a cleared row.
       const waiting = libraryChanges.get(msg.docId);
       if (!waiting || waiting.state !== 'pending') return;
       libraryChanges.set(msg.docId, resolveLibraryChanges({
@@ -3290,10 +2986,8 @@ const handleMainMessage = (event: MessageEvent): void => {
       const active = libraryOperation;
       if (!active || active.kind !== 'copy' || active.currentDocId !== msg.docId) return;
       active.prose = msg.prose;
-      // DocSourceIntent has only ever had one value. The main thread never
-      // branches on it — it only echoes it back on `docSource` — so 'update'
-      // is sent here too; the docSource handler below tells Copy apart from
-      // Update by `libraryOperation.kind`, not by this field.
+      // Main only echoes the intent; docSource tells Copy from Update by
+      // `libraryOperation.kind`, so 'update' is sent here too.
       send({ type: 'requestDocSource', docId: msg.docId, intent: 'update' });
       return;
     }
@@ -3310,9 +3004,7 @@ const handleMainMessage = (event: MessageEvent): void => {
         prose: msg.prose,
       };
       if (active.kind === 'copy') {
-        // Copy never asks about hand edits (msg.selfEdited) and never runs
-        // updateFromSource: it only reads the source, builds the brief, and
-        // clears the operation, whatever the outcome.
+        // Copy only reads: no hand-edit confirm, no update, always clears the operation.
         const prose = active.prose ?? null;
         void copyBriefFromSource(state, src, prose, copyPresenter()).finally(() => {
           libraryOperation = null;
@@ -3322,23 +3014,17 @@ const handleMainMessage = (event: MessageEvent): void => {
         return;
       }
       const runUpdate = (): void => {
-        // updateFromSource reports through this callback before every false
-        // return, so a refusal arrives with its own sentence. The backstop
-        // below only keeps an empty one from reading as "Doc updated."
+        // updateFromSource reports each refusal through this callback; the
+        // backstop below keeps an empty one from reading as "Doc updated."
         let preparationError = '';
-        // A stale-version rebuild tops up the sections the old prompt could
-        // not write before the frame rebuilds; a plain update sends the
-        // source's prose through untouched, exactly as before.
+        // A stale-version rebuild first tops up the sections the old prompt
+        // could not write; a plain update sends the source's prose untouched.
         void (async () => {
           let prose = src.prose;
           if (msg.intent === 'rebuild') {
             prose = await topUpProseForRebuild(state, src);
-            // Take the note (if any) right here, for exactly the document
-            // whose top-up just finished, and clear the shared slot in the
-            // same step. Waiting until this document's own completion (or
-            // reading it from any other document's) would risk reporting a
-            // failure against the wrong document, or losing it if this whole
-            // operation aborts before that later point ever runs.
+            // Take the note now, for exactly this doc, and clear the slot, so it
+            // cannot be reported against another doc or lost to an abort.
             const note = takeTopUpNote(state);
             if (note && !active.aiNotes.includes(note)) active.aiNotes.push(note);
           }
@@ -3352,8 +3038,7 @@ const handleMainMessage = (event: MessageEvent): void => {
       if (msg.selfEdited && !active.confirmedOverwrite.has(msg.docId)) {
         void confirmDialog({
           title: HAND_EDIT_TITLE,
-          // docSource only ever serves component docs, so the writing
-          // sections are always there to keep.
+          // docSource serves only component docs, which have writing sections.
           body: handEditBody(false),
           confirmLabel: 'Update',
         }).then((ok) => {
@@ -3394,26 +3079,21 @@ const handleMainMessage = (event: MessageEvent): void => {
 
     case 'publishInfo':
       onPublishInfo(msg);
-      // The publish screen may be open already, drawn before the identity
-      // landed. Re-enter so a published file gets its dry run and an
-      // unpublished one its first-version field.
+      // Publish may already show, drawn before the identity landed; re-enter
+      // for the dry run or the first-version field.
       if (view === 'library' && libraryPane === 'publish') onPublishOpen();
       return;
 
     case 'docDetached':
     case 'docRemoved':
-      // The detached/removed doc might have been a foundation doc, so its
-      // descriptions (if any) are gone from canvas: refresh the cache with
-      // the fresh whole-canvas truth rather than leaving the pre-removal one
-      // in place for the next Copy to serve.
+      // It may have been a foundation doc, so refresh the copy cache from the canvas.
       setFoundationGroupDescriptions(msg.groupDescriptions);
       nativeNotify(
         msg.type === 'docDetached'
           ? 'Doc detached. It stays on the canvas but no longer appears in the Library.'
           : 'Doc deleted.',
       );
-      // A detached or deleted doc no longer counts as the component's doc:
-      // Create would make a new one, not replace it.
+      // Create would now make a new doc, not replace this one.
       for (const entry of libraryEntries) {
         if (entry.docId === msg.docId && entry.sourceNodeId) componentHasDoc.set(entry.sourceNodeId, false);
       }
@@ -3429,9 +3109,6 @@ const handleMainMessage = (event: MessageEvent): void => {
       syncLibraryBadge();
       if (view === 'library') paint();
       if (searchOpen) renderGlobalSearch();
-      // The removed or detached doc is no longer part of what a publish
-      // would send, so a proposal computed before this no longer describes
-      // the file.
       invalidatePublishAfterChange();
       return;
 
@@ -3455,13 +3132,10 @@ function timedMainMessage(event: MessageEvent): void {
 }
 
 /**
- * No source check. Figma does not deliver the main thread's messages from
- * `window.parent`, the window `send()` posts to (actions.ts): in Figma they
- * arrive from another https://www.figma.com window. A check on
- * `event.source === window.parent` dropped every reply and left the plugin
- * on its loading skeleton. Which window Figma posts from is not observable
- * from this repository, so any source or origin check needs a Figma run
- * first (CodeQL js/missing-origin-check).
+ * No source check: Figma posts main-thread replies from another
+ * https://www.figma.com window, not `window.parent` (where `send()` posts,
+ * actions.ts), so `event.source === window.parent` drops every reply. Any source
+ * or origin check needs a Figma run first (CodeQL js/missing-origin-check).
  */
 window.onmessage = __DRIFT_TIMING__ ? timedMainMessage : handleMainMessage;
 

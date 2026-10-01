@@ -1,10 +1,7 @@
 /**
- * sidebar.ts — the 52px navigation rail.
- *
- * The rail is five workflow destinations in three groups, then a spacer, then
- * the utility links. Selection is a background fill plus a blue icon: no left
- * marker, no outline. Labels are always present as accessible names even
- * though only the tooltip shows them.
+ * The 52px navigation rail: workflow destinations in groups, a spacer, then the
+ * utility links. Labels are always the accessible names, though only tooltips
+ * show them.
  */
 
 import { navigation, type NavigationItem, type PluginView } from '../viewModel/contracts';
@@ -42,11 +39,7 @@ export function railIcon(id: PluginView): IconName {
 const SITE_LABEL = 'Spec Layer website';
 const LINKEDIN_LABEL = 'Spec Layer on LinkedIn';
 
-/**
- * One rail button, always drawn without a badge. The rail is built once, at
- * mount, before any source check has answered, so the only badge path is
- * setRailBadge repainting the live button in place.
- */
+/** One rail button, drawn without a badge; setRailBadge adds it to the live button. */
 function railButton(item: NavigationItem, active: PluginView): string {
   const current = item.id === active ? ' aria-current="page"' : '';
   return (
@@ -82,21 +75,10 @@ export function sidebarMarkup(active: PluginView): string {
 }
 
 /**
- * Show or hide one live badge without rebuilding the rail or losing focus.
- *
- * The badge is a dot, not a count. A count is a number the UI only knows
- * progressively: source checks resolve one doc at a time, so a digit would
- * climb as they land and vanish on every refresh. "Something in the Library
- * needs attention" is the whole message, and a dot says it without changing
- * shape.
- *
- * The dot itself stays aria-hidden, and the state goes on the button's
- * accessible name instead: colour and shape alone are not available to a
- * screen reader, and the count never was either.
- *
- * The caller decides WHEN the answer is settled enough to act on (ui-vnext.ts
- * holds the badge steady while source checks are still resolving); this only
- * draws it.
+ * Show or hide one live badge without rebuilding the rail or losing focus. A
+ * dot, not a count: checks resolve one doc at a time, so a digit would climb
+ * and vanish on every refresh. The dot is aria-hidden and the state goes on the
+ * button's accessible name. The caller decides when the answer is settled.
  */
 export function setRailBadge(
   root: HTMLElement,

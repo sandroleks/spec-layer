@@ -1,12 +1,8 @@
 /**
- * Deterministic findings about one component.
- *
- * Every entry here is COMPUTED from extracted data. Nothing is inferred, and there
- * is deliberately no aggregate score: a number with no defined arithmetic that
- * tells an agent it may generate without human review is worse than no number.
- *
- * There is also no `info` severity. A finding nobody should act on should not be
- * emitted at all.
+ * Deterministic findings about one component, each computed from extracted
+ * data. No aggregate score (a number with no defined arithmetic that licenses
+ * unreviewed generation is worse than none) and no `info` severity (a finding
+ * nobody should act on is not emitted).
  */
 import type { IntermediateSpec } from './extract';
 import type { LayoutSummary } from './layout';
@@ -30,16 +26,12 @@ export interface Finding {
   when?: Record<string, string[]>;
 }
 
-/** State words that appearing in a TOKEN name implies a state-specific value. */
+/** State words that, in a token name, imply a state-specific value. */
 const STATE_WORDS = ['disabled', 'hover', 'hovered', 'focus', 'focused', 'press', 'pressed', 'loading', 'selected'];
 
 /**
- * Words that name the SAME interaction state under a different inflection, so a
- * condition value spelled with one form ("Hovered") still suppresses a token
- * named with the other ("...primary-hover") -- mirrors the hover/hovered and
- * focus/focused equivalence STATE_ORDER already encodes in statesMatrix.ts,
- * for the same reason: both spellings describe one ongoing condition, and
- * whichever form is used should not depend on which side of the check it's on.
+ * Inflections of one state, so a condition spelled "Hovered" still suppresses a
+ * token named `...primary-hover`; mirrors STATE_ORDER in statesMatrix.ts.
  */
 const STATE_SYNONYMS: Record<string, string[]> = {
   hover: ['hover', 'hovered'], hovered: ['hover', 'hovered'],
@@ -47,12 +39,8 @@ const STATE_SYNONYMS: Record<string, string[]> = {
   press: ['press', 'pressed'], pressed: ['press', 'pressed'],
 };
 
-/** Whole-word match (not a bare substring): a plain `.includes` would flag a
- *  token like `color/surface/compressed/default` for "naming" the press
- *  state, when `press` there is only a fragment of an unrelated word. One
- *  RegExp per word, built on first use and kept: the words come from the
- *  closed STATE_WORDS and STATE_SYNONYMS sets, and this ran per token per
- *  word. No `g` flag, so `.test` carries no lastIndex between calls. */
+/** Whole-word match, so `compressed` does not name the press state. Cached per
+ *  word (the sets are closed); no `g` flag, so `.test` keeps no lastIndex. */
 const WORD_PATTERNS = new Map<string, RegExp>();
 const hasWord = (haystack: string, word: string): boolean => {
   let pattern = WORD_PATTERNS.get(word);
@@ -61,37 +49,24 @@ const hasWord = (haystack: string, word: string): boolean => {
 };
 
 /**
- * Values that read as a boolean flag's own two settings.
- *
- * `isModifierAxis` needs exactly `true` and `false` together, so it is false
- * for a condition SLICE like `{ Enabled: ['False'] }`, which names only the one
- * value the binding is scoped to. This reads the same signal through such a
- * slice, which is what makes the verdict independent of whether the axis was
- * declared in `variants` at all.
+ * Values that read as a boolean flag's settings. Unlike `isModifierAxis`, which
+ * needs both `true` and `false`, this reads a slice like `{ Enabled: ['False'] }`,
+ * so the verdict does not depend on the axis being declared in `variants`.
  */
 const isBooleanValues = (values: string[]): boolean =>
   values.length > 0 && values.every((v) => v.toLowerCase() === 'true' || v.toLowerCase() === 'false');
 
 /**
- * Does this binding's own condition restrict it to a STATE axis at all?
+ * Does this binding's condition restrict it to a state axis: one named after a
+ * state concept (`isStateVocabName`) that is a boolean flag, not an enum? Not a
+ * name-to-meaning table (`Enabled: False` -> disabled), since every entry would
+ * guess at someone else's naming. Name alone would also suppress the enum
+ * `{ State: ['Default'] }` this rule exists for.
  *
- * Deliberately NOT a table mapping axis names to state meanings (`Enabled:
- * False` -> disabled, `Active: True` -> ...). Such a table is unbounded, every
- * entry guesses at someone else's naming, and each guess is a new way to be
- * confidently wrong. This asks only the structural question the rest of the
- * codebase already asks: is the axis named after a state concept
- * (`isStateVocabName`, the same test detectStateMatrix's flags path uses), and
- * is it a boolean flag rather than an enum? A name-only test would not do:
- * `isStateVocabName('State')` is true, so it would suppress the enum
- * `{ State: ['Default'] }` case this rule is named after.
- *
- * The consequence, accepted on purpose: this is POLARITY-BLIND. A binding
- * conditioned `{ Enabled: ['True'] }` or `{ Loading: ['True'] }` on a
- * `...disabled` token is a genuine defect and will now be missed. Reading
- * polarity means deciding what `True` means on someone else's axis, which is
- * the guessing table above. The message can only honestly claim "this binding
- * applies where that state is not set" when no state-named axis is involved at
- * all, so the rule now claims exactly that much and no more.
+ * Polarity-blind: `{ Enabled: ['True'] }` on a `...disabled` token is a real
+ * defect this misses, because reading polarity means guessing what `True`
+ * means. The rule fires only where its message can honestly claim the state is
+ * not set.
  */
 function conditionsNameAStateAxis(
   conditions: Record<string, string[]>,
@@ -105,12 +80,8 @@ function conditionsNameAStateAxis(
 }
 
 /**
- * The geometry a layout entry states, as property name plus number.
- *
- * Reads `values`, the structured numbers extractLayout now carries. An earlier
- * draft regex-parsed `summary` ("horizontal, radius 4") instead, which is the same
- * mistake v1 made with typography: round-tripping a number through a display
- * string, so the parse breaks silently the day the sentence is reworded.
+ * The geometry a layout entry states, from the structured `values`, never parsed
+ * back out of the `summary` display string, which can be reworded.
  */
 function geometryOf(l: LayoutSummary): { property: string; value: number }[] {
   const out: { property: string; value: number }[] = [];
@@ -128,21 +99,12 @@ export function validate(
 ): Finding[] {
   const findings: Finding[] = [];
 
-  // 1. A binding whose token names a state that its own condition does not.
-  //
-  // Two independent suppressions, neither of which subsumes the other:
-  //
-  //  - LEXICAL: the condition spells the state word itself. Checked against
-  //    every inflection of the word the token matched (via STATE_SYNONYMS),
-  //    not just that exact spelling: a condition reading `{ State: ['Hovered'] }`
-  //    must still suppress a token named `...primary-hover`, and vice versa, or
-  //    the two most common spellings of one state fail to recognize each other.
-  //    This one catches `{ State: ['Disabled'] }`, where the axis is an enum and
-  //    the structural test below says nothing.
-  //  - STRUCTURAL: the condition restricts to a state-named BOOLEAN axis, whose
-  //    value spells no state word at all. This one catches
-  //    `{ Enabled: ['False'] }`, a very common way to model "disabled", which
-  //    the lexical test reported as the exact defect the rule looks for.
+  // 1. A binding whose token names a state its own condition does not. Two
+  // independent suppressions:
+  //  - lexical: the condition spells the state word in any inflection
+  //    (STATE_SYNONYMS); catches the enum `{ State: ['Disabled'] }`.
+  //  - structural: the condition restricts to a state-named boolean axis, as in
+  //    `{ Enabled: ['False'] }`, whose value spells no state word.
   for (const t of spec.tokens) {
     const word = STATE_WORDS.find((w) => hasWord(t.name.toLowerCase(), w));
     if (!word) continue;
@@ -162,43 +124,17 @@ export function validate(
 
   // 2. A rendered number disagreeing with its bound token's resolved value.
   //
-  // Joined on `path`, not `part`. `part` is unique only among SIBLINGS, so two
-  // subtrees each holding a node named `Icon` share one flat `part` key, and a
-  // lookup keyed on it took the first match, so the SECOND node's rendered
-  // radius was compared against the FIRST node's token and reported under the
-  // FIRST node's path. Both nodes can be individually correct and still produce
-  // that finding: a fabricated contradiction between two unrelated nodes,
-  // attributed to the wrong path. `path` is the identity extractTokens itself
-  // groups by, for exactly this reason (see the grouping comment in tokens.ts).
+  // Joined on `path`, not `part`: `part` is unique only among siblings, so two
+  // `Icon` nodes in different subtrees would compare one node's radius with the
+  // other's token (see the grouping comment in tokens.ts). Joined on the
+  // condition too: extractLayout walks the default variant only, so only rules
+  // matching its combo apply (`anatomyComponentId` is the default variant's
+  // node id; `ruleMatchesConfig` treats an absent axis as matching anything).
   //
-  // Joined on the CONDITION too, not just on path and property. extractLayout
-  // walks the default variant only, so a LayoutSummary states what the DEFAULT
-  // variant renders. A `find` over path and property alone took whichever rule
-  // came first regardless of the variants it is scoped to, so a component that
-  // binds one geometry property to a different token per variant had the
-  // default variant's rendered number compared against another variant's
-  // token: every variant individually correct, and a confidently wrong finding
-  // anyway.
-  //
-  // `defaultCombo` is the default variant's own axis values, already on the
-  // spec: `anatomyComponentId` IS the default variant's node id, and
-  // `variantInstances` carries the axis combo extractTokens conditioned its
-  // rules with, from the one shared axis model. `ruleMatchesConfig` treats an
-  // axis absent from a rule's conditions as matching anything, which is what an
-  // unconditioned or partially conditioned rule means.
-  //
-  // Then, deliberately, exactly ONE surviving rule is compared:
-  //  - ZERO: nothing is bound here for the default variant. Silent, as before.
-  //  - MORE THAN ONE: two rules both applying to the default variant for one
-  //    path and property is either a genuine conflict, which
-  //    `duplicate-conflicting-binding` reports below with the right message, or
-  //    a distinction on an axis this comparison cannot see. Guessing which one
-  //    the frame actually used is precisely how the bug above happened, so do
-  //    not guess.
-  // When the combo cannot be derived at all (no variantInstance carries the
-  // default variant's node id) the combo is empty, so EVERY rule matches and
-  // the more-than-one guard is what stops a multi-variant component from
-  // reporting nonsense.
+  // Exactly one applicable rule is compared. Zero: nothing is bound. More than
+  // one: a conflict `duplicate-conflicting-binding` reports, or a distinction on
+  // an axis this cannot see, so never guess. An underivable combo is empty, so
+  // every rule matches and this guard keeps a multi-variant component quiet.
   const defaultCombo =
     spec.variantInstances.find((v) => v.nodeId === spec.anatomyComponentId)?.values ?? {};
   for (const l of spec.layout) {
@@ -219,12 +155,9 @@ export function validate(
     }
   }
 
-  // 3. One path and property bound to two different tokens under one condition.
-  //
-  // Grouped by a string key, but `path`/`property` for the finding are carried
-  // alongside it rather than recovered by splitting the key on spaces: a part
-  // name containing a space ("Icon Left") would otherwise silently mangle the
-  // reported path.
+  // 3. One path and property bound to two tokens under one condition. `path` and
+  // `property` travel beside the key, never split back out of it: a part name
+  // can contain a space.
   const byTarget = new Map<string, { path: string; property: string; tokens: Set<string> }>();
   for (const t of spec.tokens) {
     const key = JSON.stringify([t.path, t.property, t.conditions]);
@@ -253,16 +186,10 @@ export function validate(
     });
   }
 
-  // 5. Mirror each surviving gap, so one list carries everything actionable.
-  //
-  // A gap and a binding can name the same path and property: gap detection
-  // walks the default variant while token extraction can see the property
-  // bound in a different variant. componentBrief's own `unbound` block
-  // already drops a gap in that situation because the binding is the
-  // stronger evidence -- reporting `unbound-value` here anyway would put this
-  // block in direct contradiction with `tokens` for the exact same fact, the
-  // ButtonLabel defect the `unbound` reconciliation exists to prevent. Same
-  // reconciliation, so the two blocks can never disagree.
+  // 5. Mirror each surviving gap, so one list carries everything actionable. A
+  // gap whose path and property another variant binds is dropped, the same
+  // reconciliation componentBrief's `unbound` block makes (the binding is the
+  // stronger evidence), so the two blocks never disagree.
   const boundPaths = new Set(spec.tokens.map((t) => `${t.path} ${t.property}`));
   for (const g of spec.gaps) {
     if (boundPaths.has(`${g.path} ${g.property}`)) continue;

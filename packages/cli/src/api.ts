@@ -4,13 +4,12 @@ export type FetchBundleResult =
   | { kind: 'ok'; raw: string; publishedAt: string; bundleHash: string; version: string | null }
   | { kind: 'not_modified'; version: string | null }
   /**
-   * `retryable` is true only for a failure the same request can get past on
-   * its own: the network, the timeout, an unreadable body, or a 5xx. A 4xx
-   * needs something changed first, so a caller must not suggest a bare retry.
+   * `retryable`: network, timeout, unreadable body, or 5xx. A 4xx needs
+   * something changed first, so a caller must not suggest a bare retry.
    */
   | { kind: 'error'; message: string; retryable: boolean };
 
-/** How long one request may take, headers and body together, before the CLI gives up and says so. */
+/** One request's deadline, headers and body together. */
 export const FETCH_TIMEOUT_MS = 30_000;
 
 /** `AbortSignal.timeout` rejects with a DOMException named TimeoutError; nothing else in this path does. */
@@ -22,13 +21,11 @@ export async function fetchBundle(opts: {
 }): Promise<FetchBundleResult> {
   const doFetch = opts.fetcher ?? fetch;
   const timeoutMs = opts.timeoutMs ?? FETCH_TIMEOUT_MS;
-  // Worded for both places the deadline can fire: before the headers, and
-  // while a slow body is still arriving.
+  // Worded for both places the deadline fires: before the headers, or mid-body.
   const timedOut: FetchBundleResult = {
     kind: 'error', message: `${opts.api} did not finish answering within ${timeoutMs / 1000} seconds.`, retryable: true,
   };
-  // One signal covers the headers and the body. Without it a stalled server
-  // hung pull and status forever, with nothing printed.
+  // One signal covers the headers and the body, so a stalled server cannot hang the CLI.
   const signal = AbortSignal.timeout(timeoutMs);
   let res: Response;
   try {

@@ -1,8 +1,6 @@
 /**
- * license.ts — subscription, quota, activation, and device connection states.
- *
- * Network work and persistence stay in ui-vnext.ts. This module is a pure
- * rendering surface for the exhaustive LicenseState contract.
+ * The license screen: plan, quota, activation and device states. A pure
+ * rendering of the exhaustive LicenseState; network work stays in ui-vnext.ts.
  */
 
 import type { LicenseState } from '../viewModel/contracts';
@@ -20,11 +18,9 @@ export interface LicenseScreenModel {
   limit: number;
   resetsAt: string;
   /**
-   * Whether a quota has arrived from the proxy, so `remaining` and `limit`
-   * are the server's numbers. False draws no usage row: before the first
-   * answer, or offline, the counts are placeholders, and "0 of 0 free uses
-   * left" on a full amber bar would be a claim nobody made. Omitted reads as
-   * known, which is how every caller behaved before the flag existed.
+   * Whether `remaining` and `limit` are the proxy's numbers. False draws no
+   * usage row, since "0 of 0 free uses left" would be a claim nobody made.
+   * Omitted reads as known.
    */
   quotaKnown?: boolean;
   /** A saved key's check is running again, so its button reads as busy. */
@@ -120,11 +116,8 @@ function planCard(model: LicenseScreenModel): string {
   const isUnknown = model.state === 'unknown';
   const safeLimit = Math.max(0, model.limit);
   const safeRemaining = Math.max(0, model.remaining);
-  // Mirrors the header's allowanceCopy(): exhausted always reads as a full
-  // amber bar, not an empty gray one, because a "remaining" gauge has nothing
-  // left to show at 0 regardless of what color it would have been. LOW_REMAINING
-  // is the same import the header uses, so this page and the header cannot
-  // drift apart on what "low" means (allowance.test.ts pins that boundary).
+  // Exhausted reads as a full amber bar, as in the header's allowanceCopy();
+  // LOW_REMAINING is the header's own import, so "low" cannot drift.
   const isExhausted = safeRemaining <= 0;
   const isLow = !isExhausted && safeRemaining < LOW_REMAINING;
   const usageTone = isExhausted ? 'exhausted' : isLow ? 'low' : 'normal';
@@ -132,12 +125,10 @@ function planCard(model: LicenseScreenModel): string {
     ? 100
     : safeLimit > 0 ? Math.min(100, (safeRemaining / safeLimit) * 100) : 0;
   const title = isPro ? 'Pro plan' : isUnknown ? 'License key saved' : 'Free plan';
-  // Says it once. Pro has no monthly cap, but PRO_SOFT_THRESHOLD and the
-  // per-minute rate limit still apply, so "unlimited" is the word voice rule 6
-  // tells us not to use here. The file counts are the proxy's LIBRARY_LIMITS
-  // (1 free, 10 Pro). The free line names no AI or publish number: the proxy
-  // owns those limits and can change them without a plugin release, and the
-  // meter carries the number it reports.
+  // Pro has no monthly cap, but PRO_SOFT_THRESHOLD and the rate limit apply, so
+  // not "unlimited" (voice rule 6). File counts are the proxy's LIBRARY_LIMITS
+  // (1 free, 10 Pro); the free line names no AI or publish number, which the
+  // proxy can change without a plugin release.
   const detail = isPro
     ? 'Up to 10 published Figma files, no monthly cap on AI writing or publishing'
     : isUnknown
@@ -145,10 +136,8 @@ function planCard(model: LicenseScreenModel): string {
       : '1 published Figma file, with limits on AI writing and publishing';
   const badge = isPro ? 'Active' : isUnknown ? 'Unverified' : 'Current';
 
-  // Pro adds nothing here. The heading already states the plan, the badge
-  // already states that it is active, and the detail already states what that
-  // buys, so a benefits list could only repeat one of the three. A free plan
-  // with no quota yet has no count to show, so it shows none.
+  // Pro adds nothing: the heading, badge and detail already say it all. A free
+  // plan with no quota yet has no count to show.
   const body = isPro
     ? ''
     : isUnknown

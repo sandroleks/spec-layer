@@ -3,26 +3,18 @@ import { defaultVariant } from './anatomy';
 import { cleanPartName, walkParts } from './naming';
 import { RADIUS_BINDINGS } from './tokens';
 
-/** `path` is the identity (sibling-disambiguated names from the root, joined
- *  with `/`, as walkParts builds it); `part` is the display name, unique only
- *  among siblings. Same split as TokenRule and Gap in tokens.ts. */
+/** `path` is the walkParts identity; `part` the display name, unique only
+ *  among siblings. Same split as TokenRule and Gap. */
 export interface RawValue { part: string; path: string; property: string; value: string }
 
-/** Bound-variable property names that cover each measure property. */
 const PADDING_BINDINGS = new Set([
   'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'verticalPadding', 'horizontalPadding',
 ]);
 
 /**
- * Hardcoded (unbound) values on the DEFAULT variant, shaped like token rules so
- * the variant cards can list them alongside real tokens in "unbound" style.
- * Additive: excluded from specContentHash (hash.ts destructures it out), so
- * nothing here can mark a committed document as drifted.
- *
- * Keyed by (path, property), not (part, property): two layers in different
- * branches routinely share a name (two `Label` texts), and a part-keyed set
- * dropped the second one's value from the Tokens table. tokens.ts keys its
- * rules and gaps on path for the same reason.
+ * Hardcoded (unbound) values on the DEFAULT variant, shaped like token rules.
+ * Excluded from specContentHash, so nothing here can mark a doc as drifted.
+ * Keyed by path, not part: layers in different branches share names.
  */
 export function extractRawValues(root: SerializedNode): RawValue[] {
   const out: RawValue[] = [];
@@ -35,17 +27,8 @@ export function extractRawValues(root: SerializedNode): RawValue[] {
   };
 
   const def = defaultVariant(root);
-  // skipInvisible=true: pruning has to happen IN THE WALKER, not in this
-  // callback. walkParts recurses into every node's children unconditionally
-  // once it has decided to visit that node — a callback-level
-  // `if (n.visible === false) return` only stops that one node from pushing a
-  // value, it cannot stop walkParts from descending into the hidden node's
-  // children. So a hidden wrapper's visible descendants would still get
-  // visited and leak raw values that were never reachable in the pre-walkParts
-  // version of this file (whose private `walk` returned before recursing,
-  // pruning the whole hidden subtree). Passing skipInvisible=true here
-  // reproduces that exact semantics, because walkParts checks visibility
-  // BEFORE calling visit and before recursing into children.
+  // skipInvisible=true prunes IN THE WALKER: a callback-level visibility check
+  // cannot stop walkParts descending into a hidden wrapper's children.
   walkParts(def, root.type === 'COMPONENT_SET' ? 'Container' : cleanPartName(def.name), (n, part, path) => {
     const bound = new Set((n.bindings ?? []).map((b) => b.property));
 
@@ -70,8 +53,7 @@ export function extractRawValues(root: SerializedNode): RawValue[] {
           }
         }
       }
-      // Zero is the default for both, so a zero row tells the reader nothing.
-      // Matches the `> 0` guard the padding branch above already uses.
+      // Zero is the default, so a zero row tells the reader nothing.
       if (l.itemSpacing !== undefined && l.itemSpacing > 0 && !bound.has('itemSpacing')) {
         push(part, path, 'gap', String(l.itemSpacing));
       }

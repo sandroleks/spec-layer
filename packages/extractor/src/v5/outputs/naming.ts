@@ -29,9 +29,8 @@ export interface OutputReportEntry {
 }
 
 /**
- * A DTCG path segment as words: split on every run of characters outside
- * letters and digits and on every lowercase-to-uppercase boundary. Digits are
- * not a boundary, so `h1` stays one word.
+ * A DTCG path segment as words: split on runs outside letters and digits and on
+ * lowercase-to-uppercase boundaries. Digits are no boundary, so `h1` is one word.
  */
 export function splitWords(segment: string): string[] {
   return segment
