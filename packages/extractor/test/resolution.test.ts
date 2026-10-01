@@ -1,16 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { resolutionOf, type ResolutionStatus } from '../src/resolution';
-import { buildFoundation, narrowFoundation, type FoundationSpec } from '../src/foundation';
+import { buildFoundation, type FoundationSpec } from '../src/foundation';
 import type { RefIdentity } from '../src/tree';
 
 const ref = (over: Partial<RefIdentity> = {}): RefIdentity => ({
   id: 'VariableID:1', name: 'color/brand', kind: 'variable', remote: false, ...over,
 });
 
-// One real text style, not `[]`: narrowFoundation's own early return treats an
-// empty textStyles array as "nothing to narrow to" and hands back null, which
-// the `!` below would otherwise silently paper over -- the "not in scope"
-// test needs a narrow that actually succeeded, not a null miscast as one.
 const spec = (): FoundationSpec => buildFoundation({
   fileKey: 'FILE1', extractedAt: 'T', externals: [], effectStyles: [],
   textStyles: [{ name: 'Body/Regular', description: '', fontFamily: 'Inter', fontStyle: 'Regular',
@@ -45,12 +41,6 @@ describe('resolutionOf', () => {
     expect(resolutionOf(s, ref({ kind: 'effect-style', id: 'S:1' })).status).toBe('unavailable');
   });
 
-  it('reports a scope exclusion separately from an absence', () => {
-    const narrowed = narrowFoundation(spec(), { target: 'textStyles' })!;
-    const r = resolutionOf(narrowed, ref({ collectionId: 'c1' }));
-    expect(r.status).toBe('not-in-scope');
-  });
-
   it('reports a local resource missing from the cached dump as not in snapshot', () => {
     const r = resolutionOf(spec(), ref({ id: 'VariableID:99', name: 'color/new' }));
     expect(r.status).toBe('not-in-snapshot');
@@ -61,13 +51,13 @@ describe('resolutionOf', () => {
     expect(resolutionOf(undefined, ref()).status).toBe('no-foundation');
   });
 
-  it('has exactly six statuses and no `missing`', () => {
+  it('has exactly five statuses and no `missing`', () => {
     // A binding's name comes from Figma resolving a real id, so a name pointing
     // at nothing is unreachable, and this codebase does not emit findings that
     // cannot occur.
     const all: ResolutionStatus[] = ['external', 'not-extracted', 'unavailable',
-      'not-in-snapshot', 'not-in-scope', 'no-foundation'];
-    expect(all).toHaveLength(6);
+      'not-in-snapshot', 'no-foundation'];
+    expect(all).toHaveLength(5);
   });
 
   it('writes no em dash or en dash in any reason', () => {
@@ -76,7 +66,6 @@ describe('resolutionOf', () => {
       resolutionOf(spec(), ref({ remote: true })),
       resolutionOf(spec(), ref({ kind: 'paint-style' })),
       resolutionOf({ ...spec(), unavailable: ['variables' as const] }, ref()),
-      resolutionOf(narrowFoundation(spec(), { target: 'textStyles' })!, ref()),
       resolutionOf(spec(), ref({ id: 'VariableID:99' })),
     ].map((r) => r.reason);
     for (const reason of reasons) expect(reason).not.toMatch(/[–—]/);

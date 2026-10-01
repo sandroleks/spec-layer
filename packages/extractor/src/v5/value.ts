@@ -173,12 +173,8 @@ export type CanonicalValue =
   | { kind: 'alias'; reference: AliasReference; resolved: AliasResolution }
   | { kind: 'missing'; reason: MissingReason };
 
-export const isLiteral = (v: CanonicalValue): v is Extract<CanonicalValue, { kind: 'literal' }> =>
-  v.kind === 'literal';
 export const isAlias = (v: CanonicalValue): v is Extract<CanonicalValue, { kind: 'alias' }> =>
   v.kind === 'alias';
-export const isMissing = (v: CanonicalValue): v is Extract<CanonicalValue, { kind: 'missing' }> =>
-  v.kind === 'missing';
 
 /**
  * The typed value a consumer would use, or null.

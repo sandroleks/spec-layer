@@ -57,7 +57,8 @@ export interface LibraryEntry {
    *  travels with the entry rather than being re-derived in the UI.
    *
    *  Copy is its only consumer, and it reads only `target` and `collectionId`:
-   *  see FoundationCopyTarget for why `group` and `modeIds` are dropped there.
+   *  `group` and `modeIds` only exist because a frame has four mode columns
+   *  and splits a large collection, and the clipboard has neither limit.
    *
    *  Absent on component rows, and on any entry an older main thread produced,
    *  which is why Copy is withheld rather than guessed at when it is missing. */

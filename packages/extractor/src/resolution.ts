@@ -1,7 +1,7 @@
 /**
  * resolution.ts — why a reference could not be resolved, stated as a fact.
  *
- * Absence from local foundation data has at least six causes, and a name-only
+ * Absence from local foundation data has several causes, and a name-only
  * lookup collapses them into one bare `{}`. Every status here is decided from
  * something Figma or this codebase RECORDED, never inferred from a lookup that
  * found nothing:
@@ -12,19 +12,18 @@
  * | external         | `remote: true` from Figma. Not inferred.            |
  * | no-foundation    | The caller passed none, as the drift path does.     |
  * | unavailable      | serializeFoundation recorded that read as failed.   |
- * | not-in-scope     | `narrowedTo` excludes it.                            |
  * | not-in-snapshot  | Local, not remote, absent from the cached dump.     |
  *
  * There is deliberately no `missing`. A reference's name comes from Figma
  * resolving a real id, so a name pointing at nothing is unreachable, and this
  * codebase does not emit findings that cannot occur (see validate.ts).
  */
-import type { FoundationSpec, FoundationRead, FoundationCopyTarget } from './foundation';
+import type { FoundationSpec, FoundationRead } from './foundation';
 import type { RefIdentity, RefKind } from './tree';
 
 export type ResolutionStatus =
   | 'external' | 'not-extracted' | 'unavailable'
-  | 'not-in-snapshot' | 'not-in-scope' | 'no-foundation';
+  | 'not-in-snapshot' | 'no-foundation';
 
 export interface Resolution { status: ResolutionStatus; reason: string }
 
@@ -47,22 +46,6 @@ const KIND_WORD: Record<RefKind, string> = {
 const READ_WORD: Record<FoundationRead, string> = {
   variables: 'variables', textStyles: 'text styles', effectStyles: 'effect styles',
 };
-
-/** What a narrowed copy covers, named from the spec it produced rather than
- *  from the target's ids, so the sentence reads the way the user's own file does. */
-function scopeWord(spec: FoundationSpec, target: FoundationCopyTarget): string {
-  if (target.target === 'textStyles') return 'text styles only';
-  if (target.target === 'effectStyles') return 'effect styles only';
-  const names = spec.collections.map((c) => c.name).filter(Boolean);
-  return names.length > 0 ? `the ${names.join(' and ')} collection` : 'one variable collection';
-}
-
-/** Whether a narrowed copy's target covers this kind of reference at all. */
-function covers(target: FoundationCopyTarget, ref: RefIdentity): boolean {
-  if (target.target === 'textStyles') return ref.kind === 'text-style';
-  if (target.target === 'effectStyles') return ref.kind === 'effect-style';
-  return ref.kind === 'variable' && ref.collectionId === target.collectionId;
-}
 
 /**
  * Why this reference has no definition in `foundation`.
@@ -97,13 +80,6 @@ export function resolutionOf(
     return {
       status: 'unavailable',
       reason: `Reading ${READ_WORD[read]} failed, so nothing could be looked up.`,
-    };
-  }
-  if (foundation.narrowedTo && !covers(foundation.narrowedTo, ref)) {
-    return {
-      status: 'not-in-scope',
-      reason: `This copy covers ${scopeWord(foundation, foundation.narrowedTo)}, `
-        + `which does not include this ${KIND_WORD[ref.kind]}.`,
     };
   }
   return {

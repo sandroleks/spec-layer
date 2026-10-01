@@ -412,7 +412,6 @@ it('is unchanged by FoundationSpec fields that reach no rendered row', () => {
   const widened = {
     ...spec,
     effectStyles: [{ id: 'S:1', name: 'Focused/Primary', description: '', group: 'Focused', effects: [] }],
-    narrowedTo: { target: 'collection', collectionId: 'c1' },
     unavailable: ['effectStyles'],
   } as unknown as typeof spec;
 

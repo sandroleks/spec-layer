@@ -231,12 +231,6 @@ export interface FoundationSpec {
   unavailable?: FoundationRead[];
   unavailableSources?: string[];
   sourceIssues?: FoundationSourceIssue[];
-  /**
-   * Present only on a narrowed spec. Lets a resolver distinguish "excluded by
-   * scope" from "not present locally" — two causes that a lookup returning
-   * nothing collapses into one.
-   */
-  narrowedTo?: FoundationCopyTarget;
 }
 
 export type FoundationScope =
@@ -244,55 +238,6 @@ export type FoundationScope =
       group?: string; modeIds: string[] }
   | { target: 'textStyles'; group?: string }
   | { target: 'effectStyles'; group?: string };
-
-/**
- * What a single Copy-for-AI request covers.
- *
- * Deliberately coarser than FoundationScope, which additionally carries a
- * `group` and a `modeIds` subset. Both of those are artifacts of drawing a
- * frame — modes are capped at MAX_MODE_COLUMNS because a frame has four
- * columns, and a collection over SPLIT_THRESHOLD is divided into one document
- * per group — and the clipboard has neither limit. A copy that inherited them
- * would silently hide modes and whole token families from the agent reading it.
- */
-export type FoundationCopyTarget =
-  | { target: 'collection'; collectionId: string }
-  | { target: 'textStyles' }
-  | { target: 'effectStyles' };
-
-/**
- * Reduce a whole-file spec to the part one Copy covers, so colorContrast and
- * any other whole-spec reader can run over it unmodified.
- *
- * Returns null when the target resolves to nothing: a collection deleted since
- * its document was generated, or a text-styles target in a file whose styles
- * are all gone. Null rather than an empty spec, because "there is nothing here
- * any more" is a message the caller must show, not a brief it should copy.
- *
- * Alias values are untouched. They were resolved during buildFoundation, so a
- * variable aliasing into a collection this narrowing drops still carries both
- * its target name and its resolved concrete value.
- *
- * The kept collection is not cloned: it is the same object reference as in
- * `spec`. Treat both the input and the returned spec's collection as
- * read-only, since mutating one mutates the other.
- */
-export function narrowFoundation(
-  spec: FoundationSpec,
-  target: FoundationCopyTarget,
-): FoundationSpec | null {
-  if (target.target === 'textStyles') {
-    if (spec.textStyles.length === 0) return null;
-    return { ...spec, collections: [], textStyles: spec.textStyles, effectStyles: [], narrowedTo: target };
-  }
-  if (target.target === 'effectStyles') {
-    if (spec.effectStyles.length === 0) return null;
-    return { ...spec, collections: [], textStyles: [], effectStyles: spec.effectStyles, narrowedTo: target };
-  }
-  const collection = spec.collections.find((c) => c.id === target.collectionId);
-  if (!collection) return null;
-  return { ...spec, collections: [collection], textStyles: [], effectStyles: [], narrowedTo: target };
-}
 
 /** Rows per output unit, above which a unit splits by top-level group. */
 export const SPLIT_THRESHOLD = 150;

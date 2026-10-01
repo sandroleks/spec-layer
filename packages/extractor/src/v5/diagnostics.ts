@@ -174,18 +174,3 @@ export function sortDiagnostics(diagnostics: Diagnostic[]): Diagnostic[] {
     || compareCodeUnits(a.message, b.message)
     || compareCodeUnits(JSON.stringify(a.details ?? null), JSON.stringify(b.details ?? null)));
 }
-
-export const hasErrors = (diagnostics: Diagnostic[]): boolean =>
-  diagnostics.some((d) => d.severity === 'error');
-
-/** §14.2 strict mode promotes a SELECTION, never everything: a blanket
- *  promotion would fail a build on MODE_VALUES_IDENTICAL, which describes a
- *  legitimate design choice. */
-export function promoteToErrors(
-  diagnostics: Diagnostic[],
-  codes: DiagnosticCode[],
-): Diagnostic[] {
-  const promoted = new Set(codes);
-  return diagnostics.map((d) =>
-    promoted.has(d.code) ? { ...d, severity: 'error' as const } : d);
-}
