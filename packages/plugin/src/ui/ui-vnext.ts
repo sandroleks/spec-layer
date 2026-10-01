@@ -172,7 +172,7 @@ import {
   onHistoryToggle,
   setHistoryHost,
 } from './history';
-import { DriftQueue } from './libraryPass';
+import { DriftQueue, libraryCarry, type LibraryCarry } from './libraryPass';
 import { BlockWatch } from '../timing';
 
 const refs: ShellRefs = mountShell('component');
@@ -240,6 +240,10 @@ function newPassId(): string { return String(++driftPassCounter); }
 let libraryProbeInFlight = false;
 /** When the last drift pass completed, or null before the first one. */
 let libraryCheckedAt: number | null = null;
+/** What the next `library` reply keeps instead of checking again; see libraryCarry. */
+let pendingLibraryCarry: LibraryCarry | null = null;
+/** The running pass kept results from this earlier check, so it ends no fresher. */
+let libraryCarriedCheckedAt: number | null = null;
 /** Wakes when the caption's label next changes, while the Library list shows. */
 let libraryCheckedTimer: ReturnType<typeof setTimeout> | null = null;
 /** The same `DRIFT_TIMING=1` build define main.ts reads; see build.mjs. */
@@ -316,6 +320,10 @@ type LibraryUpdateOperation = {
   total: number;
   batch: boolean;
   confirmedOverwrite: Set<string>;
+  /** Groups this run's requests so main shares one read across them. */
+  batchId: string;
+  /** The Section ids this run's component rebuilds placed. */
+  rebuilt: string[];
   /** Sections left out or drawn as placeholders across this run, deduplicated
    *  by id and reason, so the completion message says which and why the way
    *  Create's does. Collected per document as each one finishes, because
@@ -665,7 +673,8 @@ function syncLibraryCheckedTimer(): void {
 
 /** A pass just finished: stamp it and re-arm the caption from the new stamp. */
 function stampLibraryChecked(): void {
-  libraryCheckedAt = Date.now();
+  libraryCheckedAt = libraryCarriedCheckedAt ?? Date.now();
+  libraryCarriedCheckedAt = null;
   syncLibraryCheckedTimer();
 }
 
@@ -1049,7 +1058,8 @@ function syncLibraryBadge(): void {
   setRailBadge(refs.sidebar, 'library', libraryHasUpdates);
 }
 
-function refreshLibrary(): void {
+function refreshLibrary(carry: LibraryCarry | null = null): void {
+  pendingLibraryCarry = carry;
   libraryRequested = true;
   libraryRefreshing = true;
   libraryMenuDocId = null;
@@ -1091,7 +1101,8 @@ function checkLibrary(): void {
   send({ type: 'requestLibrary', ifChanged: true });
 }
 
-function startLibraryDriftChecks(): void {
+function startLibraryDriftChecks(carry: LibraryCarry | null): void {
+  libraryCarriedCheckedAt = carry?.checkedAt ?? null;
   libraryDrift.clear();
   libraryBaseline.clear();
   libraryExtractorVersion.clear();
@@ -1105,10 +1116,16 @@ function startLibraryDriftChecks(): void {
       libraryDrift.set(entry.docId, initial);
       continue;
     }
-    libraryDrift.set(entry.docId, 'pending');
     libraryBaseline.set(entry.docId, entry.storedContentHash);
     libraryExtractorVersion.set(entry.docId, entry.extractorVersion);
     libraryIncludeHidden.set(entry.docId, entry.includeHidden === true);
+    const carried = carry?.checks.get(entry.docId);
+    if (carried) {
+      libraryDrift.set(entry.docId, carried.status);
+      if (carried.projection) libraryLiveProjection.set(entry.docId, carried.projection);
+      continue;
+    }
+    libraryDrift.set(entry.docId, 'pending');
   }
   // Display order: the rows the user sees first settle first.
   const order = new Map(currentLibraryModel().allRows.map((row, index) => [row.docId, index] as const));
@@ -1318,7 +1335,13 @@ function finishLibraryOperation(error = '', canceled = false): void {
   libraryOperation = null;
   completeOperation();
   if (view === 'library') paint();
-  refreshLibrary();
+  // The rescan keeps what this run did not change; see libraryCarry.
+  refreshLibrary(libraryCarry({
+    drift: libraryDrift,
+    projections: libraryLiveProjection,
+    checkedAt: libraryCheckedAt,
+    rebuilt: active.kind === 'update' ? active.rebuilt : [],
+  }));
 }
 
 function dispatchNextLibraryUpdate(): void {
@@ -1337,11 +1360,11 @@ function dispatchNextLibraryUpdate(): void {
   }
   active.currentDocId = docId;
   if (entry.kind === 'foundation') {
-    send({ type: 'updateFoundationDoc', docId });
+    send({ type: 'updateFoundationDoc', docId, batchId: active.batchId });
   } else {
     // The intent was fixed when the run started: reading libraryDrift here
     // would lose a rebuild after a mid-run refresh cleared it.
-    send({ type: 'requestDocSource', docId, intent });
+    send({ type: 'requestDocSource', docId, intent, batchId: active.batchId });
   }
   if (view === 'library') paint();
 }
@@ -1404,6 +1427,8 @@ async function startLibraryUpdates(
     total: docIds.length,
     batch,
     confirmedOverwrite: new Set(edited),
+    batchId: newPassId(),
+    rebuilt: [],
     omitted: [],
     aiNotes: [],
   };
@@ -2897,6 +2922,7 @@ const handleMainMessage = (event: MessageEvent): void => {
 
     case 'docFrameDone':
       if (libraryOperation?.kind === 'update' && libraryOperation.currentDocId) {
+        libraryOperation.rebuilt.push(msg.docId);
         completeCurrentLibraryUpdate();
         void refreshQuota();
         return;
@@ -3147,7 +3173,8 @@ const handleMainMessage = (event: MessageEvent): void => {
       libraryReadIncomplete = msg.incomplete === true;
       libraryEntries = msg.entries;
       libraryMenuDocId = null;
-      startLibraryDriftChecks();
+      startLibraryDriftChecks(pendingLibraryCarry);
+      pendingLibraryCarry = null;
       // A file with no component docs has no pass to wait for: this reply is
       // the check.
       if (driftQueue.done()) stampLibraryChecked();
@@ -3234,6 +3261,7 @@ const handleMainMessage = (event: MessageEvent): void => {
       libraryRefreshing = false;
       // A failed read establishes nothing, so a paused pass has nothing to resume.
       driftQueue.clear();
+      pendingLibraryCarry = null;
       libraryProbeInFlight = false;
       libraryError = msg.message;
       // Not a partial success, so there is no honest "list may be missing

@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { DriftQueue } from '../src/ui/libraryPass';
+import type { SpecHashProjection } from '@spec-layer/extractor';
+import { DriftQueue, libraryCarry } from '../src/ui/libraryPass';
+import type { LibraryDriftState } from '../src/ui/viewModel/library';
 
 describe('DriftQueue', () => {
   it('hands out doc ids in order, one in flight at a time, with the pass id they go under', () => {
@@ -87,5 +89,41 @@ describe('DriftQueue', () => {
     q.next();
     q.clear();
     expect(q.settle('a', 'p1')).toBe(false);
+  });
+});
+
+describe('libraryCarry', () => {
+  const projection = { name: 'Button' } as unknown as SpecHashProjection;
+
+  it('keeps settled checks, with the projection a drifted row diffs, at their check time', () => {
+    const carry = libraryCarry({
+      drift: new Map<string, LibraryDriftState>([
+        ['a', 'inSync'], ['b', 'drifted'], ['c', 'pending'], ['d', 'unavailable'], ['e', 'staleVersion'],
+      ]),
+      projections: new Map([['b', projection]]),
+      checkedAt: 1000,
+      rebuilt: [],
+    });
+    expect([...carry.checks]).toEqual([
+      ['a', { status: 'inSync' }],
+      ['b', { status: 'drifted', projection }],
+    ]);
+    expect(carry.checkedAt).toBe(1000);
+  });
+
+  it('marks the docs a run rebuilt in sync', () => {
+    const carry = libraryCarry({ drift: new Map(), projections: new Map(), checkedAt: 1000, rebuilt: ['new'] });
+    expect(carry.checks.get('new')).toEqual({ status: 'inSync' });
+    // Nothing earlier was kept, so the pass is as fresh as the rebuild.
+    expect(carry.checkedAt).toBeNull();
+  });
+
+  it('keeps nothing from a check that never completed', () => {
+    const carry = libraryCarry({
+      drift: new Map<string, LibraryDriftState>([['a', 'inSync']]),
+      projections: new Map(), checkedAt: null, rebuilt: ['new'],
+    });
+    expect([...carry.checks.keys()]).toEqual(['new']);
+    expect(carry.checkedAt).toBeNull();
   });
 });

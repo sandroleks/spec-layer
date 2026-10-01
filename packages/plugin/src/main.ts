@@ -11,7 +11,7 @@ import {
   buildFoundation, planFoundationUnits, unitContent, foundationContentHash, foundationUnitContentHash,
   foundationUnitTitle, groupRowsByFolder, colorContrast, isSemver,
   type FoundationSpec, type FoundationUnit, type FoundationUnitContent,
-  type FoundationVariableRow, type SerializedFoundation,
+  type FoundationVariableRow, type SerializedFoundation, type ColorContrastReport,
   type ProseV2,
   UNKNOWN_FILE_KEY,
 } from '@spec-layer/extractor';
@@ -210,6 +210,26 @@ const selectionCache = new SelectionCache(selectionDirty, selectionDirtyWatched)
 
 /** One resolver memo per drift pass; see driftPass.ts. */
 const driftPassResolvers = new DriftPassResolvers(resolver);
+/** The same, per Library update run (`batchId`), for its requestDocSource reads. */
+const updateBatchResolvers = new DriftPassResolvers(resolver);
+
+/**
+ * The Foundation read one Library update run shares. Update all over ten
+ * Foundation docs reads the file and measures contrast once, not ten times;
+ * a new batch id replaces it, and a request without one reads fresh.
+ */
+interface UpdateFoundation { batchId: string | null; fileKey: string; spec: FoundationSpec; contrast(): ColorContrastReport }
+let updateBatchFoundation: UpdateFoundation | null = null;
+
+async function foundationForUpdate(batchId: string | undefined, fileKey: string): Promise<UpdateFoundation> {
+  const held = updateBatchFoundation;
+  if (batchId && held && held.batchId === batchId && held.fileKey === fileKey) return held;
+  const spec = buildFoundation(await readFoundationDump(fileKey, false));
+  let report: ColorContrastReport | undefined;
+  const read: UpdateFoundation = { batchId: batchId ?? null, fileKey, spec, contrast: () => (report ??= colorContrast(spec)) };
+  updateBatchFoundation = batchId ? read : null;
+  return read;
+}
 
 /**
  * Identity of local variables at the last Library scan. A rename, a
@@ -590,6 +610,24 @@ async function findExistingDoc(
   return null;
 }
 
+/**
+ * The doc a component build replaces. A Library Update names it, so that one
+ * is used while it is still this source's doc, without reading the whole
+ * registry; Create, or a named doc that no longer qualifies, looks it up.
+ */
+async function docToReplace(docId: string | undefined, sourceNodeId: string, sectionName: string): Promise<SectionNode | null> {
+  if (docId) {
+    try {
+      const node = await figma.getNodeByIdAsync(docId);
+      if (node && node.type === 'SECTION') {
+        const link = parseDocLink((node as SectionNode).getPluginData(DOC_LINK_KEY));
+        if (link && !isFoundationLink(link) && link.sourceNodeId === sourceNodeId) return node as SectionNode;
+      }
+    } catch { /* fall back to the lookup */ }
+  }
+  return findExistingDoc(sourceNodeId, sectionName);
+}
+
 // React to UI messages
 
 /**
@@ -773,7 +811,7 @@ const handleUiMessage = async (raw: unknown): Promise<void> => {
       let committed = false; // true once the old doc has been replaced by the new one
       try {
         const sectionName = `${msg.model.componentName}: Documentation`;
-        const existing = await findExistingDoc(msg.nodeId, sectionName);
+        const existing = await docToReplace(msg.docId, msg.nodeId, sectionName);
         // Capture the id now: after existing.remove() below, reading any
         // property of a removed node (except `removed`) throws, and this id is
         // needed post-commit to prune the old doc from the registry.
@@ -881,7 +919,9 @@ const handleUiMessage = async (raw: unknown): Promise<void> => {
 
         // `replaced` lets the UI say "Updated" vs "Created": an existing doc was
         // found and swapped out, so this regenerated in place rather than adding.
-        figma.ui.postMessage({ type: 'docFrameDone', frameName: section.name, replaced: existingId !== null } as MainToUi);
+        figma.ui.postMessage({
+          type: 'docFrameDone', frameName: section.name, replaced: existingId !== null, docId: section.id,
+        } satisfies MainToUi);
       } catch (err) {
         // Clean up an orphan only if we failed BEFORE committing the replacement;
         // after commit the section is the live doc and must not be removed.
@@ -954,6 +994,9 @@ const handleUiMessage = async (raw: unknown): Promise<void> => {
       // result (success or failure) is reused rather than reading again.
       libraryDirty.consume();
       driftPassResolvers.reset();
+      // A run ends with this scan, so its shared reads are done with.
+      updateBatchResolvers.reset();
+      updateBatchFoundation = null;
       lastFoundationFingerprint.set(probed ? Promise.resolve(fingerprint) : readFoundationFingerprint());
       // Foundation drift needs one live extraction to answer every foundation
       // row, unlike component docs, which the UI checks one at a time via
@@ -1313,9 +1356,8 @@ const handleUiMessage = async (raw: unknown): Promise<void> => {
           break;
         }
 
-        const fileKey = currentFileKey();
-        const dump = await readFoundationDump(fileKey, false);
-        const spec = buildFoundation(dump);
+        const foundation = await foundationForUpdate(msg.batchId, currentFileKey());
+        const spec = foundation.spec;
 
         // Retarget a renamed/re-created collection by name before giving up,
         // the same rule requestLibrary's drift check uses: a single live
@@ -1370,7 +1412,7 @@ const handleUiMessage = async (raw: unknown): Promise<void> => {
           content, unit, resolveTheme(brandTheme), link.config.includeDescriptions,
           brandLogo, link.groupDescriptions,
           link.config.includeContrast,
-          link.config.includeContrast ? colorContrast(spec) : undefined,
+          link.config.includeContrast ? foundation.contrast() : undefined,
           pill,
           link.collectionOverview,
         );
@@ -1653,8 +1695,9 @@ const handleUiMessage = async (raw: unknown): Promise<void> => {
           break;
         }
         const selfEdited = textContentHash(collectGeneratedLane(section)) !== data.selfHash;
+        const memo = msg.batchId ? updateBatchResolvers.forPass(msg.batchId) : memoizedResolver(resolver);
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const node = await serializeNode(src as any, memoizedResolver(resolver));
+        const node = await serializeNode(src as any, memo);
         const fileKey = currentFileKey();
         figma.ui.postMessage({
           type: 'docSource', docId: msg.docId, node, fileKey, fileName: figma.root.name,

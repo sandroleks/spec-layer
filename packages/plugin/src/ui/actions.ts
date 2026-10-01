@@ -619,6 +619,7 @@ export async function updateFromSource(
       extractorVersion: EXTRACTOR_VERSION,
       config: src.config,
       ...(src.prose ? { prose: src.prose } : {}),
+      docId: src.docId,
     });
     // Loader stops on docFrameDone/docFrameError (ui-vnext.ts).
     return true;
