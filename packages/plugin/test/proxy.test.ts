@@ -183,7 +183,8 @@ describe('CHECKOUT_URL', () => {
     expect(licenseExternalUrl('upgrade')).toBe(CHECKOUT_URL);
     expect(licenseExternalUrl('renew')).toBe(CHECKOUT_URL);
     expect(licenseExternalUrl('manage')).toBe('https://app.lemonsqueezy.com/my-orders');
-    expect(licenseExternalUrl('support')).toBe('https://spec-layer.com/');
+    // Mail is not a browser destination; the License screen links it directly.
+    expect(licenseExternalUrl('support')).toBeNull();
     expect(licenseExternalUrl('unknown')).toBeNull();
   });
 });

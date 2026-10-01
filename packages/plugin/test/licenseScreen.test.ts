@@ -4,6 +4,7 @@ import {
   licenseScrollMarkup,
   type LicenseScreenModel,
 } from '../src/ui/screens/license';
+import { SUPPORT_EMAIL, SUPPORT_MAILTO } from '../src/ui/proxy';
 
 function model(
   state: LicenseScreenModel['state'],
@@ -144,5 +145,18 @@ describe('license screen presentation', () => {
     expect(busy).not.toContain('>Check again</button>');
     // Only the saved-key row reads the flag.
     expect(licenseScrollMarkup(model('free', { rechecking: true }))).not.toContain('Checking…');
+  });
+
+  it('sends a disabled key to email support, not the homepage', () => {
+    // figma.openExternal takes http and https only, so the mail link is an
+    // anchor, the plugin's other established way out of the iframe. The
+    // address is also in the message so a blocked handler still leaves a path.
+    const markup = licenseScrollMarkup(model('disabled', { licenseKey: '', input: 'SPEC-DISABLED-DEMO' }));
+    expect(markup).toContain(`href="${SUPPORT_MAILTO}"`);
+    expect(markup).toContain('target="_blank"');
+    expect(markup).toContain('Email support');
+    expect(markup).toContain(`Email ${SUPPORT_EMAIL} if that’s unexpected.`);
+    expect(markup).not.toContain('data-license-open="support"');
+    expect(markup).not.toContain('Contact support');
   });
 });

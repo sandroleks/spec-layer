@@ -586,6 +586,10 @@ record.
 5. **Manage subscription** opens the billing portal.
 6. If the proxy is unreachable, the saved key remains and the UI reports a
    temporary verification problem rather than falsely marking it expired.
+7. Force the disabled-key state (a key the proxy reports as disabled). The
+   message names the support address, and **Email support** opens your mail
+   client with the subject "Spec Layer license key". If nothing opens, the
+   address in the message must still be selectable in the panel.
 
 ## Publish and pull
 

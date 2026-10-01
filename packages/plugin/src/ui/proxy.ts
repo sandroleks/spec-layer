@@ -6,6 +6,15 @@ export const CHECKOUT_URL = 'https://speclayer-docs.lemonsqueezy.com/checkout/bu
 export const MANAGE_SUB_URL = 'https://app.lemonsqueezy.com/my-orders';
 // Marketing / author links surfaced as icons in the tab bar.
 export const SITE_URL = 'https://spec-layer.com/';
+/**
+ * Where "Email support" goes. A placeholder until the owner confirms the
+ * address (spec 2026-10-01); one constant so the swap is one line. Mail is an
+ * anchor, not an openBrowser message, because figma.openExternal accepts http
+ * and https only.
+ */
+export const SUPPORT_EMAIL = 'hello@spec-layer.com';
+export const SUPPORT_MAILTO =
+  `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent('Spec Layer license key')}`;
 // The documentation index, linked from Settings > About.
 export const DOCS_URL = 'https://spec-layer.com/docs/';
 // The publish and pull workflow, linked from the Publish screen's footer.
@@ -20,8 +29,6 @@ export function licenseExternalUrl(action: string): string | null {
       return CHECKOUT_URL;
     case 'manage':
       return MANAGE_SUB_URL;
-    case 'support':
-      return SITE_URL;
     default:
       return null;
   }
