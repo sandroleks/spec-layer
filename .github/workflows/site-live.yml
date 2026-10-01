@@ -1,0 +1,28 @@
+name: Site live
+
+# spec-layer.com is deployed from a private repository, so a schema change
+# here is not live until that side redeploys, and a redeploy there can drift
+# from the committed bytes. This turns that gap red within a week instead of
+# at release time. Advisory: the live site is not something a pull request
+# here can fix.
+on:
+  schedule:
+    - cron: '41 5 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+      # Reads only Node built-ins and the committed schemas, so no npm ci.
+      - run: node scripts/check-site-live.mjs
