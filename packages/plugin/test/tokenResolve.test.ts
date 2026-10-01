@@ -3,6 +3,7 @@ import {
   resolveTokenColor,
   resolveTokenNumber,
   resolveTokenTypography,
+  resolveTokenDisplay,
   resetTokenResolveCaches,
 } from '../src/tokenResolve';
 
@@ -76,7 +77,7 @@ function installFigma(opts: MockOptions = {}) {
     getLocalTextStylesAsync,
   };
 
-  return { getLocalVariablesAsync, getLocalTextStylesAsync, getVariableByIdAsync };
+  return { getLocalVariablesAsync, getLocalTextStylesAsync, getVariableByIdAsync, getVariableCollectionByIdAsync };
 }
 
 beforeEach(() => {
@@ -333,5 +334,51 @@ describe('resolveTokenTypography', () => {
     };
     installFigma({ styles: [hostile as unknown as FakeStyle] });
     return expect(resolveTokenTypography('Hostile')).resolves.toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolveTokenDisplay
+// ---------------------------------------------------------------------------
+
+describe('resolveTokenDisplay', () => {
+  it('shows a swatch, or else a number, or else a text-style summary', async () => {
+    installFigma({
+      color: [colorVar('c', { r: 1, g: 0, b: 0, a: 1 })],
+      float: [colorVar('n', 8)],
+      styles: [{ name: 's', fontName: { family: 'Inter', style: 'Bold' }, fontSize: 20 }],
+    });
+    await expect(resolveTokenDisplay('c')).resolves.toEqual({ color: { r: 1, g: 0, b: 0 }, suffix: null });
+    await expect(resolveTokenDisplay('n')).resolves.toEqual({ color: null, suffix: '· 8' });
+    await expect(resolveTokenDisplay('s')).resolves.toEqual({ color: null, suffix: '· Inter Bold 20' });
+    await expect(resolveTokenDisplay('none')).resolves.toEqual({ color: null, suffix: null });
+  });
+
+  it('resolves a token once per build however many cards repeat it', async () => {
+    const { getVariableCollectionByIdAsync } = installFigma({
+      color: [colorVar('a', { r: 1, g: 1, b: 1, a: 1 }), colorVar('b', { r: 0, g: 0, b: 0, a: 1 })],
+    });
+    await Promise.all([resolveTokenDisplay('a'), resolveTokenDisplay('a'), resolveTokenDisplay('b')]);
+    await resolveTokenDisplay('a');
+    // Both tokens live in one collection, read once for the build.
+    expect(getVariableCollectionByIdAsync).toHaveBeenCalledTimes(1);
+  });
+
+  it('reads an alias target shared by two tokens once', async () => {
+    const { getVariableByIdAsync } = installFigma({
+      color: [colorVar('x', alias('base')), colorVar('y', alias('base'))],
+      byId: [colorVar('base-name', { r: 0, g: 0, b: 1, a: 1 }, 'base')],
+    });
+    await expect(resolveTokenColor('x')).resolves.toEqual({ r: 0, g: 0, b: 1 });
+    await expect(resolveTokenColor('y')).resolves.toEqual({ r: 0, g: 0, b: 1 });
+    expect(getVariableByIdAsync).toHaveBeenCalledTimes(1);
+  });
+
+  it('gives up on an alias cycle instead of waiting on itself', async () => {
+    installFigma({
+      color: [colorVar('p', alias('q'), 'p')],
+      byId: [colorVar('q-name', alias('p'), 'q')],
+    });
+    await expect(resolveTokenDisplay('p')).resolves.toEqual({ color: null, suffix: null });
   });
 });

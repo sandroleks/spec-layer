@@ -28,7 +28,7 @@ import {
 import { buildBrandHeader, HEADER_PAD_X } from './brandHeader';
 import { buildMeasureSection } from './measureSection';
 import { buildMatrixSection } from './statesSection';
-import { resolveTokenColor, resolveTokenNumber, resolveTokenTypography, resetTokenResolveCaches } from './tokenResolve';
+import { resolveTokenDisplay, resetTokenResolveCaches, type TokenDisplay } from './tokenResolve';
 import {
   tagSlot, applyRuns, accentRule, makeBulletRow, buildProse, makeCell, buildTable,
 } from './docText';
@@ -110,8 +110,10 @@ function colorChip(color: RGB): FrameNode {
 
 /** The Token cell: a rounded chip (like the web) holding an optional color
  *  swatch plus the token name. When `unbound`, the value is a raw hardcoded
- *  value (not a token): no color lookup, a dashed muted outline, and muted ink. */
-async function makeTokenCell(token: string, unbound = false): Promise<FrameNode> {
+ *  value (not a token): no color lookup, a dashed muted outline, and muted ink.
+ *  A bound token with no swatch carries its resolved number or text-style
+ *  summary as a separate muted node, so the chip stays single-line. */
+function makeTokenCell(token: string, unbound: boolean, display: TokenDisplay | null): FrameNode {
   const cell = vstack(0);
   cell.paddingTop = 10;
   cell.paddingBottom = 10;
@@ -139,8 +141,7 @@ async function makeTokenCell(token: string, unbound = false): Promise<FrameNode>
     chip.dashPattern = [3, 2];
   } else {
     chip.fills = solidFill(palette.chipBg);
-    const color = await resolveTokenColor(token);
-    if (color) chip.appendChild(colorChip(color));
+    if (display?.color) chip.appendChild(colorChip(display.color));
   }
 
   // Chip and text both hug their content (single-line pill). The Token column is
@@ -150,22 +151,10 @@ async function makeTokenCell(token: string, unbound = false): Promise<FrameNode>
   text.textAutoResize = 'WIDTH_AND_HEIGHT';
   chip.appendChild(text);
 
-  // Bound tokens with no color swatch: append a best-effort resolved-value
-  // suffix (a FLOAT number, or a text-style summary) as a separate muted node so
-  // the chip stays single-line. Any failure → no suffix, never a crash.
-  if (!unbound && chip.children.length === 1) {
-    let suffix: string | null = null;
-    const n = await resolveTokenNumber(token);
-    if (n !== null) suffix = `· ${n}`;
-    else {
-      const typo = await resolveTokenTypography(token);
-      if (typo) suffix = `· ${typo}`;
-    }
-    if (suffix) {
-      const sfx = makeText(suffix, 'Regular', 11, palette.muted, 140);
-      sfx.textAutoResize = 'WIDTH_AND_HEIGHT';
-      chip.appendChild(sfx);
-    }
+  if (!unbound && display?.suffix) {
+    const sfx = makeText(display.suffix, 'Regular', 11, palette.muted, 140);
+    sfx.textAutoResize = 'WIDTH_AND_HEIGHT';
+    chip.appendChild(sfx);
   }
 
   cell.appendChild(chip);
@@ -220,6 +209,11 @@ async function buildTokenTable(
   // it would read as "this variant binds no tokens", which is the opposite.
   if (rows.length === 0) return table;
 
+  // Every distinct bound token resolved at once, before any row is drawn.
+  const bound = [...new Set(rows.filter((r) => !r.unbound && r.token).map((r) => r.token))];
+  const displays = new Map(await Promise.all(bound.map(async (token) =>
+    [token, await resolveTokenDisplay(token)] as const)));
+
   let currentPart: string | null = null;
   for (const r of rows) {
     const part = r.part ?? '';
@@ -262,7 +256,7 @@ async function buildTokenTable(
       const isToken = i === dataCount - 1;
       // Property reads as a quiet label; the token value (chip) carries emphasis.
       const cell = isToken
-        ? await makeTokenCell(value, r.unbound)
+        ? makeTokenCell(value, r.unbound, displays.get(value) ?? null)
         : makeCell(value, 'Medium', 13, r.diff ? palette.heading : palette.label);
       row.appendChild(cell);
       sizeCol(cell, i);
