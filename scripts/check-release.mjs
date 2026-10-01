@@ -87,16 +87,36 @@ export function releaseProblems(surface, tag, files) {
 export const NOTES_LIMIT = 100_000;
 
 /**
- * The release body for a changelog section: whole when it fits, otherwise
- * cut at the last paragraph break under the limit, with a pointer to the
- * full entry. A release never fails over the length of its own notes.
+ * What a person still has to do before a draft plugin release is published.
+ * CI cannot reach Figma, and the order of the three deliveries is the
+ * release's own rule (proxy, then CLI, then the listing).
  */
-export function releaseNotes(section, version) {
+export function pluginChecklist(version) {
+  return [
+    '## Before publishing',
+    '',
+    `- [ ] The manual Figma pass in \`packages/plugin/TESTING.md\` ran on this build (the zip attached here) and is recorded below.`,
+    '- [ ] `npm run check:site-live` passed against https://spec-layer.com (the scheduled Site live run counts).',
+    '- [ ] The proxy this build needs is deployed to production.',
+    '- [ ] Any CLI version this build needs is `latest` on npm.',
+    `- [ ] The Figma Community listing is updated to ${version} last, after all of the above.`,
+    '',
+    'Install from the [Figma Community listing](https://www.figma.com/community/plugin/1652104411578396548), or import `manifest.json` from the attached zip under **Plugins → Development → Import plugin from manifest**. `gh attestation verify <zip> --repo sandroleks/spec-layer` checks the zip was built by this repository\'s release workflow.',
+  ].join('\n');
+}
+
+/**
+ * The release body: the changelog section whole when it fits, otherwise cut
+ * at the last paragraph break under the limit with a pointer to the full
+ * entry, then the footer. A release never fails over the length of its notes.
+ */
+export function releaseNotes(section, version, footer = '') {
+  const tail = footer ? `\n\n${footer}\n` : '\n';
+  if (section.length + tail.length <= NOTES_LIMIT) return `${section}${tail}`;
   const pointer = `See CHANGELOG.md for the full ${version} entry.`;
-  if (section.length <= NOTES_LIMIT) return `${section}\n`;
-  const room = NOTES_LIMIT - pointer.length - 16;
+  const room = NOTES_LIMIT - tail.length - pointer.length - 16;
   const cut = section.lastIndexOf('\n\n', room);
-  return `${section.slice(0, cut > 0 ? cut : room).trimEnd()}\n\n…\n\n${pointer}\n`;
+  return `${section.slice(0, cut > 0 ? cut : room).trimEnd()}\n\n…\n\n${pointer}${tail}`;
 }
 
 const FILES = [
@@ -121,7 +141,7 @@ function main() {
   if (notesPath) {
     const version = versionFromTag(surface, tag);
     const section = surface === 'plugin' ? changelogSection(files['CHANGELOG.md'], version) : null;
-    writeFileSync(notesPath, releaseNotes(section ?? '', version));
+    writeFileSync(notesPath, surface === 'plugin' ? releaseNotes(section ?? '', version, pluginChecklist(version)) : releaseNotes('', version));
   }
   console.log(`Release ${tag}: tag, versions, changelog${surface === 'plugin' ? ' and proxy origin' : ''} agree.`);
 }

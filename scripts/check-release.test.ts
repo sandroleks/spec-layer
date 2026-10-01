@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { NOTES_LIMIT, PROXY_ORIGIN, changelogSection, releaseNotes, releaseProblems, versionFromTag } from './check-release.mjs';
+import { NOTES_LIMIT, PROXY_ORIGIN, pluginChecklist, changelogSection, releaseNotes, releaseProblems, versionFromTag } from './check-release.mjs';
 
 const root = resolve(fileURLToPath(new URL('.', import.meta.url)), '..');
 const read = (p: string) => readFileSync(resolve(root, p), 'utf8');
@@ -90,5 +90,21 @@ describe('releaseNotes', () => {
     const notes = releaseNotes(paragraph.repeat(200), '6.1.0');
     expect(notes.length).toBeLessThanOrEqual(NOTES_LIMIT);
     expect(notes).toMatch(/word\n\n…\n\nSee CHANGELOG\.md for the full 6\.1\.0 entry\.\n$/);
+  });
+
+  it('keeps the footer whole when the section is cut', () => {
+    const footer = pluginChecklist('6.1.0');
+    const notes = releaseNotes(`${'word '.repeat(200).trim()}\n\n`.repeat(200), '6.1.0', footer);
+    expect(notes.length).toBeLessThanOrEqual(NOTES_LIMIT);
+    expect(notes.endsWith(`${footer}\n`)).toBe(true);
+    expect(notes).toContain('See CHANGELOG.md for the full 6.1.0 entry.');
+  });
+
+  it('fits the real 6.0.0 entry with its checklist', () => {
+    const section = changelogSection(read('CHANGELOG.md'), '6.0.0');
+    expect(section).not.toBeNull();
+    const notes = releaseNotes(section as string, '6.0.0', pluginChecklist('6.0.0'));
+    expect(notes.length).toBeLessThanOrEqual(NOTES_LIMIT);
+    expect(notes).toContain('## Before publishing');
   });
 });
