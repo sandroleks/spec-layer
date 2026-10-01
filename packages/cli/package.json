@@ -15,7 +15,7 @@
   },
   "scripts": {
     "build": "node build.mjs",
-    "prepublishOnly": "node build.mjs"
+    "prepublishOnly": "node build.mjs && cd ../.. && node scripts/check-cli-bundle.mjs && npx vitest run packages/cli"
   },
   "devDependencies": {
     "@spec-layer/extractor": "*",
@@ -27,6 +27,9 @@
     "directory": "packages/cli"
   },
   "homepage": "https://spec-layer.com",
+  "bugs": {
+    "url": "https://github.com/sandroleks/spec-layer/issues"
+  },
   "keywords": [
     "figma",
     "design-system",

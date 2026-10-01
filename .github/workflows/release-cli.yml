@@ -1,0 +1,92 @@
+name: Release CLI
+
+# Publishes the spec-layer CLI to npm from a cli-vX.Y.Z tag, through npm
+# trusted publishing (OIDC): no npm token is stored in this repository, and
+# the package carries a provenance attestation linking it to this workflow
+# run and commit. A run by hand is a dry run: the same gate and an
+# `npm publish --dry-run`, with nothing published.
+#
+# A laptop publish stays possible as an emergency path (see CONTRIBUTING.md);
+# it runs the same bundle check and CLI tests through prepublishOnly, but
+# ships without provenance.
+on:
+  push:
+    tags: ['cli-v*']
+  workflow_dispatch:
+
+permissions: {}
+
+# Never two releases at once, and never cancel one half way.
+concurrency:
+  group: release-cli
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # No dependency cache in a release workflow: a poisoned cache entry
+      # written by any other run would flow straight into the published bytes.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - id: tag
+        name: Resolve the release tag
+        env:
+          EVENT: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [ "$EVENT" = push ]; then
+            tag="$REF_NAME"
+          else
+            tag="cli-v$(node -p "require('./packages/cli/package.json').version")"
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - name: Tag, version and changelog agree
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: node scripts/check-release.mjs cli "$TAG"
+      - run: npm ci
+      - run: npm run check:ci
+      - name: Dry run
+        if: github.event_name != 'push'
+        run: npm publish --workspace packages/cli --dry-run
+
+  publish:
+    needs: verify
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # The npm environment holds the approval gate; the trusted publisher on
+    # npmjs.com names this workflow file and this environment.
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Node 24 ships npm 11, which trusted publishing needs (11.5.1 or later).
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - name: npm supports trusted publishing
+        run: |
+          node -e "const [a,b,c]=process.argv[1].split('.').map(Number); process.exit(a>11||(a===11&&(b>5||(b===5&&c>=1)))?0:1)" "$(npm --version)" \
+            || { echo "npm $(npm --version) is older than 11.5.1"; exit 1; }
+      - run: npm ci
+      # prepublishOnly builds the bundle, runs its smoke test and the CLI
+      # tests again in this job, so the published bytes are the tested ones.
+      - run: npm publish --workspace packages/cli --provenance --access public
