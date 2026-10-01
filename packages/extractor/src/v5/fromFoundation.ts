@@ -5,6 +5,7 @@
  * source scopes, and already-resolved alias provenance built in foundation.ts;
  * it never reconstructs v5 by round-tripping through the lossy v4 brief.
  */
+import { knownFileKey } from '../fileKey';
 import type {
   FoundationCollection, FoundationProvenanceLiteral, FoundationProvenanceValue,
   FoundationEffectStyle, FoundationSourceIssue, FoundationSpec, FoundationTextStyle,
@@ -1009,9 +1010,7 @@ export function buildFoundationArtifactV5(
   };
   const source: ArtifactSource = {
     provider: 'figma',
-    file_id: foundation.fileKey && foundation.fileKey !== 'unknown'
-      ? foundation.fileKey
-      : null,
+    file_id: knownFileKey(foundation.fileKey),
     file_name: foundation.fileName ?? null,
     file_version: null,
     library_enabled: meta.libraryEnabled ?? null,

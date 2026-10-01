@@ -7,7 +7,7 @@
  */
 
 import {
-  extract, ProseProxyError, contentHash, specHashProjection, buildFoundation,
+  extract, ProseProxyError, contentHash, specHashProjection, buildFoundation, knownFileKey,
   buildFoundationArtifactV5, foundationDtcgDocument,
   buildComponentArtifactV5, componentAiContext, toYaml, componentMarkdown,
   proseToLegacy, hasProseContent,
@@ -197,6 +197,32 @@ export function autoExtract(
   });
 }
 
+/** An AI draft held across a reselection; see draftToKeep. */
+export interface KeptDraft {
+  specHash: string;
+  prose: ProseV2;
+  keys: Set<ProseV2Key>;
+}
+
+/**
+ * The draft a new selection may keep: only when it is the component the draft
+ * was written for. restoreDraft puts it back only if that component still
+ * reads exactly as it did, so a click inside the set the user just documented
+ * does not spend another AI use, and an edited component is drafted afresh.
+ */
+export function draftToKeep(state: UiState, nextNodeId: string | undefined): KeptDraft | null {
+  if (!nextNodeId || state.currentNode?.id !== nextNodeId) return null;
+  if (!state.generatedProse || !state.generatedProseKeys || !state.currentSpec) return null;
+  return { specHash: contentHash(state.currentSpec), prose: state.generatedProse, keys: state.generatedProseKeys };
+}
+
+/** After the new selection is extracted: keep the draft if the spec is unchanged. */
+export function restoreDraft(state: UiState, kept: KeptDraft | null): void {
+  if (!kept || !state.currentSpec || contentHash(state.currentSpec) !== kept.specHash) return;
+  state.generatedProse = kept.prose;
+  state.generatedProseKeys = kept.keys;
+}
+
 // ---------------------------------------------------------------------------
 // Write with AI — when the global toggle is on (and a key + AI section exist),
 // draft guideline prose once and cache it on state. A no-op when AI is off, no
@@ -204,7 +230,6 @@ export function autoExtract(
 // second action in the same selection doesn't re-bill the API.
 // ---------------------------------------------------------------------------
 
-/** The prose keys the currently-checked sections need. */
 /** True when a fresh draft is needed: no draft yet, or the cached draft was
  *  generated for a key set that does not cover everything now requested. */
 export function proseNeedsRegen(state: UiState, requested: Set<ProseV2Key>): boolean {
@@ -791,9 +816,7 @@ export async function copyBriefFromSource(
     const generatedAt = new Date().toISOString();
     const foundation = foundationSpec
       ? buildFoundationArtifactV5(foundationSpec, {
-          exportId: `foundation:${foundationSpec.fileKey && foundationSpec.fileKey !== 'unknown'
-            ? foundationSpec.fileKey
-            : 'local'}:${generatedAt}`,
+          exportId: `foundation:${knownFileKey(foundationSpec.fileKey) ?? 'local'}:${generatedAt}`,
           generatedAt,
           build: pluginBuild(),
         }).artifact
@@ -955,7 +978,7 @@ function foundationDtcgJson(
     | { target: 'effectStyles' },
 ): string {
   const { artifact } = buildFoundationArtifactV5(spec, {
-    exportId: `foundation:${spec.fileKey && spec.fileKey !== 'unknown' ? spec.fileKey : 'local'}:${generatedAt}`,
+    exportId: `foundation:${knownFileKey(spec.fileKey) ?? 'local'}:${generatedAt}`,
     generatedAt,
     build: pluginBuild(),
     ...(scope ? { scope } : {}),

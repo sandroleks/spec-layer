@@ -111,6 +111,7 @@ import {
   currentFoundationSelection,
   currentFoundationSpec,
   currentGroupBriefs,
+  draftToKeep,
   foundationAiRequested,
   onFoundationChange,
   onFoundationMessage,
@@ -120,6 +121,7 @@ import {
   omissionsMessage,
   onFoundationToggleAll,
   pluginBuild,
+  restoreDraft,
   resultOutcome,
   send,
   setAiEnabled,
@@ -2817,6 +2819,7 @@ function applySelection(msg: SelectionMessage): void {
     nativeNotify(screen.message, { error: true, timeout: 5000 });
   }
   const keepError = outcome === 'keep';
+  const keptDraft = draftToKeep(state, node?.id);
   state.currentNode = node;
   state.currentFileKey = msg.fileKey;
   // figma.root.name, readable only on the main thread, so it arrives on this
@@ -2856,6 +2859,7 @@ function applySelection(msg: SelectionMessage): void {
     () => { /* the reading state is already painted */ },
     () => {
       if (seq !== selectionSeq || state.currentNode?.id !== node.id) return;
+      restoreDraft(state, keptDraft);
       facts = componentFacts(state.currentSpec, node.name);
       selection.variantIds = new Set(facts.defaultVariantIds);
       // Per component, and only once facts exist: on when this component has

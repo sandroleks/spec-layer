@@ -12,6 +12,7 @@
  * hashes remain untouched. Nothing in here feeds `specContentHash`.
  */
 import { sha256 } from 'js-sha256';
+import { knownFileKey } from '../fileKey';
 import { componentBrief } from '../brief';
 import type { IntermediateSpec } from '../extract';
 import type { EffectLayer } from '../effects';
@@ -727,7 +728,7 @@ export function buildComponentArtifactV5(
   };
   const source: ComponentArtifactSourceV5 = {
     provider: 'figma',
-    file_id: spec.figmaFile && spec.figmaFile !== 'unknown' ? spec.figmaFile : null,
+    file_id: knownFileKey(spec.figmaFile),
     file_name: spec.figmaFileName ?? null,
     file_version: null,
     library_enabled: null,

@@ -10,7 +10,7 @@ import {
   extract, buildFoundation, compareCodeUnits, toYaml, EXTRACTOR_VERSION,
   buildFoundationArtifactV5, foundationDtcgDocument,
   buildComponentArtifactV5, componentAiContext, parseQuotaHeaders,
-  compareBump, isSemver, nextVersion, specContentHash, proseToLegacy,
+  compareBump, isSemver, nextVersion, specContentHash, proseToLegacy, knownFileKey,
   type FoundationArtifactV5, type ProxyQuota, type YamlValue, type SerializedFoundation,
   type Bump, type LibraryChange,
 } from '@spec-layer/extractor';
@@ -74,7 +74,7 @@ export function buildPublishArtifacts(
   if (sources.foundation) {
     const spec = buildFoundation(sources.foundation);
     const { artifact } = buildFoundationArtifactV5(spec, {
-      exportId: `foundation:${spec.fileKey && spec.fileKey !== 'unknown' ? spec.fileKey : 'local'}:${generatedAt}`,
+      exportId: `foundation:${knownFileKey(spec.fileKey) ?? 'local'}:${generatedAt}`,
       generatedAt,
       build,
     });

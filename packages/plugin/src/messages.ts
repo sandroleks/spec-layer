@@ -2,7 +2,6 @@ import type {
   SerializedNode, SerializedFoundation, FoundationSelection, FoundationScope, ProseV2,
   SpecHashProjection, FoundationUnitContent,
 } from '@spec-layer/extractor';
-import type { FileKeySource } from './fileKey';
 import type { BrandTheme } from './brandColors';
 import type { ComponentFormat } from './componentFormat';
 import type { DocFrameModel } from './ui/docModel';
@@ -76,7 +75,7 @@ export interface PublishComponentSource {
 }
 
 export type MainToUi =
-  | { type: 'selection'; node: SerializedNode | null; fileKey: string; fileKeySource: FileKeySource;
+  | { type: 'selection'; node: SerializedNode | null; fileKey: string;
       /** The Figma file's name (`figma.root.name`), which only the main thread
        *  can read. It rides this message so the brief can name the file it came
        *  from instead of showing only an opaque key. Optional: a caller with no
@@ -98,7 +97,8 @@ export type MainToUi =
   | { type: 'logoError'; message: string }
   | { type: 'componentImage'; base64: string; mediaType: string }
   | { type: 'componentImageError'; message: string }
-  | { type: 'docFrameDone'; frameName: string; replaced: boolean }
+  /** `docId` is the Section the build placed, a new id whenever it replaced a doc. */
+  | { type: 'docFrameDone'; frameName: string; replaced: boolean; docId: string }
   | { type: 'docFrameError'; message: string }
   /** `incomplete` is present (always `true`) only when the scan behind these
    *  rows failed partway through: the rows collected before the failure are
@@ -241,8 +241,10 @@ export type UiToMain =
   /** `baseline` is the projection `contentHash` was computed over, stored on
    *  the Section under DOC_BASELINE_KEY so the Library can later diff it
    *  against the live projection. Same object, same function: main wraps it
-   *  with `kind` and `contentHash` and never recomputes it. */
-  | { type: 'renderDocFrame'; model: DocFrameModel; nodeId: string; contentHash: string; extractorVersion: string; config: DocConfig; prose?: ProseV2; baseline: SpecHashProjection }
+   *  with `kind` and `contentHash` and never recomputes it. `docId` names the
+   *  doc a Library Update rebuilds, so main replaces that one without
+   *  searching the registry; Create leaves it out. */
+  | { type: 'renderDocFrame'; model: DocFrameModel; nodeId: string; contentHash: string; extractorVersion: string; config: DocConfig; prose?: ProseV2; baseline: SpecHashProjection; docId?: string }
   | { type: 'requestDocProse'; docId: string }
   /** Lazy: sent only when a drifted row is expanded. Nothing new rides the
    *  `library` message, which is the hot path. */
@@ -259,7 +261,10 @@ export type UiToMain =
    *  memo per pass, so every doc in the pass shares variable and style
    *  lookups. The UI starts a new id per scan and per resume. */
   | { type: 'requestDrift'; docId: string; sourceNodeId: string; passId: string }
-  | { type: 'requestDocSource'; docId: string; intent: DocSourceIntent }
+  /** `batchId` groups one Library update run the way `passId` groups a check:
+   *  every doc in the run shares one resolver memo (requestDocSource) and one
+   *  Foundation read and contrast report (updateFoundationDoc). */
+  | { type: 'requestDocSource'; docId: string; intent: DocSourceIntent; batchId?: string }
   | { type: 'requestFoundation' }
   /** `groupDescriptions` is keyed `collectionId|folder`, because two collections
    *  in one build can hold a folder of the same name. The main thread filters
@@ -269,7 +274,7 @@ export type UiToMain =
       /** One paragraph per collection in the build, keyed by collection id.
        *  Each collection-scoped doc stores its own as `collectionOverview`. */
       collectionOverviews?: Record<string, string> }
-  | { type: 'updateFoundationDoc'; docId: string }
+  | { type: 'updateFoundationDoc'; docId: string; batchId?: string }
   | { type: 'requestPublishSources' }
   | { type: 'requestPublishInfo' }
   | { type: 'setPublishInfo'; libraryId: string; pullKey: string }

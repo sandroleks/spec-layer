@@ -17,7 +17,9 @@ vi.mock('../src/ui/ai', () => ({
 import {
   createDocFrame,
   createState,
+  draftToKeep,
   ensureExtracted,
+  restoreDraft,
   renderOne,
   setAiEnabled,
   setBrandTheme,
@@ -103,6 +105,43 @@ describe('renderOne', () => {
     expect(renderOne(buttonNode(), 'FILE1', 'Design System').spec.figmaFileName)
       .toBe('Design System');
     expect('figmaFileName' in renderOne(buttonNode(), 'FILE1').spec).toBe(false);
+  });
+});
+
+describe('draftToKeep / restoreDraft', () => {
+  const prose: ProseV2 = { v: 2, overview: { lede: 'A Button triggers an action.', body: [] } };
+
+  /** A state that drafted prose for the Button, then received `next` as a new selection. */
+  function reselect(next: SerializedNode): UiState {
+    const state = createState();
+    state.currentNode = buttonNode();
+    ensureExtracted(state);
+    state.generatedProse = prose;
+    state.generatedProseKeys = new Set(['overview']);
+    const kept = draftToKeep(state, next.id);
+    state.currentNode = next;
+    state.currentSpec = null;
+    state.generatedProse = null;
+    state.generatedProseKeys = null;
+    ensureExtracted(state);
+    restoreDraft(state, kept);
+    return state;
+  }
+
+  it('keeps the draft when the same component comes back unchanged', () => {
+    const state = reselect(buttonNode());
+    expect(state.generatedProse).toBe(prose);
+    expect([...state.generatedProseKeys ?? []]).toEqual(['overview']);
+  });
+
+  it('drops the draft once the component reads differently', () => {
+    const edited = buttonNode();
+    edited.description = 'Now with a description.';
+    expect(reselect(edited).generatedProse).toBeNull();
+  });
+
+  it('drops the draft for a different component', () => {
+    expect(reselect({ ...buttonNode(), id: '9:9' }).generatedProse).toBeNull();
   });
 });
 

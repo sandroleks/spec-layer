@@ -10,6 +10,7 @@ export * from './extract';
 export * from './foundation';
 export * from './foundationOverview';
 export * from './hash';
+export * from './fileKey';
 export * from './diff';
 export * from './version';
 export * from './resolve';

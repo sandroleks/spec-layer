@@ -3,7 +3,6 @@ import { serializeNode, mainComponentRef } from './serialize';
 import type { NodeResolver, ResolvedStyle } from './serialize';
 import { memoizedResolver } from './resolverMemo';
 import type { MainToUi, UiToMain, PublishComponentSource, PublishInfo } from './messages';
-import { resolveFileKey } from './fileKey';
 import { ProgrammaticSelection } from './programmaticSelection';
 import { serializeFoundation } from './serializeFoundation';
 import { createFoundationReader } from './foundationReader';
@@ -14,6 +13,7 @@ import {
   type FoundationSpec, type FoundationUnit, type FoundationUnitContent,
   type FoundationVariableRow, type SerializedFoundation,
   type ProseV2,
+  UNKNOWN_FILE_KEY,
 } from '@spec-layer/extractor';
 import { buildDocFrames } from './docFrame';
 import { buildFoundationFrame, isColorRow } from './foundationFrame';
@@ -42,6 +42,7 @@ import { DocumentDirtyFlag } from './libraryDirty';
 import { DriftPassResolvers, countSerializedNodes } from './driftPass';
 import { FingerprintBaseline, foundationFingerprint } from './foundationFingerprint';
 import { BlockWatch } from './timing';
+import { SelectionCache } from './selectionCache';
 
 declare const __PLUGIN_VERSION__: string;
 
@@ -186,16 +187,26 @@ const libraryDirty = new DocumentDirtyFlag();
  *  is listening for the next edit. It is also what lets the fingerprint
  *  leave styles out: with no style watch, the shortcut is never taken. */
 let libraryDirtyWatched = false;
+const dirtyHost = {
+  currentPage: () => figma.currentPage,
+  onPageChange: (cb: () => void) => figma.on('currentpagechange', cb),
+  onStyleChange: (cb: () => void) => figma.on('stylechange', cb),
+};
 try {
-  libraryDirty.attach({
-    currentPage: () => figma.currentPage,
-    onPageChange: (cb) => figma.on('currentpagechange', cb),
-    onStyleChange: (cb) => figma.on('stylechange', cb),
-  });
+  libraryDirty.attach(dirtyHost);
   libraryDirtyWatched = true;
 } catch (err) {
   console.error('[Spec Layer] could not watch for document edits; every Library visit will re-check', err);
 }
+
+/** The same watch for the selection panel, which clears it on its own schedule. */
+const selectionDirty = new DocumentDirtyFlag();
+let selectionDirtyWatched = false;
+try {
+  selectionDirty.attach(dirtyHost);
+  selectionDirtyWatched = true;
+} catch { /* every selection reads its component again */ }
+const selectionCache = new SelectionCache(selectionDirty, selectionDirtyWatched);
 
 /** One resolver memo per drift pass; see driftPass.ts. */
 const driftPassResolvers = new DriftPassResolvers(resolver);
@@ -268,84 +279,80 @@ function findComponent(
   return null;
 }
 
+/** `figma.fileKey`, which a Community plugin never sees, or the placeholder. */
+function currentFileKey(): string {
+  return figma.fileKey || UNKNOWN_FILE_KEY;
+}
+
 // ---------------------------------------------------------------------------
 // Post the current selection to the UI
 // ---------------------------------------------------------------------------
-// The Figma file key (figma.fileKey) is embedded in each extracted spec so a
-// downloaded spec can reference its source file. It's read-only here — there's
-// no manual override in this build.
 
-// Bumped on every selection change. Serializing a selection is async, so a
-// rapid A->B switch can resolve out of order; only the latest request is allowed
-// to post, so B never gets overwritten by a late-arriving A.
-let selectionSeq = 0;
+/** The component the newest selection resolved to, or null for none. A read
+ *  posts only while it is still this, so a late read of A never replaces B. */
+let selectionTarget: string | null = null;
 
-async function postSelection(): Promise<void> {
-  const seq = ++selectionSeq;
-  const resolved = resolveFileKey(figma.fileKey, null);
+/**
+ * Post the current selection to the UI. A selection that resolves to the
+ * component the panel already shows, unchanged, sends nothing (see
+ * SelectionCache); `force` posts anyway, for the UI's own request.
+ */
+async function postSelection(force = false): Promise<void> {
+  const fileKey = currentFileKey();
   const component = findComponent(figma.currentPage.selection);
+  const componentId = component ? component.id : null;
+  selectionTarget = componentId;
 
-  if (!component) {
-    if (seq !== selectionSeq) return;
-    const msg: MainToUi = { type: 'selection', node: null, fileKey: resolved.fileKey, fileKeySource: resolved.source, fileName: figma.root.name };
-    figma.ui.postMessage(msg);
+  if (!component || componentId === null) {
+    selectionCache.clear();
+    figma.ui.postMessage({ type: 'selection', node: null, fileKey, fileName: figma.root.name } satisfies MainToUi);
     return;
   }
+  if (!force && await selectionCache.unchanged(componentId, readFoundationFingerprint)) return;
+  if (selectionTarget !== componentId) return; // a newer selection arrived meanwhile
 
-  // Best-effort: a foundation failure (or simply none this file has ever
-  // needed) must never block the selection. Resolving token values into the
-  // component brief is a bonus on top of a successful extraction, not a
-  // prerequisite for it, so an unresolved foundation here just means the
-  // 'selection' message omits the field and the brief's token bindings omit
-  // `value` (and `code`) instead, the same as the drift path already does.
-  let foundation: SerializedFoundation | undefined;
-  try {
-    foundation = await foundationFor(resolved.fileKey);
-  } catch (err) {
-    // Still non-fatal, but no longer invisible. A persistent failure here is
-    // the difference between "token values are missing because no foundation
-    // has ever been fetched" (already shown in the brief's own caveat text)
-    // and "a fetch was attempted for this selection and failed", and with a
-    // bare catch the only symptom of the second was silence.
-    console.warn('[Spec Layer] foundation unavailable, token values will be missing from the component brief:', err);
-    foundation = undefined;
-  }
-
-  try {
+  selectionCache.begin(componentId, readFoundationFingerprint().catch(() => null));
+  // Independent reads, so they run together. A foundation failure never blocks
+  // the selection: token values are a bonus on a successful extraction, so
+  // the message just omits the field and the brief omits `value` and `code`.
+  const [foundation, read] = await Promise.all([
+    foundationFor(fileKey).catch((err: unknown) => {
+      console.warn('[Spec Layer] foundation unavailable, token values will be missing from the component brief:', err);
+      return undefined;
+    }),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const node = await serializeNode(component as any, memoizedResolver(resolver));
-    if (seq !== selectionSeq) return; // a newer selection superseded this one
-    const msg: MainToUi = {
-      type: 'selection', node, fileKey: resolved.fileKey, fileKeySource: resolved.source,
-      // figma.root.name is main-thread only, so the file's NAME has to ride
-      // this message alongside its key; the UI cannot read it itself.
-      fileName: figma.root.name,
-      // Only when the UI does not already hold this exact dump. See
-      // FoundationPostGate for why identity is the right test.
-      ...(foundation && foundationPosts.fresh(foundation) ? { foundation } : {}),
-    };
-    figma.ui.postMessage(msg);
-    // Whether Create would replace an existing doc, so the button can say
-    // "Replace docs". The same lookup renderDocFrame uses, sent separately so
-    // the panel never waits on the registry scan to show the selection.
-    const docName = `${component.name}: Documentation`;
-    void findExistingDoc(component.id, docName).then((doc) => {
-      if (seq !== selectionSeq) return;
-      figma.ui.postMessage({ type: 'selectionDoc', nodeId: node.id, hasDoc: doc !== null } as MainToUi);
-    }).catch(() => { /* the button keeps saying Create docs, which is still true */ });
-  } catch (err) {
-    // Serialization failed: show the empty state rather than leaving the panel
-    // stuck on the previous component with no feedback. Logged for the same
-    // reason the foundation catch above is: a bare catch here made "this
-    // component cannot be read" look identical to "nothing is selected".
-    console.error(
-      '[Spec Layer] selection serialization failed for',
-      component.type, component.name, component.id, err,
-    );
-    if (seq !== selectionSeq) return;
-    const msg: MainToUi = { type: 'selection', node: null, fileKey: resolved.fileKey, fileKeySource: resolved.source, fileName: figma.root.name };
-    figma.ui.postMessage(msg);
+    serializeNode(component as any, memoizedResolver(resolver)).then(
+      (node) => ({ node, err: null }),
+      (err: unknown) => ({ node: null, err }),
+    ),
+  ]);
+  const current = selectionTarget === componentId;
+  selectionCache.end(componentId, current && read.node !== null);
+  if (!current) return;
+
+  if (read.node === null) {
+    // Show the empty state rather than leave the panel on the previous
+    // component, and log why, so "cannot be read" is not mistaken for
+    // "nothing is selected".
+    console.error('[Spec Layer] selection serialization failed for', component.type, component.name, componentId, read.err);
+    selectionCache.clear();
+    figma.ui.postMessage({ type: 'selection', node: null, fileKey, fileName: figma.root.name } satisfies MainToUi);
+    return;
   }
+  const node = read.node;
+  figma.ui.postMessage({
+    type: 'selection', node, fileKey,
+    // figma.root.name is main-thread only, so the file's name rides along.
+    fileName: figma.root.name,
+    // Only when the UI does not already hold this exact dump (FoundationPostGate).
+    ...(foundation && foundationPosts.fresh(foundation) ? { foundation } : {}),
+  } satisfies MainToUi);
+  // Whether Create would replace an existing doc, so the button can say
+  // "Replace docs". Sent separately so the panel never waits on the registry.
+  void findExistingDoc(componentId, `${component.name}: Documentation`).then((doc) => {
+    if (selectionTarget !== componentId) return;
+    figma.ui.postMessage({ type: 'selectionDoc', nodeId: node.id, hasDoc: doc !== null } satisfies MainToUi);
+  }).catch(() => { /* the button keeps saying Create docs, which is still true */ });
 }
 
 // ---------------------------------------------------------------------------
@@ -612,7 +619,7 @@ const handleUiMessage = async (raw: unknown): Promise<void> => {
   const msg = raw as UiToMain;
   switch (msg.type) {
     case 'requestSelection':
-      await postSelection();
+      await postSelection(true);
       break;
 
     case 'setLicenseKey': {
@@ -959,7 +966,7 @@ const handleUiMessage = async (raw: unknown): Promise<void> => {
         const foundationStarted = __DRIFT_TIMING__ ? Date.now() : 0;
         if (__DRIFT_TIMING__) mainBlocks?.doing('requestLibrary foundation read');
         try {
-          const { fileKey } = resolveFileKey(figma.fileKey, null);
+          const fileKey = currentFileKey();
           const spec = buildFoundation(await readFoundationDump(fileKey, false));
           lastLibraryFoundation = { fileKey, spec };
           return spec;
@@ -1008,7 +1015,7 @@ const handleUiMessage = async (raw: unknown): Promise<void> => {
 
     case 'requestFoundation': {
       try {
-        const { fileKey } = resolveFileKey(figma.fileKey, null);
+        const fileKey = currentFileKey();
         const dump = await readFoundationDump(fileKey, true);
         // This is the Foundations tab's own fetch — both its first load and
         // its "Refresh sources" button — so it is also the one place a user
@@ -1076,7 +1083,7 @@ const handleUiMessage = async (raw: unknown): Promise<void> => {
         // fetches its data once per session and never refreshes, so the file
         // may have changed by the time the user clicks Create. Re-extracting
         // here keeps the generated frames faithful to the file as it is now.
-        const { fileKey } = resolveFileKey(figma.fileKey, null);
+        const fileKey = currentFileKey();
         const dump = await readFoundationDump(fileKey, false);
         const spec = buildFoundation(dump);
         const units = planFoundationUnits(spec, msg.selection);
@@ -1306,7 +1313,7 @@ const handleUiMessage = async (raw: unknown): Promise<void> => {
           break;
         }
 
-        const { fileKey } = resolveFileKey(figma.fileKey, null);
+        const fileKey = currentFileKey();
         const dump = await readFoundationDump(fileKey, false);
         const spec = buildFoundation(dump);
 
@@ -1539,7 +1546,7 @@ const handleUiMessage = async (raw: unknown): Promise<void> => {
         if (__DRIFT_TIMING__) {
           console.log(`[Spec Layer] drift timing ${msg.docId} ${Date.now() - started}ms, ${countSerializedNodes(node)} nodes, ${JSON.stringify(node).length} bytes`);
         }
-        const { fileKey } = resolveFileKey(figma.fileKey, null);
+        const fileKey = currentFileKey();
         figma.ui.postMessage({
           type: 'driftSource', docId: msg.docId, passId: msg.passId, node, fileKey, fileName: figma.root.name,
         } as MainToUi);
@@ -1601,7 +1608,7 @@ const handleUiMessage = async (raw: unknown): Promise<void> => {
           // so the live side of the diff is the object whose hash produced the
           // badge. A fresh read is the fallback only when no Library scan has
           // run for this file yet, which the UI's flow does not reach.
-          const { fileKey } = resolveFileKey(figma.fileKey, null);
+          const fileKey = currentFileKey();
           const spec = lastLibraryFoundation?.fileKey === fileKey
             ? lastLibraryFoundation.spec
             : buildFoundation(await readFoundationDump(fileKey, false));
@@ -1648,7 +1655,7 @@ const handleUiMessage = async (raw: unknown): Promise<void> => {
         const selfEdited = textContentHash(collectGeneratedLane(section)) !== data.selfHash;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const node = await serializeNode(src as any, memoizedResolver(resolver));
-        const { fileKey } = resolveFileKey(figma.fileKey, null);
+        const fileKey = currentFileKey();
         figma.ui.postMessage({
           type: 'docSource', docId: msg.docId, node, fileKey, fileName: figma.root.name,
           config: data.config, selfEdited, prose: mergedProse(section), intent: msg.intent,
@@ -1662,7 +1669,7 @@ const handleUiMessage = async (raw: unknown): Promise<void> => {
 
     case 'requestPublishSources': {
       try {
-        const { fileKey } = resolveFileKey(figma.fileKey, null);
+        const fileKey = currentFileKey();
         let foundation: SerializedFoundation | null = null;
         try { foundation = await foundationFor(fileKey); } catch { foundation = null; }
         const groupDescriptions = await liveFoundationGroupDescriptions();

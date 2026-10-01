@@ -12,6 +12,7 @@
  */
 
 import type { EffectLayer } from './effects';
+import { knownFileKey } from './fileKey';
 import { EXTRACTOR_VERSION } from './version';
 import type { YamlValue } from './yaml';
 import type { IntermediateSpec } from './extract';
@@ -64,16 +65,10 @@ function envelope(kind: 'component', generatedAt: string): YamlValue {
   return { kind, version: BRIEF_VERSION, extractor: EXTRACTOR_VERSION, generated: generatedAt };
 }
 
-/**
- * The `file_key` entry for a source block, or nothing at all.
- *
- * `resolveFileKey` (plugin `fileKey.ts`) returns the literal string 'unknown'
- * when Figma exposes no file key and the user set no override. A consumer
- * cannot tell that apart from a real key, so an unavailable key is emitted as
- * an ABSENT key rather than as a placeholder value.
- */
+/** The `file_key` entry for a source block, or nothing when there is no real key. */
 function fileKeyOf(fileKey: string): { file_key?: string } {
-  return fileKey && fileKey !== 'unknown' ? { file_key: fileKey } : {};
+  const key = knownFileKey(fileKey);
+  return key ? { file_key: key } : {};
 }
 
 /**
