@@ -1,0 +1,4 @@
+# Every text file is LF in the repository and in every checkout, Windows
+# included: golden fixtures and hashes are byte-exact, so a CRLF checkout would
+# fail them for a reason no user ever hits.
+* text=auto eol=lf

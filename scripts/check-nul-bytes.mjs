@@ -51,7 +51,7 @@ const CODE_EXTENSIONS = new Set(['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '
  * extensionless is skipped, so a new one has to be named here to be scanned.
  */
 export const EXTENSIONLESS_TEXT = new Set([
-  '.githooks/pre-commit', '.github/CODEOWNERS', '.gitignore', 'LICENSE',
+  '.githooks/pre-commit', '.github/CODEOWNERS', '.gitattributes', '.gitignore', 'LICENSE',
 ]);
 
 function extensionOf(path) {

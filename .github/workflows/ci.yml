@@ -43,6 +43,33 @@ jobs:
         run: node scripts/check-secrets.mjs --range "$BASE_SHA" "$HEAD_SHA"
       - run: npm run check:ci
 
+  # The CLI runs on developers' machines, not only on Linux under Node 22:
+  # its CRLF marker handling, 0600 credential file, directory renames and git
+  # spawn behave differently on Windows and macOS. This runs the shipped
+  # bundle and the CLI's own tests on every platform and supported Node. The
+  # rest of the gate stays in verify.
+  cli-portability:
+    name: cli-portability (${{ matrix.os }}, node ${{ matrix.node }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        node: [22, 24]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm run build:cli
+      - run: npm run check:cli-bundle
+      - run: npx vitest run packages/cli
+
   # New or changed dependencies are checked against the advisory database
   # and the licence allow-list before they merge. npm audit in check:ci
   # covers the whole tree; this names what a pull request itself introduces.

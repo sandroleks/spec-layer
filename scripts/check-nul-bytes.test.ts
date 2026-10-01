@@ -20,6 +20,7 @@ describe('isScannedPath', () => {
     'LICENSE',
     '.githooks/pre-commit',
     '.gitignore',
+    '.gitattributes',
     '.github/CODEOWNERS',
     'scripts/check-main-sandbox.d.mts',
     'packages/brand/assets/Manrope-OFL.txt',
