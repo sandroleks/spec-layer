@@ -487,8 +487,8 @@ npx wrangler secret put FIGMA_ID_SALT --env staging            # different from 
 In GitHub, the `staging` and `production` environments each hold a
 `CLOUDFLARE_API_TOKEN` secret scoped to this account (Workers Scripts edit,
 Workers KV edit, Workers Routes edit on `spec-layer.com`), and `production`
-has a required reviewer. The workflow refuses to deploy staging until
-`[env.staging]` carries its KV id.
+has a required reviewer. The workflow refuses to deploy staging if
+`[env.staging]` loses its KV id.
 
 **Emergency path.** If CI is unavailable and production is broken,
 `npx wrangler deploy --config wrangler.toml` from a clean checkout of `main`

@@ -49,15 +49,14 @@ head_sampling_rate = 1
 # zone keeps it behind the zone's WAF rate rules, so staging's own Anthropic
 # key is not an unthrottled side door.
 #
-# The KV id is deliberately absent until the namespace exists:
+# The KV namespace is "staging-LICENSE_CACHE", created with
 #   npx wrangler kv namespace create LICENSE_CACHE --env staging
-# then add `id = "..."` below. deploy-proxy.yml refuses to deploy staging
-# until it is set.
+# deploy-proxy.yml refuses to deploy staging if this id goes missing.
 [env.staging]
 workers_dev = false
 routes = [{ pattern = "staging-api.spec-layer.com", custom_domain = true }]
 kv_namespaces = [
-  { binding = "LICENSE_CACHE" }
+  { binding = "LICENSE_CACHE", id = "b3c8939304774469a89e943d98022de9" }
 ]
 
 [[env.staging.durable_objects.bindings]]

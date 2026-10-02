@@ -41,7 +41,7 @@ describe('wrangler.toml', () => {
     });
 
     it('binds its own KV namespace and quota object, never the production namespace id', () => {
-      expect(staging).toMatch(/binding = "LICENSE_CACHE"/);
+      expect(staging).toMatch(/\{ binding = "LICENSE_CACHE", id = "[0-9a-f]{32}" \}/);
       expect(staging).not.toContain('46fbd911b2194babbf2019fd4d0b412a');
       expect(staging).toMatch(/^\[\[env\.staging\.durable_objects\.bindings\]\]\nname = "QUOTA"\nclass_name = "QuotaDO"$/m);
     });
