@@ -21,6 +21,8 @@ describe('isScannedPath', () => {
     '.githooks/pre-commit',
     '.gitignore',
     '.gitattributes',
+    '.editorconfig',
+    '.nvmrc',
     '.github/CODEOWNERS',
     'scripts/check-main-sandbox.d.mts',
     'packages/brand/assets/Manrope-OFL.txt',

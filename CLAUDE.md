@@ -176,7 +176,7 @@ themes and must never pick up the product palette.
 **NUL bytes.** Some separator idioms emit raw `0x00` that lint, tests, and
 `git diff` all hide. `npm run check:nul` reads every git-tracked file with a
 text extension, plus the extensionless files named in `EXTENSIONLESS_TEXT` in
-`scripts/check-nul-bytes.mjs` (the hook, `CODEOWNERS`, `.gitattributes`, `.gitignore`,
+`scripts/check-nul-bytes.mjs` (the hook, `CODEOWNERS`, `.editorconfig`, `.gitattributes`, `.gitignore`, `.nvmrc`,
 `LICENSE`), so `.github/` and the root configs are covered. This has bitten
 the repo three times, every time in a plan document; those now live privately
 and are scanned there.

@@ -4,7 +4,12 @@ Thanks for improving Spec Layer. Keep changes focused, testable, and safe for a 
 
 ## Setup
 
-Requirements: Node.js 22 or newer, npm 10 or newer, and Figma Desktop for plugin testing.
+Requirements: Node.js 22 or newer (`.nvmrc` names the version CI uses), npm 10 or newer, and Figma Desktop for plugin testing.
+
+Install with `npm ci`. When changing dependencies, npm 10.9 can fail with
+`Cannot read properties of null (reading 'edgesOut')` while re-resolving
+vitest's optional peers; npm 11 (bundled with Node 24) resolves the same tree,
+and `npm ci` under npm 10 installs from the lockfile it writes.
 
 ```bash
 npm ci
