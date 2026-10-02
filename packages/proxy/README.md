@@ -49,9 +49,18 @@ unauthenticated or license not active,
 `409 {"error":"generation_pending"}` (another window is generating the same
 component), `413 {"error":"request_too_large"}` (body over 7 MB),
 `429 {"error":"rate_limited"}`, with `retryAfterMs` when the per-identity
-limit refused it, `502` upstream
-failure (quota not decremented), `502 {"error":"upstream_timeout"}` when
-Anthropic does not answer within 150 s (quota not decremented).
+limit refused it, `502 {"error":"upstream_error","status":…}` upstream
+failure (quota not decremented), `503 {"error":"upstream_busy","status":…}`
+when Anthropic answers 429, 503 or 529, with Anthropic's `Retry-After` passed
+on when it is a number of seconds (quota not decremented),
+`502 {"error":"upstream_timeout"}` when Anthropic does not answer within
+150 s (quota not decremented). If Anthropic has answered and only the quota
+commit fails, the answer is still returned, `200` without the `X-Quota-*`
+headers, uncounted, and the reservation is released; `quota_commit_failed`
+is logged.
+
+Every response, the preflight included, carries
+`X-Content-Type-Options: nosniff`.
 
 ### `GET /v1/quota`
 
@@ -65,7 +74,8 @@ identity otherwise.
 Body: `{ "key": "...", "instanceName": "Figma plugin" }` →
 `{ valid, status, instanceId? }` (proxies Lemon Squeezy's public activate
 endpoint and caches the status). `instanceName` is trimmed and cut to 64
-characters before it is forwarded.
+characters before it is forwarded. Both license routes refuse a body over
+4 KB with `413 {"error":"request_too_large"}`.
 
 ### `POST /v1/license/deactivate`
 
@@ -225,7 +235,10 @@ predates versioning answers an empty log. Errors: `401`, `404`, `429`.
   profile (AI writing and publishing count separately), both tiers.
 - Request edge limiter: 60 prose requests/min and 60 quota reads/min per
   connecting IP, best-effort per isolate.
-- License status cached 24h; 5-day grace on Lemon Squeezy outages.
+- License status cached 24h; 5-day grace on Lemon Squeezy outages. A Lemon
+  Squeezy call that has not finished in 10 s counts as an outage, so a hang
+  reaches the grace window instead of holding the request open. A cache entry
+  that does not parse is a miss and is overwritten.
 
 Atomicity: one Durable Object per identity and profile (`QuotaDO`; the bare
 identity for AI writing, `publish:<identity>` for publishing) serializes that
@@ -385,8 +398,9 @@ the model assigned by the proxy for the tier (Haiku on free).
   and a rollback past #86 opens the same window again. Most of those are one failed
   request that a retry fixes, but two are worse. A prose request that
   reserved before the switch can fail at its commit after Anthropic has
-  already answered, so the call is billed and the answer is neither cached
-  nor counted. A publish can land its KV writes and then fail both its commit
+  already answered; the answer is still returned, uncounted and not cached,
+  and the reservation is released, so the call is billed but not lost (this
+  holds for any failed commit, not only this window). A publish can land its KV writes and then fail both its commit
   and its release, so the write is not counted and the library's lock is held
   for its full three minutes. Rolling forward is the remedy: a rollback opens
   the same window in the other direction, because the previous build's object

@@ -188,13 +188,71 @@ describe('handleProse', () => {
   });
 
   it('does not decrement quota when Anthropic fails, and returns 502', async () => {
-    const failing = vi.fn(async () => new Response('overloaded', { status: 529, headers: { 'request-id': 'req_abc' } }));
+    const failing = vi.fn(async () => new Response('broken', { status: 500, headers: { 'request-id': 'req_abc' } }));
     const d = deps({ fetcher: failing as unknown as typeof fetch });
     const res = await handleProse(proseReq(GOOD_BODY, { 'X-Figma-User': 'u1' }), d);
     expect(res.status).toBe(502);
-    expect(d.log).toHaveBeenCalledWith('upstream_error', { status: 529, requestId: 'req_abc' });
+    expect(await res.json()).toEqual({ error: 'upstream_error', status: 500 });
+    expect(d.log).toHaveBeenCalledWith('upstream_error', { status: 500, requestId: 'req_abc' });
     const res2 = await handleProse(proseReq(GOOD_BODY, { 'X-Figma-User': 'u1' }), { ...d, fetcher: deps().fetcher });
     expect(res2.headers.get('X-Quota-Used')).toBe('1'); // first attempt did not count
+  });
+
+  it.each([429, 503, 529])('answers an upstream %i as 503 upstream_busy, uncounted, forwarding Retry-After', async (status) => {
+    const busy = vi.fn(async () => new Response('busy', { status, headers: { 'request-id': 'req_busy', 'retry-after': '30' } }));
+    const d = deps({ fetcher: busy as unknown as typeof fetch });
+    const res = await handleProse(proseReq(GOOD_BODY, { 'X-Figma-User': 'u1' }), d);
+    expect(res.status).toBe(503);
+    expect(res.headers.get('Retry-After')).toBe('30');
+    expect(await res.json()).toEqual({ error: 'upstream_busy', status });
+    expect(d.log).toHaveBeenCalledWith('upstream_error', { status, requestId: 'req_busy' });
+    const res2 = await handleProse(proseReq(GOOD_BODY, { 'X-Figma-User': 'u1' }), { ...d, fetcher: deps().fetcher });
+    expect(res2.headers.get('X-Quota-Used')).toBe('1');
+  });
+
+  it('drops a Retry-After that is not a plain number of seconds', async () => {
+    const busy = vi.fn(async () => new Response('busy', { status: 529, headers: { 'retry-after': 'Wed, 21 Oct 2026 07:28:00 GMT' } }));
+    const res = await handleProse(proseReq(GOOD_BODY, { 'X-Figma-User': 'u1' }), deps({ fetcher: busy as unknown as typeof fetch }));
+    expect(res.status).toBe(503);
+    expect(res.headers.get('Retry-After')).toBeNull();
+  });
+
+  it('returns a billed answer even when the quota commit fails, frees the reservation, and logs it', async () => {
+    const d = deps();
+    const real = d.quotaFor;
+    let failNext = true;
+    d.quotaFor = (id, profile) => {
+      const client = real(id, profile);
+      return {
+        ...client,
+        commit: async (...args: Parameters<typeof client.commit>) => {
+          if (failNext) { failNext = false; throw new Error('storage reset'); }
+          return client.commit(...args);
+        },
+      };
+    };
+    const res = await handleProse(proseReq(GOOD_BODY, { 'X-Figma-User': 'u1' }), d);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ id: 'msg_1', content: [{ type: 'text', text: 'ok' }] });
+    expect(res.headers.get('X-Quota-Used')).toBeNull();
+    expect(d.log).toHaveBeenCalledWith('quota_commit_failed', { tier: 'free', message: 'storage reset' });
+    // Released, not left pending: the retry generates instead of answering 409.
+    const retry = await handleProse(proseReq(GOOD_BODY, { 'X-Figma-User': 'u1' }), d);
+    expect(retry.status).toBe(200);
+    expect(retry.headers.get('X-Quota-Used')).toBe('1');
+  });
+
+  it('still answers when both the commit and the release fail', async () => {
+    const d = deps();
+    const real = d.quotaFor;
+    d.quotaFor = (id, profile) => ({
+      ...real(id, profile),
+      commit: async () => { throw new Error('commit down'); },
+      release: async () => { throw new Error('release down'); },
+    });
+    const res = await handleProse(proseReq(GOOD_BODY, { 'X-Figma-User': 'u1' }), d);
+    expect(res.status).toBe(200);
+    expect(d.log).toHaveBeenCalledWith('quota_release_failed', { message: 'release down' });
   });
 
   it('gives the Anthropic call a timeout shorter than the reservation TTL', async () => {

@@ -15,6 +15,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   releases attach the built plugin as a zip with a GitHub build provenance
   attestation (`gh attestation verify`).
 
+- The proxy's license routes refuse a request body over 4 KB with `413`,
+  like the other routes that read a body. Every proxy response carries
+  `X-Content-Type-Options: nosniff`, and an internal error's log line
+  carries the first 2,000 characters of its stack; the response stays
+  generic.
+
 - When the free AI writing allowance is used up and AI writing is on, the
   component screen now says so before you build: one line under the switch
   reads that no free AI uses are left until the reset date and that sections
@@ -136,6 +142,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   JSON serializer; every hash is byte for byte unchanged.
 
 ### Fixed
+
+- AI writing no longer fails after the text was already written. When the
+  proxy wrote an answer but could not record it against the allowance, it
+  answered with an error, and every retry for the next three minutes was
+  told a generation was still pending. The answer now comes back, is not
+  counted, and a retry runs at once.
+- A Pro license check now gives up on Lemon Squeezy after 10 seconds and
+  falls back to the last good result within the 5-day grace window. Before,
+  a request waiting on a Lemon Squeezy call that never answered stayed open
+  until Cloudflare ended it.
+- When Anthropic is overloaded or rate limited (429, 503 or 529), the proxy
+  now answers `503 upstream_busy` and passes on Anthropic's `Retry-After`
+  when there is one, instead of a `502` that read as broken. The plugin
+  shows the same message for both.
+- A damaged license cache entry is now treated as missing and replaced,
+  instead of failing every request for that key with a 500.
 
 - Clicking inside the component you just documented, then pressing Create
   docs again, asked for a new AI draft and spent another free AI use. The

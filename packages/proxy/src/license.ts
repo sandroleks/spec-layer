@@ -10,6 +10,13 @@ export const LICENSE_CACHE_KV_TTL_S = 30 * 86400;
 
 const LS_BASE = 'https://api.lemonsqueezy.com/v1/licenses';
 
+/**
+ * A Lemon Squeezy call that hangs is an outage, not a wait: past this it is
+ * `transient`, so `checkLicense` reaches its grace window instead of holding
+ * the request open until the Worker is killed.
+ */
+export const LS_TIMEOUT_MS = 10_000;
+
 export interface KVLike {
   get(key: string): Promise<string | null>;
   put(key: string, value: string, opts?: { expirationTtl?: number }): Promise<void>;
@@ -22,7 +29,13 @@ export interface LibraryStore extends KVLike {
   getStream(key: string): Promise<ReadableStream | null>;
 }
 
-export interface LicenseDeps { fetcher: typeof fetch; cache: KVLike; now: () => number }
+export interface LicenseDeps {
+  fetcher: typeof fetch;
+  cache: KVLike;
+  now: () => number;
+  /** Overrides LS_TIMEOUT_MS; tests only. */
+  lsTimeoutMs?: number;
+}
 
 export type LicenseReason = 'invalid' | 'expired' | 'inactive' | 'unreachable';
 export type LicenseResult = { tier: 'pro' } | { tier: 'free'; reason: LicenseReason };
@@ -37,9 +50,22 @@ interface CacheEntry { status: string; validatedAt: number }
 const cacheKey = (key: string, instanceId: string | null) =>
   `lic:${sha256(instanceId ? `${key}:${instanceId}` : key)}`;
 
+/**
+ * A cached verdict, or null. An entry that does not parse to one is a miss,
+ * so Lemon Squeezy is asked again and the entry is overwritten, rather than
+ * every request with that key failing with a 500 until the KV TTL expires.
+ */
 async function readCache(deps: LicenseDeps, key: string, instanceId: string | null): Promise<CacheEntry | null> {
   const raw = await deps.cache.get(cacheKey(key, instanceId));
-  return raw ? (JSON.parse(raw) as CacheEntry) : null;
+  if (!raw) return null;
+  try {
+    const entry = JSON.parse(raw) as Partial<CacheEntry> | null;
+    return typeof entry?.status === 'string' && typeof entry.validatedAt === 'number'
+      ? { status: entry.status, validatedAt: entry.validatedAt }
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 async function writeCache(deps: LicenseDeps, key: string, instanceId: string | null, entry: CacheEntry): Promise<void> {
@@ -70,7 +96,9 @@ async function callLs(path: string, body: unknown, deps: LicenseDeps, verdictKey
       method: 'POST',
       headers: { 'content-type': 'application/json', accept: 'application/json' },
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(deps.lsTimeoutMs ?? LS_TIMEOUT_MS),
     });
+    // The signal also aborts a body still streaming.
     data = await res.json();
   } catch {
     return { kind: 'transient' };
