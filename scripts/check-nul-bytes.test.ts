@@ -13,7 +13,7 @@ describe('isScannedPath', () => {
   it.each([
     '.github/workflows/ci.yml',
     'eslint.config.mjs',
-    'vitest.config.ts',
+    'vitest.config.mts',
     'tsconfig.base.json',
     'package-lock.json',
     'CONTRIBUTING.md',
