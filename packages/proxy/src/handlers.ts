@@ -10,7 +10,7 @@ import { handlePublish, handlePull, handleRotate, handleVersions, truncateUtf16 
 import { activateLicense, checkLicense, deactivateLicense, validateLicense, LICENSE_KEY_RE, LsUnreachable, type KVLike, type LicenseResult, type LibraryStore } from './license';
 import { quotaHeaders } from './quota';
 import type { CommitOptions, QuotaProfile, QuotaSnapshot, ReleaseOptions, ReserveOptions, ReserveResult, Tier } from './quota';
-import type { SlidingWindowLimiter } from './ratelimit';
+import type { RateLimiter } from './ratelimit';
 import { readBodyCapped } from './body';
 
 export { licenseIdentityId };
@@ -34,8 +34,8 @@ export interface HandlerDeps {
   /** One engine per identity and profile; `profile` defaults to 'ai'. */
   quotaFor(identityId: string, profile?: QuotaProfile): QuotaClient;
   log(event: string, fields: Record<string, unknown>): void;
-  licenseLimiter: SlidingWindowLimiter;
-  requestLimiter: SlidingWindowLimiter;
+  licenseLimiter: RateLimiter;
+  requestLimiter: RateLimiter;
   /** Separate from licenseCache so a dedicated namespace stays a one-line change. */
   libraryStore: LibraryStore;
 }
@@ -245,7 +245,7 @@ function sameContent(actual: unknown, expected: unknown): boolean {
 
 export async function handleProse(req: Request, deps: HandlerDeps): Promise<Response> {
   const ip = req.headers.get('CF-Connecting-IP') ?? 'unknown';
-  if (!deps.requestLimiter.allow(`prose:${ip}`, deps.now())) {
+  if (!(await deps.requestLimiter.allow(`prose:${ip}`, deps.now()))) {
     return json(429, { error: 'rate_limited' });
   }
   const identity = identityFromHeaders(req.headers, deps.salt);
@@ -369,7 +369,7 @@ export async function handleProse(req: Request, deps: HandlerDeps): Promise<Resp
 
 export async function handleQuota(req: Request, deps: HandlerDeps): Promise<Response> {
   const ip = req.headers.get('CF-Connecting-IP') ?? 'unknown';
-  if (!deps.requestLimiter.allow(`quota:${ip}`, deps.now())) {
+  if (!(await deps.requestLimiter.allow(`quota:${ip}`, deps.now()))) {
     return json(429, { error: 'rate_limited' });
   }
   const identity = identityFromHeaders(req.headers, deps.salt);
@@ -400,7 +400,7 @@ export async function handleQuota(req: Request, deps: HandlerDeps): Promise<Resp
 
 export async function handleActivate(req: Request, deps: HandlerDeps): Promise<Response> {
   const ip = req.headers.get('CF-Connecting-IP') ?? 'unknown';
-  if (!deps.licenseLimiter.allow(ip, deps.now())) {
+  if (!(await deps.licenseLimiter.allow(ip, deps.now()))) {
     return json(429, { error: 'rate_limited' });
   }
   const parsed = await readJsonCapped<{ key?: unknown; instanceName?: unknown; instanceId?: unknown } | null>(req, MAX_LICENSE_BODY_BYTES);
@@ -426,7 +426,7 @@ export async function handleActivate(req: Request, deps: HandlerDeps): Promise<R
 
 export async function handleDeactivate(req: Request, deps: HandlerDeps): Promise<Response> {
   const ip = req.headers.get('CF-Connecting-IP') ?? 'unknown';
-  if (!deps.licenseLimiter.allow(ip, deps.now())) return json(429, { error: 'rate_limited' });
+  if (!(await deps.licenseLimiter.allow(ip, deps.now()))) return json(429, { error: 'rate_limited' });
   const parsed = await readJsonCapped<{ key?: unknown; instanceId?: unknown } | null>(req, MAX_LICENSE_BODY_BYTES);
   if (parsed instanceof Response) return parsed;
   const body = parsed ?? {};

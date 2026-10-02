@@ -233,8 +233,15 @@ predates versioning answers an empty log. Errors: `401`, `404`, `429`.
   reserves or counts.
 - Quota engine rate limit: 10 uncached reservations/min per identity and
   profile (AI writing and publishing count separately), both tiers.
-- Request edge limiter: 60 prose requests/min and 60 quota reads/min per
-  connecting IP, best-effort per isolate.
+- Request edge limiter: 60 requests/min per connecting IP and route family
+  (prose, quota, publish dry run, pull), and 20/min for the license routes,
+  publish and rotate. Each is two layers (`src/ratelimit.ts`): the isolate's
+  own sliding window, then the Workers Rate Limiting binding
+  (`REQUEST_RATE_LIMITER`, `LICENSE_RATE_LIMITER` in `wrangler.toml`), whose
+  counters every isolate in a Cloudflare location shares. The binding is
+  per location and eventually consistent, so it is not a global exact count;
+  if it errors, the isolate's window alone decides and `rate_limiter_error`
+  is logged.
 - License status cached 24h; 5-day grace on Lemon Squeezy outages. A Lemon
   Squeezy call that has not finished in 10 s counts as an outage, so a hang
   reaches the grace window instead of holding the request open. A cache entry
@@ -269,8 +276,12 @@ before this split is migrated to that layout the first time it is read.
   10 seconds after more than 5 requests in 10 seconds match
   `starts_with(http.request.uri.path, "/v1/license/")`. Reverify this zone-level
   rule after any Cloudflare account or zone migration.
-- **Prose and quota endpoints are rate-limited in-isolate.** This is a
-  best-effort cost-abuse backstop, not a substitute for a Cloudflare WAF rule.
+- **Prose, quota and library endpoints are rate-limited per location, not
+  globally.** The Rate Limiting binding shares counts across isolates in one
+  Cloudflare location; a caller spread across locations gets each location's
+  allowance. Only the license routes also sit behind a zone WAF rule. A WAF
+  rate rule on `/v1/prose` and `/v1/libraries` would add a global per-IP
+  ceiling; it is a zone setting, not something this repository can deploy.
 - **Free identities are client-asserted.** `X-Figma-User` isn't
   authenticated; rotating it re-mints a free identity with a fresh monthly
   allowance, bounded per request by the fixed prompt and `max_tokens` checks, with

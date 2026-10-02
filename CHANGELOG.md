@@ -20,6 +20,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   `X-Content-Type-Options: nosniff`, and an internal error's log line
   carries the first 2,000 characters of its stack; the response stays
   generic.
+- The proxy's per-IP rate limits now hold across every isolate in a
+  Cloudflare location: behind each isolate's own window sits the Workers
+  Rate Limiting binding, at the same limits (60 a minute for prose, quota,
+  dry runs and pulls; 20 for license, publish and rotate). Before, each
+  isolate counted alone, so a burst spread across isolates was not limited.
+  Bundles are hashed on publish with the runtime's native SHA-256.
 
 - `spec-layer pull`, `status` and `list` take `--json`, which prints one
   JSON object instead of the text: the command, its exit code, its own

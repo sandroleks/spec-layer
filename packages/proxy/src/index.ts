@@ -3,14 +3,19 @@ import { route, requestLog, type HandlerDeps, type QuotaClient } from './handler
 import type { LibraryStore } from './license';
 import { QUOTA_PROFILES, quotaObjectName, type CommitOptions, type QuotaProfile, type QuotaSnapshot, type ReleaseOptions, type ReserveOptions, type ReserveResult, type Tier } from './quota';
 import { QuotaStore } from './quotaStore';
-import { SlidingWindowLimiter, REQUEST_LIMITER_MAX_KEYS, LICENSE_LIMITER_MAX_KEYS } from './ratelimit';
+import { LayeredLimiter, SlidingWindowLimiter, REQUEST_LIMITER_MAX_KEYS, LICENSE_LIMITER_MAX_KEYS } from './ratelimit';
 
 const licenseLimiter = new SlidingWindowLimiter(20, 60_000, LICENSE_LIMITER_MAX_KEYS);
 const requestLimiter = new SlidingWindowLimiter(60, 60_000, REQUEST_LIMITER_MAX_KEYS);
 
-export interface Env {
-  LICENSE_CACHE: KVNamespace;
-  QUOTA: DurableObjectNamespace<QuotaDO>;
+/**
+ * The bindings come from worker-configuration.d.ts, which `wrangler types`
+ * generates from wrangler.toml, so a binding renamed or removed there is a
+ * type error here (npm run check:deploy fails on a stale file). Secrets are
+ * set with `wrangler secret put` and are invisible to it, so they are named
+ * by hand.
+ */
+export interface Env extends Cloudflare.Env {
   ANTHROPIC_API_KEY: string;
   FIGMA_ID_SALT: string;
 }
@@ -65,6 +70,9 @@ function kvLibraryStore(kv: KVNamespace): LibraryStore {
 
 const worker = {
   async fetch(req: Request, env: Env): Promise<Response> {
+    const log = requestLog(req, (line) => console.log(line));
+    const limiterDown = (binding: string) => (err: unknown) =>
+      log('rate_limiter_error', { binding, message: err instanceof Error ? err.message : String(err) });
     const deps: HandlerDeps = {
       salt: env.FIGMA_ID_SALT,
       anthropicKey: env.ANTHROPIC_API_KEY,
@@ -72,9 +80,10 @@ const worker = {
       licenseCache: env.LICENSE_CACHE,
       now: () => Date.now(),
       quotaFor: (id, profile) => doQuotaClient(env.QUOTA, id, profile),
-      log: requestLog(req, (line) => console.log(line)),
-      licenseLimiter,
-      requestLimiter,
+      log,
+      // The isolate's window, then the location-wide binding (ratelimit.ts).
+      licenseLimiter: new LayeredLimiter(licenseLimiter, env.LICENSE_RATE_LIMITER, limiterDown('LICENSE_RATE_LIMITER')),
+      requestLimiter: new LayeredLimiter(requestLimiter, env.REQUEST_RATE_LIMITER, limiterDown('REQUEST_RATE_LIMITER')),
       // Shares licenseCache's namespace; splitting it is a one-line change.
       libraryStore: kvLibraryStore(env.LICENSE_CACHE),
     };

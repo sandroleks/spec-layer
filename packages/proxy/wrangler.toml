@@ -18,6 +18,21 @@ class_name = "QuotaDO"
 tag = "v1"
 new_sqlite_classes = ["QuotaDO"]
 
+# Workers Rate Limiting: counters shared by every isolate in a Cloudflare
+# location, behind the per-isolate windows in src/ratelimit.ts. The limits
+# match those windows (60 and 20 a minute per key). A namespace_id is a
+# number chosen per account; it only has to differ from this account's other
+# rate limiters. Bindings do not inherit, so [env.staging] declares its own.
+[[ratelimits]]
+name = "REQUEST_RATE_LIMITER"
+namespace_id = "1001"
+simple = { limit = 60, period = 60 }
+
+[[ratelimits]]
+name = "LICENSE_RATE_LIMITER"
+namespace_id = "1002"
+simple = { limit = 20, period = 60 }
+
 # Every invocation's logs reach the Workers dashboard. The log volume is a
 # few JSON lines per request, so sampling would only hide the rare
 # `upstream_error` or `fair_use_flag` this is for.
@@ -52,3 +67,13 @@ class_name = "QuotaDO"
 [env.staging.observability]
 enabled = true
 head_sampling_rate = 1
+
+[[env.staging.ratelimits]]
+name = "REQUEST_RATE_LIMITER"
+namespace_id = "2001"
+simple = { limit = 60, period = 60 }
+
+[[env.staging.ratelimits]]
+name = "LICENSE_RATE_LIMITER"
+namespace_id = "2002"
+simple = { limit = 20, period = 60 }
