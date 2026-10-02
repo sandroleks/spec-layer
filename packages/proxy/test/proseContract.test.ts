@@ -210,8 +210,8 @@ describe('parseProseCacheKey', () => {
 
 describe('upstreamRequest', () => {
   const request = { max_tokens: PROSE_MAX_TOKENS, system: PROSE_SYSTEM_PROMPT, messages: [] };
-  it('assigns Sonnet 5 with low effort to pro and Haiku 4.5 with nothing extra to free', () => {
-    expect(upstreamRequest(request, 'pro', false)).toEqual({ ...request, model: 'claude-sonnet-5', output_config: { effort: 'low' } });
+  it('assigns Sonnet 5.5 with low effort to pro and Haiku 4.5 with nothing extra to free', () => {
+    expect(upstreamRequest(request, 'pro', false)).toEqual({ ...request, model: 'claude-sonnet-5-5', output_config: { effort: 'low' } });
     expect(upstreamRequest(request, 'free', false)).toEqual({ ...request, model: 'claude-haiku-4-5' });
   });
   it('never adds a thinking field', () => {

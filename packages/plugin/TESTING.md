@@ -342,9 +342,9 @@ were added the same day, after the review that found the callouts reading
     Expected: the same sections fill, the quota meter reads unlimited, and a
     second generation of the same unchanged component completes without the
     meter moving (the proxy replays the stored answer). The prose is written
-    by Claude Sonnet 5; the canvas cannot show which model wrote it, so the
+    by Claude Sonnet 5.5; the canvas cannot show which model wrote it, so the
     proxy log (`wrangler tail`) is the evidence: the forwarded request names
-    `claude-sonnet-5` with `output_config.effort` `low`.
+    `claude-sonnet-5-5` with `output_config.effort` `low`.
 27. **Rebuild with AI writing on.** Open a Library that holds a document
     built by 5.1.0 whose Keyboard section has hand-edited bullets, turn AI
     writing on, and press **Rebuild docs** in the banner above the rows.

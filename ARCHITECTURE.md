@@ -111,7 +111,7 @@ quotas, Lemon Squeezy license validation, and published libraries. Prose
 requests are restricted to the shipped prompts, message shapes, output limits,
 and base64 image formats; remote image URLs and caller-defined Anthropic
 options are rejected. The proxy chooses the model from the tier the request
-proves (Claude Sonnet 5 for Pro, Claude Haiku 4.5 for free), and a current
+proves (Claude Sonnet 5.5 for Pro, Claude Haiku 4.5 for free), and a current
 request may not name one; the 5.1.0 plugin's cache keys still name Haiku and
 are accepted as they were. One Durable Object per hashed identity and profile
 (AI writing or publishing) serializes quota updates. Per-isolate IP throttles blunt

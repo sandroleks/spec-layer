@@ -24,7 +24,7 @@ component prose (`prose:v9:`) and Foundation group descriptions
 messages the extractor ships, the fixed output limit, a bounded generated
 prompt, one `cache_control` breakpoint on the exemplar answer, and supported
 base64 image blocks. The request names no model: the proxy assigns
-`claude-sonnet-5` with `output_config.effort: low` to a proved Pro license and
+`claude-sonnet-5-5` with `output_config.effort: low` to a proved Pro license and
 `claude-haiku-4-5` to a Figma identity, and rejects a body that names one. The
 cache key names the tier the client believes it has (`pro` or `free`); a key
 whose tier disagrees with the proof is rejected with `400 tier mismatch` before

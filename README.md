@@ -34,7 +34,7 @@ into your repository as structured context for an AI coding agent.
   download the library as a self-contained agent skill with no publish at all.
 - **Optional AI writing.** Draft an overview, when to use it, do's and don'ts,
   and interaction notes for a component, and a line per colour group plus a
-  collection overview for a Foundation. Pro writes with Claude Sonnet 5 and the
+  collection overview for a Foundation. Pro writes with Claude Sonnet 5.5 and the
   free plan with Claude Haiku 4.5.
 
 Extraction, rendering, drift detection, and Copy for AI are deterministic. Only

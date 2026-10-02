@@ -109,13 +109,13 @@ describe('handleProse', () => {
     expect(sent.thinking).toBeUndefined();
   });
 
-  it('forwards the pro request with Sonnet 5 at low effort', async () => {
+  it('forwards the pro request with Sonnet 5.5 at low effort', async () => {
     const d = deps();
     await d.licenseCache.put(`lic:${sha256(`${UUID_KEY}:inst-1`)}`, JSON.stringify({ status: 'active', validatedAt: Date.parse('2026-07-01T00:00:00Z') }));
     const res = await handleProse(proseReq(PRO_BODY, { Authorization: `Bearer ${UUID_KEY}:inst-1` }), d);
     expect(res.status).toBe(200);
     const sent = JSON.parse(String(d._anthropic.mock.calls[0][1].body)) as Record<string, unknown>;
-    expect(sent.model).toBe('claude-sonnet-5');
+    expect(sent.model).toBe('claude-sonnet-5-5');
     expect(sent.output_config).toEqual({ effort: 'low' });
   });
 

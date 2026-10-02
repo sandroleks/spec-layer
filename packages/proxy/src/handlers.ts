@@ -79,8 +79,8 @@ const BODY_FIELDS = new Set(['cacheKey', 'request']);
 const REQUEST_FIELDS = new Set(['model', 'max_tokens', 'system', 'messages']);
 
 /** The model each proved tier writes with. The plugin never names one. */
-export const MODEL_BY_TIER: Record<Tier, string> = { pro: 'claude-sonnet-5', free: 'claude-haiku-4-5' };
-/** Sonnet 5 bills adaptive thinking as output, so low effort keeps it small.
+export const MODEL_BY_TIER: Record<Tier, string> = { pro: 'claude-sonnet-5-5', free: 'claude-haiku-4-5' };
+/** Sonnet 5.5 bills adaptive thinking as output, so low effort keeps it small.
  *  Haiku 4.5 rejects `output_config.effort`, so free sends none. */
 export const PRO_OUTPUT_CONFIG = { effort: 'low' } as const;
 
