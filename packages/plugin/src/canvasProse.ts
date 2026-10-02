@@ -66,7 +66,7 @@ export interface ProseNodeLike {
   id?: string;
   type: string;
   characters?: string;
-  children?: readonly ProseNodeLike[];
+  children?: readonly ProseNodeLike[] | undefined;
   getPluginData(key: string): string;
   /** Figma's native subtree search, when the host has it. */
   findAllWithCriteria?(criteria: { pluginData: { keys: string[] } }): readonly { id: string }[];

@@ -235,17 +235,17 @@ export function parseProseResponse(text: string): ProseV2 {
     if (typeof o[key] === 'string') out[key] = o[key] as string;
   }
   const variantsGuide = asRecordList(o.variantsGuide);
-  if (variantsGuide) out.variantsGuide = variantsGuide as unknown as ProseV2['variantsGuide'];
+  if (variantsGuide) out.variantsGuide = variantsGuide as unknown as NonNullable<ProseV2['variantsGuide']>;
   const anatomyParts = asRecordList(o.anatomyParts);
-  if (anatomyParts) out.anatomyParts = anatomyParts as unknown as ProseV2['anatomyParts'];
+  if (anatomyParts) out.anatomyParts = anatomyParts as unknown as NonNullable<ProseV2['anatomyParts']>;
   const properties = asRecordList(o.properties);
-  if (properties) out.properties = properties as unknown as ProseV2['properties'];
+  if (properties) out.properties = properties as unknown as NonNullable<ProseV2['properties']>;
   const states = asRecordList(o.states);
-  if (states) out.states = states as unknown as ProseV2['states'];
+  if (states) out.states = states as unknown as NonNullable<ProseV2['states']>;
   const keyboard = asRecordList(o.keyboard);
-  if (keyboard) out.keyboard = keyboard as unknown as ProseV2['keyboard'];
+  if (keyboard) out.keyboard = keyboard as unknown as NonNullable<ProseV2['keyboard']>;
   const guidelines = asRecordList(o.guidelines);
-  if (guidelines) out.guidelines = guidelines as unknown as ProseV2['guidelines'];
+  if (guidelines) out.guidelines = guidelines as unknown as NonNullable<ProseV2['guidelines']>;
   return out;
 }
 

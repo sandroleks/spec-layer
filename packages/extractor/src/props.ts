@@ -8,7 +8,7 @@ export interface ComponentProp {
   name: string;
   kind: PropKind;
   options?: string[];
-  default?: string | boolean;
+  default?: string | boolean | undefined;
 }
 
 export interface VariantAxis {

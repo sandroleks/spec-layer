@@ -236,7 +236,7 @@ export function swapInto(staging: string, target: string, fs: SwapFs = REAL_SWAP
 export function writeBundleFiles(opts: {
   outDir: string; cwd: string; raw: string; bundle: BundleV1; libraryId: string; publishedAt: string; bundleHash: string;
   version?: string | null;
-  selection?: Selection; dtcg?: DtcgOptions; platforms?: Platform[]; outputs?: OutputConfig[]; componentSpecsDir?: string;
+  selection?: Selection; dtcg?: DtcgOptions | undefined; platforms?: Platform[]; outputs?: OutputConfig[]; componentSpecsDir?: string;
   componentSpecsFormat?: ComponentFormat;
 }): { written: string[]; componentSpecs: { path: string; files: string[] }; outputs: Array<{ path: string; files: string[] }> } {
   assertReplaceable(opts.outDir, opts.cwd);

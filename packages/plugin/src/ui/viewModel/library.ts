@@ -299,8 +299,8 @@ export function libraryBadgeVisible(input: {
 /** A `docBaseline` reply as the row's change result; any failure is `unavailable`, never a partial list. */
 export function resolveLibraryChanges(input: {
   baseline: DocBaseline | null;
-  live?: FoundationUnitContent | null;
-  liveProjection?: SpecHashProjection;
+  live?: FoundationUnitContent | null | undefined;
+  liveProjection?: SpecHashProjection | undefined;
 }): LibraryChangeResult {
   if (!input.baseline) return { state: 'unavailable', reason: 'noBaseline' };
   try {

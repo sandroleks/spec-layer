@@ -63,16 +63,16 @@ function projectEffectLayers(layers: EffectLayer[]): YamlValue {
 export interface ComponentBriefOptions {
   generatedAt: string;
   /** Guidelines read from storage. Never generated here. */
-  prose?: ProseDrafts | null;
+  prose?: ProseDrafts | null | undefined;
 }
 
 /** An anatomy node under construction: `children` always exists, and `stripEmptyChildren` drops an empty one. */
 interface AnatomyBuildNode {
   part: string;
   type: string;
-  component?: string;
+  component?: string | undefined;
   /** Present only on a part hidden by default: the boolean property that shows it. */
-  shown_by?: string;
+  shown_by?: string | undefined;
   children: AnatomyBuildNode[];
 }
 

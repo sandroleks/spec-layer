@@ -130,7 +130,7 @@ function readProseV1(o: Record<string, unknown>): ProseV2 | null {
   for (const k of ['interactions', 'variantsSummary', 'anatomySummary', 'contentConsiderations'] as const) {
     if (typeof o[k] === 'string') v1[k] = o[k] as string;
   }
-  if (Array.isArray(o.anatomyParts)) v1.anatomyParts = o.anatomyParts as ProseDrafts['anatomyParts'];
+  if (Array.isArray(o.anatomyParts)) v1.anatomyParts = o.anatomyParts as NonNullable<ProseDrafts['anatomyParts']>;
   const upgraded = upgradeProseV1(v1);
   return hasProseContent(upgraded) ? upgraded : null;
 }

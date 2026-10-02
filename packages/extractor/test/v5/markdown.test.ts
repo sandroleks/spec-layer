@@ -7,6 +7,13 @@ import type { ComponentArtifactV5, SerializedFoundation, SerializedNode } from '
 import { buildComponentV5GoldenArtifact, buildComponentV5StyledArtifact } from '../fixtures/componentV5';
 import button from '../fixtures/button.json';
 
+/** A copy without `keys`: how a field is absent in an artifact parsed from JSON, which never holds undefined. */
+function omit<T extends object, K extends keyof T>(value: T, ...keys: K[]): Omit<T, K> {
+  const copy = { ...value };
+  for (const key of keys) delete copy[key];
+  return copy;
+}
+
 // The exact sentence `tokensUsedSection` (`markdown.ts`) renders when
 // `references.foundation` is absent, pinned here as its own constant per
 // Task 12's brief rather than repeated as an inline literal below.
@@ -147,7 +154,7 @@ describe('componentMarkdown properties', () => {
 
   it('omits the section entirely when there is no api', () => {
     const artifact = buildComponentV5GoldenArtifact();
-    const out = componentMarkdown({ ...artifact, api: undefined });
+    const out = componentMarkdown(omit(artifact, 'api'));
     expect(out).not.toContain('## Properties');
     expect(out).not.toContain('States:');
   });
@@ -233,7 +240,7 @@ describe('componentMarkdown layout', () => {
 
   it('omits the section when there is no layout', () => {
     const artifact = buildComponentV5GoldenArtifact();
-    expect(componentMarkdown({ ...artifact, layout: undefined })).not.toContain('## Layout');
+    expect(componentMarkdown(omit(artifact, 'layout'))).not.toContain('## Layout');
   });
 });
 
@@ -281,9 +288,7 @@ describe('componentMarkdown tokens used', () => {
 
   it('says plainly that the foundation was not read', () => {
     const artifact = buildComponentV5GoldenArtifact();
-    const out = componentMarkdown({
-      ...artifact, references: { ...artifact.references, foundation: undefined },
-    });
+    const out = componentMarkdown({ ...artifact, references: omit(artifact.references, 'foundation') });
     expect(out).toContain(
       'Token values are not included: the foundations had not been read when this was exported.',
     );
@@ -634,7 +639,7 @@ describe('componentMarkdown unbound and issues', () => {
 
   it('omits the section when there is no unbound value', () => {
     const artifact = buildComponentV5GoldenArtifact();
-    expect(componentMarkdown({ ...artifact, unbound: undefined })).not.toContain('## Unbound values');
+    expect(componentMarkdown(omit(artifact, 'unbound'))).not.toContain('## Unbound values');
   });
 
   it('renders no Issues section when every validation row is an unbound value', () => {
@@ -1227,12 +1232,10 @@ describe('componentMarkdown hostile input', () => {
   it('renders a minimal artifact carrying only required fields', () => {
     const artifact = buildComponentV5GoldenArtifact();
     const out = componentMarkdown({
-      ...artifact,
-      component: { name: 'Bare' }, api: undefined, anatomy: [], layout: undefined,
-      effects_inline: undefined, unbound: undefined, validation: undefined,
-      guidelines: undefined, diagnostics: [],
-      references: { used: [], bindings: [], foundation: undefined },
-    } as typeof artifact);
+      ...omit(artifact, 'api', 'layout', 'effects_inline', 'unbound', 'validation', 'guidelines'),
+      component: { name: 'Bare' }, anatomy: [], diagnostics: [],
+      references: { used: [], bindings: [] },
+    });
     expect(out).toContain('# Bare');
     expect(out).toContain(NOT_READ_SENTENCE);
     for (const heading of ['## Properties', '## Anatomy', '## Layout',

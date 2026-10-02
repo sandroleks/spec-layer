@@ -94,8 +94,8 @@ function manifestReader(): (outDir: string) => Manifest | null {
 
 /** Two pulls write the same files when they agree on all of these. */
 function sameOutput(
-  a: { selection: Selection; dtcg?: DtcgOptions; outputs?: OutputConfig[]; componentSpecsDir?: string; componentSpecsFormat?: ComponentFormat },
-  b: { selection: Selection; dtcg?: DtcgOptions; outputs?: OutputConfig[]; componentSpecsDir?: string; componentSpecsFormat?: ComponentFormat },
+  a: { selection: Selection; dtcg?: DtcgOptions | undefined; outputs?: OutputConfig[] | undefined; componentSpecsDir?: string | undefined; componentSpecsFormat?: ComponentFormat | undefined },
+  b: { selection: Selection; dtcg?: DtcgOptions | undefined; outputs?: OutputConfig[] | undefined; componentSpecsDir?: string | undefined; componentSpecsFormat?: ComponentFormat | undefined },
 ): boolean {
   const selectionKey = (s: Selection) =>
     JSON.stringify([s.foundation, s.components === null ? null : [...new Set(s.components.map(slugify))].sort()]);

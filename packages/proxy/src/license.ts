@@ -159,7 +159,7 @@ export async function validateLicense(
 
 export async function activateLicense(
   key: string, instanceName: string, deps: LicenseDeps,
-): Promise<{ valid: boolean; status: string; instanceId?: string }> {
+): Promise<{ valid: boolean; status: string; instanceId?: string | undefined }> {
   const out = await callLs('activate', { license_key: key, instance_name: instanceName }, deps, 'activated');
   if (out.kind === 'transient') throw new LsUnreachable();
   const activated = Boolean(out.data.activated);

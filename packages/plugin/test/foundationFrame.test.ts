@@ -593,7 +593,7 @@ describe('buildFoundationFrame', () => {
   it('removes the card it drew when the Section cannot be made, so a failed build leaves nothing on the canvas', async () => {
     class TrackedFrame extends FakeFrame {
       removed = false;
-      remove(): void { this.removed = true; }
+      override remove(): void { this.removed = true; }
     }
     const made: TrackedFrame[] = [];
     installFakeFigma({
@@ -611,7 +611,7 @@ describe('buildFoundationFrame', () => {
     class TrackedSection extends FakeSection {
       removed = false;
       remove(): void { this.removed = true; }
-      resizeWithoutConstraints(): void { throw new Error('resize refused'); }
+      override resizeWithoutConstraints(): void { throw new Error('resize refused'); }
     }
     let section: TrackedSection | null = null;
     installFakeFigma({ createSection: () => { section = new TrackedSection(); return section; } });

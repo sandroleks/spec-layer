@@ -29,13 +29,13 @@ export interface LibraryEntry {
   storedContentHash: string;
   /** Component rows only: the EXTRACTOR_VERSION that produced this doc. Absent
    *  on older blobs, which the UI treats as stale rather than comparing hashes. */
-  extractorVersion?: string;
+  extractorVersion?: string | undefined;
   /** Component rows only, so drift hashes the same anatomy the baseline was
    *  computed over. Absent reads as false. */
   includeHidden?: boolean;
   /** Foundation rows only: the live hash for this scope. Absent when the live
    *  extraction failed; the row must then not read as drifted. */
-  currentContentHash?: string;
+  currentContentHash?: string | undefined;
   /** Foundation rows only. Only main can read the doc's scope (pluginData), so
    *  the glyph travels with the entry. */
   foundationIcon?: FoundationIconKind;

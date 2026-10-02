@@ -242,7 +242,7 @@ const withPullKey = (headers: Record<string, string>, pullKey: string | null | u
 export async function publishBundle(
   bundle: PublishBundleV1,
   opts: {
-    auth: ProxyAuth; libraryId: string | null; pullKey?: string | null; fetcher?: typeof fetch;
+    auth: ProxyAuth; libraryId: string | null; pullKey?: string | null; fetcher?: typeof fetch | undefined;
     /** Omitted or null lets the proxy apply the minimum bump. */
     bump?: Bump | null;
     note?: string | null;
@@ -302,7 +302,7 @@ export async function publishBundle(
  */
 export async function dryRunBundle(
   bundle: PublishBundleV1,
-  opts: { auth: ProxyAuth; libraryId: string; pullKey?: string | null; fetcher?: typeof fetch },
+  opts: { auth: ProxyAuth; libraryId: string; pullKey?: string | null; fetcher?: typeof fetch | undefined },
 ): Promise<{ kind: 'ok'; result: DryRunResult } | { kind: 'error'; message?: string }> {
   const headers = authHeaders(opts.auth);
   if (!headers) return { kind: 'error', message: NO_IDENTITY };

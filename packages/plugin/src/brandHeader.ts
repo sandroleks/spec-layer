@@ -23,13 +23,13 @@ export interface BrandHeaderOptions {
   /** Optional one-line subtitle in muted ink. Pass plain text, not markdown. */
   subtitle?: string | null;
   /** Base64 PNG of the user's captured logo, if they have one. */
-  logoBase64?: string | null;
+  logoBase64?: string | null | undefined;
   /** Publish pill on the eyebrow row, right-aligned, left of any logo. Absent
    *  draws none, so documents without a pill render byte-identical. */
   pill?: PillState | null;
   /** Restyles the subtitle (docFrame's bold runs), after it is appended and
    *  before the FILL pass. */
-  styleSubtitle?: (node: TextNode) => void;
+  styleSubtitle?: ((node: TextNode) => void) | undefined;
 }
 
 /**

@@ -14,7 +14,7 @@ const BOLD: Font = { family: 'Inter', style: 'Bold' };
 
 interface Seg { characters: string; fontName: Font }
 
-function text(chars: string, opts: { segments?: Seg[]; data?: Record<string, string> } = {}): ProseNodeLike {
+function text(chars: string, opts: { segments?: Seg[] | undefined; data?: Record<string, string> } = {}): ProseNodeLike {
   const data = opts.data ?? {};
   return {
     type: 'TEXT',

@@ -151,7 +151,7 @@ describe('key format gate', () => {
 
 describe('KV expiry', () => {
   it('writes cache entries with an expirationTtl', async () => {
-    const puts: Array<{ opts?: { expirationTtl?: number } }> = [];
+    const puts: Array<{ opts?: { expirationTtl?: number } | undefined }> = [];
     const cache = {
       get: async () => null,
       put: async (_k: string, _v: string, opts?: { expirationTtl?: number }) => { puts.push({ opts }); },

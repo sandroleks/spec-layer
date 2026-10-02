@@ -30,7 +30,7 @@ const BAD_LIBRARY_ID = 'Couldn’t load versions. This file’s link to its publ
 const UNREADABLE = 'Couldn’t load versions. Spec Layer sent a reply the plugin couldn’t read. Try again in a moment.';
 
 export async function fetchVersionLog(opts: {
-  libraryId: string; pullKey: string; etag: string | null; fetcher?: typeof fetch;
+  libraryId: string; pullKey: string; etag: string | null; fetcher?: typeof fetch | undefined;
 }): Promise<
   | { kind: 'ok'; log: VersionLog; etag: string | null }
   | { kind: 'not_modified' }
