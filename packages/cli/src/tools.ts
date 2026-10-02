@@ -50,8 +50,8 @@ export const TOOLS: readonly Tool[] = [
   },
   {
     name: 'pull',
-    usage: 'spec-layer pull [--id lib_...] [--key sl_...|-] [--out DIR] [--platform web|ios|android|flutter]... [--component-format yaml|md] [--only foundation|components] [--component NAME]... [--strict]',
-    summary: 'Fetches the published library and writes the record under the output directory (default .speclayer/), the briefs under componentSpecsDir (YAML, or Markdown when componentSpecsFormat or --component-format says md), and the token files under outputs[].path. Prints a severity summary to stderr, even on a cached pull, when tokens/report.json or an outputs/*.report.json holds an error or warning.',
+    usage: 'spec-layer pull [--id lib_...] [--key sl_...|-] [--out DIR] [--platform web|ios|android|flutter]... [--component-format yaml|md] [--only foundation|components] [--component NAME]... [--strict] [--json]',
+    summary: 'Fetches the published library and writes the record under the output directory (default .speclayer/), the briefs under componentSpecsDir (YAML, or Markdown when componentSpecsFormat or --component-format says md), and the token files under outputs[].path. Prints a severity summary to stderr, even on a cached pull, when tokens/report.json or an outputs/*.report.json holds an error or warning. Retries a network, timeout, 5xx or 429 failure (SPEC_LAYER_RETRIES, default 2). --json prints one object: state (pulled, up_to_date or failed), version, publishedAt, files, componentSpecs, outputs, reportErrors.',
     when: 'After setup, whenever status says the local copy is behind, or after changing the include, dtcg, outputs, componentSpecsDir, or componentSpecsFormat settings. Add --strict in CI to fail the build on an error-severity report entry.',
     network: true, needsKey: true,
     writes: [
@@ -63,8 +63,8 @@ export const TOOLS: readonly Tool[] = [
   },
   {
     name: 'status',
-    usage: 'spec-layer status [--id lib_...] [--key sl_...|-] [--out DIR]',
-    summary: 'Checks whether the local pull is current without writing anything.',
+    usage: 'spec-layer status [--id lib_...] [--key sl_...|-] [--out DIR] [--json]',
+    summary: 'Checks whether the local pull is current without writing anything. Retries like pull. --json prints one object: state (up_to_date, behind, no_local_pull or error), local and remote version and publishedAt.',
     when: 'Before reading the pulled files, or in CI; exit 2 means run pull.',
     network: true, needsKey: true,
     writes: [],
@@ -72,8 +72,8 @@ export const TOOLS: readonly Tool[] = [
   },
   {
     name: 'list',
-    usage: 'spec-layer list [--out DIR]',
-    summary: 'Lists every artifact in the last pull with its file path, or "not written" when the selection skipped it.',
+    usage: 'spec-layer list [--out DIR] [--json]',
+    summary: 'Lists every artifact in the last pull with its file path, or "not written" when the selection skipped it. --json prints the artifacts (kind, name, path, contentHash) and outputs as one object.',
     when: 'To learn which components the library documents and where each file is.',
     network: false, needsKey: false,
     writes: [],
@@ -111,6 +111,9 @@ export const TOOLS: readonly Tool[] = [
 export const GLOBAL_FLAGS: ReadonlyArray<{ flag: string; summary: string }> = [
   { flag: '--api URL', summary: 'Override the API origin (default https://api.spec-layer.com). Also SPEC_LAYER_API. https only, except http to localhost.' },
   { flag: '--out DIR', summary: 'Output directory (default .speclayer, or the outDir in speclayer.json). A relative path inside the working directory; pull replaces it wholesale.' },
+  { flag: '--json', summary: 'On pull, status and list: one JSON object on stdout with command, exitCode, the command\'s fields, and the human lines as stdout and stderr arrays. Exit codes are the same as without it.' },
+  { flag: '--help, --version', summary: 'Print the usage or the version to stdout and exit 0.' },
+  { flag: 'SPEC_LAYER_RETRIES=N', summary: 'How many times pull and status retry a network, timeout, 5xx or 429 failure, 0 to 9 (default 2). A server Retry-After over 30 seconds is reported instead of waited out.' },
 ];
 
 export const KEY_RESOLUTION = 'The pull key resolves from --key, then SPEC_LAYER_KEY, then speclayer.local.json written by setup. --key - reads it from stdin so it stays out of shell history. No command ever prints it.';

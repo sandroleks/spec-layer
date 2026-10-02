@@ -113,13 +113,13 @@ export interface AnatomyPartBlock {
   nested: boolean;
   id: string;
   depth: number;
-  component?: string;
+  component?: string | undefined;
   tokens: string[];
   type: string;
   /** AI role sentence, matched by raw part name. */
-  role?: string;
+  role?: string | undefined;
   /** Only on a part hidden by default: the boolean property that shows it. */
-  shownBy?: string;
+  shownBy?: string | undefined;
 }
 
 /** Each selected view becomes its own measure mini-diagram. */

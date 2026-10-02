@@ -199,8 +199,8 @@ function versionBlock(state: PublishState): string {
       note('The first publish creates this version.') +
       `<label class="sl-field"${valid ? '' : ' data-invalid="true"'}><span class="sl-field-label">First version</span>` +
       '<span class="sl-input-wrap"><input data-publish-initial-version inputmode="decimal" ' +
-      `value="${esc(state.initialVersion)}" aria-invalid="${!valid}"></span></label>` +
-      `<p class="sl-publish-status is-error" data-publish-initial-version-error${valid ? ' hidden' : ''}>${INVALID_FIRST_VERSION_HINT}</p>` +
+      `value="${esc(state.initialVersion)}" aria-invalid="${!valid}"${valid ? '' : ` aria-describedby="${INITIAL_VERSION_ERROR_ID}"`}></span></label>` +
+      `<p class="sl-publish-status is-error" id="${INITIAL_VERSION_ERROR_ID}" data-publish-initial-version-error${valid ? ' hidden' : ''}>${INVALID_FIRST_VERSION_HINT}</p>` +
       noteField;
     return `<section class="sl-publish-block sl-publish-version">${head()}${body}</section>`;
   }
@@ -399,11 +399,20 @@ export function renderPublishScreen(
  * Reflects the first-version field's validity without a repaint, which would
  * move the caret. Trims like onInitialVersionInput. False when the field is absent.
  */
+/**
+ * The hint's id. The input names it in aria-describedby only while the value
+ * is invalid: a hidden element referenced by aria-describedby is still read
+ * out, so a valid field would announce an error it does not have.
+ */
+const INITIAL_VERSION_ERROR_ID = 'sl-publish-initial-version-error';
+
 export function patchInitialVersion(root: ParentNode, value: string): boolean {
   const input = root.querySelector<HTMLInputElement>('[data-publish-initial-version]');
   if (!input) return false;
   const valid = isSemver(value.trim());
   input.setAttribute('aria-invalid', String(!valid));
+  if (valid) input.removeAttribute('aria-describedby');
+  else input.setAttribute('aria-describedby', INITIAL_VERSION_ERROR_ID);
   const field = input.closest<HTMLElement>('.sl-field');
   if (field) {
     if (valid) field.removeAttribute('data-invalid');

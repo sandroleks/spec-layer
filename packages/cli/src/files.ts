@@ -177,11 +177,66 @@ function assertReplaceable(outDir: string, cwd: string): void {
   }
 }
 
+/** The filesystem calls a swap makes, so a test can fail one of them. */
+export interface SwapFs {
+  renameSync: (from: string, to: string) => void;
+  rmSync: (path: string, opts: { recursive: true; force: true }) => void;
+  existsSync: (path: string) => boolean;
+}
+
+const REAL_SWAP_FS: SwapFs = { renameSync, rmSync, existsSync };
+
+/**
+ * Puts `staging` at `target` so that at every moment one complete copy is on
+ * disk: the previous directory moves aside first, the new one moves in, and
+ * only then is the previous one deleted. If the second rename fails (on
+ * Windows, a virus scanner or indexer holding a file open answers EPERM), the
+ * previous directory moves back, so a failed pull leaves the last good one.
+ * Deleting it before the rename, as this once did, left no output directory
+ * at all when that rename failed.
+ */
+export function swapInto(staging: string, target: string, fs: SwapFs = REAL_SWAP_FS): void {
+  if (!fs.existsSync(target)) {
+    try {
+      fs.renameSync(staging, target);
+    } catch (err) {
+      fs.rmSync(staging, { recursive: true, force: true });
+      throw err;
+    }
+    return;
+  }
+  const previous = `${staging}.previous`;
+  try {
+    fs.renameSync(target, previous);
+  } catch (err) {
+    fs.rmSync(staging, { recursive: true, force: true });
+    throw err;
+  }
+  try {
+    fs.renameSync(staging, target);
+  } catch (err) {
+    try {
+      fs.renameSync(previous, target);
+    } catch {
+      // Both renames failed: the last good copy is still whole at `previous`.
+      throw new Error(`${target} could not be replaced, and the previous copy could not be moved back. It is intact at ${previous}; rename it to ${target}.`);
+    }
+    fs.rmSync(staging, { recursive: true, force: true });
+    throw err;
+  }
+  // The new copy is in place. A previous copy that will not delete is clutter, not a failed pull.
+  try {
+    fs.rmSync(previous, { recursive: true, force: true });
+  } catch {
+    // Left for the developer; its name says what it is.
+  }
+}
+
 /** Stage the record into a fresh <outDir>.partial-XXXXXX, swap, then write the visible directories. A failed pull never half-writes. */
 export function writeBundleFiles(opts: {
   outDir: string; cwd: string; raw: string; bundle: BundleV1; libraryId: string; publishedAt: string; bundleHash: string;
   version?: string | null;
-  selection?: Selection; dtcg?: DtcgOptions; platforms?: Platform[]; outputs?: OutputConfig[]; componentSpecsDir?: string;
+  selection?: Selection; dtcg?: DtcgOptions | undefined; platforms?: Platform[]; outputs?: OutputConfig[]; componentSpecsDir?: string;
   componentSpecsFormat?: ComponentFormat;
 }): { written: string[]; componentSpecs: { path: string; files: string[] }; outputs: Array<{ path: string; files: string[] }> } {
   assertReplaceable(opts.outDir, opts.cwd);
@@ -288,8 +343,7 @@ export function writeBundleFiles(opts: {
     rmSync(staging, { recursive: true, force: true });
     throw err;
   }
-  rmSync(opts.outDir, { recursive: true, force: true });
-  renameSync(staging, opts.outDir);
+  swapInto(staging, resolve(opts.outDir));
   // Visible directories go last, after the record is complete. Briefs are
   // rewritten on every pull; tokens/ only when the Foundation was written.
   const componentSpecs = { path: componentSpecsDir, files: writeVisibleDir(opts.cwd, componentSpecsDir, COMPONENT_SPEC_MARKERS, briefs) };

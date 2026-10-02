@@ -13,8 +13,9 @@
  * test suite and the build itself all passed, because vitest imports the
  * TypeScript sources directly and never touches the bundle.
  *
- * So this runs the actual artifact three ways: with no arguments (the usage
- * banner, which proves the module graph evaluated), `tools --json` (a command
+ * So this runs the actual artifact four ways: with no arguments (the usage
+ * banner, which proves the module graph evaluated), `--version` (exactly the
+ * package version on stdout), `tools --json` (a command
  * path and the version read from disk), and `show component` against a
  * synthetic bundle in a scratch directory (the local-read path through the
  * inlined bundle parser). None needs a network, a key, or repository state.
@@ -61,6 +62,12 @@ if (!`${banner.stdout ?? ''}${banner.stderr ?? ''}`.includes(BANNER)) {
   ]);
 }
 
+// 1b. `--version`: exactly the package version on stdout, exit 0.
+const version = spawnSync(process.execPath, [bundlePath, '--version'], { encoding: 'utf8' });
+if (version.status !== 0 || version.stdout !== `${pkg.version}\n`) {
+  fail(`\`--version\` did not print ${pkg.version} and exit 0.`, version, []);
+}
+
 // 2. and 3. run in a scratch directory so nothing touches the repository.
 const scratch = mkdtempSync(join(tmpdir(), 'sl-bundle-check-'));
 try {
@@ -95,4 +102,4 @@ try {
   rmSync(scratch, { recursive: true, force: true });
 }
 
-console.log(`CLI bundle ok: banner, tools --json (${pkg.version}), show component.`);
+console.log(`CLI bundle ok: banner, --version, tools --json (${pkg.version}), show component.`);

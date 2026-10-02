@@ -49,9 +49,18 @@ unauthenticated or license not active,
 `409 {"error":"generation_pending"}` (another window is generating the same
 component), `413 {"error":"request_too_large"}` (body over 7 MB),
 `429 {"error":"rate_limited"}`, with `retryAfterMs` when the per-identity
-limit refused it, `502` upstream
-failure (quota not decremented), `502 {"error":"upstream_timeout"}` when
-Anthropic does not answer within 150 s (quota not decremented).
+limit refused it, `502 {"error":"upstream_error","status":…}` upstream
+failure (quota not decremented), `503 {"error":"upstream_busy","status":…}`
+when Anthropic answers 429, 503 or 529, with Anthropic's `Retry-After` passed
+on when it is a number of seconds (quota not decremented),
+`502 {"error":"upstream_timeout"}` when Anthropic does not answer within
+150 s (quota not decremented). If Anthropic has answered and only the quota
+commit fails, the answer is still returned, `200` without the `X-Quota-*`
+headers, uncounted, and the reservation is released; `quota_commit_failed`
+is logged.
+
+Every response, the preflight included, carries
+`X-Content-Type-Options: nosniff`.
 
 ### `GET /v1/quota`
 
@@ -65,7 +74,8 @@ identity otherwise.
 Body: `{ "key": "...", "instanceName": "Figma plugin" }` →
 `{ valid, status, instanceId? }` (proxies Lemon Squeezy's public activate
 endpoint and caches the status). `instanceName` is trimmed and cut to 64
-characters before it is forwarded.
+characters before it is forwarded. Both license routes refuse a body over
+4 KB with `413 {"error":"request_too_large"}`.
 
 ### `POST /v1/license/deactivate`
 
@@ -223,9 +233,19 @@ predates versioning answers an empty log. Errors: `401`, `404`, `429`.
   reserves or counts.
 - Quota engine rate limit: 10 uncached reservations/min per identity and
   profile (AI writing and publishing count separately), both tiers.
-- Request edge limiter: 60 prose requests/min and 60 quota reads/min per
-  connecting IP, best-effort per isolate.
-- License status cached 24h; 5-day grace on Lemon Squeezy outages.
+- Request edge limiter: 60 requests/min per connecting IP and route family
+  (prose, quota, publish dry run, pull), and 20/min for the license routes,
+  publish and rotate. Each is two layers (`src/ratelimit.ts`): the isolate's
+  own sliding window, then the Workers Rate Limiting binding
+  (`REQUEST_RATE_LIMITER`, `LICENSE_RATE_LIMITER` in `wrangler.toml`), whose
+  counters every isolate in a Cloudflare location shares. The binding is
+  per location and eventually consistent, so it is not a global exact count;
+  if it errors, the isolate's window alone decides and `rate_limiter_error`
+  is logged.
+- License status cached 24h; 5-day grace on Lemon Squeezy outages. A Lemon
+  Squeezy call that has not finished in 10 s counts as an outage, so a hang
+  reaches the grace window instead of holding the request open. A cache entry
+  that does not parse is a miss and is overwritten.
 
 Atomicity: one Durable Object per identity and profile (`QuotaDO`; the bare
 identity for AI writing, `publish:<identity>` for publishing) serializes that
@@ -256,8 +276,12 @@ before this split is migrated to that layout the first time it is read.
   10 seconds after more than 5 requests in 10 seconds match
   `starts_with(http.request.uri.path, "/v1/license/")`. Reverify this zone-level
   rule after any Cloudflare account or zone migration.
-- **Prose and quota endpoints are rate-limited in-isolate.** This is a
-  best-effort cost-abuse backstop, not a substitute for a Cloudflare WAF rule.
+- **Prose, quota and library endpoints are rate-limited per location, not
+  globally.** The Rate Limiting binding shares counts across isolates in one
+  Cloudflare location; a caller spread across locations gets each location's
+  allowance. Only the license routes also sit behind a zone WAF rule. A WAF
+  rate rule on `/v1/prose` and `/v1/libraries` would add a global per-IP
+  ceiling; it is a zone setting, not something this repository can deploy.
 - **Free identities are client-asserted.** `X-Figma-User` isn't
   authenticated; rotating it re-mints a free identity with a fresh monthly
   allowance, bounded per request by the fixed prompt and `max_tokens` checks, with
@@ -385,8 +409,9 @@ the model assigned by the proxy for the tier (Haiku on free).
   and a rollback past #86 opens the same window again. Most of those are one failed
   request that a retry fixes, but two are worse. A prose request that
   reserved before the switch can fail at its commit after Anthropic has
-  already answered, so the call is billed and the answer is neither cached
-  nor counted. A publish can land its KV writes and then fail both its commit
+  already answered; the answer is still returned, uncounted and not cached,
+  and the reservation is released, so the call is billed but not lost (this
+  holds for any failed commit, not only this window). A publish can land its KV writes and then fail both its commit
   and its release, so the write is not counted and the library's lock is held
   for its full three minutes. Rolling forward is the remedy: a rollback opens
   the same window in the other direction, because the previous build's object
@@ -425,13 +450,51 @@ the model assigned by the proxy for the tier (Haiku on free).
 
 ## Deploy
 
+Deploys run from `.github/workflows/deploy-proxy.yml`, not from a laptop.
+Every change merged to `main` that touches `packages/proxy/`,
+`packages/extractor/` or the lockfile:
+
+1. runs the full `check:ci` gate on that commit;
+2. deploys to **staging** (`spec-layer-proxy-staging` at
+   `staging-api.spec-layer.com`, its own KV namespace, Durable Object
+   storage and secrets) and runs `scripts/smoke-proxy.mjs` against it, three
+   probes that call no upstream and write nothing;
+3. waits for approval in the GitHub `production` environment, then runs
+   `wrangler deploy` and the same smoke test against `api.spec-layer.com`.
+
+A run by hand can pick `rollout: upload-only`, which uploads the production
+version with `wrangler versions upload` and routes no traffic to it, so a
+risky change (an RPC signature change, see the Durable Object note above) can
+be split gradually with `wrangler versions deploy <new>@10% <old>@90%` or in
+the dashboard. A version upload cannot apply a Durable Object migration; a
+change that adds one ships with `rollout: full`. A dispatch from a branch
+stops after staging.
+
+One-time setup, outside the repository:
+
 ```bash
 cd packages/proxy
-npx wrangler kv namespace create LICENSE_CACHE   # FIRST DEPLOY ONLY; paste the id into wrangler.toml
+# Production (done once already):
+npx wrangler kv namespace create LICENSE_CACHE                 # id into the top-level kv_namespaces
 npx wrangler secret put ANTHROPIC_API_KEY
-npx wrangler secret put FIGMA_ID_SALT            # long random string
-npx wrangler deploy
+npx wrangler secret put FIGMA_ID_SALT                          # long random string
+# Staging:
+npx wrangler kv namespace create LICENSE_CACHE --env staging   # id into [env.staging] kv_namespaces
+npx wrangler secret put ANTHROPIC_API_KEY --env staging        # a separate, low-limit Anthropic workspace key
+npx wrangler secret put FIGMA_ID_SALT --env staging            # different from production's
 ```
+
+In GitHub, the `staging` and `production` environments each hold a
+`CLOUDFLARE_API_TOKEN` secret scoped to this account (Workers Scripts edit,
+Workers KV edit, Workers Routes edit on `spec-layer.com`), and `production`
+has a required reviewer. The workflow refuses to deploy staging if
+`[env.staging]` loses its KV id.
+
+**Emergency path.** If CI is unavailable and production is broken,
+`npx wrangler deploy --config wrangler.toml` from a clean checkout of `main`
+after `npm run check` still works. Say so in the pull request or commit that
+follows, because the deploy record otherwise lives only in the Cloudflare
+dashboard.
 
 Ops: set a spend alert on the Anthropic workspace; `fair_use_flag` and
 `upstream_error` log events are the abuse/outage review queue. Workers
@@ -441,6 +504,11 @@ in the dashboard beside its request. Every log line carries the request's
 for their support.
 
 ## Smoke test
+
+`node scripts/smoke-proxy.mjs https://api.spec-layer.com` runs the three
+probes the deploy workflow gates on (CORS preflight, an unknown path, and a
+pull of an unknown library, which reads KV). By hand, the quota route also
+proves the Durable Object answers:
 
 ```bash
 curl -s -D - https://api.spec-layer.com/v1/quota -H 'X-Figma-User: smoke-test-1'

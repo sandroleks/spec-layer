@@ -1660,9 +1660,11 @@ describe('runSetup', () => {
     const RETRY = 'Setup is stored. Run spec-layer pull to retry.';
     const down = vi.fn(async () => { throw new Error('network down'); }) as unknown as typeof fetch;
     const status = (code: number) => vi.fn(async () => new Response(null, { status: code })) as unknown as typeof fetch;
+    // Retries off: this is about the suggestion after the last attempt, not the retries.
+    const noRetries = { SPEC_LAYER_RETRIES: '0' };
     for (const [label, fetcher] of [['network', down], ['503', status(503)]] as const) {
       const io = makeIo();
-      expect(await runSetup(cwd, { id: LIB, key: KEY }, {}, io, fetcher), label).toBe(1);
+      expect(await runSetup(cwd, { id: LIB, key: KEY }, noRetries, io, fetcher), label).toBe(1);
       expect(io.errLines.at(-1), label).toBe(RETRY);
     }
     for (const [label, fetcher] of [['403', status(403)], ['404', status(404)]] as const) {
@@ -1670,6 +1672,19 @@ describe('runSetup', () => {
       expect(await runSetup(cwd, { id: LIB, key: KEY }, {}, io, fetcher), label).toBe(1);
       expect(io.errLines, label).not.toContain(RETRY);
     }
+  });
+
+  it('retries a pull through a passing 503 and says so on stderr', async () => {
+    let calls = 0;
+    const flaky = stub200();
+    const fetcher = vi.fn(async (...args: Parameters<typeof fetch>) => {
+      calls += 1;
+      return calls === 1 ? new Response(null, { status: 503 }) : flaky(...args);
+    }) as unknown as typeof fetch;
+    const io = makeIo();
+    expect(await runPull(cwd, { id: LIB, key: KEY }, { SPEC_LAYER_RETRIES: '1' }, io, fetcher)).toBe(0);
+    expect(calls).toBe(2);
+    expect(io.errLines.some((l) => /HTTP 503\. Retrying in \d s \(1 of 1\)\./.test(l))).toBe(true);
   });
 
   /**
@@ -2235,5 +2250,88 @@ describe('runSetup points a coding agent at the guide', () => {
     const io = makeIo();
     expect(await runSetup(cwd, { id: LIB, key: KEY }, {}, io, stub401())).toBe(1);
     expect(io.outLines.join('\n')).not.toContain('skill --install');
+  });
+});
+
+describe('--json on pull, status and list', () => {
+  const LIB_ID = 'lib_abcabcabcabcabcabcabcabc';
+  const ENV = { SPEC_LAYER_KEY: 'sl_secret', SPEC_LAYER_RETRIES: '0' };
+  let cwd: string;
+  beforeEach(() => {
+    cwd = mkdtempSync(join(tmpdir(), 'sl-cli-json-'));
+    runInit(cwd, { id: LIB_ID }, makeIo());
+  });
+  afterEach(() => {
+    rmSync(cwd, { recursive: true, force: true });
+  });
+
+  /** The one JSON object on stdout; nothing else may be there. */
+  const parsed = (io: ReturnType<typeof makeIo>) => {
+    expect(io.outLines).toEqual([]);
+    expect(io.writes).toHaveLength(1);
+    return JSON.parse(io.writes[0]) as Record<string, unknown>;
+  };
+
+  it('pull: reports what it wrote, and the cached answer the second time', async () => {
+    const first = makeIo();
+    expect(await runPull(cwd, { json: true }, ENV, first, stub200(JSON.stringify(GOOD_BUNDLE), '2026-09-01T00:00:00.000Z', '1.5.0'))).toBe(0);
+    const pulled = parsed(first);
+    expect(pulled).toMatchObject({
+      command: 'pull', exitCode: 0, state: 'pulled', libraryId: LIB_ID, outDir: '.speclayer',
+      version: '1.5.0', publishedAt: '2026-09-01T00:00:00.000Z', reportErrors: 0,
+    });
+    expect(pulled.stderr).toEqual(first.errLines);
+    expect(pulled.files).toEqual(expect.arrayContaining(['bundle.json', 'manifest.json']));
+    expect((pulled.stdout as string[]).some((m) => m.startsWith('Pulled '))).toBe(true);
+
+    const second = makeIo();
+    expect(await runPull(cwd, { json: true }, ENV, second, stub304('1.5.0'))).toBe(0);
+    expect(parsed(second)).toMatchObject({ command: 'pull', exitCode: 0, state: 'up_to_date', version: '1.5.0' });
+  });
+
+  it('pull: a failure is state "failed" with the error, on stderr as well', async () => {
+    const io = makeIo();
+    expect(await runPull(cwd, { json: true }, ENV, io, stub401())).toBe(1);
+    const report = parsed(io);
+    expect(report).toMatchObject({ command: 'pull', exitCode: 1, state: 'failed', retryable: false });
+    expect(report.stderr).toEqual(io.errLines);
+    expect(io.errLines.join('\n')).toMatch(/rotated or revoked/);
+  });
+
+  it('status: up to date, behind, and no local pull, with the same exit codes as text', async () => {
+    const none = makeIo();
+    expect(await runStatus(cwd, { json: true }, ENV, none, stub304())).toBe(2);
+    expect(parsed(none)).toMatchObject({ command: 'status', exitCode: 2, state: 'no_local_pull' });
+
+    await runPull(cwd, {}, ENV, makeIo(), stub200(JSON.stringify(GOOD_BUNDLE), '2026-09-01T00:00:00.000Z', '1.5.0'));
+    const current = makeIo();
+    expect(await runStatus(cwd, { json: true }, ENV, current, stub304('1.5.0'))).toBe(0);
+    expect(parsed(current)).toMatchObject({
+      state: 'up_to_date', local: { version: '1.5.0', publishedAt: '2026-09-01T00:00:00.000Z' },
+    });
+
+    const behind = makeIo();
+    expect(await runStatus(cwd, { json: true }, ENV, behind, stub200(JSON.stringify(GOOD_BUNDLE), '2026-09-02T00:00:00.000Z', '1.6.0'))).toBe(2);
+    expect(parsed(behind)).toMatchObject({
+      state: 'behind', remote: { version: '1.6.0', publishedAt: '2026-09-02T00:00:00.000Z' },
+    });
+  });
+
+  it('list: the artifacts and outputs of the last pull', async () => {
+    await runPull(cwd, {}, ENV, makeIo(), stub200());
+    const io = makeIo();
+    expect(runList(cwd, { json: true }, io)).toBe(0);
+    const report = parsed(io);
+    expect(report).toMatchObject({ command: 'list', exitCode: 0, libraryId: LIB_ID });
+    expect(Array.isArray(report.artifacts)).toBe(true);
+    for (const a of report.artifacts as Array<Record<string, unknown>>) {
+      expect(Object.keys(a).sort()).toEqual(['contentHash', 'kind', 'name', 'path']);
+    }
+  });
+
+  it('list: no local pull is exit 1 with the error', () => {
+    const io = makeIo();
+    expect(runList(cwd, { json: true }, io)).toBe(1);
+    expect(parsed(io)).toMatchObject({ exitCode: 1, stderr: ['No local pull found. Run spec-layer pull.'] });
   });
 });

@@ -77,7 +77,7 @@ export function visibleDirProblem(
 }
 
 /** Writes to <path>.partial, then renames over the target, so a reader never sees a half file. */
-function writeAtomically(abs: string, text: string): void {
+export function writeAtomically(abs: string, text: string): void {
   const partial = `${abs}.partial`;
   writeFileSync(partial, text);
   try {

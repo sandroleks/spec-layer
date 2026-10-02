@@ -23,7 +23,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "prepare": "node scripts/install-hooks.mjs",
-    "typecheck": "tsc -p packages/extractor/tsconfig.json --noEmit && tsc -p packages/plugin/tsconfig.json --noEmit && tsc -p packages/proxy/tsconfig.json --noEmit && tsc -p packages/cli/tsconfig.json --noEmit",
+    "typecheck": "tsc -p packages/extractor/tsconfig.src.json && tsc -p packages/extractor/tsconfig.json --noEmit && tsc -p packages/plugin/tsconfig.main.json && tsc -p packages/plugin/tsconfig.ui.json && tsc -p packages/plugin/tsconfig.json --noEmit && tsc -p packages/proxy/tsconfig.json --noEmit && tsc -p packages/cli/tsconfig.json --noEmit",
     "lint": "eslint . --max-warnings=0",
     "build:plugin": "node packages/plugin/build.mjs",
     "build:brand": "node packages/brand/build.mjs",
@@ -31,8 +31,9 @@
     "audit": "npm audit",
     "audit:production": "npm audit --omit=dev",
     "check:nul": "node scripts/check-nul-bytes.mjs",
-    "check": "npm run lint && npm run typecheck && npm run check:nul && npm test && npm run build:plugin && npm run build:cli && npm run check:cli-bundle && npm run check:sandbox && npm run check:proxy-dry-run",
-    "check:ci": "npm run lint && npm run typecheck && npm run check:nul && npm run test:coverage && npm run build:plugin && npm run build:cli && npm run check:cli-bundle && npm run check:sandbox && npm run check:proxy-dry-run && npm run audit",
+    "check:secrets": "node scripts/check-secrets.mjs --tree",
+    "check": "npm run lint && npm run typecheck && npm run check:nul && npm run check:secrets && npm test && npm run build:plugin && npm run build:cli && npm run check:cli-bundle && npm run check:sandbox && npm run check:proxy-dry-run",
+    "check:ci": "npm run lint && npm run typecheck && npm run check:nul && npm run check:secrets && npm run test:coverage && npm run build:plugin && npm run build:cli && npm run check:cli-bundle && npm run check:sandbox && npm run check:proxy-dry-run && npm run audit",
     "check:cli-bundle": "node scripts/check-cli-bundle.mjs",
     "check:sandbox": "node scripts/check-main-sandbox.mjs",
     "check:proxy-dry-run": "npm run check:deploy --workspace @spec-layer/proxy",
@@ -40,25 +41,22 @@
   },
   "overrides": {
     "brace-expansion": "^5.0.9",
-    "minimatch": "^10.2.6",
-    "nanoid": "^3.3.18",
-    "sharp": "^0.35.4",
-    "undici": "~7.29.1"
+    "minimatch": "^10.2.6"
   },
   "devDependencies": {
-    "@eslint/js": "^9.39.4",
+    "@eslint/js": "^10.0.1",
     "@types/js-yaml": "^4.0.9",
-    "@types/node": "^22.0.0",
-    "@vitest/coverage-v8": "^4.1.8",
+    "@types/node": "^22.20.5",
+    "@vitest/coverage-v8": "^5.0.3",
     "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1",
-    "eslint": "^9.39.4",
-    "globals": "^14.0.0",
-    "happy-dom": "^20.11.2",
-    "js-yaml": "^5.3.0",
-    "style-dictionary": "^5.5.2",
-    "typescript": "^5.6.0",
-    "typescript-eslint": "^8.61.0",
-    "vitest": "^4.1.8"
+    "eslint": "^10.11.0",
+    "globals": "^17.13.0",
+    "happy-dom": "^20.14.5",
+    "js-yaml": "^5.4.2",
+    "style-dictionary": "^5.5.5",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.71.0",
+    "vitest": "^5.0.3"
   }
 }

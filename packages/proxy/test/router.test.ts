@@ -308,7 +308,57 @@ describe('route', () => {
     // The catch-all still runs `withCors`, so a caller never sees an opaque
     // network failure in place of a real (if generic) status.
     expect(res.headers.get('Access-Control-Allow-Origin')).toBe('*');
-    expect(d.log).toHaveBeenCalledWith('internal_error', { message: 'boom' });
+    expect(d.log).toHaveBeenCalledWith('internal_error', { message: 'boom', stack: expect.stringContaining('Error: boom') });
+  });
+
+  it('caps the logged stack', async () => {
+    const d = baseDeps();
+    const deep = new Error('deep');
+    deep.stack = `Error: deep\n${'    at frame (file.ts:1:1)\n'.repeat(500)}`;
+    d.licenseCache = { get: async () => null, put: async () => { throw deep; }, delete: async () => {} };
+    d.fetcher = vi.fn(async () => new Response(JSON.stringify({
+      activated: true, instance: { id: 'i1' }, license_key: { status: 'active' },
+    }), { status: 200 })) as unknown as typeof fetch;
+    await route(new Request('https://proxy.test/v1/license/activate', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ key: UUID_KEY }),
+    }), d);
+    const [, fields] = (d.log as ReturnType<typeof vi.fn>).mock.calls.find(([event]) => event === 'internal_error') as [string, { stack: string }];
+    expect(fields.stack.length).toBe(2000);
+  });
+
+  it('sends nosniff on every response, the preflight and errors included', async () => {
+    const d = baseDeps();
+    const preflight = await route(new Request('https://proxy.test/v1/prose', { method: 'OPTIONS' }), d);
+    const missing = await route(new Request('https://proxy.test/nope'), d);
+    const ok = await route(new Request('https://proxy.test/v1/quota', { headers: { 'X-Figma-User': 'u1' } }), d);
+    for (const res of [preflight, missing, ok]) expect(res.headers.get('X-Content-Type-Options')).toBe('nosniff');
+  });
+
+  describe('license routes read a capped body', () => {
+    it.each(['/v1/license/activate', '/v1/license/deactivate'])('%s refuses a body over 4 KB with 413', async (path) => {
+      const res = await route(new Request(`https://proxy.test${path}`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ key: UUID_KEY, instanceName: 'x'.repeat(5000) }),
+      }), baseDeps());
+      expect(res.status).toBe(413);
+      expect(await res.json()).toEqual({ error: 'request_too_large' });
+    });
+
+    it.each(['/v1/license/activate', '/v1/license/deactivate'])('%s answers a JSON null body as a missing key, not a 500', async (path) => {
+      const res = await route(new Request(`https://proxy.test${path}`, {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: 'null',
+      }), baseDeps());
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: 'missing key' });
+    });
+
+    it('still answers malformed JSON with 400 invalid json', async () => {
+      const res = await route(new Request('https://proxy.test/v1/license/activate', {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: '{ nope',
+      }), baseDeps());
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: 'invalid json' });
+    });
   });
 });
 

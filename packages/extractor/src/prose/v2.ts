@@ -358,7 +358,7 @@ export function hasHeading(value: string): boolean {
 export interface ValidateProseOptions {
   /** Lets `whenNotToUse` drop a bullet naming an unrelated component. Absent:
    *  the bullet is left alone (spec 5.3). */
-  fileComponents?: readonly string[];
+  fileComponents?: readonly string[] | undefined;
 }
 
 export interface ProseValidation {

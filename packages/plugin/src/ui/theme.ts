@@ -33,6 +33,24 @@ export function detectFigmaTheme(): ThemeMode {
   return 'light';
 }
 
+/**
+ * Calls `onChange` with Figma's theme whenever it changes while the plugin is
+ * open: Figma swaps the `figma-dark` / `figma-light` class on <html> without
+ * reloading the iframe, so a theme read only at boot went stale. Returns the
+ * function that stops watching.
+ */
+export function watchFigmaTheme(onChange: (mode: ThemeMode) => void): () => void {
+  let last = detectFigmaTheme();
+  const observer = new MutationObserver(() => {
+    const next = detectFigmaTheme();
+    if (next === last) return;
+    last = next;
+    onChange(next);
+  });
+  observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'style'] });
+  return () => observer.disconnect();
+}
+
 // Crisp 24-viewBox line icons, stroked with currentColor. The icon previews the
 // theme a click will switch to; the title spells out the same action.
 const ICONS: Record<ThemeMode, string> = {

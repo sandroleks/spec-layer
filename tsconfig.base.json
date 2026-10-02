@@ -6,6 +6,8 @@
     "strict": true,
     "skipLibCheck": true,
     "declaration": true,
-    "esModuleInterop": true
+    "esModuleInterop": true,
+    "noImplicitOverride": true,
+    "exactOptionalPropertyTypes": true
   }
 }

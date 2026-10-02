@@ -1,4 +1,5 @@
 /// <reference types="@figma/plugin-typings" />
+import { dispatchUiMessage, type DispatchDeps } from './uiDispatch';
 import { serializeNode, mainComponentRef } from './serialize';
 import type { NodeResolver, ResolvedStyle } from './serialize';
 import { memoizedResolver } from './resolverMemo';
@@ -323,7 +324,7 @@ Promise.all([
 }).catch(() => {/* ignore */});
 // `figma.currentUser` THROWS without the "currentuser" manifest permission,
 // which optional chaining does not catch.
-let figmaUserId: string | null = null;
+let figmaUserId: string | null;
 try {
   figmaUserId = figma.currentUser?.id ?? null;
 } catch {
@@ -425,7 +426,7 @@ function notifySettingNotSaved(): void {
 async function readPublishInfo(): Promise<PublishInfo> {
   const libraryId = figma.root.getPluginData(PUBLISH_LIBRARY_KEY) || null;
   if (!libraryId) return { libraryId: null, pullKey: null, publishedAt: null, version: null };
-  let pullKey: string | null = null;
+  let pullKey: string | null;
   try {
     const raw = await figma.clientStorage.getAsync(publishKeyStorageKey(libraryId)) as unknown;
     pullKey = typeof raw === 'string' && raw ? raw : null;
@@ -1294,7 +1295,7 @@ const handleUiMessage = async (raw: unknown): Promise<void> => {
     case 'requestDocProse': {
       // Under "dynamic-page" access getNodeByIdAsync can REJECT, not just
       // resolve null, and an unguarded rejection leaves the UI with no reply.
-      let section: SectionNode | null = null;
+      let section: SectionNode | null;
       try {
         const docNode = await figma.getNodeByIdAsync(msg.docId);
         section = docNode && docNode.type === 'SECTION' ? (docNode as SectionNode) : null;
@@ -1478,7 +1479,7 @@ const handleUiMessage = async (raw: unknown): Promise<void> => {
       for (const { section } of await registrySections()) {
         const link = parseDocLink(section.getPluginData(DOC_LINK_KEY));
         if (!link) continue;
-        let sourceHash: string | null = null;
+        let sourceHash: string | null;
         if (isFoundationLink(link)) {
           if (!publishedFoundation) continue;
           sourceHash = foundationContentHash(publishedFoundation, retargetScope(link.scope, publishedFoundation.collections));
@@ -1534,4 +1535,13 @@ async function timedUiMessage(raw: unknown): Promise<void> {
   }
 }
 
-figma.ui.onmessage = __DRIFT_TIMING__ ? timedUiMessage : handleUiMessage;
+const dispatchDeps: DispatchDeps = {
+  commitUndo: () => figma.commitUndo(),
+  notifyError: (message) => { figma.notify(message, { error: true }); },
+  log: (message, err) => console.error(message, err),
+};
+
+// dispatchUiMessage catches every throw, so the promise it returns never rejects.
+figma.ui.onmessage = (raw: unknown) => {
+  void dispatchUiMessage(raw, __DRIFT_TIMING__ ? timedUiMessage : handleUiMessage, dispatchDeps);
+};

@@ -10,10 +10,10 @@ export function parseBundle(raw: string): BundleV1 {
   } catch (err) {
     if (!(err instanceof LibraryBundleError)) throw err;
     switch (err.code) {
-      case 'not_json': throw new Error('The server response is not valid JSON.');
-      case 'not_bundle': throw new Error('The server response is not a Spec Layer library bundle.');
-      case 'unsupported_version': throw new Error(`${err.message} Update spec-layer and try again.`);
-      case 'malformed': throw new Error(err.message);
+      case 'not_json': throw new Error('The server response is not valid JSON.', { cause: err });
+      case 'not_bundle': throw new Error('The server response is not a Spec Layer library bundle.', { cause: err });
+      case 'unsupported_version': throw new Error(`${err.message} Update spec-layer and try again.`, { cause: err });
+      case 'malformed': throw new Error(err.message, { cause: err });
     }
   }
 }

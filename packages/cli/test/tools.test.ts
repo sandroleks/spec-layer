@@ -4,10 +4,10 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { TOOLS, toolsJson, toolsText } from '../src/tools';
 
-const CLI_SOURCE = readFileSync(fileURLToPath(new URL('../src/cli.ts', import.meta.url)), 'utf8');
+const CLI_SOURCE = readFileSync(fileURLToPath(new URL('../src/main.ts', import.meta.url)), 'utf8');
 
 describe('the tool catalogue', () => {
-  it('names every command cli.ts dispatches, and nothing else', () => {
+  it('names every command main.ts dispatches, and nothing else', () => {
     const dispatched = [...CLI_SOURCE.matchAll(/command === '([a-z]+)'/g)].map((m) => m[1]).sort();
     expect(TOOLS.map((t) => t.name).sort()).toEqual(dispatched);
   });

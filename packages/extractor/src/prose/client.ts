@@ -47,7 +47,7 @@ function proseInputHash(spec: IntermediateSpec, requested?: ReadonlySet<ProseV2K
  */
 export function proseCacheKey(
   spec: IntermediateSpec,
-  opts: { tier: ProseTier; image?: boolean; keys?: readonly ProseV2Key[] },
+  opts: { tier: ProseTier; image?: boolean; keys?: readonly ProseV2Key[] | undefined },
 ): string {
   // Sorted, so key order does not split one request into two entries.
   const keySig = opts.keys && opts.keys.length ? `:keys=${[...opts.keys].sort().join(',')}` : '';
@@ -68,7 +68,7 @@ export interface ProxyQuota {
   remaining: number | null;
   resetsAt: string;
   /** Why a stored key is not granting pro; license identities only. */
-  licenseReason?: 'invalid' | 'expired' | 'inactive' | 'unreachable';
+  licenseReason?: 'invalid' | 'expired' | 'inactive' | 'unreachable' | undefined;
   /** Library publish allowance, same shape. Absent from proxies that predate it. */
   publish?: { tier: 'free' | 'pro'; used: number; limit: number | null; remaining: number | null; resetsAt: string };
 }
@@ -90,9 +90,26 @@ const PROXY_ERROR_BY_STATUS: Record<number, ProseProxyErrorCode> = {
   409: 'generation_pending', 429: 'rate_limited',
 };
 
+/**
+ * The slice of the Fetch API the prose client uses. The extractor compiles
+ * with no host's types (no DOM, no Node, no Figma), and any host's `fetch`,
+ * the UI iframe's, Node's or a test double, fits these shapes.
+ */
+export interface FetchHeaders { get(name: string): string | null }
+export interface FetchResponse {
+  ok: boolean;
+  status: number;
+  headers: FetchHeaders;
+  json(): Promise<unknown>;
+}
+export type Fetcher = (
+  input: string,
+  init?: { method?: string; headers?: Record<string, string>; body?: string },
+) => Promise<FetchResponse>;
+
 /** The `X-Tier` / `X-Quota-*` headers, or null when absent. Publish responses
  *  carry them too, for the publish allowance. */
-export function parseQuotaHeaders(headers: Headers): ProxyQuota | null {
+export function parseQuotaHeaders(headers: FetchHeaders): ProxyQuota | null {
   const tier = headers.get('X-Tier');
   if (tier !== 'free' && tier !== 'pro') return null;
   const num = (v: string | null): number | null =>
@@ -108,17 +125,17 @@ export function parseQuotaHeaders(headers: Headers): ProxyQuota | null {
 
 export interface DraftOptions {
   apiKey: string | null;
-  fetcher: typeof fetch;
+  fetcher: Fetcher;
   cacheStore: CacheStore;
   /** A rendered component image URL, attached as an image block; absent sends text only. */
-  imageUrl?: string | null;
+  imageUrl?: string | null | undefined;
   /** Base64 component image (plugin path); in practice exclusive with imageUrl. */
-  imageBase64?: string | null;
-  imageMediaType?: string; // e.g. 'image/png'
+  imageBase64?: string | null | undefined;
+  imageMediaType?: string | undefined; // e.g. 'image/png'
   /** Omit to request the full set. */
-  requested?: ReadonlySet<ProseV2Key>;
+  requested?: ReadonlySet<ProseV2Key> | undefined;
   /** Every component name in the file, for the whenNotToUse rule in `validateProseV2`. */
-  fileComponents?: readonly string[];
+  fileComponents?: readonly string[] | undefined;
   /** Routes through the Spec Layer proxy and ignores `apiKey`. licenseKey (pro)
    *  wins over figmaUserId (free). onQuota fires on every successful response. */
   proxy?: {
@@ -126,7 +143,7 @@ export interface DraftOptions {
     licenseKey?: string | null;
     licenseInstanceId?: string | null;
     figmaUserId?: string | null;
-    onQuota?: (q: ProxyQuota) => void;
+    onQuota?: ((q: ProxyQuota) => void) | undefined;
   };
 }
 
@@ -140,7 +157,7 @@ async function postCompletion(
   cacheKey: string,
   opts: Pick<DraftOptions, 'apiKey' | 'fetcher' | 'proxy'>,
 ): Promise<string> {
-  let res: Response;
+  let res: FetchResponse;
   if (opts.proxy) {
     const bearer = opts.proxy.licenseKey
       ? opts.proxy.licenseInstanceId
@@ -207,7 +224,7 @@ export interface ProseRequest { max_tokens: number; system: string; messages: Pr
  *  run the proxy's validator against it. */
 export function proseRequest(
   spec: IntermediateSpec,
-  opts: { requested?: ReadonlySet<ProseV2Key>; imageBase64?: string | null; imageMediaType?: string; imageUrl?: string | null } = {},
+  opts: { requested?: ReadonlySet<ProseV2Key> | undefined; imageBase64?: string | null | undefined; imageMediaType?: string | undefined; imageUrl?: string | null | undefined } = {},
 ): ProseRequest {
   const prompt = buildProsePrompt(spec, opts.requested);
   const imageBlock = opts.imageBase64

@@ -26,7 +26,10 @@ describe('credentials', () => {
     expect(readCredentials(cwd)).toEqual({ libraryId: LIB, key: KEY });
   });
 
-  it('writes mode 0600 on create', () => {
+  // Windows has no POSIX permission bits: Node reports 0o666 or 0o444 from the
+  // read-only attribute whatever was asked, and the README says the file is
+  // unprotected there. The mode tests describe POSIX behaviour only.
+  it.skipIf(process.platform === 'win32')('writes mode 0600 on create', () => {
     writeCredentials(cwd, { libraryId: LIB, key: KEY });
     const mode = statSync(join(cwd, CREDENTIALS_NAME)).mode & 0o777;
     expect(mode).toBe(0o600);
@@ -34,7 +37,7 @@ describe('credentials', () => {
 
   // writeFileSync's `mode` option applies only when the file is created, so an
   // overwrite of a loose-permission file needs an explicit chmod.
-  it('forces mode 0600 on overwrite of a loose file', () => {
+  it.skipIf(process.platform === 'win32')('forces mode 0600 on overwrite of a loose file', () => {
     const path = join(cwd, CREDENTIALS_NAME);
     writeFileSync(path, '{}\n');
     chmodSync(path, 0o644);

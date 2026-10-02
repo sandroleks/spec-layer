@@ -6,7 +6,7 @@ import {
   readConfig, resolveOptions, resolveOutDir, legacyOutDir, writeConfig, DEFAULT_COMPONENT_SPECS_DIR, DEFAULT_COMPONENT_FORMAT,
   COMPONENT_FORMATS, isComponentFormat, isLibraryId, type CliConfig, type ComponentFormat, type ResolvedOptions,
 } from './config';
-import { fetchBundle } from './api';
+import { fetchBundleWithRetry, retriesFromEnv } from './api';
 import { componentMarkdownPage, readLocalBundle, readManifest, slugify, writeBundleFiles, type Manifest } from './files';
 import {
   DEFAULT_SELECTION, matchesName, resolveSelection, selectComponents, selectionFromFlags, type Selection,
@@ -37,6 +37,49 @@ export type Io = { out(line: string): void; err(line: string): void; write(text:
 
 const NO_LOCAL_PULL = 'No local pull found. Run spec-layer pull.';
 
+/** What a command adds to its --json object beyond the exit code and lines. */
+type JsonReport = Record<string, unknown>;
+
+/**
+ * Runs a command; with --json, stdout carries exactly one JSON object:
+ * `{ command, exitCode, ...report, stdout, stderr }`. The human lines the
+ * command would have printed to stdout go into `stdout` instead; stderr lines
+ * (errors, warnings, notes) still reach stderr and are copied into `stderr`.
+ * Exit codes do not change.
+ */
+function jsonCapture(io: Io): { captured: Io; finish(command: string, exitCode: number, report: JsonReport): number } {
+  const stdout: string[] = [];
+  const stderr: string[] = [];
+  return {
+    captured: {
+      out: (line) => stdout.push(line),
+      err: (line) => { stderr.push(line); io.err(line); },
+      write: (text) => stdout.push(text),
+    },
+    finish(command, exitCode, report) {
+      io.write(`${JSON.stringify({ command, exitCode, ...report, stdout, stderr }, null, 2)}\n`);
+      return exitCode;
+    },
+  };
+}
+
+async function withJson(
+  command: string, flags: Flags, io: Io, run: (io: Io, report: JsonReport) => Promise<number>,
+): Promise<number> {
+  if (!flags.json) return run(io, {});
+  const { captured, finish } = jsonCapture(io);
+  const report: JsonReport = {};
+  return finish(command, await run(captured, report), report);
+}
+
+/** withJson for a command that never awaits, so it stays synchronous. */
+function withJsonSync(command: string, flags: Flags, io: Io, run: (io: Io, report: JsonReport) => number): number {
+  if (!flags.json) return run(io, {});
+  const { captured, finish } = jsonCapture(io);
+  const report: JsonReport = {};
+  return finish(command, run(captured, report), report);
+}
+
 /** The plugin never shows `md`; neither does the pull summary. */
 const FORMAT_NAME: Record<ComponentFormat, string> = { yaml: 'YAML', md: 'Markdown' };
 
@@ -51,8 +94,8 @@ function manifestReader(): (outDir: string) => Manifest | null {
 
 /** Two pulls write the same files when they agree on all of these. */
 function sameOutput(
-  a: { selection: Selection; dtcg?: DtcgOptions; outputs?: OutputConfig[]; componentSpecsDir?: string; componentSpecsFormat?: ComponentFormat },
-  b: { selection: Selection; dtcg?: DtcgOptions; outputs?: OutputConfig[]; componentSpecsDir?: string; componentSpecsFormat?: ComponentFormat },
+  a: { selection: Selection; dtcg?: DtcgOptions | undefined; outputs?: OutputConfig[] | undefined; componentSpecsDir?: string | undefined; componentSpecsFormat?: ComponentFormat | undefined },
+  b: { selection: Selection; dtcg?: DtcgOptions | undefined; outputs?: OutputConfig[] | undefined; componentSpecsDir?: string | undefined; componentSpecsFormat?: ComponentFormat | undefined },
 ): boolean {
   const selectionKey = (s: Selection) =>
     JSON.stringify([s.foundation, s.components === null ? null : [...new Set(s.components.map(slugify))].sort()]);
@@ -270,7 +313,7 @@ export async function runSetup(
   // carries neither --out nor a selection, so re-pasting it must not reset them.
   // That is why the two blocks are not shared. A corrupt speclayer.json has
   // nothing to preserve, and setup overwriting it is the repair path.
-  let existing: CliConfig | null = null;
+  let existing: CliConfig | null;
   try { existing = readConfig(cwd); } catch { existing = null; }
   const fromFlags = platformsFromFlags(flags, io);
   if (fromFlags === null) return 1;
@@ -475,22 +518,28 @@ function publishedPhrase(version: string | null | undefined, publishedAt: string
 export async function runPull(
   cwd: string, flags: Flags, env: Record<string, string | undefined>, io: Io, fetcher?: typeof fetch,
 ): Promise<number> {
-  return pullWith(cwd, flags, env, io, fetcher, { retryable: false });
+  return withJson('pull', flags, io, (jsonIo, report) => pullWith(cwd, flags, env, jsonIo, fetcher, { retryable: false, report }));
 }
 
 /** What runSetup needs to know about a failed pull beyond its exit code. */
 interface PullOutcome {
   /** The failed fetch's `retryable`. */
   retryable: boolean;
+  /** Filled for `pull --json`: state is "pulled", "up_to_date", or "failed". */
+  report?: JsonReport;
 }
 
 async function pullWith(
   cwd: string, flags: Flags, env: Record<string, string | undefined>, io: Io, fetcher: typeof fetch | undefined,
   outcome: PullOutcome,
 ): Promise<number> {
+  const report = outcome.report ?? {};
+  report.state = 'failed';
   const manifestAt = manifestReader();
   const opts = resolved(cwd, flags, env, io, manifestAt);
   if (!opts) return 1;
+  report.libraryId = opts.libraryId;
+  report.outDir = opts.outDir;
   let selection: Selection;
   try {
     selection = resolveSelection(flags, opts);
@@ -532,13 +581,14 @@ async function pullWith(
     && (!willWriteFoundation || outputs.every((o) => outputFilesOnDisk(cwd, opts.outDir, o)))
     ? manifest.bundleHash
     : undefined;
-  const result = await fetchBundle({
-    api: opts.api, libraryId: opts.libraryId, key: opts.key,
+  const result = await fetchBundleWithRetry({
+    api: opts.api, libraryId: opts.libraryId, key: opts.key, env,
     ...(etag ? { etag } : {}), ...(fetcher ? { fetcher } : {}),
-  });
+  }, { retries: retriesFromEnv(env), onRetry: io.err });
   if (result.kind === 'error') {
     io.err(result.message);
     outcome.retryable = result.retryable;
+    report.retryable = result.retryable;
     return 1;
   }
   if (result.kind === 'not_modified') {
@@ -551,6 +601,10 @@ async function pullWith(
     io.out(`Already up to date ${publishedPhrase(result.version ?? manifest?.version, manifest?.publishedAt ?? 'unknown')}.`);
     // --strict must see a cached error report too; see printReportSummary.
     const cachedErrors = printReportSummary(cwd, opts.outDir, outputs, io);
+    Object.assign(report, {
+      state: 'up_to_date', version: result.version ?? manifest?.version ?? null,
+      publishedAt: manifest?.publishedAt ?? null, reportErrors: cachedErrors,
+    });
     if (flags.strict && cachedErrors > 0) return 1;
     return 0;
   }
@@ -607,6 +661,10 @@ async function pullWith(
   // A report entry never fails a default pull (that would break every CI that
   // runs it), so this is where it gets said. See printReportSummary.
   const errors = printReportSummary(cwd, opts.outDir, outputs, io);
+  Object.assign(report, {
+    state: 'pulled', version: result.version, publishedAt: result.publishedAt,
+    files: written, componentSpecs, outputs: outputResults, reportErrors: errors,
+  });
   if (flags.strict && errors > 0) return 1;
   return 0;
 }
@@ -614,26 +672,41 @@ async function pullWith(
 export async function runStatus(
   cwd: string, flags: Flags, env: Record<string, string | undefined>, io: Io, fetcher?: typeof fetch,
 ): Promise<number> {
+  return withJson('status', flags, io, (jsonIo, report) => statusWith(cwd, flags, env, jsonIo, fetcher, report));
+}
+
+/** `state` is "up_to_date", "behind", "no_local_pull", or "error". */
+async function statusWith(
+  cwd: string, flags: Flags, env: Record<string, string | undefined>, io: Io, fetcher: typeof fetch | undefined,
+  report: JsonReport,
+): Promise<number> {
+  report.state = 'error';
   const manifestAt = manifestReader();
   const opts = resolved(cwd, flags, env, io, manifestAt);
   if (!opts) return 1;
+  report.libraryId = opts.libraryId;
   const manifest = manifestAt(join(cwd, opts.outDir));
   if (!manifest) {
+    report.state = 'no_local_pull';
     io.err(NO_LOCAL_PULL);
     return 2;
   }
-  const result = await fetchBundle({
-    api: opts.api, libraryId: opts.libraryId, key: opts.key, etag: manifest.bundleHash,
+  report.local = { version: manifest.version ?? null, publishedAt: manifest.publishedAt };
+  const result = await fetchBundleWithRetry({
+    api: opts.api, libraryId: opts.libraryId, key: opts.key, etag: manifest.bundleHash, env,
     ...(fetcher ? { fetcher } : {}),
-  });
+  }, { retries: retriesFromEnv(env), onRetry: io.err });
   if (result.kind === 'error') {
     io.err(result.message);
     return 1;
   }
   if (result.kind === 'not_modified') {
+    report.state = 'up_to_date';
     io.out(`Up to date ${publishedPhrase(result.version ?? manifest.version, manifest.publishedAt)}.`);
     return 0;
   }
+  report.state = 'behind';
+  report.remote = { version: result.version, publishedAt: result.publishedAt };
   io.out(result.version
     ? `Behind: remote is v${result.version}, published ${result.publishedAt}. Run spec-layer pull.`
     : `Behind: remote published ${result.publishedAt}. Run spec-layer pull.`);
@@ -641,6 +714,10 @@ export async function runStatus(
 }
 
 export function runList(cwd: string, flags: Flags, io: Io): number {
+  return withJsonSync('list', flags, io, (jsonIo, report) => listWith(cwd, flags, jsonIo, report));
+}
+
+function listWith(cwd: string, flags: Flags, io: Io, report: JsonReport): number {
   const outDir = resolvedOutDir(cwd, flags, io);
   if (!outDir) return 1;
   const manifest = readManifest(outDir);
@@ -648,6 +725,14 @@ export function runList(cwd: string, flags: Flags, io: Io): number {
     io.err(NO_LOCAL_PULL);
     return 1;
   }
+  Object.assign(report, {
+    libraryId: manifest.libraryId, version: manifest.version ?? null, publishedAt: manifest.publishedAt,
+    artifacts: manifest.artifacts.map((a) => ({ kind: a.kind, name: a.name, path: a.path, contentHash: a.contentHash })),
+    outputs: (manifest.outputs ?? []).map((o) => ({
+      platform: o.platform, format: o.format, path: o.path,
+      written: existsSync(join(outDir, 'outputs', `${o.platform}-${o.format}.map.json`)),
+    })),
+  });
   io.out(manifest.version
     ? `Library ${manifest.libraryId}, v${manifest.version}, published ${manifest.publishedAt}.`
     : `Library ${manifest.libraryId}, published ${manifest.publishedAt}.`);
@@ -752,7 +837,7 @@ export function runTools(flags: Flags, io: Io): number {
 
 /** Everything `skill` says, gathered once so --json, printing, and --install agree. */
 function collectSkillInput(cwd: string, flags: Flags, io: Io): SkillInput | null {
-  let config: CliConfig | null = null;
+  let config: CliConfig | null;
   let outDir: string;
   try {
     config = readConfig(cwd);

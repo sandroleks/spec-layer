@@ -4,7 +4,7 @@
  */
 
 import type { PluginView } from '../viewModel/contracts';
-import { applyThemeMode, detectFigmaTheme, toggleThemeMode, type ThemeMode } from '../theme';
+import { applyThemeMode, detectFigmaTheme, toggleThemeMode, watchFigmaTheme, type ThemeMode } from '../theme';
 import { sidebarMarkup } from './sidebar';
 import { headerMarkup, HEADER_IDS } from './header';
 
@@ -88,10 +88,12 @@ export function setActiveView(refs: ShellRefs, view: PluginView): void {
 /**
  * Wire the header's theme control; theme.ts owns detection and application.
  * The accessible name is copied from the `title` applyThemeMode sets. `initial`
- * lets the dev harness seed the mode.
+ * lets the dev harness seed the mode. A change of Figma's own theme while the
+ * plugin is open is followed, over the header toggle too, since it is the
+ * newer choice; the harness, which seeds its mode, does not follow.
  */
-export function wireShellTheme(refs: ShellRefs, initial: ThemeMode = detectFigmaTheme()): void {
-  let mode: ThemeMode = initial;
+export function wireShellTheme(refs: ShellRefs, initial?: ThemeMode): void {
+  let mode: ThemeMode = initial ?? detectFigmaTheme();
   const paint = (): void => {
     applyThemeMode(refs.themeButton, mode);
     refs.themeButton.setAttribute('aria-label', refs.themeButton.title);
@@ -101,4 +103,10 @@ export function wireShellTheme(refs: ShellRefs, initial: ThemeMode = detectFigma
     mode = toggleThemeMode(mode);
     paint();
   });
+  if (initial === undefined) {
+    watchFigmaTheme((next) => {
+      mode = next;
+      paint();
+    });
+  }
 }

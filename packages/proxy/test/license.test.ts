@@ -16,7 +16,54 @@ const lsOk = (status: string, valid = status === 'active') =>
 
 const T0 = Date.parse('2026-07-01T00:00:00Z');
 
+/** A fetcher that never answers, and rejects only when its signal aborts, like a hung connection. */
+const hung = () => vi.fn((_input: string, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+  init?.signal?.addEventListener('abort', () => reject(init.signal?.reason));
+}));
+
+describe('Lemon Squeezy timeout', () => {
+  it('treats a hung validate as unreachable instead of waiting forever', async () => {
+    const fetcher = hung();
+    const out = await checkLicense(UUID_KEY, null, { fetcher: fetcher as unknown as typeof fetch, cache: new MemKV(), now: () => T0, lsTimeoutMs: 20 });
+    expect(out).toEqual({ tier: 'free', reason: 'unreachable' });
+    const [, init] = fetcher.mock.calls[0];
+    expect(init?.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it('reaches the grace window when the hang follows a good verdict', async () => {
+    const cache = new MemKV();
+    await checkLicense(UUID_KEY, null, { fetcher: lsOk('active') as unknown as typeof fetch, cache, now: () => T0 });
+    const later = T0 + LICENSE_CACHE_TTL_MS + 1;
+    expect(await checkLicense(UUID_KEY, null, { fetcher: hung() as unknown as typeof fetch, cache, now: () => later, lsTimeoutMs: 20 }))
+      .toEqual({ tier: 'pro' });
+  });
+
+  it('throws LsUnreachable from a hung activation', async () => {
+    await expect(activateLicense(UUID_KEY, 'Figma plugin', { fetcher: hung() as unknown as typeof fetch, cache: new MemKV(), now: () => T0, lsTimeoutMs: 20 }))
+      .rejects.toBeInstanceOf(LsUnreachable);
+  });
+
+  it('defaults to 10 seconds', async () => {
+    const { LS_TIMEOUT_MS } = await import('../src/license');
+    expect(LS_TIMEOUT_MS).toBe(10_000);
+  });
+});
+
 describe('checkLicense', () => {
+  it.each([
+    ['not JSON', '{ nope'],
+    ['JSON null', 'null'],
+    ['the wrong shape', JSON.stringify({ status: 7 })],
+  ])('treats a cache entry that is %s as a miss and overwrites it', async (_label, raw) => {
+    const cache = new MemKV();
+    const key = `lic:${sha256(UUID_KEY)}`;
+    cache.map.set(key, raw);
+    const fetcher = lsOk('active');
+    expect(await checkLicense(UUID_KEY, null, { fetcher: fetcher as unknown as typeof fetch, cache, now: () => T0 })).toEqual({ tier: 'pro' });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(cache.map.get(key) as string)).toEqual({ status: 'active', validatedAt: T0 });
+  });
+
   it('valid active key → pro, and caches the result', async () => {
     const cache = new MemKV();
     const fetcher = lsOk('active');
@@ -104,7 +151,7 @@ describe('key format gate', () => {
 
 describe('KV expiry', () => {
   it('writes cache entries with an expirationTtl', async () => {
-    const puts: Array<{ opts?: { expirationTtl?: number } }> = [];
+    const puts: Array<{ opts?: { expirationTtl?: number } | undefined }> = [];
     const cache = {
       get: async () => null,
       put: async (_k: string, _v: string, opts?: { expirationTtl?: number }) => { puts.push({ opts }); },

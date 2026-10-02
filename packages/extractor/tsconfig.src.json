@@ -1,0 +1,8 @@
+{
+  "extends": "../../tsconfig.base.json",
+  // The extractor runs in Figma's sandbox (through the plugin), in Node (the
+  // CLI and tests) and in Workers (the proxy), so its source may use the
+  // language and nothing a host adds: no DOM, no Node, no Figma.
+  "compilerOptions": { "lib": ["ES2020"], "types": [], "noEmit": true },
+  "include": ["src"]
+}

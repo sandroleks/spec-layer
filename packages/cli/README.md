@@ -91,9 +91,9 @@ copies, rewrites it to that path, where the files already are.
 |---|---|
 | `setup --id lib_... --key sl_...\|- [--out DIR] [--platform P]... [selection] [--component-format yaml\|md]` | Writes `speclayer.json`, stores the key in `speclayer.local.json`, then pulls. The command the plugin copies. |
 | `init --id lib_... [--out DIR] [--platform P]... [selection] [--component-format yaml\|md]` | Writes `speclayer.json` so later commands need no flags. No key, no network. |
-| `pull [--id lib_...] [--key sl_...\|-] [--out DIR] [--platform P]... [selection] [--component-format yaml\|md] [--strict]` | Fetches the library and writes it into `DIR` (default `.speclayer`). |
-| `status [--id lib_...] [--key sl_...\|-] [--out DIR]` | Checks freshness without writing. Prints the library version when the service reports one. Exits `2` when the local copy is behind. |
-| `list [--out DIR]` | Lists every artifact in the last pull, with its file path or `not written`. |
+| `pull [--id lib_...] [--key sl_...\|-] [--out DIR] [--platform P]... [selection] [--component-format yaml\|md] [--strict] [--json]` | Fetches the library and writes it into `DIR` (default `.speclayer`). |
+| `status [--id lib_...] [--key sl_...\|-] [--out DIR] [--json]` | Checks freshness without writing. Prints the library version when the service reports one. Exits `2` when the local copy is behind. |
+| `list [--out DIR] [--json]` | Lists every artifact in the last pull, with its file path or `not written`. |
 | `show foundation [--out DIR] [--canonical]` | Prints the Foundation's DTCG document to stdout. |
 | `show component NAME [--out DIR] [--component-format yaml\|md] [--canonical]` | Prints one component's AI YAML or Markdown page to stdout. |
 | `tools [--json]` | Lists every command with what it reaches, needs, and writes. |
@@ -103,6 +103,24 @@ copies, rewrites it to that path, where the files already are.
 `tokens/report.json` and `outputs/*.report.json` to stderr, and names each
 font family nothing in the repository loads. It still exits 0; `--strict`
 exits 1 when a report holds an error-severity entry, even on a cached pull.
+
+`--json` on `pull`, `status` and `list` prints one JSON object to stdout
+instead of the text: `command`, `exitCode`, the command's own fields
+(`state` is `pulled`, `up_to_date` or `failed` for `pull`, and `up_to_date`,
+`behind`, `no_local_pull` or `error` for `status`), and the text lines as
+`stdout` and `stderr` arrays. Errors still print to stderr, and the exit codes
+are the same as without it. `spec-layer --help` and `spec-layer --version`
+print to stdout and exit 0.
+
+`pull` and `status` retry a dropped connection, a timeout, a `5xx` or a `429`
+twice, waiting about 1 and then 3 seconds, or what the server's `Retry-After`
+says up to 30 seconds. `SPEC_LAYER_RETRIES=0` turns retries off. Each request
+sends `User-Agent: spec-layer/<version> node/<version>`.
+
+Behind a proxy, Node's built-in `fetch` uses `HTTPS_PROXY` only when
+`NODE_USE_ENV_PROXY=1` is also set, and a proxy that re-signs HTTPS needs its
+CA certificate in `NODE_EXTRA_CA_CERTS`. A failed connection names the
+system error and says which of these applies.
 
 `--api URL`, or `SPEC_LAYER_API` in the environment, overrides the API origin
 (default `https://api.spec-layer.com`). It must be `https`; plain `http` is accepted only for `localhost`, `127.0.0.1`,

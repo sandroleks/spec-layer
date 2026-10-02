@@ -1,11 +1,11 @@
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import type { DtcgOptions } from '@spec-layer/extractor';
 import type { Selection } from './selection';
 import { readCredentials } from './credentials';
 import { isPlatform, PLATFORMS, type Platform } from './detect';
 import { parseOutput, type OutputConfig } from './outputs';
-import { pathInside } from './visibleDir';
+import { pathInside, writeAtomically } from './visibleDir';
 
 export const DEFAULT_API = 'https://api.spec-layer.com';
 export const DEFAULT_OUT_DIR = '.speclayer';
@@ -227,7 +227,8 @@ export function writeConfig(
     ...(config.platforms && config.platforms.length > 0 ? { platforms: config.platforms } : {}),
     ...(config.outputs ? { outputs: config.outputs } : {}),
   };
-  writeFileSync(join(cwd, CONFIG_NAME), `${JSON.stringify(body, null, 2)}\n`);
+  // Atomic, so an interrupted init or setup never leaves a half-written config.
+  writeAtomically(join(cwd, CONFIG_NAME), `${JSON.stringify(body, null, 2)}\n`);
 }
 
 export interface ResolvedOptions {

@@ -1,1 +1,8 @@
-{ "extends": "../../tsconfig.base.json", "include": ["src", "test"] }
+{
+  "extends": "../../tsconfig.base.json",
+  // TypeScript 6 includes no @types package unless named. The tests read
+  // fixtures with node:fs; src stays Figma-free and Node-free by review and by
+  // the plugin's sandbox scan, not by this list.
+  "compilerOptions": { "types": ["node"] },
+  "include": ["src", "test"]
+}

@@ -49,7 +49,7 @@ export interface TokenV5 extends EntityIdentity {
    *  `iOS`), absent when none is declared. A cross-check for a code
    *  identifier, never the source of a name. Schema 5.1.0. */
   code_syntax?: Record<string, string>;
-  publication?: PublicationState;
+  publication?: PublicationState | undefined;
   lifecycle?: LifecycleState;
   /** Keyed by MODE ID, never by mode display name. §7. */
   values: Record<string, CanonicalValue>;

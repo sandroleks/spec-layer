@@ -8,6 +8,40 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
+- The `spec-layer` CLI is now published from this repository's release
+  workflow through npm trusted publishing, so each version from the next
+  release on carries an npm provenance attestation that names the commit and
+  workflow run it was built from. `npm audit signatures` checks it. Plugin
+  releases attach the built plugin as a zip with a GitHub build provenance
+  attestation (`gh attestation verify`).
+
+- The proxy's license routes refuse a request body over 4 KB with `413`,
+  like the other routes that read a body. Every proxy response carries
+  `X-Content-Type-Options: nosniff`, and an internal error's log line
+  carries the first 2,000 characters of its stack; the response stays
+  generic.
+- The proxy's per-IP rate limits now hold across every isolate in a
+  Cloudflare location: behind each isolate's own window sits the Workers
+  Rate Limiting binding, at the same limits (60 a minute for prose, quota,
+  dry runs and pulls; 20 for license, publish and rotate). Before, each
+  isolate counted alone, so a burst spread across isolates was not limited.
+  Bundles are hashed on publish with the runtime's native SHA-256.
+
+- `spec-layer pull`, `status` and `list` take `--json`, which prints one
+  JSON object instead of the text: the command, its exit code, its own
+  fields (`state`, version, publish date, the files written), and the text
+  lines as `stdout` and `stderr` arrays. Exit codes do not change.
+  `spec-layer --help` and `--version` now print to stdout and exit 0; before,
+  both printed the usage to stderr and exited 1.
+- `pull` and `status` now retry a dropped connection, a timeout, a `5xx` or
+  a `429` twice with a short backoff, honouring the server's `Retry-After`
+  up to 30 seconds, and say so on stderr. `SPEC_LAYER_RETRIES=0` turns this
+  off. A failed connection names the system error (`ENOTFOUND`, a
+  certificate error) and, when `HTTPS_PROXY` is set without
+  `NODE_USE_ENV_PROXY=1` or a certificate is not trusted, what to set.
+  Requests carry a `User-Agent` with the CLI and Node versions, and a
+  response over 64 MB is refused instead of read.
+
 - When the free AI writing allowance is used up and AI writing is on, the
   component screen now says so before you build: one line under the switch
   reads that no free AI uses are left until the reset date and that sections
@@ -129,6 +163,40 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   JSON serializer; every hash is byte for byte unchanged.
 
 ### Fixed
+
+- Undo in Figma now reverts one Spec Layer action at a time. Plugin edits
+  were never closed as undo steps, so one Undo after building a second doc
+  could take the first doc away too. Each build, Foundation build, update,
+  detach and remove is now its own step.
+- Keyboard focus stays where it was when the plugin redraws on its own (a
+  build finishing, the allowance loading, a selection change); before, it
+  fell back to the page and a screen reader lost its place. The plugin also
+  follows a change of Figma's light or dark theme while it is open, and an
+  invalid first version on Publish is read out with its hint.
+- An error no part of the plugin expected is now logged to the plugin
+  console and shown as a toast, instead of stopping the action silently.
+- A `spec-layer pull` that could not move its new output into place (on
+  Windows, a file held open by a virus scanner or indexer) deleted the
+  previous `.speclayer/` first and left none. The previous copy now moves
+  aside first and moves back when the swap fails. Rotating the pull key
+  over a loose-permission `speclayer.local.json` no longer leaves the new
+  key readable for a moment: the file is made `0600` before the key is
+  written. `speclayer.json` is written atomically.
+- AI writing no longer fails after the text was already written. When the
+  proxy wrote an answer but could not record it against the allowance, it
+  answered with an error, and every retry for the next three minutes was
+  told a generation was still pending. The answer now comes back, is not
+  counted, and a retry runs at once.
+- A Pro license check now gives up on Lemon Squeezy after 10 seconds and
+  falls back to the last good result within the 5-day grace window. Before,
+  a request waiting on a Lemon Squeezy call that never answered stayed open
+  until Cloudflare ended it.
+- When Anthropic is overloaded or rate limited (429, 503 or 529), the proxy
+  now answers `503 upstream_busy` and passes on Anthropic's `Retry-After`
+  when there is one, instead of a `502` that read as broken. The plugin
+  shows the same message for both.
+- A damaged license cache entry is now treated as missing and replaced,
+  instead of failing every request for that key with a 500.
 
 - Clicking inside the component you just documented, then pressing Create
   docs again, asked for a new AI draft and spent another free AI use. The

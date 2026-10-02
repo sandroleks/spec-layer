@@ -60,14 +60,19 @@ npm run build:cli
 npm run check:site-live              # live spec-layer.com schemas against the committed files
 ```
 
-`npm run check` is lint, typecheck, NUL scan, tests, plugin build, CLI build,
+`npm run check` is lint, typecheck, NUL scan, secret scan, tests, plugin build, CLI build,
 CLI bundle smoke test, sandbox scan, proxy deploy dry run.
 
 CI (`.github/workflows/ci.yml`) runs `npm run check:ci`, which adds coverage
 thresholds and a full dependency audit. Its job id is `verify`, which is the
 required status check on `main`; do not rename it.
-CodeQL runs weekly and per pull request and is deliberately advisory, not a
-merge gate. Never verify CI or a gate through a pipe that swallows the exit
+The same workflow runs `cli-portability` (Windows, macOS, Node 24),
+`dependency-review` and `workflow-lint` (actionlint, zizmor); CodeQL,
+Scorecard and the weekly live-schema check are deliberately advisory, not
+merge gates. Releases and proxy deploys run only from their workflows
+(`release-cli.yml`, `release-plugin.yml`, `deploy-proxy.yml`); see "How
+releases happen" in `CONTRIBUTING.md`. Every action is pinned to a commit
+SHA. Never verify CI or a gate through a pipe that swallows the exit
 code; read the status directly.
 
 ## Where current truth lives
@@ -104,8 +109,11 @@ audit boundary that turns live Figma data into plain JSON.
 
 **The main thread has no browser globals.** Figma's plugin sandbox lacks them,
 but Node tests pass anyway, so the failure only shows up in Figma.
-`npm run check:sandbox` scans `dist/main.js` for this. Trust the scan, not the
-test suite.
+`packages/plugin/tsconfig.main.json` compiles the main thread with no DOM
+types, so `npm run typecheck` rejects a browser global before the build, and
+`npm run check:sandbox` scans `dist/main.js` as the last word. Trust those,
+not the test suite. `packages/extractor/tsconfig.src.json` likewise compiles
+the extractor's source with no DOM, Node or Figma types.
 
 **Three hashes answer three questions.** `specContentHash` (component canvas
 drift), `foundationContentHash` (Foundation canvas drift), `semanticContentHash`
@@ -171,7 +179,7 @@ themes and must never pick up the product palette.
 **NUL bytes.** Some separator idioms emit raw `0x00` that lint, tests, and
 `git diff` all hide. `npm run check:nul` reads every git-tracked file with a
 text extension, plus the extensionless files named in `EXTENSIONLESS_TEXT` in
-`scripts/check-nul-bytes.mjs` (the hook, `CODEOWNERS`, `.gitignore`,
+`scripts/check-nul-bytes.mjs` (the hook, `CODEOWNERS`, `.editorconfig`, `.gitattributes`, `.gitignore`, `.nvmrc`,
 `LICENSE`), so `.github/` and the root configs are covered. This has bitten
 the repo three times, every time in a plan document; those now live privately
 and are scanned there.
@@ -258,10 +266,13 @@ rejected; the bet is deterministic extraction depth.
   `feat(v5): group repeated component bindings`, `fix(proxy): ...`,
   `docs: ...`, `chore(plugin): ...`. Add a body when the change needs
   explaining. Commits carry a `Co-Authored-By` trailer.
-- A pre-commit hook (`.githooks/pre-commit`) rejects known secret patterns,
-  including this product's own `sl_` pull keys. `npm ci` runs `prepare`,
-  which points `core.hooksPath` at it; `scripts/pre-commit.test.ts` pins
-  the shapes.
+- `scripts/check-secrets.mjs` holds the one list of known secret patterns,
+  including this product's own `sl_` pull keys. The pre-commit hook
+  (`.githooks/pre-commit`) runs it over staged lines, `npm run check` over
+  the tracked tree, and CI over every commit in a pull request, so
+  `--no-verify` only moves the failure to CI. `npm ci` runs `prepare`,
+  which points `core.hooksPath` at the hook; `scripts/check-secrets.test.ts`
+  and `scripts/pre-commit.test.ts` pin the shapes.
 - Update `CHANGELOG.md` alongside behavior changes and the JSON Schema
   alongside contract changes, in the same commit. `CHANGELOG.md` is the only
   place shipped work is described; do not mirror it into this file.

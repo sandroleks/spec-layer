@@ -41,9 +41,9 @@ export interface SettingsScreenState {
   theme: BrandTheme;
   customMode: boolean;
   logoAttached: boolean;
-  logoError?: string;
-  colorError?: string;
-  fontWarning?: string;
+  logoError?: string | undefined;
+  colorError?: string | undefined;
+  fontWarning?: string | undefined;
   /** Which font field has its list open, if any. */
   fontMenuField?: FontField | null;
   /** The build's stamped plugin version, or null when unstamped; from pluginBuild(). */

@@ -16,6 +16,13 @@ import {
 import { componentFoundationAiSlice } from '../../src/index';
 import { buildComponentV5GoldenArtifact } from '../fixtures/componentV5';
 
+/** A copy without `keys`: how a field is absent in an artifact parsed from JSON, which never holds undefined. */
+function omit<T extends object, K extends keyof T>(value: T, ...keys: K[]): Omit<T, K> {
+  const copy = { ...value };
+  for (const key of keys) delete copy[key];
+  return copy;
+}
+
 const SOURCE = {
   provider: 'figma' as const,
   file_id: 'FILE1', file_name: 'Design System', file_version: null,
@@ -578,7 +585,7 @@ describe('componentFoundationAiSlice', () => {
 
   it('returns null when the foundation was not read', () => {
     const artifact = buildComponentV5GoldenArtifact();
-    const without = { ...artifact, references: { ...artifact.references, foundation: undefined } };
+    const without = { ...artifact, references: omit(artifact.references, 'foundation') };
     expect(componentFoundationAiSlice(without)).toBeNull();
   });
 });

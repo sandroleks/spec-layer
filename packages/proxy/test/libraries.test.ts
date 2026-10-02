@@ -375,7 +375,7 @@ describe('handlePublish', () => {
   it('refuses a second create even when the KV listing has not caught up, and says existing is unknown', async () => {
     // KV `list` is eventually consistent: model a listing that never sees the first create.
     class ForgetfulKV extends MemKV {
-      async list(_opts: { prefix: string }) { return { keys: [] as Array<{ name: string }> }; }
+      override async list(_opts: { prefix: string }) { return { keys: [] as Array<{ name: string }> }; }
     }
     const d = deps({ libraryStore: new ForgetfulKV() });
     const first = await handlePublish(publishReq({ bundle: BUNDLE }, figma()), d);
@@ -390,8 +390,8 @@ describe('handlePublish', () => {
     // The listing never catches up and the meta write takes longer than the
     // reservation lives, so by commit time the create slot has been pruned.
     class SlowForgetfulKV extends MemKV {
-      async list(_opts: { prefix: string }) { return { keys: [] as Array<{ name: string }> }; }
-      async put(k: string, v: string, opts?: { expirationTtl?: number }) {
+      override async list(_opts: { prefix: string }) { return { keys: [] as Array<{ name: string }> }; }
+      override async put(k: string, v: string, opts?: { expirationTtl?: number }) {
         if (k.endsWith(':meta')) t += RESERVATION_TTL_MS + 1;
         await super.put(k, v, opts);
       }
@@ -486,7 +486,7 @@ describe('handlePublish', () => {
     let t = Date.parse('2026-07-01T00:00:00Z');
     class StaleLogKV extends MemKV {
       staleLog: string | null = null;
-      async get(k: string) { return this.staleLog !== null && k.endsWith(':versions') ? this.staleLog : super.get(k); }
+      override async get(k: string) { return this.staleLog !== null && k.endsWith(':versions') ? this.staleLog : super.get(k); }
     }
     const store = new StaleLogKV();
     const d = deps({ now: () => t, quotaFor: memQuota(() => t), libraryStore: store });
@@ -508,7 +508,7 @@ describe('handlePublish', () => {
     let t = Date.parse('2026-07-01T00:00:00Z');
     class MetaFailKV extends MemKV {
       failMeta = false;
-      async put(k: string, v: string, opts?: { expirationTtl?: number }) {
+      override async put(k: string, v: string, opts?: { expirationTtl?: number }) {
         if (this.failMeta && k.endsWith(':meta')) { this.failMeta = false; throw new Error('kv unavailable'); }
         await super.put(k, v, opts);
       }
@@ -548,7 +548,7 @@ describe('handlePublish', () => {
     let t = Date.parse('2026-07-01T00:00:00Z');
     class MetaFailKV extends MemKV {
       failMeta = false;
-      async put(k: string, v: string, opts?: { expirationTtl?: number }) {
+      override async put(k: string, v: string, opts?: { expirationTtl?: number }) {
         if (this.failMeta && k.endsWith(':meta')) { this.failMeta = false; throw new Error('kv unavailable'); }
         await super.put(k, v, opts);
       }
@@ -582,7 +582,7 @@ describe('handlePublish', () => {
     };
     class StaleKV extends MemKV {
       stale = new Map<string, string>();
-      async get(k: string) { return this.stale.get(k) ?? super.get(k); }
+      override async get(k: string) { return this.stale.get(k) ?? super.get(k); }
     }
     const store = new StaleKV();
     const d = deps({ now: () => t, quotaFor, libraryStore: store });
@@ -632,7 +632,7 @@ describe('handlePublish', () => {
   it('a write that fails frees its own lock, so the same publish can be retried at once', async () => {
     class FailingKV extends MemKV {
       failNext = false;
-      async put(k: string, v: string, opts?: { expirationTtl?: number }) {
+      override async put(k: string, v: string, opts?: { expirationTtl?: number }) {
         if (this.failNext) { this.failNext = false; throw new Error('kv unavailable'); }
         await super.put(k, v, opts);
       }

@@ -13,6 +13,7 @@ import { quotaHeaders } from './quota';
 import type { HandlerDeps } from './handlers';
 import { readBodyCapped } from './body';
 import type { Tier } from './quota';
+import { sha256Hex } from './digest';
 
 /** UTF-8 bytes of the request body, the unit every size check here uses. */
 export const MAX_BUNDLE_BYTES = 5_000_000;
@@ -266,7 +267,7 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
 
   // Charged before reading any body, so malformed or oversized bodies are
   // throttled too. The publish budget is charged once the body says which.
-  if (!deps.requestLimiter.allow(`libreq:${ip}`, deps.now())) return json(429, { error: 'rate_limited' });
+  if (!(await deps.requestLimiter.allow(`libreq:${ip}`, deps.now()))) return json(429, { error: 'rate_limited' });
 
   const read = await readBodyCapped(req, MAX_BUNDLE_BYTES);
   if (read.kind === 'too_large') {
@@ -282,7 +283,7 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
   // publish budget.
   const limiter = body.dryRun === true ? deps.requestLimiter : deps.licenseLimiter;
   const limiterKey = body.dryRun === true ? `libdry:${ip}` : `libpub:${ip}`;
-  if (!limiter.allow(limiterKey, deps.now())) return json(429, { error: 'rate_limited' });
+  if (!(await limiter.allow(limiterKey, deps.now()))) return json(429, { error: 'rate_limited' });
 
   const caller = await resolveCaller(req, deps);
   if (caller instanceof Response) return caller;
@@ -308,7 +309,7 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
   // Stored as the client sent it, so the pulled bytes are the published bytes.
   const stored = JSON.stringify(bundle);
   const fileName = typeof bundle.fileName === 'string' ? truncateUtf16(bundle.fileName, MAX_FILE_NAME_LENGTH) : null;
-  const bundleHash = sha256(stored);
+  const bundleHash = await sha256Hex(stored);
   // The byte hash is the pull ETag. The content hash answers "did this change
   // what developers pull": the bytes differ on every Publish (fresh generatedAt).
   const contentHash = libraryBundleContentHash(bundle);
@@ -501,7 +502,7 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
 
 export async function handleRotate(req: Request, deps: HandlerDeps, libraryId: string): Promise<Response> {
   const ip = req.headers.get('CF-Connecting-IP') ?? 'unknown';
-  if (!deps.licenseLimiter.allow(`librot:${ip}`, deps.now())) return json(429, { error: 'rate_limited' });
+  if (!(await deps.licenseLimiter.allow(`librot:${ip}`, deps.now()))) return json(429, { error: 'rate_limited' });
   const caller = await resolveCaller(req, deps);
   if (caller instanceof Response) return caller;
   const meta = await ownedMeta(deps.libraryStore, libraryId, caller.owners, pullKeyOf(req));
@@ -557,7 +558,7 @@ export async function handleVersions(req: Request, deps: HandlerDeps, libraryId:
 
 async function versionsAnswer(req: Request, deps: HandlerDeps, libraryId: string): Promise<Response> {
   const ip = req.headers.get('CF-Connecting-IP') ?? 'unknown';
-  if (!deps.requestLimiter.allow(`libpull:${ip}`, deps.now())) return json(429, { error: 'rate_limited' });
+  if (!(await deps.requestLimiter.allow(`libpull:${ip}`, deps.now()))) return json(429, { error: 'rate_limited' });
   const meta = await pullAuthorized(req, deps, libraryId);
   if (meta instanceof Response) return meta;
   const raw = (await deps.libraryStore.get(versionsKey(libraryId))) ?? JSON.stringify({ v: 1, records: [] });
@@ -574,7 +575,7 @@ export async function handlePull(req: Request, deps: HandlerDeps, libraryId: str
 
 async function pullAnswer(req: Request, deps: HandlerDeps, libraryId: string): Promise<Response> {
   const ip = req.headers.get('CF-Connecting-IP') ?? 'unknown';
-  if (!deps.requestLimiter.allow(`libpull:${ip}`, deps.now())) return json(429, { error: 'rate_limited' });
+  if (!(await deps.requestLimiter.allow(`libpull:${ip}`, deps.now()))) return json(429, { error: 'rate_limited' });
   const meta = await pullAuthorized(req, deps, libraryId);
   if (meta instanceof Response) return meta;
   const etag = `"${meta.bundleHash}"`;

@@ -10,7 +10,7 @@ import { handlePublish, handlePull, handleRotate, handleVersions, truncateUtf16 
 import { activateLicense, checkLicense, deactivateLicense, validateLicense, LICENSE_KEY_RE, LsUnreachable, type KVLike, type LicenseResult, type LibraryStore } from './license';
 import { quotaHeaders } from './quota';
 import type { CommitOptions, QuotaProfile, QuotaSnapshot, ReleaseOptions, ReserveOptions, ReserveResult, Tier } from './quota';
-import type { SlidingWindowLimiter } from './ratelimit';
+import type { RateLimiter } from './ratelimit';
 import { readBodyCapped } from './body';
 
 export { licenseIdentityId };
@@ -34,8 +34,8 @@ export interface HandlerDeps {
   /** One engine per identity and profile; `profile` defaults to 'ai'. */
   quotaFor(identityId: string, profile?: QuotaProfile): QuotaClient;
   log(event: string, fields: Record<string, unknown>): void;
-  licenseLimiter: SlidingWindowLimiter;
-  requestLimiter: SlidingWindowLimiter;
+  licenseLimiter: RateLimiter;
+  requestLimiter: RateLimiter;
   /** Separate from licenseCache so a dedicated namespace stays a one-line change. */
   libraryStore: LibraryStore;
 }
@@ -57,6 +57,22 @@ interface ProseBody {
 
 /** UTF-8 bytes of the request body; the base64 image is the bulk of it. */
 const MAX_PROXY_BODY_BYTES = 7_000_000;
+/** A license body is a key, an instance id and a short name; 4 KB is generous. */
+const MAX_LICENSE_BODY_BYTES = 4096;
+/** Upstream statuses that mean "busy, retry later" rather than "broken". */
+const UPSTREAM_BUSY_STATUSES = new Set([429, 503, 529]);
+
+/**
+ * A JSON body read through the byte cap: the parsed value, or the error
+ * response. Every route that reads a body goes through a cap, so none holds
+ * an arbitrarily large one whole.
+ */
+async function readJsonCapped<T>(req: Request, maxBytes: number): Promise<T | Response> {
+  const read = await readBodyCapped(req, maxBytes);
+  if (read.kind === 'too_large') return json(413, { error: 'request_too_large' });
+  if (read.kind === 'unreadable') return json(400, { error: 'invalid body' });
+  try { return JSON.parse(new TextDecoder().decode(read.bytes)) as T; } catch { return json(400, { error: 'invalid json' }); }
+}
 const MAX_IMAGE_BASE64_CHARS = 6_500_000;
 const MAX_PROMPT_CHARS = 100_000;
 const BODY_FIELDS = new Set(['cacheKey', 'request']);
@@ -229,17 +245,15 @@ function sameContent(actual: unknown, expected: unknown): boolean {
 
 export async function handleProse(req: Request, deps: HandlerDeps): Promise<Response> {
   const ip = req.headers.get('CF-Connecting-IP') ?? 'unknown';
-  if (!deps.requestLimiter.allow(`prose:${ip}`, deps.now())) {
+  if (!(await deps.requestLimiter.allow(`prose:${ip}`, deps.now()))) {
     return json(429, { error: 'rate_limited' });
   }
   const identity = identityFromHeaders(req.headers, deps.salt);
   if (!identity) return json(401, { error: 'unauthenticated' });
 
-  const read = await readBodyCapped(req, MAX_PROXY_BODY_BYTES);
-  if (read.kind === 'too_large') return json(413, { error: 'request_too_large' });
-  if (read.kind === 'unreadable') return json(400, { error: 'invalid body' });
-  let body: ProseBody;
-  try { body = JSON.parse(new TextDecoder().decode(read.bytes)) as ProseBody; } catch { return json(400, { error: 'invalid json' }); }
+  const parsed = await readJsonCapped<ProseBody>(req, MAX_PROXY_BODY_BYTES);
+  if (parsed instanceof Response) return parsed;
+  const body = parsed;
   const invalid = validateProseBody(body);
   if (invalid) return json(400, { error: invalid });
   const cacheKey = body.cacheKey as string;
@@ -309,6 +323,13 @@ export async function handleProse(req: Request, deps: HandlerDeps): Promise<Resp
   if (!upstream.ok) {
     await quota.release(cacheKey);
     deps.log('upstream_error', { status: upstream.status, requestId: upstream.headers.get('request-id') });
+    if (UPSTREAM_BUSY_STATUSES.has(upstream.status)) {
+      // Overloaded or rate limited upstream: say "back off" rather than
+      // "broken", and pass on how long to wait when Anthropic says.
+      const retryAfter = upstream.headers.get('retry-after');
+      const headers: Record<string, string> = retryAfter && /^\d{1,6}$/.test(retryAfter.trim()) ? { 'Retry-After': retryAfter.trim() } : {};
+      return json(503, { error: 'upstream_busy', status: upstream.status }, headers);
+    }
     return json(502, { error: 'upstream_error', status: upstream.status });
   }
 
@@ -326,13 +347,29 @@ export async function handleProse(req: Request, deps: HandlerDeps): Promise<Resp
     }
     throw err;
   }
-  const s = await quota.commit(tier, cacheKey, text);
+  // Anthropic has answered and billed, so a failed commit must not turn the
+  // answer into a 500 and leave the reservation answering 409 for its whole
+  // lifetime. The answer goes back uncounted and without quota headers (the
+  // plugin keeps its last meter), the reservation is freed, and the failure
+  // is logged for the review queue.
+  let s: QuotaSnapshot;
+  try {
+    s = await quota.commit(tier, cacheKey, text);
+  } catch (err) {
+    deps.log('quota_commit_failed', { tier, message: err instanceof Error ? err.message : String(err) });
+    try {
+      await quota.release(cacheKey);
+    } catch (releaseErr) {
+      deps.log('quota_release_failed', { message: releaseErr instanceof Error ? releaseErr.message : String(releaseErr) });
+    }
+    return new Response(text, { status: 200, headers: { 'content-type': 'application/json' } });
+  }
   return new Response(text, { status: 200, headers: { 'content-type': 'application/json', ...quotaHeaders(s) } });
 }
 
 export async function handleQuota(req: Request, deps: HandlerDeps): Promise<Response> {
   const ip = req.headers.get('CF-Connecting-IP') ?? 'unknown';
-  if (!deps.requestLimiter.allow(`quota:${ip}`, deps.now())) {
+  if (!(await deps.requestLimiter.allow(`quota:${ip}`, deps.now()))) {
     return json(429, { error: 'rate_limited' });
   }
   const identity = identityFromHeaders(req.headers, deps.salt);
@@ -363,11 +400,12 @@ export async function handleQuota(req: Request, deps: HandlerDeps): Promise<Resp
 
 export async function handleActivate(req: Request, deps: HandlerDeps): Promise<Response> {
   const ip = req.headers.get('CF-Connecting-IP') ?? 'unknown';
-  if (!deps.licenseLimiter.allow(ip, deps.now())) {
+  if (!(await deps.licenseLimiter.allow(ip, deps.now()))) {
     return json(429, { error: 'rate_limited' });
   }
-  let body: { key?: unknown; instanceName?: unknown; instanceId?: unknown };
-  try { body = (await req.json()) as typeof body; } catch { return json(400, { error: 'invalid json' }); }
+  const parsed = await readJsonCapped<{ key?: unknown; instanceName?: unknown; instanceId?: unknown } | null>(req, MAX_LICENSE_BODY_BYTES);
+  if (parsed instanceof Response) return parsed;
+  const body = parsed ?? {};
   if (typeof body.key !== 'string' || !body.key) return json(400, { error: 'missing key' });
   if (!LICENSE_KEY_RE.test(body.key)) return json(200, { valid: false, status: 'invalid' });
   const licenseDeps = { fetcher: deps.fetcher, cache: deps.licenseCache, now: deps.now };
@@ -388,9 +426,10 @@ export async function handleActivate(req: Request, deps: HandlerDeps): Promise<R
 
 export async function handleDeactivate(req: Request, deps: HandlerDeps): Promise<Response> {
   const ip = req.headers.get('CF-Connecting-IP') ?? 'unknown';
-  if (!deps.licenseLimiter.allow(ip, deps.now())) return json(429, { error: 'rate_limited' });
-  let body: { key?: unknown; instanceId?: unknown };
-  try { body = (await req.json()) as typeof body; } catch { return json(400, { error: 'invalid json' }); }
+  if (!(await deps.licenseLimiter.allow(ip, deps.now()))) return json(429, { error: 'rate_limited' });
+  const parsed = await readJsonCapped<{ key?: unknown; instanceId?: unknown } | null>(req, MAX_LICENSE_BODY_BYTES);
+  if (parsed instanceof Response) return parsed;
+  const body = parsed ?? {};
   if (typeof body.key !== 'string' || !LICENSE_KEY_RE.test(body.key)) return json(400, { error: 'missing key' });
   if (typeof body.instanceId !== 'string' || !body.instanceId) return json(400, { error: 'missing instanceId' });
   try {
@@ -414,9 +453,18 @@ const CORS_HEADERS: Record<string, string> = {
   'Access-Control-Max-Age': '86400',
 };
 
+/** Sent on every response, the preflight included. Every body here is JSON. */
+const SECURITY_HEADERS: Record<string, string> = {
+  'X-Content-Type-Options': 'nosniff',
+};
+
+/** Enough of a stack to find the throw, never enough to flood the log line. */
+const MAX_LOGGED_STACK_CHARS = 2000;
+
 function withCors(res: Response): Response {
   const headers = new Headers(res.headers);
   for (const [k, v] of Object.entries(CORS_HEADERS)) headers.set(k, v);
+  for (const [k, v] of Object.entries(SECURITY_HEADERS)) headers.set(k, v);
   return new Response(res.body, { status: res.status, headers });
 }
 
@@ -437,13 +485,17 @@ async function routeInner(req: Request, deps: HandlerDeps): Promise<Response> {
 }
 
 export async function route(req: Request, deps: HandlerDeps): Promise<Response> {
-  if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS_HEADERS });
+  if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: { ...CORS_HEADERS, ...SECURITY_HEADERS } });
   try {
     return withCors(await routeInner(req, deps));
   } catch (err) {
     // An uncaught throw must still carry CORS headers, or the plugin sees an
     // opaque network failure instead of a real status.
-    deps.log('internal_error', { message: err instanceof Error ? err.message : String(err) });
+    // The response stays generic; the log carries the stack for triage.
+    deps.log('internal_error', {
+      message: err instanceof Error ? err.message : String(err),
+      ...(err instanceof Error && err.stack ? { stack: err.stack.slice(0, MAX_LOGGED_STACK_CHARS) } : {}),
+    });
     return withCors(json(500, { error: 'internal' }));
   }
 }

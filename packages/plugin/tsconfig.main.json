@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.base.json",
+  // The main thread runs in Figma's sandbox, which has no DOM and no Node, so
+  // this project sees neither. A browser global used there fails here, before
+  // the build, instead of only in Figma (npm run check:sandbox still scans the
+  // bundle as the last word). Main-thread files are src/*.ts and whatever they
+  // import, which includes the shared ui/docModel, ui/displayNames and
+  // ui/placeholders.
+  "compilerOptions": { "lib": ["ES2020"], "types": ["@figma/plugin-typings"], "noEmit": true },
+  "include": ["src/*.ts"]
+}
