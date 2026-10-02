@@ -10,6 +10,7 @@
   },
   "devDependencies": {
     "@figma/plugin-typings": "1.128.0",
+    "js-sha256": "^1.0.0",
     "esbuild": "^0.28.1"
   }
 }

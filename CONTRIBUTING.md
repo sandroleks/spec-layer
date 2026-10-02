@@ -86,14 +86,16 @@ comments, so the provenance lives here. Each entry names the parent whose own
 range still asks for the vulnerable version; when `npm explain <package>` no
 longer prints an `overridden … (was …)` line for it, the parent has caught up
 and the entry should be deleted in the next dependency pull request. Recorded
-2026-09-23:
+2026-10-02:
 
 | Override | Parent that asks for less | Drop when |
 |---|---|---|
-| `sharp` `^0.35.4` | `miniflare@5.20260826.0-alpha` via `wrangler@4.127.0` asks for `0.35.2` | miniflare's own range reaches `0.35.4` |
-| `minimatch` `^10.2.6` | `eslint@9.39.4` asks for `^3.1.5`; `glob@13.0.6` via `style-dictionary@5.5.2` asks for `^10.2.2` | both parents ask for `^10.2.6` or later |
+| `minimatch` `^10.2.6` | `eslint@9.39.5` and `@eslint/config-array@0.21.2` ask for `^3.1.5`; `glob@13.0.6` via `style-dictionary@5.5.5` asks for `^10.2.2` | every parent asks for `^10.2.6` or later |
 | `brace-expansion` `^5.0.9` | `minimatch@10.2.6` asks for `^5.0.8` | minimatch asks for `^5.0.9` or later |
-| `nanoid` `^3.3.18` | `postcss@8.5.28` already asks for `^3.3.18` | now: `npm explain nanoid` shows no override in effect, so remove it in the next dependency PR once `npm audit` stays clean without it |
+
+`sharp`, `undici` and `nanoid` were dropped on 2026-10-02: `miniflare` now
+asks for `sharp@0.35.4` and `undici@7.29.1` itself, and `npm explain nanoid`
+showed no override in effect. `npm audit` stays clean without them.
 
 ## Reporting security issues
 

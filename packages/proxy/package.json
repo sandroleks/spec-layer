@@ -10,10 +10,10 @@
   },
   "dependencies": {
     "@spec-layer/extractor": "*",
-    "js-sha256": "^0.11.0"
+    "js-sha256": "^1.0.0"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^5.20260828.1",
-    "wrangler": "^4.127.0"
+    "@cloudflare/workers-types": "^5.20261001.1",
+    "wrangler": "^4.146.0"
   }
 }
