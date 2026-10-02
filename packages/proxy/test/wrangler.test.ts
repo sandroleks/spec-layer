@@ -18,4 +18,27 @@ describe('wrangler.toml', () => {
     expect(toml).toMatch(/^\[observability\]$/m);
     expect(toml).toMatch(/^\[observability\]\nenabled = true\nhead_sampling_rate = 1$/m);
   });
+
+  describe('[env.staging]', () => {
+    const staging = toml.slice(toml.indexOf('\n[env.staging]\n'));
+
+    it('exists after the production config, so nothing above it is scoped to staging', () => {
+      expect(toml.indexOf('\n[env.staging]\n')).toBeGreaterThan(toml.indexOf('[observability]'));
+    });
+
+    it('serves a custom domain in the same zone and no workers.dev origin, like production', () => {
+      expect(staging).toMatch(/^workers_dev = false$/m);
+      expect(staging).toMatch(/^routes = \[\{ pattern = "staging-api\.spec-layer\.com", custom_domain = true \}\]$/m);
+    });
+
+    it('binds its own KV namespace and quota object, never the production namespace id', () => {
+      expect(staging).toMatch(/binding = "LICENSE_CACHE"/);
+      expect(staging).not.toContain('46fbd911b2194babbf2019fd4d0b412a');
+      expect(staging).toMatch(/^\[\[env\.staging\.durable_objects\.bindings\]\]\nname = "QUOTA"\nclass_name = "QuotaDO"$/m);
+    });
+
+    it('keeps observability on with every invocation sampled', () => {
+      expect(staging).toMatch(/^\[env\.staging\.observability\]\nenabled = true\nhead_sampling_rate = 1$/m);
+    });
+  });
 });

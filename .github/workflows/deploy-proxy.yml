@@ -1,0 +1,132 @@
+name: Deploy proxy
+
+# Every proxy change merged to main deploys to staging, passes a smoke test
+# that spends nothing, then waits for approval in the production
+# environment before production sees it. Laptop deploys remain an emergency
+# path only (packages/proxy/README.md).
+#
+# Needs, configured outside this repository: a CLOUDFLARE_API_TOKEN secret on
+# the staging and production environments (Workers Scripts edit, Workers KV
+# edit, Workers Routes edit for spec-layer.com, this account only), a
+# required reviewer on production, the staging KV id in wrangler.toml, and
+# staging's own ANTHROPIC_API_KEY and FIGMA_ID_SALT set with
+# `wrangler secret put --env staging`.
+on:
+  push:
+    branches: [main]
+    paths:
+      - packages/proxy/**
+      - packages/extractor/**
+      - package-lock.json
+      - .github/workflows/deploy-proxy.yml
+  workflow_dispatch:
+    inputs:
+      rollout:
+        description: >-
+          full: wrangler deploy (applies Durable Object migrations).
+          upload-only: wrangler versions upload, then split traffic by hand
+          with wrangler versions deploy or the dashboard.
+        type: choice
+        options: [full, upload-only]
+        default: full
+
+permissions: {}
+
+# One deploy at a time, in order, and never cancelled half way.
+concurrency:
+  group: deploy-proxy
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # No dependency cache in a workflow that ships (see release-cli.yml).
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: npm ci
+      - run: npm run check:ci
+
+  staging:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: staging
+      url: https://staging-api.spec-layer.com
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: npm ci
+      - name: Staging KV namespace is configured
+        run: |
+          node -e '
+            const toml = require("fs").readFileSync("packages/proxy/wrangler.toml", "utf8");
+            const staging = toml.slice(toml.indexOf("\n[env.staging]\n"));
+            if (!/\{ binding = "LICENSE_CACHE", id = "[0-9a-f]{32}" \}/.test(staging)) {
+              console.error("wrangler.toml [env.staging] has no LICENSE_CACHE id. Run");
+              console.error("  npx wrangler kv namespace create LICENSE_CACHE --env staging");
+              console.error("in packages/proxy and add the id it prints.");
+              process.exit(1);
+            }'
+      - name: Deploy to staging
+        working-directory: packages/proxy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: npx wrangler deploy --config wrangler.toml --env staging
+      - name: Smoke test staging
+        run: node scripts/smoke-proxy.mjs https://staging-api.spec-layer.com
+
+  production:
+    needs: staging
+    # Production only ever ships main; a dispatch from a branch stops at staging.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Required reviewers on this environment are the approval gate.
+    environment:
+      name: production
+      url: https://api.spec-layer.com
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: npm ci
+      - name: Deploy to production
+        if: inputs.rollout != 'upload-only'
+        working-directory: packages/proxy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: npx wrangler deploy --config wrangler.toml
+      - name: Upload a production version without routing traffic to it
+        if: inputs.rollout == 'upload-only'
+        working-directory: packages/proxy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          SHA: ${{ github.sha }}
+        run: npx wrangler versions upload --config wrangler.toml --message "$SHA"
+      # After upload-only this probes the version still serving, which is
+      # still worth knowing before traffic is split.
+      - name: Smoke test production
+        run: node scripts/smoke-proxy.mjs https://api.spec-layer.com

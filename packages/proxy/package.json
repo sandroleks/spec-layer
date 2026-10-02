@@ -6,7 +6,7 @@
   "main": "src/index.ts",
   "scripts": {
     "deploy": "wrangler deploy --config wrangler.toml",
-    "check:deploy": "wrangler deploy --dry-run --config wrangler.toml"
+    "check:deploy": "wrangler deploy --dry-run --config wrangler.toml && wrangler deploy --dry-run --config wrangler.toml --env staging"
   },
   "dependencies": {
     "@spec-layer/extractor": "*",

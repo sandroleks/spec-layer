@@ -425,13 +425,51 @@ the model assigned by the proxy for the tier (Haiku on free).
 
 ## Deploy
 
+Deploys run from `.github/workflows/deploy-proxy.yml`, not from a laptop.
+Every change merged to `main` that touches `packages/proxy/`,
+`packages/extractor/` or the lockfile:
+
+1. runs the full `check:ci` gate on that commit;
+2. deploys to **staging** (`spec-layer-proxy-staging` at
+   `staging-api.spec-layer.com`, its own KV namespace, Durable Object
+   storage and secrets) and runs `scripts/smoke-proxy.mjs` against it, three
+   probes that call no upstream and write nothing;
+3. waits for approval in the GitHub `production` environment, then runs
+   `wrangler deploy` and the same smoke test against `api.spec-layer.com`.
+
+A run by hand can pick `rollout: upload-only`, which uploads the production
+version with `wrangler versions upload` and routes no traffic to it, so a
+risky change (an RPC signature change, see the Durable Object note above) can
+be split gradually with `wrangler versions deploy <new>@10% <old>@90%` or in
+the dashboard. A version upload cannot apply a Durable Object migration; a
+change that adds one ships with `rollout: full`. A dispatch from a branch
+stops after staging.
+
+One-time setup, outside the repository:
+
 ```bash
 cd packages/proxy
-npx wrangler kv namespace create LICENSE_CACHE   # FIRST DEPLOY ONLY; paste the id into wrangler.toml
+# Production (done once already):
+npx wrangler kv namespace create LICENSE_CACHE                 # id into the top-level kv_namespaces
 npx wrangler secret put ANTHROPIC_API_KEY
-npx wrangler secret put FIGMA_ID_SALT            # long random string
-npx wrangler deploy
+npx wrangler secret put FIGMA_ID_SALT                          # long random string
+# Staging:
+npx wrangler kv namespace create LICENSE_CACHE --env staging   # id into [env.staging] kv_namespaces
+npx wrangler secret put ANTHROPIC_API_KEY --env staging        # a separate, low-limit Anthropic workspace key
+npx wrangler secret put FIGMA_ID_SALT --env staging            # different from production's
 ```
+
+In GitHub, the `staging` and `production` environments each hold a
+`CLOUDFLARE_API_TOKEN` secret scoped to this account (Workers Scripts edit,
+Workers KV edit, Workers Routes edit on `spec-layer.com`), and `production`
+has a required reviewer. The workflow refuses to deploy staging until
+`[env.staging]` carries its KV id.
+
+**Emergency path.** If CI is unavailable and production is broken,
+`npx wrangler deploy --config wrangler.toml` from a clean checkout of `main`
+after `npm run check` still works. Say so in the pull request or commit that
+follows, because the deploy record otherwise lives only in the Cloudflare
+dashboard.
 
 Ops: set a spend alert on the Anthropic workspace; `fair_use_flag` and
 `upstream_error` log events are the abuse/outage review queue. Workers
@@ -441,6 +479,11 @@ in the dashboard beside its request. Every log line carries the request's
 for their support.
 
 ## Smoke test
+
+`node scripts/smoke-proxy.mjs https://api.spec-layer.com` runs the three
+probes the deploy workflow gates on (CORS preflight, an unknown path, and a
+pull of an unknown library, which reads KV). By hand, the quota route also
+proves the Durable Object answers:
 
 ```bash
 curl -s -D - https://api.spec-layer.com/v1/quota -H 'X-Figma-User: smoke-test-1'

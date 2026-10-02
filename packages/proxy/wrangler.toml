@@ -24,3 +24,31 @@ new_sqlite_classes = ["QuotaDO"]
 [observability]
 enabled = true
 head_sampling_rate = 1
+
+# Staging: the same Worker under its own name (spec-layer-proxy-staging),
+# with its own KV namespace, Durable Object storage and secrets, so a deploy
+# is proven on real Cloudflare bindings before production sees it. Bindings
+# and routes do not inherit from the top level; migrations do.
+#
+# Like production it has no workers.dev origin: a custom domain in the same
+# zone keeps it behind the zone's WAF rate rules, so staging's own Anthropic
+# key is not an unthrottled side door.
+#
+# The KV id is deliberately absent until the namespace exists:
+#   npx wrangler kv namespace create LICENSE_CACHE --env staging
+# then add `id = "..."` below. deploy-proxy.yml refuses to deploy staging
+# until it is set.
+[env.staging]
+workers_dev = false
+routes = [{ pattern = "staging-api.spec-layer.com", custom_domain = true }]
+kv_namespaces = [
+  { binding = "LICENSE_CACHE" }
+]
+
+[[env.staging.durable_objects.bindings]]
+name = "QUOTA"
+class_name = "QuotaDO"
+
+[env.staging.observability]
+enabled = true
+head_sampling_rate = 1
