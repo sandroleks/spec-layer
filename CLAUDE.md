@@ -66,8 +66,13 @@ CLI bundle smoke test, sandbox scan, proxy deploy dry run.
 CI (`.github/workflows/ci.yml`) runs `npm run check:ci`, which adds coverage
 thresholds and a full dependency audit. Its job id is `verify`, which is the
 required status check on `main`; do not rename it.
-CodeQL runs weekly and per pull request and is deliberately advisory, not a
-merge gate. Never verify CI or a gate through a pipe that swallows the exit
+The same workflow runs `cli-portability` (Windows, macOS, Node 24),
+`dependency-review` and `workflow-lint` (actionlint, zizmor); CodeQL,
+Scorecard and the weekly live-schema check are deliberately advisory, not
+merge gates. Releases and proxy deploys run only from their workflows
+(`release-cli.yml`, `release-plugin.yml`, `deploy-proxy.yml`); see "How
+releases happen" in `CONTRIBUTING.md`. Every action is pinned to a commit
+SHA. Never verify CI or a gate through a pipe that swallows the exit
 code; read the status directly.
 
 ## Where current truth lives

@@ -35,6 +35,49 @@ of one of those shapes builds it at runtime instead of writing it literally.
 
 Explain the user-visible behavior, architectural tradeoffs, and verification performed. UI changes should include screenshots using synthetic content. The public contract is the Component and Foundation Context v5 JSON Schemas in `packages/extractor/src/v5/schema/`; YAML, Markdown, and DTCG are projections of it. A contract change updates the schema, the golden fixtures, and `CHANGELOG.md` in the same pull request, and ships under a new schema version, because `spec-layer.com/schemas/` never overwrites a published one.
 
+## How releases happen
+
+Nothing ships from a laptop in the normal path. Each surface has one workflow,
+and each refuses to run when its tag, versions and changelog disagree
+(`scripts/check-release.mjs`).
+
+| Surface | Trigger | Workflow | What it does |
+|---|---|---|---|
+| `spec-layer` CLI | push a `cli-vX.Y.Z` tag | `release-cli.yml` | `check:ci`, then `npm publish` through npm trusted publishing with a provenance attestation, after approval in the `npm` environment |
+| Figma plugin | push a `vX.Y.Z` tag | `release-plugin.yml` | `check:ci`, a reproducible zip of `manifest.json` and `dist/`, a build provenance attestation, and a **draft** GitHub Release with the changelog section and the checklist a person still owns |
+| Proxy | merge to `main` touching the proxy, extractor or lockfile | `deploy-proxy.yml` | `check:ci`, staging deploy and smoke test, then production after approval in the `production` environment |
+
+Order matters when a release spans surfaces: the proxy first, then the CLI,
+then the plugin listing. Figma has no publishing API, so the Community listing
+is updated by hand from the draft release, after the manual pass in
+`packages/plugin/TESTING.md` is recorded on it. Running either release workflow
+by hand is a dry run.
+
+To cut a CLI release: bump `packages/cli/package.json`, describe the version in
+`CHANGELOG.md`, merge, then tag the squash commit `cli-vX.Y.Z` and push the tag.
+A plugin release is the same with the root and `packages/plugin` versions, a
+dated `## [X.Y.Z] - YYYY-MM-DD` section, and a `vX.Y.Z` tag.
+
+**Emergency CLI publish.** `npm publish --workspace packages/cli` from a clean
+checkout of `main` still works: `prepublishOnly` builds the bundle and runs its
+smoke test and the CLI tests first. It ships without provenance, so use it only
+when the workflow cannot run, and say so in the next changelog entry. The
+proxy's emergency path is in `packages/proxy/README.md`.
+
+## CI jobs
+
+| Job | Where | Gate |
+|---|---|---|
+| `verify` | `ci.yml` | Required on `main`. `check:ci`, plus a secret scan of every commit in a pull request |
+| `cli-portability` | `ci.yml` | CLI bundle and tests on Linux, Windows and macOS under Node 22 and 24 |
+| `dependency-review` | `ci.yml` | New dependencies: high-severity advisories and the licence allow-list |
+| `workflow-lint` | `ci.yml` | actionlint and zizmor over `.github/` |
+| CodeQL, Scorecard | `codeql.yml`, `scorecard.yml` | Advisory, reported to the Security tab |
+| Site live | `site-live.yml` | Weekly: the live schemas against the committed bytes |
+
+Every action is pinned to a commit SHA with its version in a comment, and
+Dependabot moves both. Release and deploy jobs never use the dependency cache.
+
 ## Dependency overrides
 
 `package.json` carries an `overrides` block for transitive packages that

@@ -8,6 +8,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
+- The `spec-layer` CLI is now published from this repository's release
+  workflow through npm trusted publishing, so each version from the next
+  release on carries an npm provenance attestation that names the commit and
+  workflow run it was built from. `npm audit signatures` checks it. Plugin
+  releases attach the built plugin as a zip with a GitHub build provenance
+  attestation (`gh attestation verify`).
+
 - When the free AI writing allowance is used up and AI writing is on, the
   component screen now says so before you build: one line under the switch
   reads that no free AI uses are left until the reset date and that sections

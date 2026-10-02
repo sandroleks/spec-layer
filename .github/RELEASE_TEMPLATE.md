@@ -8,6 +8,11 @@
 
 Install from the [Figma Community listing](https://www.figma.com/community/plugin/1652104411578396548).
 
+Or import `manifest.json` from the attached `spec-layer-plugin-vX.Y.Z.zip`
+under **Plugins → Development → Import plugin from manifest**.
+`gh attestation verify spec-layer-plugin-vX.Y.Z.zip --repo sandroleks/spec-layer`
+checks that the zip was built by this repository's release workflow.
+
 To run this release from source, with Node.js 22 or newer:
 
 ```bash
@@ -23,24 +28,22 @@ Deterministic sections run entirely inside the plugin and send nothing. AI writi
 
 ## Verification
 
-The release candidate must pass:
+`release-plugin.yml` drafts this release from the `vX.Y.Z` tag, and refuses to
+when `check:ci` fails or when the tag, the package versions, the dated
+changelog section, or the proxy origin in the manifest and `ui/proxy.ts`
+disagree. Its draft body carries the checklist below; it stays a draft until
+every item is ticked.
 
-```text
-npm ci
-npm run check:ci
-git diff --check
-```
+The manual Figma pass in `packages/plugin/TESTING.md` is recorded in the
+release notes rather than assumed: load the attached zip's manifest and
+confirm component docs, Foundation docs, Library, and Copy for AI behavior on
+a synthetic or publishable file.
 
-Plus the current manual Figma pass in `packages/plugin/TESTING.md`, recorded
-in the release notes rather than assumed: load the
-built manifest and confirm component docs, Foundation docs, Library, and Copy
-for AI behavior on a synthetic or publishable file.
-
-Also run `npm run check:site-live`. It fetches
+`npm run check:site-live` (or the scheduled Site live run) compares
 `https://spec-layer.com/schemas/foundation-context/v5.json` and
-`component-context/v5.json` from the custom domain and compares them byte for
-byte with the committed schemas. A failure blocks the release; a `*.pages.dev`
-preview is not enough.
+`component-context/v5.json` on the custom domain byte for byte with the
+committed schemas. A failure blocks the release; a `*.pages.dev` preview is
+not enough.
 
 ## Known Limitations
 
@@ -50,9 +53,6 @@ preview is not enough.
 - Verify the active Cloudflare rule `Protect license endpoints` still applies
   per IP to `starts_with(http.request.uri.path, "/v1/license/")`, blocks after
   more than 5 requests in 10 seconds, and has a 10-second mitigation timeout.
-- Before publishing, verify that `packages/plugin/src/ui/proxy.ts` and the
-  manifest's `networkAccess` both use `https://api.spec-layer.com`, then rebuild
-  and rerun the plugin smoke test.
 
 ## Full Changelog
 
