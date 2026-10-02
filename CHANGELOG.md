@@ -21,6 +21,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   carries the first 2,000 characters of its stack; the response stays
   generic.
 
+- `spec-layer pull`, `status` and `list` take `--json`, which prints one
+  JSON object instead of the text: the command, its exit code, its own
+  fields (`state`, version, publish date, the files written), and the text
+  lines as `stdout` and `stderr` arrays. Exit codes do not change.
+  `spec-layer --help` and `--version` now print to stdout and exit 0; before,
+  both printed the usage to stderr and exited 1.
+- `pull` and `status` now retry a dropped connection, a timeout, a `5xx` or
+  a `429` twice with a short backoff, honouring the server's `Retry-After`
+  up to 30 seconds, and say so on stderr. `SPEC_LAYER_RETRIES=0` turns this
+  off. A failed connection names the system error (`ENOTFOUND`, a
+  certificate error) and, when `HTTPS_PROXY` is set without
+  `NODE_USE_ENV_PROXY=1` or a certificate is not trusted, what to set.
+  Requests carry a `User-Agent` with the CLI and Node versions, and a
+  response over 64 MB is refused instead of read.
+
 - When the free AI writing allowance is used up and AI writing is on, the
   component screen now says so before you build: one line under the switch
   reads that no free AI uses are left until the reset date and that sections
@@ -143,6 +158,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- A `spec-layer pull` that could not move its new output into place (on
+  Windows, a file held open by a virus scanner or indexer) deleted the
+  previous `.speclayer/` first and left none. The previous copy now moves
+  aside first and moves back when the swap fails. Rotating the pull key
+  over a loose-permission `speclayer.local.json` no longer leaves the new
+  key readable for a moment: the file is made `0600` before the key is
+  written. `speclayer.json` is written atomically.
 - AI writing no longer fails after the text was already written. When the
   proxy wrote an answer but could not record it against the allowance, it
   answered with an error, and every retry for the next three minutes was

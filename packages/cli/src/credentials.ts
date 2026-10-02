@@ -26,13 +26,24 @@ export function readCredentials(cwd: string): StoredKey | null {
   return { libraryId: record.libraryId, key: record.key };
 }
 
-/** Writes the key at mode 0600. `replaced` is true when a file was already there. */
+/**
+ * Writes the key at mode 0600. `replaced` is true when a file was already there.
+ *
+ * An existing file is tightened to 0600 before the new key is written into
+ * it. Tightening afterwards, as this once did, left the new key readable for
+ * a moment when the old file was loose, and a crash in between left it
+ * readable for good. No temporary file is used: only this exact name is
+ * gitignored by setup, so a temp left behind by a crash could be committed
+ * with the key in it. A file cut short by a crash is caught by
+ * readCredentials, which names the setup command.
+ */
 export function writeCredentials(cwd: string, stored: StoredKey): { replaced: boolean } {
   const path = join(cwd, CREDENTIALS_NAME);
   const replaced = existsSync(path);
   const body = { libraryId: stored.libraryId, key: stored.key };
+  if (replaced) chmodSync(path, 0o600);
   writeFileSync(path, `${JSON.stringify(body, null, 2)}\n`, { mode: 0o600 });
-  // `mode` applies only on create; this tightens an existing loose file.
+  // `mode` on create is masked by the umask; this makes it exactly 0600.
   chmodSync(path, 0o600);
   return { replaced };
 }
