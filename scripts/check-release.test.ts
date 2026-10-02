@@ -75,6 +75,19 @@ describe('releaseProblems', () => {
     expect(problems).toHaveLength(2);
   });
 
+  it('refuses allowedDomains that only contain the origin as a substring, or are not a list', () => {
+    for (const allowedDomains of [
+      `${PROXY_ORIGIN}.evil.example`,
+      [`${PROXY_ORIGIN}.evil.example`],
+      [`https://evil.example/?${PROXY_ORIGIN}`],
+    ]) {
+      const problems = releaseProblems('plugin', 'v6.1.0', files({
+        'packages/plugin/manifest.json': JSON.stringify({ networkAccess: { allowedDomains } }),
+      }));
+      expect(problems, JSON.stringify(allowedDomains)).toEqual([`manifest.json networkAccess.allowedDomains does not include ${PROXY_ORIGIN}.`]);
+    }
+  });
+
   it('refuses a tag for the wrong surface', () => {
     expect(releaseProblems('plugin', 'cli-v0.12.0', files())[0]).toMatch(/not a plugin release tag/);
   });

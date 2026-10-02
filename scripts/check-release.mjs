@@ -72,8 +72,10 @@ export function releaseProblems(surface, tag, files) {
     problems.push(`CHANGELOG.md has no dated "## [${version}] - YYYY-MM-DD" section.`);
   }
   const manifest = JSON.parse(files['packages/plugin/manifest.json']);
-  const allowed = manifest.networkAccess?.allowedDomains ?? [];
-  if (!allowed.includes(PROXY_ORIGIN)) {
+  // An exact entry in an array. A string here would make `.includes` a
+  // substring test, which "https://api.spec-layer.com.evil.example" passes.
+  const allowed = manifest.networkAccess?.allowedDomains;
+  if (!Array.isArray(allowed) || !allowed.some((domain) => domain === PROXY_ORIGIN)) {
     problems.push(`manifest.json networkAccess.allowedDomains does not include ${PROXY_ORIGIN}.`);
   }
   const proxyUrl = /export const PROXY_URL = '([^']*)'/.exec(files['packages/plugin/src/ui/proxy.ts'])?.[1];
