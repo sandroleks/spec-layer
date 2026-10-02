@@ -1,4 +1,5 @@
 /// <reference types="@figma/plugin-typings" />
+import { dispatchUiMessage, type DispatchDeps } from './uiDispatch';
 import { serializeNode, mainComponentRef } from './serialize';
 import type { NodeResolver, ResolvedStyle } from './serialize';
 import { memoizedResolver } from './resolverMemo';
@@ -1534,4 +1535,10 @@ async function timedUiMessage(raw: unknown): Promise<void> {
   }
 }
 
-figma.ui.onmessage = __DRIFT_TIMING__ ? timedUiMessage : handleUiMessage;
+const dispatchDeps: DispatchDeps = {
+  commitUndo: () => figma.commitUndo(),
+  notifyError: (message) => { figma.notify(message, { error: true }); },
+  log: (message, err) => console.error(message, err),
+};
+
+figma.ui.onmessage = (raw: unknown) => dispatchUiMessage(raw, __DRIFT_TIMING__ ? timedUiMessage : handleUiMessage, dispatchDeps);

@@ -25,6 +25,8 @@ import {
 } from './viewModel/contracts';
 import { allowanceState, publishAllowance } from './viewModel/allowance';
 import { mountShell, setActiveView, wireShellTheme, type ShellRefs } from './shell/shell';
+import { keepFocus } from './focusRestore';
+import { installErrorReporting } from './errorReporting';
 import { renderAllowance } from './shell/header';
 import { setRailBadge } from './shell/sidebar';
 import { confirmDialog } from './shell/confirmDialog';
@@ -409,6 +411,12 @@ function nativeNotify(
   send({ type: 'notify', message, ...options });
 }
 
+installErrorReporting(window, {
+  log: (message, detail) => console.error(message, detail),
+  notify: (message) => nativeNotify(message, { error: true }),
+  now: () => Date.now(),
+});
+
 function stopComponentProgress(): void {
   if (!componentProgressTimer) return;
   clearInterval(componentProgressTimer);
@@ -457,7 +465,22 @@ function paintAllowance(): void {
   if (view === 'component') paint();
 }
 
+/** The screen the last paint drew; focus is carried only within one screen. */
+let paintedView: PluginView | null = null;
+
+/**
+ * Repaints the current screen. On the same screen, keyboard focus survives a
+ * rebuild the user did not ask for (focusRestore.ts); a screen change starts
+ * fresh, and callers that move focus themselves still do so after this.
+ */
 function paint(): void {
+  const sameScreen = paintedView === view;
+  paintedView = view;
+  if (sameScreen) keepFocus(document, paintScreen);
+  else paintScreen();
+}
+
+function paintScreen(): void {
   switch (view) {
     case 'component':
       renderComponentScreen(

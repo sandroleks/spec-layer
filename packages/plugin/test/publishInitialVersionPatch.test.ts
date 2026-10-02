@@ -37,6 +37,30 @@ describe('patchInitialVersion', () => {
     expect(hint.hidden).toBe(true);
   });
 
+  it('names the hint in aria-describedby only while the value is invalid', () => {
+    const root = mount();
+    const input = root.querySelector<HTMLInputElement>('[data-publish-initial-version]')!;
+    const hint = root.querySelector<HTMLElement>('[data-publish-initial-version-error]')!;
+    expect(hint.id).not.toBe('');
+    expect(input.hasAttribute('aria-describedby')).toBe(false);
+
+    patchInitialVersion(root, '2.0');
+    expect(input.getAttribute('aria-describedby')).toBe(hint.id);
+    expect(document.getElementById(hint.id)).toBe(hint);
+
+    patchInitialVersion(root, '2.0.0');
+    expect(input.hasAttribute('aria-describedby')).toBe(false);
+  });
+
+  it('renders an invalid first version already described by its hint', () => {
+    const root = document.createElement('div');
+    root.innerHTML = publishScrollMarkup({ ...createPublishState(), infoKnown: true, initialVersion: 'one' }, { kind: 'hidden' });
+    const input = root.querySelector<HTMLInputElement>('[data-publish-initial-version]')!;
+    const hint = root.querySelector<HTMLElement>('[data-publish-initial-version-error]')!;
+    expect(input.getAttribute('aria-describedby')).toBe(hint.id);
+    expect(hint.hidden).toBe(false);
+  });
+
   it('reports when the field is not on screen', () => {
     const root = document.createElement('div');
     expect(patchInitialVersion(root, '1.0.0')).toBe(false);

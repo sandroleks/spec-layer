@@ -158,6 +158,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- Undo in Figma now reverts one Spec Layer action at a time. Plugin edits
+  were never closed as undo steps, so one Undo after building a second doc
+  could take the first doc away too. Each build, Foundation build, update,
+  detach and remove is now its own step.
+- Keyboard focus stays where it was when the plugin redraws on its own (a
+  build finishing, the allowance loading, a selection change); before, it
+  fell back to the page and a screen reader lost its place. The plugin also
+  follows a change of Figma's light or dark theme while it is open, and an
+  invalid first version on Publish is read out with its hint.
+- An error no part of the plugin expected is now logged to the plugin
+  console and shown as a toast, instead of stopping the action silently.
 - A `spec-layer pull` that could not move its new output into place (on
   Windows, a file held open by a virus scanner or indexer) deleted the
   previous `.speclayer/` first and left none. The previous copy now moves

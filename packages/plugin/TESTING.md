@@ -862,6 +862,29 @@ all.
 8. **Export** shows **Component format** on YAML. Choose Markdown, close the
    plugin and reopen it: Markdown is still chosen. The arrow keys move the
    choice.
+9. **Undo.** Create component docs for one component, then for a second.
+   Press Undo once in Figma: only the second doc's change is reverted, and the
+   first doc is still on the canvas. Do the same with Generate Foundation
+   docs, Update on a Library row, Detach, and Remove: each is one undo step.
+10. **Figma theme while open.** With the plugin open, switch Figma between
+    light and dark (Figma menu > Theme). The plugin follows without being
+    reopened, including after the header theme button was used.
+11. **Focus across repaints.** Tab to **Create docs** and press Enter without
+    moving the mouse. When the build finishes, focus is still on that button
+    (or its replacement), not lost to the page. On **Publish** with nothing
+    published yet, type an invalid first version: a screen reader reads the
+    hint with the field, and stops reading it once the version is valid.
+12. **Unexpected errors.** Open the plugin console (Plugins > Development >
+    Show/Hide console). No `[Spec Layer] ... failed`, `uncaught error` or
+    `unhandled rejection` line appears during a normal pass; if one does, a
+    native toast said something went wrong, and the console line is the bug
+    report.
+13. **Message origin, record only.** In the desktop app's developer tools,
+    select the plugin UI's iframe as the console context and run
+    `addEventListener('message', (e) => console.log(e.origin))`, then select a
+    component. Record every origin printed (#99 saw `https://www.figma.com`).
+    An origin check on `window.onmessage` waits on this being recorded from a
+    real run; do not add one without it.
 
 ## Automated checks
 
@@ -869,10 +892,15 @@ all.
 npm test -- packages/plugin/test
 npm run typecheck
 npm run lint
+npm run check:nul
+npm run check:secrets
 npm run build:plugin
+npm run check:sandbox     # dist/main.js uses no browser global; trust this over the tests
 npm run check:proxy-dry-run
 npm run audit
 ```
+
+`npm run check` runs all of these in order and is what CI's `verify` job runs.
 
 ## Release gate
 
