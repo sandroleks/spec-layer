@@ -313,7 +313,7 @@ export async function runSetup(
   // carries neither --out nor a selection, so re-pasting it must not reset them.
   // That is why the two blocks are not shared. A corrupt speclayer.json has
   // nothing to preserve, and setup overwriting it is the repair path.
-  let existing: CliConfig | null = null;
+  let existing: CliConfig | null;
   try { existing = readConfig(cwd); } catch { existing = null; }
   const fromFlags = platformsFromFlags(flags, io);
   if (fromFlags === null) return 1;
@@ -837,7 +837,7 @@ export function runTools(flags: Flags, io: Io): number {
 
 /** Everything `skill` says, gathered once so --json, printing, and --install agree. */
 function collectSkillInput(cwd: string, flags: Flags, io: Io): SkillInput | null {
-  let config: CliConfig | null = null;
+  let config: CliConfig | null;
   let outDir: string;
   try {
     config = readConfig(cwd);

@@ -90,7 +90,7 @@ and the entry should be deleted in the next dependency pull request. Recorded
 
 | Override | Parent that asks for less | Drop when |
 |---|---|---|
-| `minimatch` `^10.2.6` | `eslint@9.39.5` and `@eslint/config-array@0.21.2` ask for `^3.1.5`; `glob@13.0.6` via `style-dictionary@5.5.5` asks for `^10.2.2` | every parent asks for `^10.2.6` or later |
+| `minimatch` `^10.2.6` | `eslint@10.11.0` asks for `^10.2.5`, `@eslint/config-array@0.23.5` for `^10.2.4`, `@typescript-eslint/typescript-estree@8.71.0` and `glob@13.0.6` for `^10.2.2` | every parent asks for `^10.2.6` or later |
 | `brace-expansion` `^5.0.9` | `minimatch@10.2.6` asks for `^5.0.8` | minimatch asks for `^5.0.9` or later |
 
 `sharp`, `undici` and `nanoid` were dropped on 2026-10-02: `miniflare` now

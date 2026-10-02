@@ -324,7 +324,7 @@ Promise.all([
 }).catch(() => {/* ignore */});
 // `figma.currentUser` THROWS without the "currentuser" manifest permission,
 // which optional chaining does not catch.
-let figmaUserId: string | null = null;
+let figmaUserId: string | null;
 try {
   figmaUserId = figma.currentUser?.id ?? null;
 } catch {
@@ -426,7 +426,7 @@ function notifySettingNotSaved(): void {
 async function readPublishInfo(): Promise<PublishInfo> {
   const libraryId = figma.root.getPluginData(PUBLISH_LIBRARY_KEY) || null;
   if (!libraryId) return { libraryId: null, pullKey: null, publishedAt: null, version: null };
-  let pullKey: string | null = null;
+  let pullKey: string | null;
   try {
     const raw = await figma.clientStorage.getAsync(publishKeyStorageKey(libraryId)) as unknown;
     pullKey = typeof raw === 'string' && raw ? raw : null;
@@ -1295,7 +1295,7 @@ const handleUiMessage = async (raw: unknown): Promise<void> => {
     case 'requestDocProse': {
       // Under "dynamic-page" access getNodeByIdAsync can REJECT, not just
       // resolve null, and an unguarded rejection leaves the UI with no reply.
-      let section: SectionNode | null = null;
+      let section: SectionNode | null;
       try {
         const docNode = await figma.getNodeByIdAsync(msg.docId);
         section = docNode && docNode.type === 'SECTION' ? (docNode as SectionNode) : null;
@@ -1479,7 +1479,7 @@ const handleUiMessage = async (raw: unknown): Promise<void> => {
       for (const { section } of await registrySections()) {
         const link = parseDocLink(section.getPluginData(DOC_LINK_KEY));
         if (!link) continue;
-        let sourceHash: string | null = null;
+        let sourceHash: string | null;
         if (isFoundationLink(link)) {
           if (!publishedFoundation) continue;
           sourceHash = foundationContentHash(publishedFoundation, retargetScope(link.scope, publishedFoundation.collections));

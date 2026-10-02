@@ -24,6 +24,13 @@ export default defineConfig([
     },
   },
   {
+    // The extractor and the plugin compile against ES2020 (tsconfig.base.json),
+    // because both run in Figma's plugin sandbox, and Error's `cause` option is
+    // ES2022. The CLI and the proxy target ES2022 and keep the rule.
+    files: ["packages/extractor/**", "packages/plugin/**"],
+    rules: { "preserve-caught-error": "off" },
+  },
+  {
     // The YAML writer's whole job is deciding which characters must be quoted
     // or escaped, so matching C0 controls literally is the point rather than a
     // slip. See the NUL-byte handling in `needsQuote`/`quoteDouble`.

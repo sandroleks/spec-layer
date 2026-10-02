@@ -138,7 +138,7 @@ export function detectRepo(cwd: string): RepoProfile {
   const evidence: Evidence[] = [];
   let styleDictionaryMajor: number | null = null;
 
-  let names: string[] = [];
+  let names: string[];
   try { names = readdirSync(cwd).sort(); } catch { names = []; }
 
   for (const name of names) {
@@ -288,7 +288,7 @@ function dependencyField(record: Record<string, unknown> | null, field: string):
 
 /** Root-level `*.css` files, concatenated. CSS under `src/` reads as none, the safe direction. */
 function readRootCssText(cwd: string): string {
-  let names: string[] = [];
+  let names: string[];
   try { names = readdirSync(cwd); } catch { names = []; }
   const chunks: string[] = [];
   for (const name of names) {

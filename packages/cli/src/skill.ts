@@ -147,7 +147,7 @@ export function summarizePull(cwd: string, outDir: string, manifest: Manifest | 
     const tokensDir = join(absOut, 'tokens');
     const resolver = readJson(join(tokensDir, 'resolver.json')) as DtcgResolverDocument | null;
     const report = readJson(join(tokensDir, 'report.json'));
-    let tokenFiles: string[] = [];
+    let tokenFiles: string[];
     try { tokenFiles = readdirSync(tokensDir).filter((f) => f.endsWith('.json') && !RESERVED.has(f)).sort(); } catch { tokenFiles = []; }
     const legitimatelyUnitless = unitlessScopedPaths(tokensDir);
     const unitlessPaths = new Set<string>();
