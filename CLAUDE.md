@@ -109,8 +109,11 @@ audit boundary that turns live Figma data into plain JSON.
 
 **The main thread has no browser globals.** Figma's plugin sandbox lacks them,
 but Node tests pass anyway, so the failure only shows up in Figma.
-`npm run check:sandbox` scans `dist/main.js` for this. Trust the scan, not the
-test suite.
+`packages/plugin/tsconfig.main.json` compiles the main thread with no DOM
+types, so `npm run typecheck` rejects a browser global before the build, and
+`npm run check:sandbox` scans `dist/main.js` as the last word. Trust those,
+not the test suite. `packages/extractor/tsconfig.src.json` likewise compiles
+the extractor's source with no DOM, Node or Figma types.
 
 **Three hashes answer three questions.** `specContentHash` (component canvas
 drift), `foundationContentHash` (Foundation canvas drift), `semanticContentHash`

@@ -1,0 +1,7 @@
+{
+  "extends": "../../tsconfig.base.json",
+  // The UI iframe: the DOM, and no Figma global (it talks to the main thread
+  // by postMessage only).
+  "compilerOptions": { "lib": ["ES2020", "DOM", "DOM.Iterable"], "types": [], "noEmit": true },
+  "include": ["src/ui/**/*.ts"]
+}

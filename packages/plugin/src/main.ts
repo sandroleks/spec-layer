@@ -1541,4 +1541,7 @@ const dispatchDeps: DispatchDeps = {
   log: (message, err) => console.error(message, err),
 };
 
-figma.ui.onmessage = (raw: unknown) => dispatchUiMessage(raw, __DRIFT_TIMING__ ? timedUiMessage : handleUiMessage, dispatchDeps);
+// dispatchUiMessage catches every throw, so the promise it returns never rejects.
+figma.ui.onmessage = (raw: unknown) => {
+  void dispatchUiMessage(raw, __DRIFT_TIMING__ ? timedUiMessage : handleUiMessage, dispatchDeps);
+};

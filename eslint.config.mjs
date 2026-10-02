@@ -11,16 +11,38 @@ export default defineConfig([
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
-    // Source runs in the Figma plugin sandbox (main thread) or its UI iframe;
-    // the build and check scripts run in Node.
+    // Every plain JS file here is a build or check script run by Node. For
+    // TypeScript, typescript-eslint turns no-undef off and the compiler owns
+    // which globals exist: the per-surface tsconfigs give the plugin's main
+    // thread no DOM, its UI the DOM, and the extractor's source neither DOM
+    // nor Node (packages/*/tsconfig.*.json).
+    files: ["**/*.{js,mjs,cjs}"],
     languageOptions: {
-      globals: { ...globals.browser, ...globals.node },
+      globals: globals.node,
     },
+  },
+  {
     rules: {
       "@typescript-eslint/no-unused-vars": [
         "warn",
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
       ],
+    },
+  },
+  {
+    // Promise misuse is the one bug class the untyped rules cannot see, and
+    // this code is promise-heavy: Figma's async node API, clientStorage, the
+    // proxy's Durable Object calls, the CLI's fetches. A dropped promise
+    // swallows its rejection; a promise passed where a boolean or a void
+    // callback is expected never runs as intended.
+    files: ["packages/*/src/**/*.ts"],
+    languageOptions: {
+      parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname },
+    },
+    rules: {
+      "@typescript-eslint/no-floating-promises": "error",
+      "@typescript-eslint/no-misused-promises": "error",
+      "@typescript-eslint/await-thenable": "error",
     },
   },
   {

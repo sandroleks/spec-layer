@@ -90,9 +90,26 @@ const PROXY_ERROR_BY_STATUS: Record<number, ProseProxyErrorCode> = {
   409: 'generation_pending', 429: 'rate_limited',
 };
 
+/**
+ * The slice of the Fetch API the prose client uses. The extractor compiles
+ * with no host's types (no DOM, no Node, no Figma), and any host's `fetch`,
+ * the UI iframe's, Node's or a test double, fits these shapes.
+ */
+export interface FetchHeaders { get(name: string): string | null }
+export interface FetchResponse {
+  ok: boolean;
+  status: number;
+  headers: FetchHeaders;
+  json(): Promise<unknown>;
+}
+export type Fetcher = (
+  input: string,
+  init?: { method?: string; headers?: Record<string, string>; body?: string },
+) => Promise<FetchResponse>;
+
 /** The `X-Tier` / `X-Quota-*` headers, or null when absent. Publish responses
  *  carry them too, for the publish allowance. */
-export function parseQuotaHeaders(headers: Headers): ProxyQuota | null {
+export function parseQuotaHeaders(headers: FetchHeaders): ProxyQuota | null {
   const tier = headers.get('X-Tier');
   if (tier !== 'free' && tier !== 'pro') return null;
   const num = (v: string | null): number | null =>
@@ -108,7 +125,7 @@ export function parseQuotaHeaders(headers: Headers): ProxyQuota | null {
 
 export interface DraftOptions {
   apiKey: string | null;
-  fetcher: typeof fetch;
+  fetcher: Fetcher;
   cacheStore: CacheStore;
   /** A rendered component image URL, attached as an image block; absent sends text only. */
   imageUrl?: string | null;
@@ -140,7 +157,7 @@ async function postCompletion(
   cacheKey: string,
   opts: Pick<DraftOptions, 'apiKey' | 'fetcher' | 'proxy'>,
 ): Promise<string> {
-  let res: Response;
+  let res: FetchResponse;
   if (opts.proxy) {
     const bearer = opts.proxy.licenseKey
       ? opts.proxy.licenseInstanceId

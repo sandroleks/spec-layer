@@ -23,7 +23,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "prepare": "node scripts/install-hooks.mjs",
-    "typecheck": "tsc -p packages/extractor/tsconfig.json --noEmit && tsc -p packages/plugin/tsconfig.json --noEmit && tsc -p packages/proxy/tsconfig.json --noEmit && tsc -p packages/cli/tsconfig.json --noEmit",
+    "typecheck": "tsc -p packages/extractor/tsconfig.src.json && tsc -p packages/extractor/tsconfig.json --noEmit && tsc -p packages/plugin/tsconfig.main.json && tsc -p packages/plugin/tsconfig.ui.json && tsc -p packages/plugin/tsconfig.json --noEmit && tsc -p packages/proxy/tsconfig.json --noEmit && tsc -p packages/cli/tsconfig.json --noEmit",
     "lint": "eslint . --max-warnings=0",
     "build:plugin": "node packages/plugin/build.mjs",
     "build:brand": "node packages/brand/build.mjs",
