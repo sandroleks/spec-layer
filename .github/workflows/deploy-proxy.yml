@@ -18,6 +18,7 @@ on:
       - packages/proxy/**
       - packages/extractor/**
       - package-lock.json
+      - scripts/smoke-proxy.mjs
       - .github/workflows/deploy-proxy.yml
   workflow_dispatch:
     inputs:
