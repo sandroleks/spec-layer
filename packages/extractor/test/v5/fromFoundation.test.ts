@@ -691,3 +691,42 @@ describe('buildFoundationArtifactV5 — completeness, hashes, and validation', (
     for (const d of partial) expect(d.severity).toBe('error');
   });
 });
+
+describe('motion variables', () => {
+  const dump = (): SerializedFoundation => ({
+    fileKey: 'FILE1', extractedAt: '2026-10-03T00:00:00.000Z', externals: [], textStyles: [], effectStyles: [],
+    collections: [{
+      id: 'c1', name: 'Motion', defaultModeId: 'm1', modes: [{ modeId: 'm1', name: 'Value' }],
+      variables: [
+        variable('fast', 'motion/duration/fast', 'TIMING', { m1: 0.3 }),
+        variable('standard', 'motion/ease/standard', 'EASING', { m1: { type: 'EASE_OUT' } }),
+        variable('custom', 'motion/ease/custom', 'EASING', { m1: { type: 'CUSTOM_CUBIC_BEZIER', easingFunctionCubicBezier: { x1: 0.2, y1: 0, x2: 0, y2: 1 } } }),
+        variable('spring', 'motion/ease/spring', 'EASING', { m1: { type: 'CUSTOM_SPRING', easingFunctionSpring: { bounce: 0.3 } } }),
+        variable('step', 'motion/ease/step', 'EASING', { m1: { type: 'HOLD' } }),
+        variable('unknown', 'motion/ease/unknown', 'EASING', { m1: { type: 'WOBBLE' } }),
+      ],
+    }],
+  });
+
+  it('exports TIMING as duration in seconds and EASING as easing', () => {
+    const artifact = buildFoundationArtifactV5(buildFoundation(dump()), META).artifact;
+    const byPath = Object.fromEntries(artifact.tokens.map((t) => [t.path.join('/'), t]));
+    expect(byPath['motion/duration/fast'].type).toBe('duration');
+    expect(byPath['motion/duration/fast'].values.m1).toEqual({ kind: 'literal', value: { type: 'duration', number: 0.3, unit: 's' } });
+    expect(byPath['motion/ease/standard'].type).toBe('easing');
+    expect(byPath['motion/ease/standard'].values.m1).toEqual({ kind: 'literal', value: { type: 'easing', easing: { type: 'named', name: 'ease_out' } } });
+    expect(byPath['motion/ease/custom'].values.m1).toEqual({ kind: 'literal', value: { type: 'easing', easing: { type: 'cubic_bezier', value: [0.2, 0, 0, 1] } } });
+    expect(byPath['motion/ease/spring'].values.m1).toEqual({ kind: 'literal', value: { type: 'easing', easing: { type: 'spring', bounce: 0.3 } } });
+    expect(byPath['motion/ease/step'].values.m1).toEqual({ kind: 'literal', value: { type: 'easing', easing: { type: 'hold' } } });
+    expect(validateLevel1(artifact)).toEqual([]);
+  });
+
+  it('records an easing it cannot model as missing and names what Figma returned', () => {
+    const artifact = buildFoundationArtifactV5(buildFoundation(dump()), META).artifact;
+    const unknown = artifact.tokens.find((t) => t.path.join('/') === 'motion/ease/unknown')!;
+    expect(unknown.values.m1).toEqual({ kind: 'missing', reason: 'unsupported_value_type' });
+    const diag = artifact.diagnostics.find((d) => d.entity_id === 'unknown' && d.code === 'UNSUPPORTED_VALUE_TYPE');
+    expect(diag?.details).toEqual({ source: 'WOBBLE' });
+    expect(artifact.diagnostics.some((d) => d.code === 'INVALID_SOURCE_COLOR')).toBe(false);
+  });
+});

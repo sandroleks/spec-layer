@@ -26,7 +26,7 @@ describe('foundationAiContext', () => {
       source: { provider: 'figma', file_name: 'Synthetic Direct Foundation' },
     });
     expect(context.completeness).toEqual(full.completeness);
-    expect(context.collections.map(({ name }) => name)).toEqual(['Primitives', 'Semantic']);
+    expect(context.collections.map(({ name }) => name)).toEqual(['Primitives', 'Semantic', 'Motion']);
 
     const primitives = context.collections[0];
     expect(primitives.modes).toEqual([
@@ -82,6 +82,7 @@ describe('foundationAiContext', () => {
         MISSING_MODE_VALUE: 2,
         UNRESOLVED_ALIAS: 2,
         UNRESOLVED_EXTERNAL_ALIAS: 4,
+        UNSUPPORTED_VALUE_TYPE: 1,
       },
       warning: { CONFUSABLE_NAME: 1, STYLE_BINDING_DRIFT: 1, UNIT_METADATA_UNAVAILABLE: 1 },
       info: { METADATA_UNAVAILABLE: 1 },
@@ -345,5 +346,16 @@ describe('valueText', () => {
     expect(valueText({ type: 'number', value: 16 })).toBe('16');
     expect(valueText({ number: 1.5, unit: 'rem' })).toBe('1.5rem');
     expect(valueText(null)).toBe('unknown');
+  });
+});
+
+describe('easing values', () => {
+  it('compacts an easing to its own object and labels it in text', () => {
+    expect(valueText({ type: 'named', name: 'ease_out' })).toBe('Ease out');
+    expect(valueText({ type: 'cubic_bezier', value: [0.2, 0, 0, 1] })).toBe('Cubic bezier 0.2, 0, 0, 1');
+    expect(valueText({ type: 'spring', bounce: 0.3 })).toBe('Spring, bounce 0.3');
+    expect(valueText({ type: 'hold' })).toBe('Hold');
+    expect(valueText({ type: 'easing', easing: { type: 'hold' } })).toBe('Hold');
+    expect(valueText({ number: 0.3, unit: 's' })).toBe('0.3s');
   });
 });

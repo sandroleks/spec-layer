@@ -18,6 +18,8 @@ export const CHECKER = 6;
 export const FONT_MAX = 64;
 export const SAMPLE_SIZE = 14;
 
+export const EASING_SIZE = 32;
+
 export type GlyphSpec =
   | { kind: 'bar'; length: number; clipped: boolean }
   | { kind: 'radius'; side: number; radius: number; clamped: boolean }
@@ -25,7 +27,8 @@ export type GlyphSpec =
   | { kind: 'opacity'; opacity: number }
   | { kind: 'fontSize'; size: number }
   | { kind: 'lineHeight'; lineHeight: number }
-  | { kind: 'letterSpacing'; letterSpacing: number };
+  | { kind: 'letterSpacing'; letterSpacing: number }
+  | { kind: 'easingCurve'; x1: number; y1: number; x2: number; y2: number };
 
 /** The number a glyph is drawn from: a literal, or an alias that resolved to one. */
 export function glyphValue(value: FoundationValue): number | null {
@@ -97,6 +100,17 @@ function sample(chars: string, size: number): TextNode {
   return t;
 }
 
+/** The curve a cubic bezier easing draws, from the literal or the alias's
+ *  resolved value. Named easings and springs have no numbers, so null. */
+export function easingCurveSpec(value: FoundationValue): GlyphSpec | null {
+  const easing = value.kind === 'easing'
+    ? value.easing
+    : value.kind === 'alias' && value.resolved?.kind === 'easing' ? value.resolved.easing : null;
+  if (!easing || easing.type !== 'cubic_bezier') return null;
+  const [x1, y1, x2, y2] = easing.value;
+  return { kind: 'easingCurve', x1, y1, x2, y2 };
+}
+
 /** Draw one glyph. The frame hugs its content and never exceeds `cellWidth`. */
 export function buildGlyph(spec: GlyphSpec, cellWidth: number): FrameNode {
   const box = hstack(0);
@@ -144,6 +158,24 @@ export function buildGlyph(spec: GlyphSpec, cellWidth: number): FrameNode {
       const t = sample('Ag', SAMPLE_SIZE);
       t.letterSpacing = { value: spec.letterSpacing, unit: 'PIXELS' };
       box.appendChild(t);
+      return box;
+    }
+    case 'easingCurve': {
+      const vector = figma.createVector();
+      vector.name = 'Easing curve';
+      vector.resize(EASING_SIZE, EASING_SIZE);
+      // Canvas y grows downward, so 1 - y draws the curve upright. A control
+      // point outside 0..1 (a back easing) draws outside the box, as it should.
+      const px = (x: number) => (x * EASING_SIZE).toFixed(2);
+      const py = (y: number) => ((1 - y) * EASING_SIZE).toFixed(2);
+      vector.vectorPaths = [{
+        windingRule: 'NONE',
+        data: `M ${px(0)} ${py(0)} C ${px(spec.x1)} ${py(spec.y1)} ${px(spec.x2)} ${py(spec.y2)} ${px(1)} ${py(1)}`,
+      }];
+      vector.fills = [];
+      vector.strokes = solidFill(palette.accent);
+      vector.strokeWeight = 1.5;
+      box.appendChild(vector);
       return box;
     }
   }

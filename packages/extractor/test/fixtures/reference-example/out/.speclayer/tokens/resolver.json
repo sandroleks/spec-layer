@@ -77,7 +77,7 @@
   ],
   "$extensions": {
     "com.spec-layer": {
-      "schema_version": "5.1.1",
+      "schema_version": "5.2.0",
       "content_hash": "sha256:c94a75e9f0d78969dcd512ea58b367370ed1790c733e780e62fb481a9aa5afcb",
       "config_hash": "sha256:c68f92d8722277d28acec2f2fdb0a1a1556a2fc51e759f0ea17029daf8e98adf",
       "source": {

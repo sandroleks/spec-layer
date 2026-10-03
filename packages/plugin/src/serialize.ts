@@ -1,8 +1,9 @@
 import type {
   SerializedNode, PropertyDefinition, TokenRef, RefIdentity, LayoutInfo, RawEffect,
-  EffectLayer, EffectBindings,
+  EffectLayer, EffectBindings, SerializedTrigger, SerializedEasing, SerializedTransitionEffect,
+  SerializedTransition, TransitionDirection,
 } from '@spec-layer/extractor';
-import { effectLayerOf } from '@spec-layer/extractor';
+import { effectLayerOf, easingOf, canonicalNumber } from '@spec-layer/extractor';
 
 /** VariableBindableEffectField. Shadows bind all five, blurs only `radius`,
  *  others none; a field an effect cannot bind simply has no entry. */
@@ -105,6 +106,8 @@ interface RawNode {
     characters?: string;
     mainComponent?: string;
   } | null;
+  // Prototype reactions; absent on node types without the mixin, and the read can throw.
+  reactions?: unknown;
   children?: RawNode[];
 }
 
@@ -119,6 +122,102 @@ const WEIGHTS: Record<string, number> = {
 function fontWeightOf(style: string): number {
   const key = style.toLowerCase().replace(/\s|-|italic|oblique/g, '');
   return WEIGHTS[key] ?? 400;
+}
+
+const TRIGGER_TYPES: Readonly<Record<string, SerializedTrigger['type']>> = {
+  ON_CLICK: 'on_click', ON_HOVER: 'on_hover', ON_PRESS: 'on_press', ON_DRAG: 'on_drag',
+  AFTER_TIMEOUT: 'after_timeout', MOUSE_UP: 'mouse_up', MOUSE_DOWN: 'mouse_down',
+  MOUSE_ENTER: 'mouse_enter', MOUSE_LEAVE: 'mouse_leave', ON_KEY_DOWN: 'on_key_down',
+  ON_MEDIA_HIT: 'on_media_hit', ON_MEDIA_END: 'on_media_end',
+};
+const SIMPLE_TRANSITIONS: Readonly<Record<string, 'dissolve' | 'smart_animate' | 'scroll_animate'>> = {
+  DISSOLVE: 'dissolve', SMART_ANIMATE: 'smart_animate', SCROLL_ANIMATE: 'scroll_animate',
+};
+const DIRECTIONAL_TRANSITIONS: Readonly<Record<string, 'move_in' | 'move_out' | 'push' | 'slide_in' | 'slide_out'>> = {
+  MOVE_IN: 'move_in', MOVE_OUT: 'move_out', PUSH: 'push', SLIDE_IN: 'slide_in', SLIDE_OUT: 'slide_out',
+};
+const DIRECTIONS: Readonly<Record<string, TransitionDirection>> = {
+  LEFT: 'left', RIGHT: 'right', TOP: 'top', BOTTOM: 'bottom',
+};
+
+/** Own-property lookup only: a plain object also answers "constructor" or
+ *  "__proto__", which Figma never sends but an untrusted string could. */
+function own<T>(table: Readonly<Record<string, T>>, key: unknown): T | undefined {
+  return typeof key === 'string' && Object.prototype.hasOwnProperty.call(table, key) ? table[key] : undefined;
+}
+
+const finite = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n);
+
+function triggerOf(raw: unknown): SerializedTrigger | null {
+  if (raw === null || typeof raw !== 'object') return null;
+  const t = raw as { type?: unknown; timeout?: unknown; delay?: unknown; device?: unknown; keyCodes?: unknown; mediaHitTime?: unknown };
+  const type = own(TRIGGER_TYPES, t.type);
+  switch (type) {
+    case 'on_click': case 'on_hover': case 'on_press': case 'on_drag': case 'on_media_end':
+      return { type };
+    case 'after_timeout':
+      return finite(t.timeout) ? { type, timeout: canonicalNumber(t.timeout) } : null;
+    case 'mouse_up': case 'mouse_down': case 'mouse_enter': case 'mouse_leave':
+      return finite(t.delay) ? { type, delay: canonicalNumber(t.delay) } : null;
+    case 'on_key_down':
+      return typeof t.device === 'string' && Array.isArray(t.keyCodes) && t.keyCodes.every(finite)
+        ? { type, device: t.device, keyCodes: [...t.keyCodes] }
+        : null;
+    case 'on_media_hit':
+      return finite(t.mediaHitTime) ? { type, mediaHitTime: canonicalNumber(t.mediaHitTime) } : null;
+    default:
+      return null;
+  }
+}
+
+/** Caller guarantees `raw` is an object with a string `type`. */
+function serializedEasing(raw: unknown): SerializedEasing {
+  const easing = easingOf(raw);
+  if (easing) return easing;
+  return { type: 'unsupported', figma_type: (raw as { type: string }).type };
+}
+
+function transitionEffectOf(raw: unknown): SerializedTransitionEffect | null {
+  if (raw === null) return { type: 'instant' };
+  if (typeof raw !== 'object') return null;
+  const t = raw as { type?: unknown; duration?: unknown; easing?: unknown; direction?: unknown; matchLayers?: unknown };
+  if (typeof t.type !== 'string' || !finite(t.duration)) return null;
+  // An easing that is not an object with a string type is not one this model states.
+  if (t.easing === null || typeof t.easing !== 'object' || typeof (t.easing as { type?: unknown }).type !== 'string') return null;
+  const simple = own(SIMPLE_TRANSITIONS, t.type);
+  if (simple) return { type: simple, duration: canonicalNumber(t.duration), easing: serializedEasing(t.easing) };
+  const directional = own(DIRECTIONAL_TRANSITIONS, t.type);
+  const direction = own(DIRECTIONS, t.direction);
+  if (directional && direction) {
+    return {
+      type: directional, direction, matchLayers: t.matchLayers === true,
+      duration: canonicalNumber(t.duration), easing: serializedEasing(t.easing),
+    };
+  }
+  return null;
+}
+
+/** CHANGE_TO actions only: the variant interactions. A transition type or
+ *  trigger this model does not state is left out, never approximated. */
+function transitionsOf(raw: unknown): SerializedTransition[] {
+  if (!Array.isArray(raw)) return [];
+  const out: SerializedTransition[] = [];
+  for (const reaction of raw) {
+    if (reaction === null || typeof reaction !== 'object') continue;
+    const r = reaction as { trigger?: unknown; actions?: unknown; action?: unknown };
+    const trigger = triggerOf(r.trigger);
+    if (!trigger) continue;
+    const actions = Array.isArray(r.actions) ? r.actions : r.action ? [r.action] : [];
+    for (const action of actions) {
+      if (action === null || typeof action !== 'object') continue;
+      const a = action as { type?: unknown; navigation?: unknown; destinationId?: unknown; transition?: unknown };
+      if (a.type !== 'NODE' || a.navigation !== 'CHANGE_TO' || typeof a.destinationId !== 'string') continue;
+      const transition = transitionEffectOf(a.transition ?? null);
+      if (!transition) continue;
+      out.push({ trigger, destinationId: a.destinationId, transition });
+    }
+  }
+  return out;
 }
 
 export async function serializeNode(node: RawNode, resolver: NodeResolver): Promise<SerializedNode> {
@@ -294,6 +393,15 @@ export async function serializeNode(node: RawNode, resolver: NodeResolver): Prom
         .filter((uri) => uri !== '')
     : [];
 
+  // Wrapped: a node type without the mixin, or a Figma read that throws,
+  // means no transitions, not a failed serialization.
+  let transitions: SerializedTransition[];
+  try {
+    transitions = transitionsOf(node.reactions);
+  } catch {
+    transitions = [];
+  }
+
   const children = node.children
     ? await Promise.all(node.children.map(c => serializeNode(c, resolver)))
     : undefined;
@@ -320,6 +428,7 @@ export async function serializeNode(node: RawNode, resolver: NodeResolver): Prom
     ...(mainComponent ? { mainComponent } : {}),
     ...(layout ? { layout } : {}),
     ...(text ? { text } : {}),
+    ...(transitions.length > 0 ? { transitions } : {}),
     ...(children ? { children } : {}),
   };
 

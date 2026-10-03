@@ -7,9 +7,11 @@
  * downstream.
  */
 
+import type { Easing } from '../motion';
+
 export type TokenType =
   | 'color' | 'dimension' | 'number' | 'string' | 'boolean'
-  | 'duration' | 'cubic_bezier' | 'font_family';
+  | 'duration' | 'cubic_bezier' | 'font_family' | 'easing';
 
 /** §9.5. No `unitless`: a unitless quantity is `type: number`, not a dimension
  *  with a null unit. */
@@ -21,7 +23,7 @@ export const SUPPORTED_UNITS: readonly Unit[] =
   ['px', 'rem', 'em', '%', 'deg', 'ms', 's'] as const;
 export const SUPPORTED_TOKEN_TYPES: readonly TokenType[] =
   ['color', 'dimension', 'number', 'string', 'boolean',
-   'duration', 'cubic_bezier', 'font_family'] as const;
+   'duration', 'cubic_bezier', 'font_family', 'easing'] as const;
 export const SUPPORTED_VALUE_KINDS = ['literal', 'alias', 'missing'] as const;
 /** Duration's units, a subset of `Unit` spelled out in `DurationValue` and the
  *  schema's `$defs.duration_value`; mirrored for the same parity check. */
@@ -78,10 +80,13 @@ export interface BooleanValue { type: 'boolean'; value: boolean }
 export interface DurationValue { type: 'duration'; number: number; unit: 'ms' | 's' }
 export interface CubicBezierValue { type: 'cubic_bezier'; value: [number, number, number, number] }
 export interface FontFamilyValue { type: 'font_family'; value: string }
+/** A Figma EASING variable. `cubic_bezier` stays a separate token type for
+ *  artifacts that already carry it; an easing variable never produces it. */
+export interface EasingValue { type: 'easing'; easing: Easing }
 
 export type TypedValue =
   | ColorValue | DimensionValue | NumberValue | StringValue
-  | BooleanValue | DurationValue | CubicBezierValue | FontFamilyValue;
+  | BooleanValue | DurationValue | CubicBezierValue | FontFamilyValue | EasingValue;
 
 /**
  * One hop of a resolution: the token and the mode it was read under. A Figma

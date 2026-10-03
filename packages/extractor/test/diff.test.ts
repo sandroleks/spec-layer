@@ -116,6 +116,11 @@ describe('formatFoundationValue', () => {
     })).toBe('{Brand Kit/blue/500}');
     expect(formatFoundationValue({ kind: 'unresolved', reason: 'missing' })).toBe('unresolved (missing)');
   });
+
+  it('renders a duration in seconds and an easing by its label', () => {
+    expect(formatFoundationValue({ kind: 'duration', seconds: 0.3 })).toBe('0.3 s');
+    expect(formatFoundationValue({ kind: 'easing', easing: { type: 'spring', bounce: 0.3 } })).toBe('Spring, bounce 0.3');
+  });
 });
 
 const TEXT_BASE = {
@@ -328,6 +333,19 @@ function projection(overrides: Partial<SpecHashProjection> = {}): SpecHashProjec
 }
 
 describe('componentChangeGroups', () => {
+  it('lists added, removed and changed transitions under Motion', () => {
+    const rule = { from: { State: 'Default' }, to: { State: 'Hover' }, trigger: { type: 'on_hover' as const }, triggerPart: 'Container',
+      transition: { type: 'smart_animate' as const, duration: 0.3, easing: { type: 'named' as const, name: 'ease_out' as const } } };
+    const faster = { ...rule, transition: { ...rule.transition, duration: 0.2 } };
+    const a = { ...projection(), transitions: [rule] };
+    const b = { ...projection(), transitions: [faster] };
+    const groups = componentChangeGroups(a, b);
+    const motion = groups.find((g) => g.label === 'Motion');
+    expect(motion?.items).toEqual([{ text: 'Transition Default to Hover, while hovering: Smart animate 0.3 s, Ease out changed to Smart animate 0.2 s, Ease out' }]);
+    expect(componentChangeGroups(projection(), a).find((g) => g.label === 'Motion')?.items)
+      .toEqual([{ text: 'Transition Default to Hover, while hovering added: Smart animate 0.3 s, Ease out' }]);
+  });
+
   it('returns no groups when nothing differs', () => {
     expect(componentChangeGroups(projection(), projection())).toEqual([]);
   });

@@ -75,8 +75,10 @@ export interface SectionOption {
   aiCapable: boolean;
   selected: boolean;
   disabled?: boolean;
-  /** Why the row is disabled, as a muted suffix; the label stays the section's name. */
+  /** A muted suffix for a disabled row (why it is disabled) or a beta row (what the section is); the label stays the section's name. */
   note?: string;
+  /** Marks a section whose data path is new; drawn as a Beta badge in the picker only. */
+  beta?: boolean;
 }
 
 export interface SectionGroupView {

@@ -3,6 +3,7 @@ import type { IntermediateSpec, ProseV2Key, ProseV2, GuidelinePair, VariantInsta
 import {
   cleanPartName, formatConditions, resolveTokensForVariant,
   detectStateMatrix, stateAxisProps, anatomyFor, tokensFor, firstSentence, foldName,
+  transitionYaml, axisLabel, triggerLabel, transitionLabel, durationCell, easingCell,
 } from '@spec-layer/extractor';
 import { displayComponentName } from './displayNames';
 import { placeholderShapeFor, type PlaceholderShape } from './placeholders';
@@ -11,14 +12,14 @@ export { firstSentence };
 
 export type SectionId =
   | 'definition' | 'whenToUse' | 'variants' | 'dosDonts' | 'related'
-  | 'anatomy' | 'properties' | 'states' | 'measurements' | 'tokens'
+  | 'anatomy' | 'properties' | 'states' | 'motion' | 'measurements' | 'tokens'
   | 'keyboard' | 'pointer' | 'accessibility' | 'contentConsiderations';
 
 export type GroupId = 'usage' | 'specs' | 'a11y';
 
 /** The section map, in frame order. `label` is the canvas heading and the name
  *  an omission is reported under. */
-export const ALL_SECTIONS: { id: SectionId; label: string; ai: boolean; group: GroupId }[] = [
+export const ALL_SECTIONS: { id: SectionId; label: string; ai: boolean; group: GroupId; beta?: true }[] = [
   { id: 'definition',            label: 'Overview',             ai: true,  group: 'usage' },
   { id: 'whenToUse',             label: 'When to use',          ai: true,  group: 'usage' },
   { id: 'variants',              label: 'Variants',             ai: true,  group: 'usage' },
@@ -27,6 +28,7 @@ export const ALL_SECTIONS: { id: SectionId; label: string; ai: boolean; group: G
   { id: 'anatomy',               label: 'Anatomy',              ai: true,  group: 'specs' },
   { id: 'properties',            label: 'Properties',           ai: true,  group: 'specs' },
   { id: 'states',                label: 'States',               ai: false, group: 'specs' },
+  { id: 'motion',                label: 'Motion',               ai: false, group: 'specs', beta: true },
   { id: 'measurements',          label: 'Measurements',         ai: false, group: 'specs' },
   { id: 'tokens',                label: 'Tokens',               ai: false, group: 'specs' },
   { id: 'keyboard',              label: 'Keyboard',             ai: true,  group: 'a11y'  },
@@ -555,6 +557,23 @@ function buildSection(
         id, heading: label, kind: 'statesMatrix',
         axisName: info.axis ?? '', states: info.columns.map((c) => c.label), rows, capped,
       };
+    }
+
+    case 'motion': {
+      // Omitted rather than drawn empty, like Tokens. The trigger layer joins
+      // the Trigger cell because the canvas table is width-bound; Markdown
+      // keeps Part as its own column.
+      const rules = spec.transitions ?? [];
+      if (!rules.length) return null;
+      const rows = rules.map((rule) => {
+        const row = transitionYaml(rule);
+        const onPart = rule.triggerPath.includes('/') ? rule.triggerPart : null;
+        return [
+          axisLabel(row.from), axisLabel(row.to), triggerLabel(row.trigger, onPart),
+          transitionLabel(row.transition), durationCell(row.transition), easingCell(row.transition),
+        ];
+      });
+      return { id, heading: label, kind: 'table', columns: ['From', 'To', 'Trigger', 'Transition', 'Duration', 'Easing'], rows };
     }
 
     case 'tokens': {

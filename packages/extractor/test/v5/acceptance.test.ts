@@ -74,7 +74,7 @@ describe('Foundation Context v5 direct synthetic golden acceptance', () => {
 
     expect(validateLevel1(artifact)).toEqual([]);
     expect(artifact.collections.map((collection) => collection.id)).toEqual([
-      'CollectionID:primitives', 'CollectionID:semantic',
+      'CollectionID:primitives', 'CollectionID:semantic', 'CollectionID:motion',
     ]);
     expect(artifact.collections.flatMap((collection) => collection.modes)
       .every((mode) => mode.id.startsWith('ModeID:'))).toBe(true);

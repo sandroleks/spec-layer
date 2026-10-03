@@ -42,6 +42,14 @@ describe('valueLines', () => {
     expect(valueLines({ kind: 'number', value: 1.5 }).primary).toBe('1.5');
   });
 
+  it('labels a duration in seconds and an easing by name or numbers', () => {
+    expect(valueLines({ kind: 'duration', seconds: 0.3 })).toEqual({ primary: '0.3 s', secondary: '' });
+    expect(valueLines({ kind: 'easing', easing: { type: 'named', name: 'ease_in_and_out' } })).toEqual({ primary: 'Ease in and out', secondary: '' });
+    expect(valueLines({ kind: 'easing', easing: { type: 'cubic_bezier', value: [0.2, 0, 0, 1] } })).toEqual({ primary: 'Cubic bezier 0.2, 0, 0, 1', secondary: '' });
+    expect(valueLines({ kind: 'alias', targetName: 'motion/duration/fast', targetCollection: 'Motion', external: false,
+      resolved: { kind: 'duration', seconds: 0.3 } })).toEqual({ primary: '→ motion/duration/fast', secondary: '0.3 s' });
+  });
+
   it('labels strings and booleans', () => {
     expect(valueLines({ kind: 'string', value: 'Acme' }).primary).toBe('Acme');
     expect(valueLines({ kind: 'boolean', value: true }).primary).toBe('true');

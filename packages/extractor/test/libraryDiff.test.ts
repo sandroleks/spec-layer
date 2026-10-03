@@ -473,6 +473,19 @@ describe('libraryDiff: components', () => {
     expect(only(libraryDiff(base, withGap), 'value')).toEqual([expect.objectContaining({ kind: 'added', id: 'unbound:Container / cornerRadius', bump: 'patch' })]);
   });
 
+  it('value: a transition is keyed by its trigger and compared by its effect', () => {
+    const rule = (seconds: number) => ({
+      from: { State: 'Default' }, to: { State: 'Hover' }, trigger: { type: 'on_hover' }, on: 'Container',
+      transition: { type: 'smart_animate', duration: { number: seconds, unit: 's' }, easing: { type: 'named', name: 'ease_out' } },
+    });
+    const before = withComponent((a) => { a.motion = { transitions: [rule(0.3)] }; });
+    const after = withComponent((a) => { a.motion = { transitions: [rule(0.5)] }; });
+    const changes = only(libraryDiff(before, after), 'value');
+    expect(changes).toHaveLength(1);
+    expect(changes[0].kind).toBe('changed');
+    expect(changes[0].id.startsWith('motion:')).toBe(true);
+  });
+
   it('ignores every field that is not a Figma fact', () => {
     const noisy = withComponent((a) => {
       a.diagnostics = [{ code: 'X', severity: 'warning', entity_id: 'e', message: 'm' }];

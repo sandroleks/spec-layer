@@ -11,6 +11,8 @@
 @import "./semantic.light.css";
 /* Semantic, Dark */
 @import "./semantic.dark.css";
+/* Motion */
+@import "./motion.css";
 /* Effect styles */
 @import "./effect-styles.css";
 /* Typography styles */

@@ -1177,3 +1177,91 @@ describe('effect styles unit', () => {
     expect(units.map((u) => u.title)).toEqual(['Effect styles · Blur', 'Effect styles · Shadow']);
   });
 });
+
+describe('motion variables', () => {
+  function motionDump(): SerializedFoundation {
+    return {
+      fileKey: 'FILE1', extractedAt: '2026-10-03T00:00:00.000Z', externals: [], textStyles: [], effectStyles: [],
+      collections: [{
+        id: 'c1', name: 'Motion', defaultModeId: 'm1', modes: [{ modeId: 'm1', name: 'Value' }],
+        variables: [
+          { id: 'fast', name: 'motion/duration/fast', resolvedType: 'TIMING', description: '', codeSyntax: {}, scopes: [],
+            valuesByMode: { m1: 0.30000001192092896 } },
+          { id: 'alias', name: 'motion/duration/button', resolvedType: 'TIMING', description: '', codeSyntax: {}, scopes: [],
+            valuesByMode: { m1: { type: 'VARIABLE_ALIAS', id: 'fast' } } },
+          { id: 'mismatch', name: 'motion/duration/wrong', resolvedType: 'TIMING', description: '', codeSyntax: {}, scopes: [],
+            valuesByMode: { m1: { type: 'VARIABLE_ALIAS', id: 'space' } } },
+          { id: 'space', name: 'space/4', resolvedType: 'FLOAT', description: '', codeSyntax: {}, scopes: [],
+            valuesByMode: { m1: 16 } },
+          { id: 'standard', name: 'motion/ease/standard', resolvedType: 'EASING', description: '', codeSyntax: {}, scopes: [],
+            valuesByMode: { m1: { type: 'EASE_OUT' } } },
+          { id: 'custom', name: 'motion/ease/custom', resolvedType: 'EASING', description: '', codeSyntax: {}, scopes: [],
+            valuesByMode: { m1: { type: 'CUSTOM_CUBIC_BEZIER', easingFunctionCubicBezier: { x1: 0.2, y1: 0, x2: 0, y2: 1 } } } },
+          { id: 'unknown', name: 'motion/ease/unknown', resolvedType: 'EASING', description: '', codeSyntax: {}, scopes: [],
+            valuesByMode: { m1: { type: 'WOBBLE' } } },
+          { id: 'bad-timing', name: 'motion/duration/bad', resolvedType: 'TIMING', description: '', codeSyntax: {}, scopes: [],
+            valuesByMode: { m1: 'soon' } },
+        ],
+      }],
+    };
+  }
+
+  it('reads TIMING as a duration in seconds and EASING as an easing', () => {
+    const spec = buildFoundation(motionDump());
+    const byName = Object.fromEntries(spec.collections[0].variables.map((v) => [v.name, v]));
+    expect(byName['motion/duration/fast'].valuesByMode.m1).toEqual({ kind: 'duration', seconds: 0.3 });
+    expect(byName['motion/duration/fast'].provenance.valuesByMode.m1).toEqual({ kind: 'duration', seconds: 0.3 });
+    expect(byName['motion/ease/standard'].valuesByMode.m1).toEqual({ kind: 'easing', easing: { type: 'named', name: 'ease_out' } });
+    expect(byName['motion/ease/custom'].valuesByMode.m1).toEqual({ kind: 'easing', easing: { type: 'cubic_bezier', value: [0.2, 0, 0, 1] } });
+  });
+
+  it('resolves a TIMING alias to the duration and a cross-kind alias to type_mismatch', () => {
+    const spec = buildFoundation(motionDump());
+    const byName = Object.fromEntries(spec.collections[0].variables.map((v) => [v.name, v]));
+    const alias = byName['motion/duration/button'].valuesByMode.m1;
+    expect(alias.kind).toBe('alias');
+    if (alias.kind === 'alias') expect(alias.resolved).toEqual({ kind: 'duration', seconds: 0.3 });
+    const wrong = byName['motion/duration/wrong'].provenance.valuesByMode.m1;
+    expect(wrong.kind === 'alias' && wrong.resolved).toEqual({ kind: 'unresolved', reason: 'type_mismatch' });
+  });
+
+  it('records a value it cannot model as invalid, naming what Figma returned', () => {
+    const spec = buildFoundation(motionDump());
+    const byName = Object.fromEntries(spec.collections[0].variables.map((v) => [v.name, v]));
+    expect(byName['motion/ease/unknown'].provenance.valuesByMode.m1)
+      .toEqual({ kind: 'unresolved', reason: 'invalid_source_value', detail: 'WOBBLE' });
+    expect(byName['motion/ease/unknown'].valuesByMode.m1).toEqual({ kind: 'unresolved', reason: 'missing' });
+    expect(byName['motion/duration/bad'].provenance.valuesByMode.m1)
+      .toEqual({ kind: 'unresolved', reason: 'invalid_source_value', detail: 'soon' });
+  });
+
+  it('omits detail when Figma returned nothing printable, and for colour and FLOAT values', () => {
+    const dump = motionDump();
+    const vars = dump.collections[0].variables;
+    const set = (id: string, value: unknown) => { vars.find((v) => v.id === id)!.valuesByMode.m1 = value as never; };
+    set('unknown', { type: 42 });
+    set('bad-timing', { type: 'EASE_OUT' });
+    const byName = () => Object.fromEntries(buildFoundation(dump).collections[0].variables.map((v) => [v.name, v]));
+    const first = byName();
+    for (const name of ['motion/ease/unknown', 'motion/duration/bad']) {
+      const value = first[name].provenance.valuesByMode.m1;
+      expect(value).toEqual({ kind: 'unresolved', reason: 'invalid_source_value' });
+      expect('detail' in value).toBe(false);
+    }
+    set('unknown', undefined);
+    expect('detail' in byName()['motion/ease/unknown'].provenance.valuesByMode.m1).toBe(false);
+
+    vars.push(
+      { id: 'badcolor', name: 'c/bad', resolvedType: 'COLOR', description: '', codeSyntax: {}, scopes: [],
+        valuesByMode: { m1: { r: 1.2, g: 0, b: 0, a: 1 } } },
+      { id: 'nan', name: 'n/nan', resolvedType: 'FLOAT', description: '', codeSyntax: {}, scopes: [],
+        valuesByMode: { m1: Number.NaN } },
+    );
+    const second = byName();
+    for (const name of ['c/bad', 'n/nan']) {
+      const value = second[name].provenance.valuesByMode.m1;
+      expect(value).toEqual({ kind: 'unresolved', reason: 'invalid_source_value' });
+      expect('detail' in value).toBe(false);
+    }
+  });
+});

@@ -6,11 +6,11 @@ import { COMPONENT_SCHEMA_URI } from '../../src/v5/componentContext';
 import { buildComponentV5GoldenArtifact } from '../fixtures/componentV5';
 
 const componentSchemaText = readFileSync(
-  'packages/extractor/src/v5/schema/component-5.2.0.json', 'utf8',
+  'packages/extractor/src/v5/schema/component-5.3.0.json', 'utf8',
 );
 const componentSchema = JSON.parse(componentSchemaText) as Record<string, unknown>;
 const foundationSchema = JSON.parse(readFileSync(
-  'packages/extractor/src/v5/schema/foundation-5.1.1.json', 'utf8',
+  'packages/extractor/src/v5/schema/foundation-5.2.0.json', 'utf8',
 )) as Record<string, unknown>;
 
 const ajv = addFormats(new Ajv2020({ allErrors: true, strict: true, inlineRefs: false }));
@@ -45,6 +45,16 @@ describe('Component Context v5 schema', () => {
     artifact.anatomy[0].shown_by = 'Icon left';
     expect(validate(artifact), ajv.errorsText(validate.errors)).toBe(true);
     artifact.anatomy[0].shown_by = true;
+    expect(validate(artifact)).toBe(false);
+  });
+  it('accepts a motion block and rejects an unknown trigger type', () => {
+    const artifact = structuredClone(buildComponentV5GoldenArtifact()) as unknown as Record<string, unknown>;
+    artifact.motion = { transitions: [{
+      from: { State: 'Default' }, to: { State: 'Hover' }, trigger: { type: 'on_hover' }, on: 'Container',
+      transition: { type: 'move_in', direction: 'left', match_layers: true, duration: { number: 0.3, unit: 's' }, easing: { type: 'unsupported', figma_type: 'CUSTOM_SPRING' } },
+    }] };
+    expect(validate(artifact), ajv.errorsText(validate.errors)).toBe(true);
+    (artifact.motion as { transitions: Array<{ trigger: { type: string } }> }).transitions[0].trigger.type = 'on_sneeze';
     expect(validate(artifact)).toBe(false);
   });
 });

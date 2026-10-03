@@ -6,8 +6,43 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **Motion variables in the Foundation.** Figma's `TIMING` and `EASING`
+  variable types (Plugin API update 133) are read as `duration` tokens in
+  seconds and a new `easing` token type (a named preset, a cubic bezier, a
+  spring bounce, or hold). Foundation rows read "0.3 s" or the easing name,
+  and a cubic bezier draws its curve. Foundation Context v5 moves to schema
+  **5.2.0** (`foundation-5.2.0.json`); the envelope sits outside the content
+  hash, so no artifact identity moves for a file without these variables.
+  DTCG projects `duration` and a cubic bezier `cubicBezier`; a preset,
+  spring or hold is omitted and named in `report.json`, never expanded to
+  numbers the API did not return. Before this, a `TIMING` variable exported
+  as a unitless `number` and an `EASING` variable read "Not resolved".
+  `@figma/plugin-typings` moves to 1.140.0.
+- **Motion section for variant transitions.** Prototype interactions that
+  change a component set's variant (hover, press, click, delay) appear as a
+  Motion section after States, with From, To, Trigger, Transition, Duration
+  and Easing, and as `motion.transitions` in the YAML brief, Component
+  Context v5 (schema **5.3.0**, `component-5.3.0.json`), Markdown and the AI
+  profile. A `CHANGE_TO` outside the set is reported as
+  `transition-target-outside-set`. The section is marked Beta in the
+  section picker; existing documents gain it when it is ticked on. The
+  `motion` key exists only when a component has transitions, so every
+  document without them keeps a byte-identical hash and `EXTRACTOR_VERSION`
+  stays `'3'`: the content hash of an affected document moves on its own,
+  which is what drift detection reports. An easing on a prototype
+  transition that Figma stores as a physical spring (mass, stiffness,
+  damping) is reported as not supported, never converted to a bounce,
+  because the conversion is Figma's own and not available to a plugin.
+
 ### Changed
 
+- CI's dependency review exempts `@figma/plugin-typings` from the licence
+  allow-list. The package ships a verbatim MIT licence but declares it as the
+  non-SPDX string "MIT License", which GitHub reports as
+  `LicenseRef-bad-mit-license`, so every version bump failed the gate. The
+  terms are unchanged; only the metadata is exempted.
 - **Pro AI writing moves to Claude Sonnet 5.5.** The proxy now assigns
   `claude-sonnet-5-5` to a proved Pro license, still at
   `output_config.effort: low`, in place of `claude-sonnet-5`. The per-token

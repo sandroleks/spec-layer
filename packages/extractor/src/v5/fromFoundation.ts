@@ -424,6 +424,8 @@ function tokenTypeOf(variable: FoundationVariable): TokenType {
     const scopes = uniqueSorted(variable.provenance.scopes);
     return scopes.length === 1 && scopes[0] === 'FONT_FAMILY' ? 'font_family' : 'string';
   }
+  if (variable.resolvedType === 'TIMING') return 'duration';
+  if (variable.resolvedType === 'EASING') return 'easing';
   const numeric = numericValue(0, variable.provenance.scopes);
   return numeric?.type === 'dimension' ? 'dimension' : 'number';
 }
@@ -449,6 +451,12 @@ function typedLiteral(
   }
   if (literal.kind === 'boolean' && tokenType === 'boolean') {
     return { type: 'boolean', value: literal.value };
+  }
+  if (literal.kind === 'duration' && tokenType === 'duration') {
+    return { type: 'duration', number: literal.seconds, unit: 's' };
+  }
+  if (literal.kind === 'easing' && tokenType === 'easing') {
+    return { type: 'easing', easing: literal.easing };
   }
   return null;
 }
@@ -490,11 +498,19 @@ function projectValue(
 
   if (value.kind === 'unresolved') {
     if (value.reason === 'invalid_source_value') {
-      diagnostics.push(diagnostic('INVALID_SOURCE_COLOR', {
+      if (variable.resolvedType === 'COLOR') {
+        diagnostics.push(diagnostic('INVALID_SOURCE_COLOR', {
+          entity_id: variable.provenance.id, mode_id: modeId,
+          message: 'The source color has a channel that is not finite or is outside 0 to 1, so the value for this mode is recorded as `missing`.',
+        }));
+        return { kind: 'missing', reason: 'invalid_source_value' };
+      }
+      diagnostics.push(diagnostic('UNSUPPORTED_VALUE_TYPE', {
         entity_id: variable.provenance.id, mode_id: modeId,
-        message: 'The source color has a channel that is not finite or is outside 0 to 1, so the value for this mode is recorded as `missing`.',
+        message: 'The source value for this mode is not one Foundation Context v5 can model (`details.source` names what Figma returned), so the value for this mode is recorded as `missing`.',
+        details: { source: value.detail ?? null },
       }));
-      return { kind: 'missing', reason: 'invalid_source_value' };
+      return { kind: 'missing', reason: 'unsupported_value_type' };
     }
     return { kind: 'missing', reason: 'source_unavailable' };
   }

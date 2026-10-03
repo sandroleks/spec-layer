@@ -4,6 +4,21 @@
     "source": "derived",
     "file": "effect-styles.css"
   },
+  "Motion.motion.duration.button": {
+    "name": "--motion-motion-duration-button",
+    "source": "derived",
+    "file": "motion.css"
+  },
+  "Motion.motion.duration.fast": {
+    "name": "--motion-duration-fast",
+    "source": "code_syntax",
+    "file": "motion.css"
+  },
+  "Motion.motion.ease.standard": {
+    "name": "--motion-motion-ease-standard",
+    "source": "derived",
+    "file": "motion.css"
+  },
   "Primitives.color.chain.bridge": {
     "name": "--primitives-color-chain-bridge",
     "source": "derived",

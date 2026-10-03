@@ -4,7 +4,9 @@ import { componentBrief } from '../src/brief';
 import type { ComponentBriefOptions } from '../src/brief';
 import { toYaml } from '../src/yaml';
 import type { IntermediateSpec } from '../src/extract';
-import type { RefIdentity } from '../src/tree';
+import type { RefIdentity, SerializedNode } from '../src/tree';
+import { extract } from '../src/index';
+import button from './fixtures/button.json';
 import type { TokenRule } from '../src/tokens';
 
 /** A TokenRule now carries the full identity Figma stated for the reference.
@@ -1186,5 +1188,34 @@ describe('tokens.used as a list', () => {
     // The style kinds share one vocabulary now: `typography` named the PROPERTY,
     // not the kind of thing bound.
     expect(brief.tokens.used[0].kind).toBe('text-style');
+  });
+});
+
+const hover = { trigger: { type: 'on_hover' as const }, destinationId: '1:2',
+  transition: { type: 'smart_animate' as const, duration: 0.3, easing: { type: 'named' as const, name: 'ease_out' as const } } };
+const press = { trigger: { type: 'on_press' as const }, destinationId: '1:3', transition: { type: 'instant' as const } };
+const away = { trigger: { type: 'on_click' as const }, destinationId: '9:9', transition: { type: 'instant' as const } };
+
+const set: SerializedNode = {
+  id: '1:0', name: 'Button', type: 'COMPONENT_SET', visible: true,
+  children: [
+    { id: '1:1', name: 'State=Default', type: 'COMPONENT', visible: true, transitions: [hover, hover, away],
+      children: [{ id: '1:11', name: 'Icon', type: 'FRAME', visible: true, transitions: [press] }] },
+    { id: '1:2', name: 'State=Hover', type: 'COMPONENT', visible: true,
+      transitions: [{ trigger: { type: 'mouse_leave', delay: 0 }, destinationId: '1:1', transition: { type: 'instant' } }] },
+    { id: '1:3', name: 'State=Pressed', type: 'COMPONENT', visible: true },
+  ],
+};
+
+describe('motion block', () => {
+  it('is absent without transitions and lists them in snake_case when present', () => {
+    const bare = componentBrief(extract(button as unknown as SerializedNode, { figmaFile: 'F' }), { generatedAt: AT, prose: null }) as Record<string, unknown>;
+    expect('motion' in bare).toBe(false);
+    const brief = componentBrief(extract(set, { figmaFile: 'F' }), { generatedAt: AT, prose: null }) as { motion: { transitions: unknown[] } };
+    expect(brief.motion.transitions[0]).toEqual({
+      from: { State: 'Default' }, to: { State: 'Hover' }, trigger: { type: 'on_hover' }, on: 'Container',
+      transition: { type: 'smart_animate', duration: { number: 0.3, unit: 's' }, easing: { type: 'named', name: 'ease_out' } },
+    });
+    expect(brief.motion.transitions[1]).toMatchObject({ on: 'Icon', transition: { type: 'instant' } });
   });
 });

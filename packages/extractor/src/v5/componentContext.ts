@@ -33,7 +33,7 @@ import { computeFoundationStatistics } from './statistics';
 import { validateLevel1, validateLevel2 } from './validate';
 import { resolvedValueOf } from './value';
 
-export const COMPONENT_SCHEMA_VERSION = '5.2.0';
+export const COMPONENT_SCHEMA_VERSION = '5.3.0';
 export const COMPONENT_SCHEMA_URI = 'https://spec-layer.com/schemas/component-context/v5.json';
 export const COMPONENT_EXTRACTOR_NAME = 'spec-layer-component';
 
@@ -88,6 +88,7 @@ export interface ComponentSemanticPayloadV5 {
   layout?: YamlValue;
   references: ComponentReferenceSetV5;
   effects_inline?: YamlValue;
+  motion?: YamlValue;
   unbound?: YamlValue;
 }
 
@@ -170,6 +171,7 @@ export interface ComponentAiContextV5 {
     foundation: YamlValue;
   };
   effects_inline?: YamlValue;
+  motion?: YamlValue;
   unbound?: YamlValue;
   validation?: YamlValue;
   issue_counts?: Record<string, Record<string, number>>;
@@ -446,6 +448,7 @@ export function componentSemanticContentHash(payload: ComponentSemanticPayloadV5
     layout: payload.layout,
     references: payload.references,
     effects_inline: payload.effects_inline,
+    motion: payload.motion,
     unbound: payload.unbound,
   }))}`;
 }
@@ -690,6 +693,7 @@ export function buildComponentArtifactV5(
     ...(effectsInline !== undefined
       ? { effects_inline: effectsInline }
       : {}),
+    ...(projected.motion !== undefined ? { motion: projected.motion } : {}),
     ...(projected.unbound !== undefined ? { unbound: projected.unbound } : {}),
   };
   const source: ComponentArtifactSourceV5 = {
@@ -901,6 +905,7 @@ export function componentAiContext(
     ...(artifact.effects_inline !== undefined
       ? { effects_inline: artifact.effects_inline }
       : {}),
+    ...(artifact.motion !== undefined ? { motion: artifact.motion } : {}),
     ...(artifact.unbound !== undefined ? { unbound: artifact.unbound } : {}),
     ...(artifact.validation !== undefined ? { validation: artifact.validation } : {}),
     ...(counts ? { issue_counts: counts } : {}),
