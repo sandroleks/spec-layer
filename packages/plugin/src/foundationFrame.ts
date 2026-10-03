@@ -55,6 +55,10 @@ function leafLabel(value: FoundationValue): string {
       return value.value === '' ? 'Empty string' : value.value;
     case 'boolean':
       return String(value.value);
+    case 'duration':
+      return String(value.seconds);
+    case 'easing':
+      return value.easing.type;
     case 'unresolved':
       return unresolvedLabel(value.reason);
   }

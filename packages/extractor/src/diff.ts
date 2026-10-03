@@ -12,6 +12,7 @@ import type {
   FoundationGlyph, FoundationRow, FoundationTextMetrics, FoundationUnitContent,
   FoundationValue, FoundationVariableRow,
 } from './foundation';
+import { durationLabel, easingLabel } from './motion';
 import { compareCodeUnits } from './v5/diagnostics';
 import { matchesVariant } from './resolve';
 
@@ -150,6 +151,10 @@ export function formatFoundationValue(value: FoundationValue): string {
       return value.value;
     case 'boolean':
       return value.value ? 'true' : 'false';
+    case 'duration':
+      return durationLabel(value.seconds);
+    case 'easing':
+      return easingLabel(value.easing);
     case 'alias': {
       const reference = `{${value.targetCollection}/${value.targetName}}`;
       return value.resolved ? `${reference} resolving to ${formatFoundationValue(value.resolved)}` : reference;

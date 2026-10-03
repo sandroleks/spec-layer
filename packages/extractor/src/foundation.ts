@@ -5,7 +5,7 @@
  * included, is synchronous and fixture-testable.
  */
 import type { EffectLayer } from './effects';
-import type { RawEasing } from './motion';
+import { easingOf, type Easing, type RawEasing } from './motion';
 import { canonicalColor } from './v5/color';
 import { compareCodeUnits } from './v5/diagnostics';
 import { canonicalNumber } from './v5/precision';
@@ -140,6 +140,8 @@ export type FoundationValue =
   | { kind: 'number'; value: number }
   | { kind: 'string'; value: string }
   | { kind: 'boolean'; value: boolean }
+  | { kind: 'duration'; seconds: number }
+  | { kind: 'easing'; easing: Easing }
   | { kind: 'alias'; targetName: string; targetCollection: string;
       external: boolean; resolved: FoundationValue | null }
   | { kind: 'unresolved'; reason: 'cycle' | 'missing' | 'external' | 'depth' };
@@ -150,7 +152,9 @@ export type FoundationProvenanceLiteral =
   | { kind: 'color'; hex: string; alpha: number; channels?: [number, number, number] }
   | { kind: 'number'; value: number }
   | { kind: 'string'; value: string }
-  | { kind: 'boolean'; value: boolean };
+  | { kind: 'boolean'; value: boolean }
+  | { kind: 'duration'; seconds: number }
+  | { kind: 'easing'; easing: Easing };
 
 export type FoundationUnresolvedReason =
   | 'cycle' | 'missing' | 'external' | 'depth' | 'type_mismatch'
@@ -168,11 +172,11 @@ export type FoundationProvenanceValue =
       targetCollection: string;
       external: boolean;
       resolved: FoundationProvenanceLiteral
-        | { kind: 'unresolved'; reason: FoundationUnresolvedReason }
+        | { kind: 'unresolved'; reason: FoundationUnresolvedReason; detail?: string }
         | null;
       chain: FoundationResolutionStep[];
     }
-  | { kind: 'unresolved'; reason: FoundationUnresolvedReason };
+  | { kind: 'unresolved'; reason: FoundationUnresolvedReason; detail?: string };
 
 export interface FoundationVariableProvenance {
   id: string;
@@ -335,8 +339,25 @@ function isRgba(v: RawVariableValue): v is RawRGBA {
   return typeof v === 'object' && v !== null && 'r' in v;
 }
 
-/** Convert one non-alias source value without losing source precision. */
-function provenanceLiteral(raw: RawVariableValue): FoundationProvenanceValue {
+/** Convert one non-alias source value without losing source precision. The
+ *  resolved type decides the kind: a TIMING number is seconds, never a bare
+ *  number, and an EASING object goes through the one easing vocabulary. */
+function provenanceLiteral(
+  raw: RawVariableValue, resolvedType: FoundationVariableType,
+): FoundationProvenanceValue {
+  if (resolvedType === 'TIMING') {
+    return typeof raw === 'number' && Number.isFinite(raw)
+      ? { kind: 'duration', seconds: canonicalNumber(raw) }
+      : { kind: 'unresolved', reason: 'invalid_source_value', detail: String(raw) };
+  }
+  if (resolvedType === 'EASING') {
+    const easing = isRgba(raw) ? null : easingOf(raw);
+    if (easing) return { kind: 'easing', easing };
+    const detail = typeof raw === 'object' && raw !== null && typeof (raw as { type?: unknown }).type === 'string'
+      ? (raw as { type: string }).type
+      : String(raw);
+    return { kind: 'unresolved', reason: 'invalid_source_value', detail };
+  }
   if (isRgba(raw)) {
     const color = canonicalColor(raw);
     if (!color.ok) return { kind: 'unresolved', reason: 'invalid_source_value' };
@@ -447,6 +468,8 @@ function legacyValueOf(value: FoundationProvenanceValue): FoundationValue {
     case 'number': return { kind: 'number', value: value.value };
     case 'string': return { kind: 'string', value: value.value };
     case 'boolean': return { kind: 'boolean', value: value.value };
+    case 'duration': return { kind: 'duration', seconds: value.seconds };
+    case 'easing': return { kind: 'easing', easing: value.easing };
     case 'unresolved': {
       const reason = value.reason === 'cycle' || value.reason === 'depth'
         || value.reason === 'external'
@@ -569,7 +592,7 @@ export function buildFoundation(
         return finishPath(path, missing);
       }
       if (!isAlias(raw)) {
-        const literal = provenanceLiteral(raw);
+        const literal = provenanceLiteral(raw, current.variable.resolvedType);
         memo.set(key, literal);
         return finishPath(path, literal);
       }

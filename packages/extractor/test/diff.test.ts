@@ -116,6 +116,11 @@ describe('formatFoundationValue', () => {
     })).toBe('{Brand Kit/blue/500}');
     expect(formatFoundationValue({ kind: 'unresolved', reason: 'missing' })).toBe('unresolved (missing)');
   });
+
+  it('renders a duration in seconds and an easing by its label', () => {
+    expect(formatFoundationValue({ kind: 'duration', seconds: 0.3 })).toBe('0.3 s');
+    expect(formatFoundationValue({ kind: 'easing', easing: { type: 'spring', bounce: 0.3 } })).toBe('Spring, bounce 0.3');
+  });
 });
 
 const TEXT_BASE = {
