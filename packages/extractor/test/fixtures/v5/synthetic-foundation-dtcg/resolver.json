@@ -2,6 +2,13 @@
   "version": "2025.10",
   "name": "Synthetic Direct Foundation",
   "sets": {
+    "Motion": {
+      "sources": [
+        {
+          "$ref": "motion.default.json"
+        }
+      ]
+    },
     "Effect styles": {
       "sources": [
         {
@@ -62,6 +69,9 @@
       "$ref": "#/modifiers/Semantic"
     },
     {
+      "$ref": "#/sets/Motion"
+    },
+    {
       "$ref": "#/sets/Effect styles"
     },
     {
@@ -71,7 +81,7 @@
   "$extensions": {
     "com.spec-layer": {
       "schema_version": "5.2.0",
-      "content_hash": "sha256:6672f17bd07643b2f27bb9b7e955fdcaf68948137a0d10a2711c45d5eb0153a8",
+      "content_hash": "sha256:9b9ce1d63c244bea2abd8815bfb7c5de0f0a6b15604e299068ad1bb5a366050b",
       "config_hash": "sha256:c68f92d8722277d28acec2f2fdb0a1a1556a2fc51e759f0ea17029daf8e98adf",
       "source": {
         "provider": "figma",
@@ -87,6 +97,9 @@
         ]
       },
       "code_syntax": {
+        "Motion.motion.duration.fast": {
+          "WEB": "--motion-duration-fast"
+        },
         "Primitives.color.exact.red": {
           "WEB": "--color-exact-red"
         },
@@ -101,6 +114,29 @@
         }
       },
       "census": {
+        "motion.default.json": {
+          "tokens": 2,
+          "types": {
+            "duration": 2
+          },
+          "descriptions": {
+            "present": 1,
+            "missing": 1
+          },
+          "aliases": 1,
+          "literals": 1,
+          "scopes": {},
+          "code_syntax": {
+            "present": 1,
+            "missing": 1
+          },
+          "publication": {
+            "published": 0,
+            "hidden_from_publishing": 0,
+            "unstated": 2
+          },
+          "omitted": 5
+        },
         "primitives.dark.json": {
           "tokens": 13,
           "types": {
@@ -278,6 +314,61 @@
         }
       },
       "report": [
+        {
+          "code": "type_not_expressible",
+          "severity": "warning",
+          "path": "Motion.motion.ease.emphasized",
+          "mode": "Default",
+          "message": "DTCG has no easing type; the value was omitted.",
+          "details": {
+            "id": "VariableID:motion-emphasized",
+            "type": "easing"
+          }
+        },
+        {
+          "code": "type_not_expressible",
+          "severity": "warning",
+          "path": "Motion.motion.ease.spring",
+          "mode": "Default",
+          "message": "DTCG has no easing type; the value was omitted.",
+          "details": {
+            "id": "VariableID:motion-spring",
+            "type": "easing"
+          }
+        },
+        {
+          "code": "type_not_expressible",
+          "severity": "warning",
+          "path": "Motion.motion.ease.standard",
+          "mode": "Default",
+          "message": "DTCG has no easing type; the value was omitted.",
+          "details": {
+            "id": "VariableID:motion-standard",
+            "type": "easing"
+          }
+        },
+        {
+          "code": "type_not_expressible",
+          "severity": "warning",
+          "path": "Motion.motion.ease.step",
+          "mode": "Default",
+          "message": "DTCG has no easing type; the value was omitted.",
+          "details": {
+            "id": "VariableID:motion-step",
+            "type": "easing"
+          }
+        },
+        {
+          "code": "value_omitted",
+          "severity": "warning",
+          "path": "Motion.motion.ease.unknown",
+          "mode": "Default",
+          "message": "The token has no value for this mode, so none was written.",
+          "details": {
+            "id": "VariableID:motion-unknown",
+            "reason": "unsupported_value_type"
+          }
+        },
         {
           "code": "type_not_expressible",
           "severity": "warning",

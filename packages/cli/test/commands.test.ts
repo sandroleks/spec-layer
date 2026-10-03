@@ -874,12 +874,12 @@ describe('runPull report summary and --strict', () => {
     const code = await runPull(cwd, { key: KEY }, {}, io, stub200(JSON.stringify(COLLISION_BUNDLE)));
     expect(code).toBe(0);
     const err = io.errLines.join('\n');
-    // 2 name_collision errors (per-output report) plus 11 warnings: 2
-    // mode_selector_shared (per-output) and 9 warnings the synthetic
+    // 2 name_collision errors (per-output report) plus 16 warnings: 2
+    // mode_selector_shared (per-output) and 14 warnings the synthetic
     // foundation's tokens/report.json always carries (unresolved cycles,
-    // externals, a boolean and a string DTCG cannot express), unrelated to
+    // externals, a boolean, a string, four easings and an unmodelled easing value DTCG cannot express), unrelated to
     // the collision and present on every pull of this fixture.
-    expect(err).toContain('2 errors, 11 warnings in the token output.');
+    expect(err).toContain('2 errors, 16 warnings in the token output.');
     expect(err).toContain('tokens/report.json');
     expect(err).toContain('web-css.report.json');
   });
@@ -899,8 +899,8 @@ describe('runPull report summary and --strict', () => {
     const code = await runPull(cwd, { key: KEY }, {}, io, stub200());
     expect(code).toBe(0);
     // 5 from outputs/web-css.report.json (2 mode_selector_shared + 3
-    // unitless_number, one per mode) plus 9 from tokens/report.json.
-    expect(io.errLines.join('\n')).toContain('0 errors, 14 warnings in the token output.');
+    // unitless_number, one per mode) plus 14 from tokens/report.json.
+    expect(io.errLines.join('\n')).toContain('0 errors, 19 warnings in the token output.');
   });
 
   it('pluralises a single warning as "1 warning", not "1 warnings"', async () => {
@@ -917,12 +917,12 @@ describe('runPull report summary and --strict', () => {
     const err = io.errLines.join('\n');
     expect(err).toContain('tokens/report.json');
     // 2 path_collision errors (one per token id sharing the DTCG path, from
-    // tokens/report.json) plus 11 warnings: 9 from tokens/report.json's own
+    // tokens/report.json) plus 16 warnings: 14 from tokens/report.json's own
     // baseline and 2 mode_selector_shared from the per-output report. The
     // colliding token's own unitless_number entries are gone, not merely
     // uncounted: a DTCG-path collision omits the token from the resolved
     // document before cssOutput ever sees it.
-    expect(err).toContain('2 errors, 11 warnings in the token output.');
+    expect(err).toContain('2 errors, 16 warnings in the token output.');
   });
 
   it('exits 1 under --strict for a path_collision error, which lives only in tokens/report.json', async () => {
@@ -952,7 +952,7 @@ describe('runPull report summary and --strict', () => {
 
     expect(io.outLines.join('\n')).toContain('Already up to date');
     expect(code).toBe(0);
-    expect(io.errLines.join('\n')).toContain('2 errors, 11 warnings in the token output.');
+    expect(io.errLines.join('\n')).toContain('2 errors, 16 warnings in the token output.');
   });
 
   it('prints no severity line for a components-only pull, which writes no output report', async () => {

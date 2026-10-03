@@ -1,0 +1,20 @@
+{
+  "Motion": {
+    "motion": {
+      "duration": {
+        "button": {
+          "$type": "duration",
+          "$value": "{Motion.motion.duration.fast}"
+        },
+        "fast": {
+          "$type": "duration",
+          "$value": {
+            "unit": "s",
+            "value": 0.3
+          },
+          "$description": "Short transitions."
+        }
+      }
+    }
+  }
+}

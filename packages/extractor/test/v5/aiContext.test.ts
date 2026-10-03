@@ -26,7 +26,7 @@ describe('foundationAiContext', () => {
       source: { provider: 'figma', file_name: 'Synthetic Direct Foundation' },
     });
     expect(context.completeness).toEqual(full.completeness);
-    expect(context.collections.map(({ name }) => name)).toEqual(['Primitives', 'Semantic']);
+    expect(context.collections.map(({ name }) => name)).toEqual(['Primitives', 'Semantic', 'Motion']);
 
     const primitives = context.collections[0];
     expect(primitives.modes).toEqual([
@@ -82,6 +82,7 @@ describe('foundationAiContext', () => {
         MISSING_MODE_VALUE: 2,
         UNRESOLVED_ALIAS: 2,
         UNRESOLVED_EXTERNAL_ALIAS: 4,
+        UNSUPPORTED_VALUE_TYPE: 1,
       },
       warning: { CONFUSABLE_NAME: 1, STYLE_BINDING_DRIFT: 1, UNIT_METADATA_UNAVAILABLE: 1 },
       info: { METADATA_UNAVAILABLE: 1 },

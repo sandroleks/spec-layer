@@ -12,6 +12,7 @@ import { diffKeyed, axisModel, comboKey, coverConditions, describeScope, type Co
 import { matchesVariant } from './resolve';
 import { canonicalJson } from './v5/canonical';
 import { compareCodeUnits } from './v5/diagnostics';
+import { easingLabel } from './motion';
 import type { LibraryBundleV1 } from './libraryBundle';
 import type { CanonicalValue, TypedValue } from './v5/value';
 
@@ -202,6 +203,8 @@ export function formatTyped(value: TypedValue): string {
       return value.value ? 'true' : 'false';
     case 'cubic_bezier':
       return `cubic-bezier(${value.value.join(', ')})`;
+    case 'easing':
+      return easingLabel(value.easing);
   }
 }
 

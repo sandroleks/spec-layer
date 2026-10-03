@@ -221,6 +221,7 @@ export function dtcgLiteral(
       return { $type: 'fontFamily', $value: value.value };
     case 'string':
     case 'boolean':
+    case 'easing':
       return { omit: 'type_not_expressible', details: { type: value.type } };
     default: {
       const exhaustive: never = value;
@@ -545,7 +546,7 @@ function projectedLiteral(
   return { converted, transform };
 }
 
-/** `string` and `boolean` never reach here: `dtcgLiteral` omits them. */
+/** `string`, `boolean` and `easing` never reach here: `dtcgLiteral` omits them. */
 function literalTransform(value: TypedValue, scopes: string[]): DtcgTransform | null {
   switch (value.type) {
     case 'color': return 'color';
@@ -555,7 +556,8 @@ function literalTransform(value: TypedValue, scopes: string[]): DtcgTransform | 
     case 'cubic_bezier': return 'cubic-bezier';
     case 'font_family': return 'font-family';
     case 'string':
-    case 'boolean': return null;
+    case 'boolean':
+    case 'easing': return null;
     default: {
       const exhaustive: never = value;
       return exhaustive;

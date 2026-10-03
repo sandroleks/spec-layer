@@ -27,6 +27,17 @@ collections:
     modes:
       - { id: ModeID:s-light, name: Light, order: 0 }
       - { id: ModeID:s-dark, name: Dark, order: 1 }
+  - id: CollectionID:motion
+    name: Motion
+    path: [Motion]
+    default_mode_id: ModeID:motion-default
+    modes: [{ id: ModeID:motion-default, name: Default, order: 0 }]
+    publication: { published: true, hidden_from_publishing: false }
+    source:
+      remote: false
+      library_file_id: null
+      library_name: null
+      modified_at: null
 tokens:
   - id: VariableID:color-exact
     name: color/exact/red
@@ -428,6 +439,90 @@ tokens:
     values:
       ModeID:s-light: { kind: literal, value: { type: string, value: available } }
       ModeID:s-dark: { kind: missing, reason: no_value_for_mode }
+  - id: VariableID:motion-fast
+    name: motion/duration/fast
+    path: [motion, duration, fast]
+    collection_id: CollectionID:motion
+    type: duration
+    description: Short transitions.
+    scopes: []
+    code_syntax: { WEB: "--motion-duration-fast" }
+    values:
+      ModeID:motion-default: { kind: literal, value: { type: duration, number: 0.3, unit: s } }
+  - id: VariableID:motion-button
+    name: motion/duration/button
+    path: [motion, duration, button]
+    collection_id: CollectionID:motion
+    type: duration
+    description: ""
+    scopes: []
+    values:
+      ModeID:motion-default:
+        kind: alias
+        reference:
+          target_id: VariableID:motion-fast
+          target_collection_id: CollectionID:motion
+          target_path: [motion, duration, fast]
+          external: false
+        resolved:
+          status: resolved
+          value: { type: duration, number: 0.3, unit: s }
+          chain: [{ token_id: VariableID:motion-fast, mode_id: ModeID:motion-default }]
+  - id: VariableID:motion-standard
+    name: motion/ease/standard
+    path: [motion, ease, standard]
+    collection_id: CollectionID:motion
+    type: easing
+    description: ""
+    scopes: []
+    values:
+      ModeID:motion-default:
+        kind: literal
+        value:
+          type: easing
+          easing: { type: cubic_bezier, value: [0.2, 0, 0, 1] }
+  - id: VariableID:motion-emphasized
+    name: motion/ease/emphasized
+    path: [motion, ease, emphasized]
+    collection_id: CollectionID:motion
+    type: easing
+    description: ""
+    scopes: []
+    values:
+      ModeID:motion-default:
+        kind: literal
+        value: { type: easing, easing: { type: named, name: ease_out } }
+  - id: VariableID:motion-spring
+    name: motion/ease/spring
+    path: [motion, ease, spring]
+    collection_id: CollectionID:motion
+    type: easing
+    description: ""
+    scopes: []
+    values:
+      ModeID:motion-default:
+        kind: literal
+        value: { type: easing, easing: { type: spring, bounce: 0.3 } }
+  - id: VariableID:motion-step
+    name: motion/ease/step
+    path: [motion, ease, step]
+    collection_id: CollectionID:motion
+    type: easing
+    description: ""
+    scopes: []
+    values:
+      ModeID:motion-default:
+        kind: literal
+        value: { type: easing, easing: { type: hold } }
+  - id: VariableID:motion-unknown
+    name: motion/ease/unknown
+    path: [motion, ease, unknown]
+    collection_id: CollectionID:motion
+    type: easing
+    description: ""
+    scopes: []
+    values:
+      ModeID:motion-default: { kind: missing, reason: unsupported_value_type }
 styles:
   typography:
     - id: StyleID:body-regular
@@ -501,7 +596,7 @@ spec_layer:
     id: synthetic-direct-v5-acceptance
     generated_at: 2026-08-28T00:00:00.000Z
     deterministic: true
-    content_hash: sha256:6672f17bd07643b2f27bb9b7e955fdcaf68948137a0d10a2711c45d5eb0153a8
+    content_hash: sha256:9b9ce1d63c244bea2abd8815bfb7c5de0f0a6b15604e299068ad1bb5a366050b
   source:
     provider: figma
     file_id: FILE:synthetic-direct-v5
@@ -565,6 +660,12 @@ diagnostics:
     mode_id: ModeID:s-light
     message: "Alias references an external library that did not resolve: unknown library."
     details: { reason: source_library_unavailable }
+  - code: UNSUPPORTED_VALUE_TYPE
+    severity: error
+    entity_id: VariableID:motion-unknown
+    mode_id: ModeID:motion-default
+    message: The source value for this mode is not one Foundation Context v5 can model (`details.source` names what Figma returned), so the value for this mode is recorded as `missing`.
+    details: { source: WOBBLE }
   - code: CONFUSABLE_NAME
     severity: warning
     entity_id: VariableID:confusable
@@ -595,10 +696,10 @@ diagnostics:
       lifecycle_unavailable: true
       consuming_mode_unavailable: true
 statistics:
-  collections: 2
-  modes: 5
-  tokens: 18
+  collections: 3
+  modes: 6
+  tokens: 25
   styles: { typography: 1, effects: 1 }
-  aliases: { total: 13, resolved: 7, unresolved: 6 }
+  aliases: { total: 14, resolved: 8, unresolved: 6 }
   lifecycle: { active: 0, deprecated: 0, archived: 0 }
-  diagnostics: { error: 9, warning: 3, info: 1 }
+  diagnostics: { error: 10, warning: 3, info: 1 }

@@ -121,6 +121,7 @@ describe('foundationDtcg files and literals', () => {
 
   it('writes one file per collection and mode, named by slug, rooted at the collection', () => {
     expect(Object.keys(out.files).sort()).toEqual([
+      'motion.default.json',
       'primitives.dark.json', 'primitives.light-2.json', 'primitives.light.json',
       'semantic.dark.json', 'semantic.light.json',
       'styles.effects.json', 'styles.typography.json',
@@ -1187,6 +1188,7 @@ describe('foundationDtcg resolver and document', () => {
     expect(out.resolver.resolutionOrder).toEqual([
       { $ref: '#/modifiers/Primitives' },
       { $ref: '#/modifiers/Semantic' },
+      { $ref: '#/sets/Motion' },
       { $ref: '#/sets/Effect styles' },
       { $ref: '#/sets/Typography styles' },
     ]);
@@ -1202,6 +1204,7 @@ describe('foundationDtcg resolver and document', () => {
     expect(clashed.resolver.resolutionOrder).toEqual([
       { $ref: `#/modifiers/${first}` },
       { $ref: `#/modifiers/${second}` },
+      { $ref: '#/sets/Motion' },
       { $ref: '#/sets/Effect styles' },
       { $ref: '#/sets/Typography styles' },
     ]);
@@ -1290,7 +1293,7 @@ describe('foundationDtcg resolver and document', () => {
   it('serializes every file deterministically with a trailing newline', () => {
     const texts = dtcgExportFiles(out);
     expect(Object.keys(texts).sort()).toEqual([
-      'primitives.dark.json', 'primitives.light-2.json', 'primitives.light.json', 'report.json',
+      'motion.default.json', 'primitives.dark.json', 'primitives.light-2.json', 'primitives.light.json', 'report.json',
       'resolver.json', 'semantic.dark.json', 'semantic.light.json', 'spec-layer.meta.json',
       'styles.effects.json', 'styles.typography.json',
     ]);
@@ -1617,7 +1620,7 @@ describe('meta resolved values', () => {
         checked += 1;
       }
     }
-    expect(checked).toBe(6);
+    expect(checked).toBe(7);
   });
 
   it('agrees on the cross-collection alias too', () => {

@@ -188,6 +188,9 @@ function compactTypedValue(value: TypedValue, expectedType?: TokenType): AiValue
     case 'cubic_bezier':
       compact = [...value.value];
       break;
+    case 'easing':
+      compact = { ...value.easing };
+      break;
     case 'number':
     case 'string':
     case 'boolean':
