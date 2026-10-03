@@ -249,7 +249,7 @@ function menuGroups(row: LibraryRowPresentation): MenuItem[][] {
   if (row.canSync) {
     navigation.push({
       action: 'sync',
-      label: 'Sync to Figma',
+      label: 'Annotate in Dev Mode',
       glyph: 'upload',
     });
   }

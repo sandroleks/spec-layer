@@ -6,7 +6,7 @@ import {
 import { annotationHash, bodyHash, descriptionHash, type SyncRecord, type AnnotationLike } from '../src/syncRecord';
 import type { DescriptionText } from '../src/syncText';
 
-const TEXT: DescriptionText = { body: 'Body', markdown: 'Body\n\nWritten in Spec Layer · synced d', origin: 'authored' };
+const TEXT: DescriptionText = { body: 'Body', markdown: 'Body\n\nWritten in Spec Layer · d', origin: 'authored' };
 const MANUAL: SyncOptions = { replaceEdited: false, auto: false };
 const REPLACE: SyncOptions = { replaceEdited: true, auto: false };
 const AUTO: SyncOptions = { replaceEdited: false, auto: true };

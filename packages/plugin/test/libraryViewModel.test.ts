@@ -223,7 +223,7 @@ describe('buildLibraryRow capabilities', () => {
     });
   });
 
-  it('offers Sync to Figma only on a current component doc with its source here', () => {
+  it('offers Annotate in Dev Mode only on a current component doc with its source here', () => {
     expect(buildLibraryRow(entry(), { drift: new Map([['doc-1', 'inSync']]), now: NOW }).canSync).toBe(true);
     expect(buildLibraryRow(entry(), { drift: new Map([['doc-1', 'staleVersion']]), now: NOW }).canSync).toBe(false);
     expect(buildLibraryRow(entry({ sourceExists: false }), { now: NOW }).canSync).toBe(false);

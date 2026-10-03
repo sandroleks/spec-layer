@@ -8,7 +8,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
-- **Sync to Figma.** A Library row's menu and Settings, Export can now write a
+- **Annotate in Dev Mode.** A Library row's menu and Settings, Export can now write a
   component doc back into Figma's own fields, so Dev Mode and the REST API
   show what the canvas shows. The Usage text (Overview, When to use, When not
   to use) goes into the component description with one provenance line; when
@@ -19,11 +19,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   text nobody has edited. A description, link or annotation changed in Figma
   is kept, and replacing it is a separate, labelled step. A record of what
   was written lives in the component's plugin data, and the serializer reads
-  a description or link that matches it as absent, so a synced doc never
+  a description or link that matches it as absent, so an annotated doc never
   reports drift against its own words and the AI prompt is never fed its own
-  output. Nothing the sync writes enters a hash or an artifact, and
-  `EXTRACTOR_VERSION` is unchanged. An optional switch syncs again after an
-  Update, for components already synced by hand, and never writes text that
+  output. Nothing it writes enters a hash or an artifact, and
+  `EXTRACTOR_VERSION` is unchanged. An optional switch annotates again after an
+  Update, for components already annotated by hand, and never writes text that
   was edited in Figma or written with AI. Whether Figma's MCP server or Make
   reads the descriptions is not verified.
 

@@ -135,7 +135,7 @@ export type MainToUi =
        *  `publishInfo` reply and mint a duplicate library. */
       publishInfo: PublishInfo }
   | { type: 'publishSourcesError'; message: string }
-  /** Sync to Figma: what a run would do, for the confirm dialog. */
+  /** Annotate in Dev Mode: what a run would do, for the confirm dialog. */
   | { type: 'syncPlan'; scope: SyncScope; replaceEdited: boolean; plan: SyncPlanResult }
   | { type: 'syncDone'; scope: SyncScope; replaceEdited: boolean; result: SyncResult }
   | { type: 'syncError'; message: string }
@@ -219,7 +219,7 @@ export type UiToMain =
       components: PublishStampComponent[]; foundation: SerializedFoundation | null }
   /** After the server says the library is gone, so the next publish creates. */
   | { type: 'clearPublishInfo' }
-  /** Sync to Figma. The plan writes nothing; `applySync` plans again against
+  /** Annotate in Dev Mode. The plan writes nothing; `applySync` plans again against
    *  the live file and writes, so a change between the two is never missed. */
   | { type: 'requestSyncPlan'; scope: SyncScope; replaceEdited: boolean }
   | { type: 'applySync'; scope: SyncScope; replaceEdited: boolean }

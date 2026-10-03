@@ -1,5 +1,5 @@
 /**
- * What Sync to Figma wrote on a component, kept in the component's own plugin
+ * What Annotate in Dev Mode wrote on a component, kept in the component's own plugin
  * data so it travels with the node. Every field holds a hash of the value as
  * Figma read it back after the write, never of what was sent: a live value
  * with the same hash is Spec Layer's own, and any other value is a person's.

@@ -52,7 +52,7 @@ export interface SettingsScreenState {
   tab?: SettingsTab;
   /** How components leave the plugin. Absent reads as YAML, the default. */
   componentFormat?: ComponentFormat;
-  /** Sync to Figma. Absent until main reports, which reads as off and no link. */
+  /** Annotate in Dev Mode. Absent until main reports, which reads as off and no link. */
   syncOnUpdate?: boolean;
   syncFileUrl?: string | null;
   /** Why the typed file link was refused; cleared by the next save. */
@@ -259,7 +259,7 @@ function exportSection(format: ComponentFormat): string {
 }
 
 /**
- * Sync to Figma: the switch for Updates, the file link documentation links
+ * Annotate in Dev Mode: the switch for Updates, the file link documentation links
  * are built from, and a run over every documented component. Every run but
  * the automatic one asks first.
  */
@@ -269,20 +269,20 @@ function syncSection(state: SettingsScreenState): string {
   return (
     '<section class="sl-settings-section sl-sync-setting" aria-labelledby="sl-sync-heading">' +
     '<div class="sl-settings-section-heading">' +
-    '<h2 id="sl-sync-heading">Sync to Figma</h2>' +
-    '<p>Writes each doc’s usage text into the component description and places anatomy annotations, ' +
+    '<h2 id="sl-sync-heading">Annotate in Dev Mode</h2>' +
+    '<p>Writes each doc’s usage text into the component description and annotates its parts, ' +
     'so Dev Mode shows what your docs show. You confirm each run.</p>' +
     '</div>' +
     '<div class="sl-ai-control">' +
-    '<span class="sl-ai-control-copy"><strong>Sync again when a doc is updated</strong></span>' +
+    '<span class="sl-ai-control-copy"><strong>Annotate again when a doc is updated</strong></span>' +
     '<label class="sl-switch-control">' +
     '<input class="sl-switch-input" id="sl-sync-on-update" type="checkbox" role="switch" ' +
-    `aria-label="Sync again when a doc is updated"${on ? ' checked' : ''} />` +
+    `aria-label="Annotate again when a doc is updated"${on ? ' checked' : ''} />` +
     '<span class="sl-switch-track" aria-hidden="true"><span class="sl-switch-thumb"></span></span>' +
     '</label>' +
     '</div>' +
-    '<p class="sl-settings-hint">Only refreshes components you have synced before. ' +
-    'Edits made in Figma and text written with AI wait for you to sync them.</p>' +
+    '<p class="sl-settings-hint">Only refreshes components you have annotated before. ' +
+    'Edits made in Figma and text written with AI wait for you to review them.</p>' +
     '<label class="sl-theme-color-field sl-sync-file-field"><span>File link</span>' +
     `<input id="sl-sync-file-url" data-sync-file-url value="${esc(url)}" spellcheck="false" ` +
     'placeholder="https://www.figma.com/design/…" aria-describedby="sl-sync-file-hint"></label>' +
@@ -297,7 +297,7 @@ function syncSection(state: SettingsScreenState): string {
       : '') +
     '<div class="sl-logo-actions">' +
     `<button class="sl-button" data-tone="primary" type="button" data-sync-all${state.syncBusy ? ' disabled' : ''}>` +
-    `${icon('upload', 15)}<span>${state.syncBusy ? 'Syncing…' : 'Sync all components'}</span></button>` +
+    `${icon('upload', 15)}<span>${state.syncBusy ? 'Annotating…' : 'Annotate all components'}</span></button>` +
     '</div>' +
     '</section>'
   );

@@ -345,7 +345,7 @@ figma.clientStorage.getAsync('componentFormat').then((value: unknown) => {
   figma.ui.postMessage(msg);
 }).catch(() => {/* ignore */});
 
-// Sync to Figma: the per-user switch, and the file link every editor shares.
+// Annotate in Dev Mode: the per-user switch, and the file link every editor shares.
 const SYNC_ON_UPDATE_KEY = 'syncOnUpdate';
 const SYNC_FILE_URL_KEY = 'speclayer.sync.fileUrl';
 let syncOnUpdate = false;
@@ -422,7 +422,7 @@ function mergedProse(section: SectionNode): ProseV2 | null {
   return mergeProse(prose, readCanvasProse(section as unknown as ProseNodeLike));
 }
 
-/** Sync to Figma's view of the file. Every Figma read the sync makes goes
+/** Annotate in Dev Mode's view of the file. Every Figma read the sync makes goes
  *  through here, so syncFigma.ts stays testable with plain objects. */
 const syncHost: SyncHost = {
   async docs() {
@@ -463,9 +463,9 @@ async function autoSync(sourceNodeId: string): Promise<void> {
     return;
   }
   if (result.held.length > 0) {
-    figma.notify('Part of this doc was not synced to Figma because it was changed there or written with AI. Use Sync to Figma in the Library to review it.');
+    figma.notify('Part of this doc was not annotated in Dev Mode because it was changed in Figma or written with AI. Use Annotate in Dev Mode in the Library to review it.');
   } else if (result.failed.length > 0) {
-    figma.notify(`Couldn’t sync to Figma: ${result.failed[0].message}`, { error: true });
+    figma.notify(`Couldn’t annotate in Dev Mode: ${result.failed[0].message}`, { error: true });
   }
 }
 

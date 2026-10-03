@@ -17,7 +17,7 @@ describe('descriptionText', () => {
       'A button starts an action.\n\nUse one per view for the main action.\n\n' +
       '**When to use**\n- To submit a form.\n\n**When not to use**\n- To navigate to another page.',
     );
-    expect(d?.markdown).toBe(`${d?.body}\n\nWritten with AI in Spec Layer · synced 2026-10-03`);
+    expect(d?.markdown).toBe(`${d?.body}\n\nWritten with AI in Spec Layer · 2026-10-03`);
     expect(d?.markdown).not.toContain('Enter');
   });
 

@@ -202,7 +202,7 @@ let settingsTab: SettingsTab = 'frames';
 let settingsColorError = '';
 let settingsFontWarning = '';
 let settingsLogoError = '';
-/** Sync to Figma, as main last reported it. */
+/** Annotate in Dev Mode, as main last reported it. */
 let syncOnUpdate = false;
 let syncFileUrl: string | null = null;
 let syncFileUrlError = '';
@@ -2877,7 +2877,7 @@ const handleMainMessage = (event: MessageEvent): void => {
     }
 
     case 'syncError':
-      nativeNotify(`Couldn’t sync to Figma: ${msg.message}`, { error: true });
+      nativeNotify(`Couldn’t annotate in Dev Mode: ${msg.message}`, { error: true });
       endSync();
       return;
 

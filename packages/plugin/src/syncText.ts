@@ -1,5 +1,5 @@
 /**
- * The component description Sync to Figma writes: the doc's Usage text, as
+ * The component description Annotate in Dev Mode writes: the doc's Usage text, as
  * Markdown, with one provenance line. A projection of the prose the canvas
  * shows. It never invents a section, never fills an empty one, and never
  * feeds a hash.
@@ -54,8 +54,8 @@ export function descriptionText(prose: ProseV2 | null, syncedOn: string): Descri
 /** For a human reading Dev Mode. Detection never depends on it. */
 export function provenanceLine(origin: SyncOrigin, syncedOn: string): string {
   return origin === 'authored'
-    ? `Written in Spec Layer · synced ${syncedOn}`
-    : `Written with AI in Spec Layer · synced ${syncedOn}`;
+    ? `Written in Spec Layer · ${syncedOn}`
+    : `Written with AI in Spec Layer · ${syncedOn}`;
 }
 
 /** A local calendar date for the provenance line. */

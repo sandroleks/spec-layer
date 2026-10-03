@@ -19,12 +19,12 @@ describe('planNext', () => {
     const next = planNext({ items: [item('Button')], skipped: [], fileLinkKnown: true });
     expect(next).toMatchObject({ kind: 'confirm', edited: [] });
     if (next.kind !== 'confirm') return;
-    expect(next.dialog.title).toBe('Sync Button to Figma?');
+    expect(next.dialog.title).toBe('Annotate Button in Dev Mode?');
     expect(next.dialog.body).toBe(
       'This writes 1 description, 1 annotation and 1 documentation link. ' +
       'Other files see the descriptions after you publish the library.',
     );
-    expect(next.dialog.confirmLabel).toBe('Sync');
+    expect(next.dialog.confirmLabel).toBe('Annotate');
   });
 
   it('flags AI text, kept edits and a missing file link', () => {
@@ -36,7 +36,7 @@ describe('planNext', () => {
       skipped: [], fileLinkKnown: false,
     });
     if (next.kind !== 'confirm') throw new Error(next.kind);
-    expect(next.dialog.title).toBe('Sync 2 components to Figma?');
+    expect(next.dialog.title).toBe('Annotate 2 components in Dev Mode?');
     expect(next.dialog.body).toContain('Written with AI and not yet edited: Button. Confirming is your review.');
     expect(next.dialog.body).toContain('Edits made in Figma are kept for Input. You can replace them next.');
     expect(next.dialog.body).toContain('save this file’s link in Settings, Export.');
@@ -53,9 +53,9 @@ describe('planNext', () => {
 
   it('says so when there is nothing to write or nothing to sync', () => {
     const same = item('Button', { description: { action: 'same' }, link: { action: 'same' }, layers: [] });
-    expect(planNext({ items: [same], skipped: [], fileLinkKnown: true })).toEqual({ kind: 'toast', message: 'Already in sync with Figma.' });
+    expect(planNext({ items: [same], skipped: [], fileLinkKnown: true })).toEqual({ kind: 'toast', message: 'Dev Mode already matches these docs.' });
     expect(planNext({ items: [], skipped: [{ name: 'B', reason: 'rebuildNeeded' }], fileLinkKnown: true }))
-      .toEqual({ kind: 'toast', message: 'Rebuild this doc first, then sync it to Figma.' });
+      .toEqual({ kind: 'toast', message: 'Rebuild this doc first, then annotate it in Dev Mode.' });
     expect(planNext({ items: [], skipped: [], fileLinkKnown: true }).kind).toBe('toast');
   });
 });
@@ -74,10 +74,10 @@ describe('words', () => {
   });
 
   it('reports results, failures first', () => {
-    expect(resultToast(RESULT).message).toBe('Synced 1 component to Figma. Publish the library so other files see the descriptions.');
-    expect(resultToast({ ...RESULT, components: 0 }).message).toBe('Already in sync with Figma.');
-    expect(resultToast({ ...RESULT, failed: [{ name: 'Button', message: 'Nope' }] })).toEqual({ message: 'Couldn’t sync Button: Nope', error: true });
-    expect(resultToast({ ...RESULT, descriptions: 0, noCategory: true }).message).toBe('Synced 1 component to Figma. Annotations went in without the Spec Layer category.');
+    expect(resultToast(RESULT).message).toBe('Annotated 1 component in Dev Mode. Publish the library so other files see the descriptions.');
+    expect(resultToast({ ...RESULT, components: 0 }).message).toBe('Dev Mode already matches these docs.');
+    expect(resultToast({ ...RESULT, failed: [{ name: 'Button', message: 'Nope' }] })).toEqual({ message: 'Couldn’t annotate Button: Nope', error: true });
+    expect(resultToast({ ...RESULT, descriptions: 0, noCategory: true }).message).toBe('Annotated 1 component in Dev Mode. Annotations went in without the Spec Layer category.');
   });
 
   it('never uses an em dash', () => {

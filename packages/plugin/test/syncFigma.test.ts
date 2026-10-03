@@ -61,7 +61,7 @@ describe('runSync', () => {
     const r = await runSync(f.host, { kind: 'all' }, MANUAL);
     expect(r).toMatchObject({ descriptions: 1, links: 1, annotations: 2, components: 1, failed: [], held: [] });
     expect(f.component.description).toBe(
-      'A button starts an action.\n\nWhen to use\n- To submit a form.\n\nWritten in Spec Layer · synced 2026-10-03',
+      'A button starts an action.\n\nWhen to use\n- To submit a form.\n\nWritten in Spec Layer · 2026-10-03',
     );
     expect(f.component.documentationLinks).toEqual([{ uri: 'https://www.figma.com/design/AbCdEf1234567890/?node-id=9-9' }]);
     expect(f.component.annotations).toEqual([{ properties: [{ type: 'padding' }, { type: 'itemSpacing' }, { type: 'cornerRadius' }], categoryId: 'cat' }]);

@@ -1,5 +1,5 @@
 /**
- * The words Sync to Figma shows: the confirm dialog built from a plan, the
+ * The words Annotate in Dev Mode shows: the confirm dialog built from a plan, the
  * second step that replaces edits made in Figma, and the result toast. Pure,
  * so every sentence is tested. Sentence case, second person, no em dashes.
  */
@@ -46,14 +46,14 @@ export function planNext(plan: SyncPlanResult): SyncNext {
   const c = countPlan(plan.items);
   if (plan.items.length === 0) {
     return plan.skipped.some((s) => s.reason === 'rebuildNeeded')
-      ? { kind: 'toast', message: 'Rebuild this doc first, then sync it to Figma.' }
-      : { kind: 'toast', message: 'There are no component docs to sync in this file.' };
+      ? { kind: 'toast', message: 'Rebuild this doc first, then annotate it in Dev Mode.' }
+      : { kind: 'toast', message: 'There are no component docs to annotate in this file.' };
   }
   const writes = c.descriptions + c.annotations + c.links;
   if (writes === 0) {
     return c.edited.length
       ? { kind: 'replace', dialog: replaceDialog(c.edited) }
-      : { kind: 'toast', message: 'Already in sync with Figma.' };
+      : { kind: 'toast', message: 'Dev Mode already matches these docs.' };
   }
   const sentences = [writesSentence(c)];
   if (c.aiWritten.length) {
@@ -71,9 +71,9 @@ export function planNext(plan: SyncPlanResult): SyncNext {
     kind: 'confirm',
     edited: c.edited,
     dialog: {
-      title: one ? `Sync ${plan.items[0].name} to Figma?` : `Sync ${plural(plan.items.length, 'component', 'components')} to Figma?`,
+      title: one ? `Annotate ${plan.items[0].name} in Dev Mode?` : `Annotate ${plural(plan.items.length, 'component', 'components')} in Dev Mode?`,
       body: sentences.join(' '),
-      confirmLabel: 'Sync',
+      confirmLabel: 'Annotate',
     },
   };
 }
@@ -82,10 +82,10 @@ export function planNext(plan: SyncPlanResult): SyncNext {
 export function resultToast(r: SyncResult): { message: string; error?: boolean } {
   if (r.failed.length) {
     const first = r.failed[0];
-    return { message: `Couldn’t sync ${first.name}: ${first.message}`, error: true };
+    return { message: `Couldn’t annotate ${first.name}: ${first.message}`, error: true };
   }
-  if (r.components === 0) return { message: 'Already in sync with Figma.' };
-  const done = `Synced ${plural(r.components, 'component', 'components')} to Figma.`;
+  if (r.components === 0) return { message: 'Dev Mode already matches these docs.' };
+  const done = `Annotated ${plural(r.components, 'component', 'components')} in Dev Mode.`;
   const tail = r.descriptions ? ' Publish the library so other files see the descriptions.' : '';
   const category = r.noCategory ? ' Annotations went in without the Spec Layer category.' : '';
   return { message: done + tail + category };

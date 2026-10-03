@@ -37,14 +37,14 @@ describe('settings screen presentation', () => {
     expect(markup).toContain('aria-label="Tech doc theme"');
   });
 
-  it('puts Sync to Figma on the Export tab, off and without a link by default', () => {
+  it('puts Annotate in Dev Mode on the Export tab, off and without a link by default', () => {
     const base = { theme: { ...THEME_PRESETS[2].theme }, customMode: false, logoAttached: false, pluginVersion: '6.1.0' };
     const markup = settingsScrollMarkup({ ...base, tab: 'export' });
-    expect(markup).toContain('<h2 id="sl-sync-heading">Sync to Figma</h2>');
+    expect(markup).toContain('<h2 id="sl-sync-heading">Annotate in Dev Mode</h2>');
     expect(markup).toMatch(/id="sl-sync-on-update" type="checkbox" role="switch" aria-label="[^"]+" \/>/);
     expect(markup).toContain('data-sync-file-url value=""');
     expect(markup).not.toContain('data-sync-file-clear');
-    expect(markup).toContain('Sync all components');
+    expect(markup).toContain('Annotate all components');
     expect(markup).not.toMatch(/\u2014/);
     expect(settingsScrollMarkup({ ...base, tab: 'frames' })).not.toContain('sl-sync-heading');
   });
@@ -59,7 +59,7 @@ describe('settings screen presentation', () => {
     expect(markup).toContain('value="https://www.figma.com/design/K1234567890/F"');
     expect(markup).toContain('data-sync-file-clear');
     expect(markup).toContain('role="alert">That is not a Figma file link.');
-    expect(markup).toMatch(/data-sync-all disabled>.*Syncing…/);
+    expect(markup).toMatch(/data-sync-all disabled>.*Annotating…/);
   });
 
   it('renders custom color/font controls and attached-logo actions', () => {

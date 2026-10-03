@@ -435,13 +435,13 @@ describe('library screen presentation', () => {
     expect(markup).toContain('Copy for AI');
   });
 
-  it('offers Sync to Figma on a row that allows it', () => {
+  it('offers Annotate in Dev Mode on a row that allows it', () => {
     const syncRow = row('buttonSync', 'inSync', { canSync: true });
     const markup = libraryScrollMarkup(model({
       allRows: [syncRow], rows: [syncRow], counts: { all: 1, updates: 0, inSync: 1 }, menuDocId: 'buttonSync',
     }));
     expect(markup).toContain('data-library-action="sync"');
-    expect(markup).toContain('Sync to Figma');
+    expect(markup).toContain('Annotate in Dev Mode');
     const without = libraryScrollMarkup(model({
       allRows: [row('b', 'inSync')], rows: [row('b', 'inSync')], counts: { all: 1, updates: 0, inSync: 1 }, menuDocId: 'b',
     }));

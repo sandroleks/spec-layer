@@ -1,5 +1,5 @@
 /**
- * Sync to Figma on the main thread: read each documented component, plan with
+ * Annotate in Dev Mode on the main thread: read each documented component, plan with
  * syncPlan.ts, then write the description, the documentation link and the
  * annotations, read them back, and store the record. Figma is reached only
  * through `SyncHost` and the narrow node shapes below, so a test drives the

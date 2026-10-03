@@ -1,5 +1,5 @@
 /**
- * Decides, per component, what Sync to Figma writes, keeps, or skips, from
+ * Decides, per component, what Annotate in Dev Mode writes, keeps, or skips, from
  * plain facts the main thread reads. Pure, so every rule is tested in Node.
  *
  * The rules, in one place:
