@@ -583,3 +583,60 @@ describe('inline node effects', () => {
     expect(out.name).toBe('N');
   });
 });
+
+describe('variant transitions', () => {
+  const hoverReaction = {
+    trigger: { type: 'ON_HOVER' },
+    actions: [{ type: 'NODE', destinationId: '1:110', navigation: 'CHANGE_TO',
+      transition: { type: 'SMART_ANIMATE', easing: { type: 'EASE_OUT' }, duration: 0.3 } }],
+  };
+  const legacyPress = {
+    trigger: { type: 'ON_PRESS' },
+    action: { type: 'NODE', destinationId: '1:120', navigation: 'CHANGE_TO', transition: null },
+  };
+  const navigateAway = {
+    trigger: { type: 'ON_CLICK' },
+    actions: [{ type: 'NODE', destinationId: '9:9', navigation: 'NAVIGATE',
+      transition: { type: 'DISSOLVE', easing: { type: 'LINEAR' }, duration: 0.2 } }],
+  };
+  const directional = {
+    trigger: { type: 'AFTER_TIMEOUT', timeout: 0.8 },
+    actions: [{ type: 'NODE', destinationId: '1:130', navigation: 'CHANGE_TO',
+      transition: { type: 'MOVE_IN', direction: 'LEFT', matchLayers: true, duration: 0.25,
+        easing: { type: 'CUSTOM_SPRING', easingFunctionSpring: { mass: 1, stiffness: 100, damping: 10, initialVelocity: 0 } } } }],
+  };
+
+  it('keeps CHANGE_TO actions from actions and the legacy action field, and drops other navigations', async () => {
+    const node = { id: '1:101', name: 'State=Default', type: 'COMPONENT', visible: true,
+      reactions: [hoverReaction, legacyPress, navigateAway, directional] };
+    const out = await serializeNode(node as never, resolver);
+    expect(out.transitions).toEqual([
+      { trigger: { type: 'on_hover' }, destinationId: '1:110',
+        transition: { type: 'smart_animate', duration: 0.3, easing: { type: 'named', name: 'ease_out' } } },
+      { trigger: { type: 'on_press' }, destinationId: '1:120', transition: { type: 'instant' } },
+      { trigger: { type: 'after_timeout', timeout: 0.8 }, destinationId: '1:130',
+        transition: { type: 'move_in', direction: 'left', matchLayers: true, duration: 0.25,
+          easing: { type: 'unsupported', figma_type: 'CUSTOM_SPRING' } } },
+    ]);
+  });
+
+  it('omits the key when there are no transitions and survives a throwing read', async () => {
+    const plain = await serializeNode({ id: '1:1', name: 'x', type: 'FRAME', visible: true, reactions: [] } as never, resolver);
+    expect('transitions' in plain).toBe(false);
+    const throwing = { id: '1:2', name: 'y', type: 'FRAME', visible: true,
+      get reactions(): never { throw new Error('no reactions here'); } };
+    const out = await serializeNode(throwing as never, resolver);
+    expect('transitions' in out).toBe(false);
+  });
+
+  it('treats an inherited property name as not modelled', async () => {
+    const hostileTrigger = { trigger: { type: 'constructor' },
+      actions: [{ type: 'NODE', destinationId: '1:1', navigation: 'CHANGE_TO', transition: null }] };
+    const hostileTransition = { trigger: { type: 'ON_CLICK' },
+      actions: [{ type: 'NODE', destinationId: '1:1', navigation: 'CHANGE_TO',
+        transition: { type: '__proto__', duration: 0.2, easing: { type: 'LINEAR' } } }] };
+    const out = await serializeNode({ id: '1:1', name: 'x', type: 'FRAME', visible: true,
+      reactions: [hostileTrigger, hostileTransition] } as never, resolver);
+    expect('transitions' in out).toBe(false);
+  });
+});
