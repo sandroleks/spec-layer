@@ -393,7 +393,7 @@ export async function serializeNode(node: RawNode, resolver: NodeResolver): Prom
 
   // Wrapped: a node type without the mixin, or a Figma read that throws,
   // means no transitions, not a failed serialization.
-  let transitions: SerializedTransition[] = [];
+  let transitions: SerializedTransition[];
   try {
     transitions = transitionsOf(node.reactions);
   } catch {
