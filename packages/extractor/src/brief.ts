@@ -294,8 +294,8 @@ function motionOf(spec: IntermediateSpec): YamlValue | undefined {
 export function componentBrief(rawSpec: IntermediateSpec, opts: ComponentBriefOptions): YamlValue {
   // Rules for a part hidden by default are dropped: v5 `conditions` cover
   // variant axes only, so such a rule would read as always holding. Anatomy
-  // parts export with `shown_by`; carrying it onto rules is a schema 5.3.0
-  // change. Filtering here keeps every existing artifact and its
+  // parts export with `shown_by`; carrying it onto rules needs its own schema
+  // version. Filtering here keeps every existing artifact and its
   // semanticContentHash byte-identical.
   const spec: IntermediateSpec = {
     ...rawSpec,

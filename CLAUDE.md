@@ -208,6 +208,10 @@ the one before it. Whether the Figma Community listing serves 6.0.0 cannot
 be verified from this repository. `spec-layer@0.11.0` is `latest` on npm
 (published 2026-09-24).
 
+The schemas on `main` are now `foundation-5.2.0.json` and
+`component-5.3.0.json`, and `npm run check:site-live` fails until the private
+site repository serves both; a release must wait for that.
+
 **`CHANGELOG.md` is the record of what shipped and why.** This section restated
 it once and went stale for its trouble. Keep it to what is not yet in the
 changelog.

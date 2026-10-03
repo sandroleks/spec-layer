@@ -232,6 +232,16 @@ under its `$extensions["com.spec-layer"]` block.
     here: the resolver's inlined sources are full per-mode files, not a
     summarized profile, so `copyFoundation.test.ts`'s size-caveat tests are
     the coverage for the 800-line threshold itself.
+12. **Motion variables.** In a file with a `TIMING` variable and `EASING`
+    variables (one custom cubic bezier, one preset such as Ease out, one
+    custom spring, one Hold), build the collection doc. The timing row reads
+    "0.3 s" with no scale drawing; the cubic bezier row reads "Cubic bezier
+    0.2, 0, 0, 1" and draws a small curve above it; the preset reads its
+    name and draws nothing; the spring reads "Spring, bounce 0.3"; Hold reads
+    "Hold". Copy the collection: the `TIMING` token is `$type: duration` with
+    `{ value, unit: "s" }`, the cubic bezier is `$type: cubicBezier`, and
+    the preset, spring and Hold are absent from the set files with one
+    `type_not_expressible` entry each in `report` naming the preset.
 
 ## Doc frame content
 
@@ -422,6 +432,17 @@ were added the same day, after the review that found the callouts reading
     the copy, Update. Both bullets survive. Duplicate a filled Do and don't
     pair, edit the copy, Update: both pairs survive, the copy right after its
     original.
+41. **Motion section.** On a component set whose Default variant has a
+    "While hovering" interaction changing to Hover (Smart animate, 300 ms,
+    Ease out) and a child layer with an "On click" interaction changing to
+    Pressed (Instant), enable Motion. The section sits after States and reads
+    two rows: "Default | Hover | While hovering | Smart animate | 0.3 s | Ease
+    out" and "Default | Pressed | On click (<layer>) | Instant | | ". Add an
+    interaction that navigates to a frame outside the set: the row count does
+    not change and Copy for AI's `validation` carries a
+    `transition-target-outside-set` warning naming the layer. On a component
+    with no interactions the section is omitted and the omission note says
+    there was nothing to show.
 
 Rows 16 to 24 were added on 2026-09-17 for Docs 2.0 Plan 1, rows 25 to 28
 on 2026-09-18 for Plan 2, rows 29 to 36 on 2026-09-19 for Plan 3, and rows
@@ -885,6 +906,13 @@ all.
     component. Record every origin printed (#99 saw `https://www.figma.com`).
     An origin check on `window.onmessage` waits on this being recorded from a
     real run; do not add one without it.
+14. **Beta badge.** In the section picker, Motion carries a Beta badge and
+    the note "Variant transitions from prototype interactions. New in this
+    release; tell us what is missing." No other row carries the badge.
+
+Foundation copy matrix row 12, Doc frame content row 41, and Settings row 14
+were added on 2026-10-03 for motion variables and variant transitions. None
+of the three have been run.
 
 ## Automated checks
 
