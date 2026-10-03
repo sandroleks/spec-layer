@@ -1,6 +1,6 @@
 /**
  * Level 1 validation (spec §18 "Schema validity"): a hand-written mirror of
- * `schema/foundation-5.1.1.json`, because the plugin sandbox cannot load
+ * `schema/foundation-5.2.0.json`, because the plugin sandbox cannot load
  * `ajv`. `test/v5/schemaParity.test.ts` keeps the two from drifting.
  *
  * Two codes carry its judgment:

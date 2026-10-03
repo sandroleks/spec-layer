@@ -25,7 +25,7 @@ const yaml = (): string => toYaml(componentAiContext(buildReferenceButton()) as 
 const doc = (): Doc => load(yaml()) as Doc;
 
 const foundationSchema = JSON.parse(readFileSync(
-  'packages/extractor/src/v5/schema/foundation-5.1.1.json', 'utf8',
+  'packages/extractor/src/v5/schema/foundation-5.2.0.json', 'utf8',
 )) as Record<string, unknown>;
 const componentSchema = JSON.parse(readFileSync(
   'packages/extractor/src/v5/schema/component-5.2.0.json', 'utf8',

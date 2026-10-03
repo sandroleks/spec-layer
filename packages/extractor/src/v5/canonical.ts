@@ -12,7 +12,7 @@ import type {
   CollectionV5, EffectStyleV5, ExtractionCompleteness, TokenV5, TypographyStyleV5,
 } from './entities';
 
-export const SCHEMA_VERSION = '5.1.1';
+export const SCHEMA_VERSION = '5.2.0';
 export const SCHEMA_URI = 'https://spec-layer.com/schemas/foundation-context/v5.json';
 export const EXTRACTOR_NAME = 'spec-layer-foundation';
 
