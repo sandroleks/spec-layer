@@ -38,6 +38,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
+- CI's dependency review exempts `@figma/plugin-typings` from the licence
+  allow-list. The package ships a verbatim MIT licence but declares it as the
+  non-SPDX string "MIT License", which GitHub reports as
+  `LicenseRef-bad-mit-license`, so every version bump failed the gate. The
+  terms are unchanged; only the metadata is exempted.
 - **Pro AI writing moves to Claude Sonnet 5.5.** The proxy now assigns
   `claude-sonnet-5-5` to a proved Pro license, still at
   `output_config.effort: low`, in place of `claude-sonnet-5`. The per-token
