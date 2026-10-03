@@ -9,12 +9,12 @@ import type {
   FoundationRow, FoundationVariableRow, FoundationTextRow, FoundationEffectRow,
   ColorContrastReport, FoundationGlyph,
 } from '@spec-layer/extractor';
-import { foundationUnitTitle, groupRowsByFolder, groupTitles } from '@spec-layer/extractor';
+import { foundationUnitTitle, groupRowsByFolder, groupTitles, durationLabel, easingLabel } from '@spec-layer/extractor';
 import {
   palette, solidFill, makeText, vstack, hstack, radius, hex, applyThemeToKit,
   headingFont, PROSE_MEASURE,
 } from './frameKit';
-import { buildGlyph, glyphSpec, glyphValue } from './foundationScales';
+import { buildGlyph, easingCurveSpec, glyphSpec, glyphValue } from './foundationScales';
 import { buildTextSpecimenList, buildEffectSpecimenList } from './foundationSpecimens';
 import { buildBrandHeader, HEADER_PAD_X } from './brandHeader';
 import {
@@ -55,6 +55,10 @@ function leafLabel(value: FoundationValue): string {
       return value.value === '' ? 'Empty string' : value.value;
     case 'boolean':
       return String(value.value);
+    case 'duration':
+      return durationLabel(value.seconds);
+    case 'easing':
+      return easingLabel(value.easing);
     case 'unresolved':
       return unresolvedLabel(value.reason);
   }
@@ -316,6 +320,8 @@ export function swatchCell(value: FoundationValue, width: number, glyph: Foundat
   const n = glyph ? glyphValue(value) : null;
   const spec = glyph && n !== null ? glyphSpec(glyph, n, width) : null;
   if (spec) cell.appendChild(buildGlyph(spec, width));
+  const curve = easingCurveSpec(value);
+  if (curve) cell.appendChild(buildGlyph(curve, width));
 
   const line = hstack(8);
   // Top-aligned, so wrapped and one-line cells share a first line.

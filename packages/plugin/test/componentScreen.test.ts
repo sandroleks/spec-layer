@@ -119,7 +119,7 @@ describe('sectionGroups', () => {
     const labels = groups.flatMap((g) => g.options.map((o) => o.label));
     expect(labels).toEqual([
       'Overview', 'When to use', 'Variants', 'Do and don’t', 'Related components',
-      'Anatomy', 'Properties', 'States', 'Measurements', 'Tokens',
+      'Anatomy', 'Properties', 'States', 'Motion', 'Measurements', 'Tokens',
       'Keyboard', 'Pointer and touch', 'Semantics and focus', 'Content',
     ]);
   });
@@ -180,7 +180,7 @@ describe('sectionGroups with unavailable sections', () => {
       true,
       new Set<SectionId>(['states']),
     ).find((group) => group.id === 'specs')!;
-    expect(includedLabel(specs)).toBe('4 of 4 included');
+    expect(includedLabel(specs)).toBe('5 of 5 included');
   });
 });
 
@@ -399,6 +399,23 @@ describe('component screen markup', () => {
     // real value when facts arrive; this only fixes the pre-facts state, so a
     // switch is never drawn checked for a component that has nothing to reveal.
     expect(createComponentSelection(true).includeHidden).toBe(false);
+  });
+
+  it('marks the Motion row with a Beta badge and a note, and no other row', () => {
+    const markup = componentScrollMarkup(
+      READY,
+      createComponentSelection(true),
+      facts({ hasStates: true }),
+    );
+    const row = (id: string) => {
+      const start = markup.indexOf(`data-section="${id}"`);
+      return markup.slice(start, markup.indexOf('</label>', start));
+    };
+    expect(row('motion')).toContain('<span class="sl-badge">Beta</span>');
+    expect(row('motion')).toContain(
+      'Variant transitions from prototype interactions. New in this release; tell us what is missing.',
+    );
+    expect(row('anatomy')).not.toContain('Beta');
   });
 
   it('renders Anatomy without display subsettings', () => {

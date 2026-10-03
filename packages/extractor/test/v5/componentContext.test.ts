@@ -149,7 +149,7 @@ const META = {
 };
 
 describe('Component Context v5', () => {
-  it('carries shown_by on anatomy nodes hidden by default, and stamps schema 5.2.0', () => {
+  it('carries shown_by on anatomy nodes hidden by default, and stamps schema 5.3.0', () => {
     const component = spec([]);
     component.anatomy = [
       { id: 'p0', name: 'container', path: 'Container/container', type: 'FRAME', nested: false, depth: 0 },
@@ -159,7 +159,7 @@ describe('Component Context v5', () => {
       },
     ];
     const artifact = buildComponentArtifactV5(component, META);
-    expect(artifact.spec_layer.schema_version).toBe('5.2.0');
+    expect(artifact.spec_layer.schema_version).toBe('5.3.0');
     expect(artifact.anatomy).toEqual([{
       part: 'container', path: 'Container/container', type: 'FRAME',
       children: [{

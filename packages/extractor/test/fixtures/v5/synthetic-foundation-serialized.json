@@ -280,6 +280,22 @@
           "valuesByMode": { "ModeID:s-light": "available" }
         }
       ]
+    },
+    {
+      "id": "CollectionID:motion",
+      "name": "Motion",
+      "publication": { "hiddenFromPublishing": false, "publishStatus": "CURRENT", "remote": false },
+      "defaultModeId": "ModeID:motion-default",
+      "modes": [{ "modeId": "ModeID:motion-default", "name": "Default" }],
+      "variables": [
+        { "id": "VariableID:motion-fast", "name": "motion/duration/fast", "resolvedType": "TIMING", "description": "Short transitions.", "codeSyntax": { "WEB": "--motion-duration-fast" }, "scopes": [], "valuesByMode": { "ModeID:motion-default": 0.3 } },
+        { "id": "VariableID:motion-button", "name": "motion/duration/button", "resolvedType": "TIMING", "description": "", "codeSyntax": {}, "scopes": [], "valuesByMode": { "ModeID:motion-default": { "type": "VARIABLE_ALIAS", "id": "VariableID:motion-fast" } } },
+        { "id": "VariableID:motion-standard", "name": "motion/ease/standard", "resolvedType": "EASING", "description": "", "codeSyntax": {}, "scopes": [], "valuesByMode": { "ModeID:motion-default": { "type": "CUSTOM_CUBIC_BEZIER", "easingFunctionCubicBezier": { "x1": 0.2, "y1": 0, "x2": 0, "y2": 1 } } } },
+        { "id": "VariableID:motion-emphasized", "name": "motion/ease/emphasized", "resolvedType": "EASING", "description": "", "codeSyntax": {}, "scopes": [], "valuesByMode": { "ModeID:motion-default": { "type": "EASE_OUT" } } },
+        { "id": "VariableID:motion-spring", "name": "motion/ease/spring", "resolvedType": "EASING", "description": "", "codeSyntax": {}, "scopes": [], "valuesByMode": { "ModeID:motion-default": { "type": "CUSTOM_SPRING", "easingFunctionSpring": { "bounce": 0.3 } } } },
+        { "id": "VariableID:motion-step", "name": "motion/ease/step", "resolvedType": "EASING", "description": "", "codeSyntax": {}, "scopes": [], "valuesByMode": { "ModeID:motion-default": { "type": "HOLD" } } },
+        { "id": "VariableID:motion-unknown", "name": "motion/ease/unknown", "resolvedType": "EASING", "description": "", "codeSyntax": {}, "scopes": [], "valuesByMode": { "ModeID:motion-default": { "type": "WOBBLE" } } }
+      ]
     }
   ],
   "textStyles": [

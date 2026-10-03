@@ -83,8 +83,8 @@ These all live in this repository:
 |---|---|
 | How the system fits together | `ARCHITECTURE.md` |
 | What shipped, in detail | `CHANGELOG.md` |
-| Foundation Context v5 contract | `packages/extractor/src/v5/schema/foundation-5.1.1.json` |
-| Component Context v5 contract | `packages/extractor/src/v5/schema/component-5.2.0.json` |
+| Foundation Context v5 contract | `packages/extractor/src/v5/schema/foundation-5.2.0.json` |
+| Component Context v5 contract | `packages/extractor/src/v5/schema/component-5.3.0.json` |
 | Manual Figma test matrix and release gate | `packages/plugin/TESTING.md` |
 | Shared brand and UI design system | `packages/brand/README.md` |
 | Proxy behaviour and accepted risks | `packages/proxy/README.md` |
@@ -207,6 +207,10 @@ from the cut's squash commit; `v5.1.0` (annotated, 0b84a9c, on 28a55c9) is
 the one before it. Whether the Figma Community listing serves 6.0.0 cannot
 be verified from this repository. `spec-layer@0.11.0` is `latest` on npm
 (published 2026-09-24).
+
+The schemas on `main` are now `foundation-5.2.0.json` and
+`component-5.3.0.json`, and `npm run check:site-live` fails until the private
+site repository serves both; a release must wait for that.
 
 **`CHANGELOG.md` is the record of what shipped and why.** This section restated
 it once and went stale for its trouble. Keep it to what is not yet in the

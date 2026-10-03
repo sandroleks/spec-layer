@@ -1,4 +1,5 @@
 import type { EffectLayer } from './effects';
+import type { Easing } from './motion';
 
 /** A Figma node serialized by the plugin main thread. Pure JSON. */
 export interface SerializedNode {
@@ -45,6 +46,34 @@ export interface SerializedNode {
   /** TEXT nodes only, for a future WCAG threshold lookup (contrast.ts's
    *  requiredRatio). No current reader. */
   text?: { fontSize?: number; fontWeight?: number };
+  /** Prototype interactions that change this component set's variant, read
+   *  from `node.reactions` on this node (a variant root or any layer inside
+   *  it). Present only when non-empty: the key's absence is what keeps every
+   *  document without interactions on its existing hash. */
+  transitions?: SerializedTransition[];
+}
+
+export type SerializedTrigger =
+  | { type: 'on_click' | 'on_hover' | 'on_press' | 'on_drag' }
+  | { type: 'after_timeout'; timeout: number }
+  | { type: 'mouse_up' | 'mouse_down' | 'mouse_enter' | 'mouse_leave'; delay: number }
+  | { type: 'on_key_down'; device: string; keyCodes: number[] }
+  | { type: 'on_media_hit'; mediaHitTime: number }
+  | { type: 'on_media_end' };
+
+export type SerializedEasing = Easing | { type: 'unsupported'; figma_type: string };
+
+export type TransitionDirection = 'left' | 'right' | 'top' | 'bottom';
+
+export type SerializedTransitionEffect =
+  | { type: 'instant' }
+  | { type: 'dissolve' | 'smart_animate' | 'scroll_animate'; duration: number; easing: SerializedEasing }
+  | { type: 'move_in' | 'move_out' | 'push' | 'slide_in' | 'slide_out'; direction: TransitionDirection; matchLayers: boolean; duration: number; easing: SerializedEasing };
+
+export interface SerializedTransition {
+  trigger: SerializedTrigger;
+  destinationId: string;
+  transition: SerializedTransitionEffect;
 }
 
 export interface PropertyDefinition {

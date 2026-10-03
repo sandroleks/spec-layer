@@ -161,10 +161,12 @@ function checkboxRow(option: {
   selected: boolean;
   disabled?: boolean;
   note?: string;
+  beta?: boolean;
 }): string {
   const badge = option.aiCapable
     ? '<span class="sl-badge" data-tone="accent">AI</span>'
     : '';
+  const beta = option.beta ? '<span class="sl-badge">Beta</span>' : '';
   const note = option.note
     ? `<span class="sl-section-option-note"> · ${esc(option.note)}</span>`
     : '';
@@ -177,6 +179,7 @@ function checkboxRow(option: {
     `<span class="sl-checkbox-box" aria-hidden="true">${CHECK_GLYPH}</span>` +
     `<span class="sl-choice-copy"><strong>${esc(option.label)}</strong>${note}</span>` +
     badge +
+    beta +
     '</label>' +
     '</div>'
   );

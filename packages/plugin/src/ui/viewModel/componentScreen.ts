@@ -22,6 +22,11 @@ export function defaultIncludeHidden(facts: ComponentFacts): boolean {
   return facts.hasHiddenParts;
 }
 
+/** Picker notes for beta sections. UI copy: sentence case, no dashes. */
+const SECTION_NOTES: Partial<Record<SectionId, string>> = {
+  motion: 'Variant transitions from prototype interactions. New in this release; tell us what is missing.',
+};
+
 /** `aiEnabled` toggles only the AI badges, never availability: deterministic sections are the fallback. */
 export function sectionGroups(
   selected: ReadonlySet<SectionId>,
@@ -37,6 +42,7 @@ export function sectionGroups(
         label: s.label,
         aiCapable: s.ai && aiEnabled,
         selected: selected.has(s.id),
+        ...(s.beta ? { beta: true, note: SECTION_NOTES[s.id] } : {}),
       }));
     return {
       id,

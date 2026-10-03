@@ -14,10 +14,11 @@ import {
   SUPPORTED_DURATION_UNITS, SUPPORTED_MISSING_REASONS, SUPPORTED_TOKEN_TYPES, SUPPORTED_UNITS,
   SUPPORTED_UNRESOLVED_REASONS,
 } from '../../src/v5/value';
+import { EASING_PRESET_NAMES } from '../../src/motion';
 import { OK_ARTIFACT, VALID_CASES, INVALID_CASES } from './fixtures';
 
 const schemaText = readFileSync(
-  'packages/extractor/src/v5/schema/foundation-5.1.1.json', 'utf8',
+  'packages/extractor/src/v5/schema/foundation-5.2.0.json', 'utf8',
 );
 const schema = JSON.parse(schemaText) as Record<string, unknown>;
 
@@ -51,6 +52,26 @@ function enumOf(defName: string, path: string[]): string[] {
 }
 
 describe('schema parity', () => {
+  it('names every easing preset in the schema exactly as the runtime does', () => {
+    expect(symmetricDifference(EASING_PRESET_NAMES, enumOf('easing_named', ['properties', 'name']))).toEqual([]);
+  });
+
+  it('accepts an artifact with duration and easing tokens', () => {
+    const dump: SerializedFoundation = {
+      fileKey: 'FILE1', extractedAt: '2026-10-03T00:00:00.000Z', externals: [], textStyles: [], effectStyles: [],
+      collections: [{
+        id: 'c1', name: 'Motion', defaultModeId: 'm1', modes: [{ modeId: 'm1', name: 'Value' }],
+        variables: [
+          { id: 'fast', name: 'motion/duration/fast', resolvedType: 'TIMING', description: '', codeSyntax: {}, scopes: [], valuesByMode: { m1: 0.3 } },
+          { id: 'ease', name: 'motion/ease/standard', resolvedType: 'EASING', description: '', codeSyntax: {}, scopes: [], valuesByMode: { m1: { type: 'CUSTOM_SPRING', easingFunctionSpring: { bounce: 0.3 } } } },
+        ],
+      }],
+    };
+    const meta: FoundationExportV5Meta = { exportId: 'e', generatedAt: '2026-10-03T00:00:00.000Z', build: null };
+    const artifact = buildFoundationArtifactV5(buildFoundation(dump), meta).artifact;
+    expect(compiled(JSON.parse(JSON.stringify(artifact))), ajv.errorsText(compiled.errors)).toBe(true);
+  });
+
   it('is itself a valid 2020-12 schema', () => {
     // strict: true above makes ajv reject an unknown keyword or a malformed
     // $ref at compile time, which is what "validate the schema itself" means

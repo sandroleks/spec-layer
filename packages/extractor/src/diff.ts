@@ -12,8 +12,12 @@ import type {
   FoundationGlyph, FoundationRow, FoundationTextMetrics, FoundationUnitContent,
   FoundationValue, FoundationVariableRow,
 } from './foundation';
+import {
+  axisLabel, durationCell, durationLabel, easingCell, easingLabel, transitionLabel, transitionYaml, triggerLabel,
+} from './motion';
 import { compareCodeUnits } from './v5/diagnostics';
 import { matchesVariant } from './resolve';
+import type { SerializedTransitionEffect } from './tree';
 
 export interface ListDiff<T> {
   added: T[];
@@ -150,6 +154,10 @@ export function formatFoundationValue(value: FoundationValue): string {
       return value.value;
     case 'boolean':
       return value.value ? 'true' : 'false';
+    case 'duration':
+      return durationLabel(value.seconds);
+    case 'easing':
+      return easingLabel(value.easing);
     case 'alias': {
       const reference = `{${value.targetCollection}/${value.targetName}}`;
       return value.resolved ? `${reference} resolving to ${formatFoundationValue(value.resolved)}` : reference;
@@ -618,6 +626,21 @@ function formatPropKind(kind: string): string {
   return kind === 'instanceSwap' ? 'instance swap' : kind;
 }
 
+type ProjectedTransition = NonNullable<SpecHashProjection['transitions']>[number];
+
+/** "Transition Default to Hover, while hovering (Icon)". */
+function transitionName(t: ProjectedTransition): string {
+  const yaml = transitionYaml({ ...t, fromVariantId: '', toVariantId: '', triggerPath: t.triggerPart });
+  const onPart = t.triggerPart === 'Container' ? null : t.triggerPart;
+  return `Transition ${axisLabel(t.from) || 'the component'} to ${axisLabel(t.to) || 'the component'}, ${triggerLabel(yaml.trigger, onPart).replace(/^./, (c) => c.toLowerCase())}`;
+}
+
+function transitionText(t: SerializedTransitionEffect): string {
+  const yaml = transitionYaml({ from: {}, to: {}, fromVariantId: '', toVariantId: '', trigger: { type: 'on_click' }, triggerPart: '', triggerPath: '', transition: t }).transition;
+  const cells = [transitionLabel(yaml), durationCell(yaml), easingCell(yaml)].filter((c) => c !== '');
+  return cells.length === 1 ? cells[0] : `${cells[0]} ${cells[1]}, ${cells[2]}`;
+}
+
 /** Figma's layer type as the layers panel says it, lowercase: FRAME reads "frame". */
 function formatLayerType(type: string): string {
   return String(type).toLowerCase().replace(/_/g, ' ');
@@ -730,6 +753,16 @@ export function componentChangeGroups(
   const related = stringSetItems(before.related, after.related,
     (value) => `Related ${value} added`, (value) => `Related ${value} removed`);
 
+  const motion: string[] = [];
+  const transitions = diffKeyed(list(before.transitions), list(after.transitions),
+    (t) => JSON.stringify([t.from, t.to, t.trigger, t.triggerPart]));
+  for (const t of transitions.added) motion.push(`${transitionName(t)} added: ${transitionText(t.transition)}`);
+  for (const t of transitions.removed) motion.push(`${transitionName(t)} removed`);
+  for (const { before: b, after: a } of transitions.changed) {
+    motion.push(`${transitionName(a)}: ${transitionText(b.transition)} changed to ${transitionText(a.transition)}`);
+  }
+  if (transitions.reordered) pushReordered(motion);
+
   return groups([
     ['Name', name],
     ['Properties', properties],
@@ -739,6 +772,7 @@ export function componentChangeGroups(
     ['Tokens', tokens],
     ['Unbound values', unbound],
     ['Layout', layout],
+    ['Motion', motion],
     ['Related', related],
   ]);
 }

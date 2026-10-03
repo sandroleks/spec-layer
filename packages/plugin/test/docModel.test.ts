@@ -67,10 +67,10 @@ const find = (model: { sections: SectionBlock[] }, id: SectionId): SectionBlock 
   model.sections.find((s) => s.id === id);
 
 describe('section map', () => {
-  it('lists the fourteen sections in frame order', () => {
+  it('lists the fifteen sections in frame order', () => {
     expect(ALL_SECTIONS.map((s) => s.id)).toEqual([
       'definition', 'whenToUse', 'variants', 'dosDonts', 'related',
-      'anatomy', 'properties', 'states', 'measurements', 'tokens',
+      'anatomy', 'properties', 'states', 'motion', 'measurements', 'tokens',
       'keyboard', 'pointer', 'accessibility', 'contentConsiderations',
     ]);
     expect(GROUPS.map((g) => g.label)).toEqual(['Usage', 'Specifications', 'Accessibility']);
@@ -188,8 +188,8 @@ describe('buildDocModel with prose', () => {
     expect(find(model, 'related')).toMatchObject({ kind: 'bullets', slot: null });
   });
 
-  it('omits nothing when every section has content', () => {
-    expect(model.omitted).toEqual([]);
+  it('omits only Motion when every other section has content', () => {
+    expect(model.omitted).toEqual([{ id: 'motion', label: 'Motion', reason: 'nothingToShow' }]);
   });
 });
 
@@ -213,6 +213,7 @@ describe('buildDocModel without prose', () => {
     expect(model.omitted).toEqual([
       { id: 'whenToUse', label: 'When to use', reason: 'placeholder' },
       { id: 'dosDonts', label: 'Do and don’t', reason: 'placeholder' },
+      { id: 'motion', label: 'Motion', reason: 'nothingToShow' },
       { id: 'keyboard', label: 'Keyboard', reason: 'placeholder' },
       { id: 'pointer', label: 'Pointer and touch', reason: 'placeholder' },
       { id: 'accessibility', label: 'Semantics and focus', reason: 'placeholder' },
@@ -1167,5 +1168,39 @@ describe('calloutLabels', () => {
 
   it('has nothing to say about an empty list', () => {
     expect(calloutLabels([])).toEqual([]);
+  });
+});
+
+describe('motion section', () => {
+  const rule = {
+    from: { Style: 'Filled', State: 'Default' }, fromVariantId: '1:10', to: { Style: 'Filled', State: 'Hover' }, toVariantId: '1:11',
+    trigger: { type: 'on_hover' as const }, triggerPart: 'Container', triggerPath: 'Container',
+    transition: { type: 'smart_animate' as const, duration: 0.3, easing: { type: 'named' as const, name: 'ease_out' as const } },
+  };
+  const childRule = { ...rule, trigger: { type: 'on_click' as const }, triggerPart: 'Label', triggerPath: 'Container/Label', transition: { type: 'instant' as const } };
+
+  it('is omitted as nothing to show without transitions', () => {
+    const model = buildDocModel(spec, null, new Set<SectionId>(['motion']));
+    expect(model.sections).toEqual([]);
+    expect(model.omitted).toEqual([{ id: 'motion', label: 'Motion', reason: 'nothingToShow' }]);
+  });
+
+  it('renders a table with the prototype panel words and the trigger layer in parentheses', () => {
+    const withMotion = { ...spec, transitions: [rule, childRule] } as unknown as IntermediateSpec;
+    const model = buildDocModel(withMotion, null, new Set<SectionId>(['motion']));
+    expect(model.sections[0]).toEqual({
+      id: 'motion', heading: 'Motion', kind: 'table',
+      columns: ['From', 'To', 'Trigger', 'Transition', 'Duration', 'Easing'],
+      rows: [
+        ['Filled, Default', 'Filled, Hover', 'While hovering', 'Smart animate', '0.3 s', 'Ease out'],
+        ['Filled, Default', 'Filled, Hover', 'On click (Label)', 'Instant', '', ''],
+      ],
+    });
+  });
+
+  it('sits after States in the specs group and is marked beta', () => {
+    const ids = ALL_SECTIONS.map((s) => s.id);
+    expect(ids.indexOf('motion')).toBe(ids.indexOf('states') + 1);
+    expect(ALL_SECTIONS.find((s) => s.id === 'motion')).toMatchObject({ group: 'specs', ai: false, beta: true });
   });
 });

@@ -347,6 +347,15 @@ function fakeRect(): Record<string, unknown> {
   return r;
 }
 
+function fakeVector(): Record<string, unknown> {
+  const v: Record<string, unknown> = {
+    type: 'VECTOR', name: '', width: 0, height: 0,
+    vectorPaths: [], fills: [], strokes: [], strokeWeight: 0,
+    resize(w: number, h: number) { v.width = w; v.height = h; },
+  };
+  return v;
+}
+
 /**
  * Install the stub on globalThis. `overrides` replaces individual members, for
  * tests that need a failing font load or a corrupt image.
@@ -356,6 +365,7 @@ export function installFakeFigma(overrides: Record<string, unknown> = {}): void 
     createFrame: () => new FakeFrame(),
     createText: () => fakeText(),
     createRectangle: () => fakeRect(),
+    createVector: () => fakeVector(),
     createSection: () => new FakeSection(),
     loadFontAsync: async () => {},
     base64Decode: () => new Uint8Array([0]),

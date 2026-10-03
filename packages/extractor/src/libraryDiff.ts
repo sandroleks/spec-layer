@@ -12,6 +12,7 @@ import { diffKeyed, axisModel, comboKey, coverConditions, describeScope, type Co
 import { matchesVariant } from './resolve';
 import { canonicalJson } from './v5/canonical';
 import { compareCodeUnits } from './v5/diagnostics';
+import { easingLabel } from './motion';
 import type { LibraryBundleV1 } from './libraryBundle';
 import type { CanonicalValue, TypedValue } from './v5/value';
 
@@ -202,6 +203,8 @@ export function formatTyped(value: TypedValue): string {
       return value.value ? 'true' : 'false';
     case 'cubic_bezier':
       return `cubic-bezier(${value.value.join(', ')})`;
+    case 'easing':
+      return easingLabel(value.easing);
   }
 }
 
@@ -348,6 +351,11 @@ function readComponentFacts(entry: LibraryBundleV1['components'][number]): Compo
     const path = asString(record.path);
     if (path === null) continue;
     values.push({ id: `effects:${path}`, value: canonicalJson(record.layers ?? null) });
+  }
+  for (const item of asArray(asRecord(artifact.motion).transitions)) {
+    const record = asRecord(item);
+    const key = canonicalJson({ from: record.from ?? null, to: record.to ?? null, trigger: record.trigger ?? null, on: record.on ?? null });
+    values.push({ id: `motion:${key}`, value: canonicalJson(record.transition ?? null) });
   }
   for (const item of asArray(artifact.unbound)) {
     const record = asRecord(item);

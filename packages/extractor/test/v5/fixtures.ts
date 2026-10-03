@@ -245,6 +245,10 @@ export const VALID_CASES: FixtureCase[] = [
   })),
   { name: 'cubic_bezier token', artifact: withTokenOfType('cubic_bezier', { type: 'cubic_bezier', value: [0.4, 0, 0.2, 1] }) },
   { name: 'font_family token', artifact: withTokenOfType('font_family', { type: 'font_family', value: 'Inter' }) },
+  { name: 'easing token, named preset', artifact: withTokenOfType('easing', { type: 'easing', easing: { type: 'named', name: 'ease_out' } }) },
+  { name: 'easing token, cubic bezier', artifact: withTokenOfType('easing', { type: 'easing', easing: { type: 'cubic_bezier', value: [0.2, 0, 0, 1] } }) },
+  { name: 'easing token, spring', artifact: withTokenOfType('easing', { type: 'easing', easing: { type: 'spring', bounce: 0.3 } }) },
+  { name: 'easing token, hold', artifact: withTokenOfType('easing', { type: 'easing', easing: { type: 'hold' } }) },
   { name: 'resolved alias value', artifact: withValue(RESOLVED_ALIAS) },
   { name: 'unresolved alias value', artifact: withValue(UNRESOLVED_ALIAS) },
   { name: 'missing value', artifact: withValue(MISSING_VALUE) },
@@ -426,6 +430,9 @@ export const INVALID_CASES: FixtureCase[] = [
   { name: 'duration number is non-finite', artifact: withValue({ kind: 'literal', value: { type: 'duration', number: Number.NaN, unit: 'ms' } }) },
   { name: 'cubic_bezier has three components instead of four', artifact: withValue({ kind: 'literal', value: { type: 'cubic_bezier', value: [0, 0, 1] } }) },
   { name: 'cubic_bezier component is non-finite', artifact: withValue({ kind: 'literal', value: { type: 'cubic_bezier', value: [0, 0, 1, Number.NaN] } }) },
+  { name: 'easing preset name is not one Figma has', artifact: withValue({ kind: 'literal', value: { type: 'easing', easing: { type: 'named', name: 'wobble' } } }) },
+  { name: 'easing spring bounce is above 1', artifact: withValue({ kind: 'literal', value: { type: 'easing', easing: { type: 'spring', bounce: 1.5 } } }) },
+  { name: 'easing cubic bezier has three components', artifact: withValue({ kind: 'literal', value: { type: 'easing', easing: { type: 'cubic_bezier', value: [0, 0, 1] } } }) },
   { name: 'font_family value is not a string', artifact: withValue({ kind: 'literal', value: { type: 'font_family', value: 42 } }) },
 ];
 
@@ -450,6 +457,7 @@ function sampleTypedValue(type: TokenType): TypedValue {
     case 'duration': return { type: 'duration', number: 200, unit: 'ms' };
     case 'cubic_bezier': return { type: 'cubic_bezier', value: [0, 0, 1, 1] };
     case 'font_family': return { type: 'font_family', value: 'Inter' };
+    case 'easing': return { type: 'easing', easing: { type: 'hold' } };
     default: throw new Error(`no sample value for token type: ${type as string}`);
   }
 }

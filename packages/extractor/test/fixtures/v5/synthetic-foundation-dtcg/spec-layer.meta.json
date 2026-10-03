@@ -1,4 +1,109 @@
 {
+  "Motion.motion.duration.button": {
+    "id": "VariableID:motion-button",
+    "collection_id": "CollectionID:motion",
+    "type": "duration",
+    "scopes": [],
+    "transform": {
+      "Default": "alias"
+    },
+    "resolved": {
+      "Default": {
+        "value": 0.3,
+        "unit": "s"
+      }
+    }
+  },
+  "Motion.motion.duration.fast": {
+    "id": "VariableID:motion-fast",
+    "collection_id": "CollectionID:motion",
+    "type": "duration",
+    "scopes": [],
+    "transform": {
+      "Default": "duration"
+    },
+    "code_syntax": {
+      "WEB": "--motion-duration-fast"
+    }
+  },
+  "Motion.motion.ease.emphasized": {
+    "id": "VariableID:motion-emphasized",
+    "collection_id": "CollectionID:motion",
+    "type": "easing",
+    "scopes": [],
+    "omitted": true,
+    "values": {
+      "Default": {
+        "kind": "literal",
+        "value": {
+          "type": "easing",
+          "easing": {
+            "type": "named",
+            "name": "ease_out"
+          }
+        }
+      }
+    }
+  },
+  "Motion.motion.ease.spring": {
+    "id": "VariableID:motion-spring",
+    "collection_id": "CollectionID:motion",
+    "type": "easing",
+    "scopes": [],
+    "omitted": true,
+    "values": {
+      "Default": {
+        "kind": "literal",
+        "value": {
+          "type": "easing",
+          "easing": {
+            "type": "spring",
+            "bounce": 0.3
+          }
+        }
+      }
+    }
+  },
+  "Motion.motion.ease.standard": {
+    "id": "VariableID:motion-standard",
+    "collection_id": "CollectionID:motion",
+    "type": "easing",
+    "scopes": [],
+    "transform": {
+      "Default": "cubic-bezier"
+    }
+  },
+  "Motion.motion.ease.step": {
+    "id": "VariableID:motion-step",
+    "collection_id": "CollectionID:motion",
+    "type": "easing",
+    "scopes": [],
+    "omitted": true,
+    "values": {
+      "Default": {
+        "kind": "literal",
+        "value": {
+          "type": "easing",
+          "easing": {
+            "type": "hold"
+          }
+        }
+      }
+    }
+  },
+  "Motion.motion.ease.unknown": {
+    "id": "VariableID:motion-unknown",
+    "collection_id": "CollectionID:motion",
+    "type": "easing",
+    "scopes": [],
+    "omitted": true,
+    "values": {
+      "Default": {
+        "kind": "missing",
+        "reason": "unsupported_value_type"
+      }
+    }
+  },
   "Primitives.Background.Chip.Сhip (Hover)": {
     "id": "VariableID:confusable",
     "collection_id": "CollectionID:primitives",

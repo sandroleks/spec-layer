@@ -1,6 +1,6 @@
 /**
  * Level 1 validation (spec §18 "Schema validity"): a hand-written mirror of
- * `schema/foundation-5.1.1.json`, because the plugin sandbox cannot load
+ * `schema/foundation-5.2.0.json`, because the plugin sandbox cannot load
  * `ajv`. `test/v5/schemaParity.test.ts` keeps the two from drifting.
  *
  * Two codes carry its judgment:
@@ -25,6 +25,7 @@ import type { EffectStyleV5, TokenV5 } from './entities';
 import { canonicalJson } from './canonical';
 import type { FoundationArtifactV5 } from './canonical';
 import { numericValue } from './units';
+import { EASING_PRESET_NAMES } from '../motion';
 
 const ROOT = '<artifact>';
 
@@ -130,6 +131,21 @@ function validateTypedValue(
       const value = tv.value;
       if (!Array.isArray(value) || value.length !== 4 || !value.every(isFiniteNumber)) {
         out.push(unsupported(entityId, 'cubic_bezier.value must be four finite numbers.', modeId));
+      }
+      break;
+    }
+    case 'easing': {
+      const easing = tv.easing as Record<string, unknown> | null | undefined;
+      const ok = easing !== null && typeof easing === 'object' && (
+        (easing.type === 'named' && typeof easing.name === 'string'
+          && (EASING_PRESET_NAMES as readonly string[]).includes(easing.name))
+        || (easing.type === 'cubic_bezier' && Array.isArray(easing.value)
+          && easing.value.length === 4 && easing.value.every(isFiniteNumber))
+        || (easing.type === 'spring' && isFiniteNumber(easing.bounce) && easing.bounce >= 0 && easing.bounce <= 1)
+        || easing.type === 'hold');
+      if (!ok) {
+        out.push(unsupported(entityId,
+          'easing.easing must be a named preset, a cubic bezier of four finite numbers, a spring with bounce 0 to 1, or hold.', modeId));
       }
       break;
     }
