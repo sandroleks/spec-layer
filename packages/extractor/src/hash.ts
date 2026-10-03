@@ -7,6 +7,7 @@ import {
 } from './foundation';
 import { anatomyFor } from './anatomy';
 import { canonicalJson } from './v5/canonical';
+import type { SerializedTrigger, SerializedTransitionEffect } from './tree';
 
 /** SHA-256 over canonical JSON (keys sorted by code unit at every depth). */
 export const contentHash = (value: unknown): string => sha256(canonicalJson(value));
@@ -49,6 +50,11 @@ export interface SpecHashProjection {
   related: string[];
   gaps: { part: string; property: string; issue: GapIssue; value?: number | string }[];
   layout: { part: string; summary: string }[];
+  /** Present only when the spec has transitions, so existing baselines match. */
+  transitions?: {
+    from: Record<string, string>; to: Record<string, string>; trigger: SerializedTrigger;
+    triggerPart: string; transition: SerializedTransitionEffect;
+  }[];
 }
 
 /**
@@ -65,10 +71,12 @@ export function specHashProjection(spec: IntermediateSpec, options: SpecHashOpti
     nodeEffects: _nodeEffects,
     figmaFileName: _figmaFileName,
     documentationLinks: _documentationLinks,
+    // Excluded: transitionIssues are reported by validate(); no canvas draws them.
+    transitionIssues: _transitionIssues,
     name, figmaKey, figmaFile, figmaNode, description, anatomyComponentId,
     props, variants, variantInstances, states, related,
     // Hashed through the reductions below.
-    anatomy, tokens, gaps, layout,
+    anatomy, tokens, gaps, layout, transitions,
     ...unrouted
   } = spec;
   // A field added to IntermediateSpec lands in `unrouted` and fails to compile
@@ -100,6 +108,13 @@ export function specHashProjection(spec: IntermediateSpec, options: SpecHashOpti
     // `part` names, so both stay out. Naming the kept fields excludes any
     // field added to LayoutSummary by default.
     layout: layout.map(({ part, summary }) => ({ part, summary })),
+    // Ids and the path re-identify what from, to and triggerPart already
+    // carry (as `tokens` drops them). Key only when non-empty: an absent key
+    // is what keeps every existing document's hash byte-identical.
+    ...((transitions ?? []).length > 0
+      ? { transitions: (transitions ?? []).map(({ from, to, trigger, triggerPart, transition }) =>
+          ({ from, to, trigger, triggerPart, transition })) }
+      : {}),
   };
 }
 

@@ -5,6 +5,7 @@ export * from './anatomy';
 export * from './props';
 export * from './naming';
 export * from './tokens';
+export * from './transitions';
 export * from './layout';
 export * from './rawValues';
 export * from './extract';

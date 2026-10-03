@@ -5,6 +5,7 @@ import { extractTokens, extractGaps, variantAxisModel, type TokenRule, type Gap,
 import { extractLayout, type LayoutSummary } from './layout';
 import { extractRawValues, type RawValue } from './rawValues';
 import { extractNodeEffects, type NodeEffects } from './effects';
+import { extractTransitions, type TransitionRule, type TransitionIssue } from './transitions';
 
 /**
  * One variant instance under a COMPONENT_SET (or the lone COMPONENT). `values`
@@ -44,6 +45,13 @@ export interface IntermediateSpec {
   /** Effect layers on the default variant. Never in specContentHash, like
    *  rawValues. Joined on (path, property), never path alone: one node has several rows. */
   nodeEffects: NodeEffects[];
+  /** Variant transitions from prototype reactions. Rendered (Motion section),
+   *  so hashed, under a key present only when non-empty. Optional only so the
+   *  hand-built specs in tests keep compiling; extract() always sets it. */
+  transitions?: TransitionRule[];
+  /** CHANGE_TO destinations outside the set. Not rendered, so not hashed;
+   *  validate() reports them. */
+  transitionIssues?: TransitionIssue[];
 }
 
 function toVariantInstances(model: VariantAxisModel): VariantInstance[] {
@@ -59,6 +67,7 @@ export function extract(
   // pseudo-axis fallback fires identically and rule conditions always match the
   // instances' `values`.
   const model = variantAxisModel(root);
+  const transitions = extractTransitions(root, model);
   return {
     name: root.name,
     figmaKey: root.key ?? '',
@@ -79,5 +88,7 @@ export function extract(
     layout: extractLayout(root),
     rawValues: extractRawValues(root),
     nodeEffects: extractNodeEffects(root),
+    transitions: transitions.rules,
+    transitionIssues: transitions.issues,
   };
 }

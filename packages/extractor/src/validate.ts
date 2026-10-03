@@ -15,7 +15,8 @@ export type FindingId =
   | 'geometry-token-mismatch'
   | 'duplicate-conflicting-binding'
   | 'ambiguous-state-axis'
-  | 'unbound-value';
+  | 'unbound-value'
+  | 'transition-target-outside-set';
 
 export interface Finding {
   id: FindingId;
@@ -199,6 +200,15 @@ export function validate(
       message: g.value !== undefined
         ? `${g.property} is a hardcoded ${g.value} rather than a bound token.`
         : `${g.property} is not bound to a token.`,
+    });
+  }
+
+  // 6. A CHANGE_TO that leaves the set is a fact worth stating, not a rule.
+  for (const issue of spec.transitionIssues ?? []) {
+    findings.push({
+      id: 'transition-target-outside-set', severity: 'warning',
+      path: issue.path, property: 'reactions',
+      message: 'A prototype interaction on this layer changes to a node outside this component set, so it is not listed as a variant transition.',
     });
   }
 
