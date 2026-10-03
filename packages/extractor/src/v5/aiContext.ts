@@ -5,6 +5,7 @@
  * must never feed a semantic or canvas drift hash.
  */
 import type { FoundationArtifactV5 } from './canonical';
+import { easingLabel, type Easing } from '../motion';
 import { compareCodeUnits } from './diagnostics';
 import type { Diagnostic, Severity } from './diagnostics';
 import type {
@@ -189,7 +190,9 @@ function compactTypedValue(value: TypedValue, expectedType?: TokenType): AiValue
       compact = [...value.value];
       break;
     case 'easing':
-      compact = { ...value.easing };
+      // The Easing object is already compact and self-describing; a bare name
+      // would be indistinguishable from a string token.
+      compact = value.easing as unknown as AiValue;
       break;
     case 'number':
     case 'string':
@@ -398,6 +401,13 @@ function kebab(code: string): string {
   return code.toLowerCase().replace(/_/g, '-');
 }
 
+const EASING_TYPES = new Set(['named', 'cubic_bezier', 'spring', 'hold']);
+function isEasing(value: unknown): value is Easing {
+  return value !== null && typeof value === 'object'
+    && typeof (value as { type?: unknown }).type === 'string'
+    && EASING_TYPES.has((value as { type: string }).type);
+}
+
 /** @internal Renders a typed value envelope compactly. Never invents: an
  *  unrecognised shape falls back to its own text. A colour's alpha is always
  *  stated, so an alpha-only drift never renders as one hex twice. Shared with
@@ -406,6 +416,8 @@ export function valueText(value: unknown): string {
   if (value === null || value === undefined) return 'unknown';
   if (typeof value === 'object') {
     const record = value as Record<string, unknown>;
+    if (isEasing(record)) return easingLabel(record);
+    if (record.type === 'easing' && isEasing(record.easing)) return easingLabel(record.easing);
     if ('value' in record) {
       // `compactTypedValue`'s envelope can hold an OBJECT: read through it.
       return record.value !== null && typeof record.value === 'object'

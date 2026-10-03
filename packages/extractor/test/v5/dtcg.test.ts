@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  dtcgExportFiles, dtcgPathOf, dtcgSegments, foundationDtcg, foundationDtcgDocument,
-  type DtcgExport, type DtcgJson, type FoundationArtifactV5, type TokenV5, type UnitEvidence,
+  buildFoundation, buildFoundationArtifactV5, dtcgExportFiles, dtcgPathOf, dtcgSegments, foundationDtcg, foundationDtcgDocument,
+  type DtcgExport, type SerializedFoundation, type DtcgJson, type FoundationArtifactV5, type TokenV5, type UnitEvidence,
   type UsageUnitMap,
 } from '../../src/index';
 import { leaf, radiusMismatchArtifact, syntheticArtifact } from './dtcgFixture';
@@ -1767,5 +1767,38 @@ describe('dtcg.units overrides', () => {
   it('reports nothing for an override that named a token', () => {
     const out = foundationDtcg(syntheticArtifact(), { units: { 'Primitives/number/*': 'px' } });
     expect(out.report.filter((r) => r.code === 'unit_override_unmatched')).toEqual([]);
+  });
+});
+
+describe('easing tokens', () => {
+  it('projects a cubic bezier and omits named presets, springs and hold with the preset in the report', () => {
+    const dump = {
+      fileKey: 'FILE1', extractedAt: '2026-10-03T00:00:00.000Z', externals: [], textStyles: [], effectStyles: [],
+      collections: [{
+        id: 'c1', name: 'Motion', defaultModeId: 'm1', modes: [{ modeId: 'm1', name: 'Value' }],
+        variables: [
+          { id: 'custom', name: 'motion/ease/custom', resolvedType: 'EASING', description: '', codeSyntax: {}, scopes: [], valuesByMode: { m1: { type: 'CUSTOM_CUBIC_BEZIER', easingFunctionCubicBezier: { x1: 0.2, y1: 0, x2: 0, y2: 1 } } } },
+          { id: 'named', name: 'motion/ease/named', resolvedType: 'EASING', description: '', codeSyntax: {}, scopes: [], valuesByMode: { m1: { type: 'EASE_OUT' } } },
+          { id: 'spring', name: 'motion/ease/spring', resolvedType: 'EASING', description: '', codeSyntax: {}, scopes: [], valuesByMode: { m1: { type: 'CUSTOM_SPRING', easingFunctionSpring: { bounce: 0.3 } } } },
+        ],
+      }],
+    } as unknown as SerializedFoundation;
+    const { artifact } = buildFoundationArtifactV5(buildFoundation(dump), {
+      exportId: 'e', generatedAt: '2026-10-03T00:00:00.000Z', build: null,
+    });
+    const exp: DtcgExport = foundationDtcg(artifact);
+    // One set file holds the Motion collection; find it by content rather
+    // than by guessing the file name the exporter derives.
+    // The set file nests its tokens under the collection name.
+    const trees = Object.values(exp.files) as Array<Record<string, Record<string, Record<string, Record<string, unknown>>>>>;
+    const motion = trees.map((t) => t.Motion).find((t) => t?.motion?.ease !== undefined);
+    expect(motion?.motion.ease.custom).toEqual({ $type: 'cubicBezier', $value: [0.2, 0, 0, 1] });
+    expect(motion?.motion.ease.named).toBeUndefined();
+    expect(motion?.motion.ease.spring).toBeUndefined();
+    const omitted = exp.report.filter((e) => e.code === 'type_not_expressible');
+    expect(omitted.map((e) => e.message)).toEqual([
+      expect.stringContaining('ease_out'),
+      expect.stringContaining('spring'),
+    ]);
   });
 });

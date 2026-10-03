@@ -219,9 +219,20 @@ export function dtcgLiteral(
       return { $type: 'cubicBezier', $value: [...value.value] };
     case 'font_family':
       return { $type: 'fontFamily', $value: value.value };
+    case 'easing': {
+      const easing = value.easing;
+      if (easing.type === 'cubic_bezier') return { $type: 'cubicBezier', $value: [...easing.value] };
+      return {
+        omit: 'type_not_expressible',
+        details: {
+          type: 'easing',
+          easing: easing.type === 'named' ? easing.name : easing.type,
+          ...(easing.type === 'spring' ? { bounce: easing.bounce } : {}),
+        },
+      };
+    }
     case 'string':
     case 'boolean':
-    case 'easing':
       return { omit: 'type_not_expressible', details: { type: value.type } };
     default: {
       const exhaustive: never = value;
@@ -546,7 +557,7 @@ function projectedLiteral(
   return { converted, transform };
 }
 
-/** `string`, `boolean` and `easing` never reach here: `dtcgLiteral` omits them. */
+/** `string` and `boolean` never reach here, and neither does a non-bezier `easing`: `dtcgLiteral` omits them. */
 function literalTransform(value: TypedValue, scopes: string[]): DtcgTransform | null {
   switch (value.type) {
     case 'color': return 'color';
@@ -556,8 +567,8 @@ function literalTransform(value: TypedValue, scopes: string[]): DtcgTransform | 
     case 'cubic_bezier': return 'cubic-bezier';
     case 'font_family': return 'font-family';
     case 'string':
-    case 'boolean':
-    case 'easing': return null;
+    case 'boolean': return null;
+    case 'easing': return value.easing.type === 'cubic_bezier' ? 'cubic-bezier' : null;
     default: {
       const exhaustive: never = value;
       return exhaustive;
@@ -1440,7 +1451,9 @@ function tokenLeaf(p: Projection, token: TokenV5, collection: CollectionV5, mode
   if ('omit' in converted) {
     reportOnce(p, {
       code: converted.omit, severity: 'warning', path, mode,
-      message: converted.omit === 'type_not_expressible'
+      message: converted.omit === 'type_not_expressible' && typeof converted.details.easing === 'string'
+        ? `An easing of kind "${converted.details.easing}" has no DTCG type; only a custom cubic bezier projects to cubicBezier, so the token was omitted.`
+        : converted.omit === 'type_not_expressible'
         ? `DTCG has no ${String(converted.details.type)} type; the value was omitted.`
         : `DTCG dimensions take only px or rem, and this value is in ${String(converted.details.unit)}; the value was omitted.`,
       details: { id: token.id, ...converted.details },

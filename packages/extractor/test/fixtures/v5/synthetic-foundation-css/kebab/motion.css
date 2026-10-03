@@ -5,4 +5,5 @@
   /* Motion */
   --motion-motion-duration-button: var(--motion-duration-fast);
   --motion-duration-fast: 0.3s;
+  --motion-motion-ease-standard: cubic-bezier(0.2, 0, 0, 1);
 }

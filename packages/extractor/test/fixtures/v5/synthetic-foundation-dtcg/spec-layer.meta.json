@@ -69,23 +69,8 @@
     "collection_id": "CollectionID:motion",
     "type": "easing",
     "scopes": [],
-    "omitted": true,
-    "values": {
-      "Default": {
-        "kind": "literal",
-        "value": {
-          "type": "easing",
-          "easing": {
-            "type": "cubic_bezier",
-            "value": [
-              0.2,
-              0,
-              0,
-              1
-            ]
-          }
-        }
-      }
+    "transform": {
+      "Default": "cubic-bezier"
     }
   },
   "Motion.motion.ease.step": {

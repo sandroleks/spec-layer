@@ -4,10 +4,11 @@
     "severity": "warning",
     "path": "Motion.motion.ease.emphasized",
     "mode": "Default",
-    "message": "DTCG has no easing type; the value was omitted.",
+    "message": "An easing of kind \"ease_out\" has no DTCG type; only a custom cubic bezier projects to cubicBezier, so the token was omitted.",
     "details": {
       "id": "VariableID:motion-emphasized",
-      "type": "easing"
+      "type": "easing",
+      "easing": "ease_out"
     }
   },
   {
@@ -15,21 +16,12 @@
     "severity": "warning",
     "path": "Motion.motion.ease.spring",
     "mode": "Default",
-    "message": "DTCG has no easing type; the value was omitted.",
+    "message": "An easing of kind \"spring\" has no DTCG type; only a custom cubic bezier projects to cubicBezier, so the token was omitted.",
     "details": {
       "id": "VariableID:motion-spring",
-      "type": "easing"
-    }
-  },
-  {
-    "code": "type_not_expressible",
-    "severity": "warning",
-    "path": "Motion.motion.ease.standard",
-    "mode": "Default",
-    "message": "DTCG has no easing type; the value was omitted.",
-    "details": {
-      "id": "VariableID:motion-standard",
-      "type": "easing"
+      "type": "easing",
+      "easing": "spring",
+      "bounce": 0.3
     }
   },
   {
@@ -37,10 +29,11 @@
     "severity": "warning",
     "path": "Motion.motion.ease.step",
     "mode": "Default",
-    "message": "DTCG has no easing type; the value was omitted.",
+    "message": "An easing of kind \"hold\" has no DTCG type; only a custom cubic bezier projects to cubicBezier, so the token was omitted.",
     "details": {
       "id": "VariableID:motion-step",
-      "type": "easing"
+      "type": "easing",
+      "easing": "hold"
     }
   },
   {

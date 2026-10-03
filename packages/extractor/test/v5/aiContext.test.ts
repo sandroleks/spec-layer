@@ -348,3 +348,14 @@ describe('valueText', () => {
     expect(valueText(null)).toBe('unknown');
   });
 });
+
+describe('easing values', () => {
+  it('compacts an easing to its own object and labels it in text', () => {
+    expect(valueText({ type: 'named', name: 'ease_out' })).toBe('Ease out');
+    expect(valueText({ type: 'cubic_bezier', value: [0.2, 0, 0, 1] })).toBe('Cubic bezier 0.2, 0, 0, 1');
+    expect(valueText({ type: 'spring', bounce: 0.3 })).toBe('Spring, bounce 0.3');
+    expect(valueText({ type: 'hold' })).toBe('Hold');
+    expect(valueText({ type: 'easing', easing: { type: 'hold' } })).toBe('Hold');
+    expect(valueText({ number: 0.3, unit: 's' })).toBe('0.3s');
+  });
+});

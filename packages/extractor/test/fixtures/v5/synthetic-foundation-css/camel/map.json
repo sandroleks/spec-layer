@@ -14,6 +14,11 @@
     "source": "code_syntax",
     "file": "motion.css"
   },
+  "Motion.motion.ease.standard": {
+    "name": "--motionMotionEaseStandard",
+    "source": "derived",
+    "file": "motion.css"
+  },
   "Primitives.color.chain.bridge": {
     "name": "--primitivesColorChainBridge",
     "source": "derived",
