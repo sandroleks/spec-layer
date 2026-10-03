@@ -12,10 +12,12 @@ import type {
   FoundationGlyph, FoundationRow, FoundationTextMetrics, FoundationUnitContent,
   FoundationValue, FoundationVariableRow,
 } from './foundation';
-import { durationLabel, easingLabel } from './motion';
+import {
+  axisLabel, durationCell, durationLabel, easingCell, easingLabel, transitionLabel, transitionYaml, triggerLabel,
+} from './motion';
 import { compareCodeUnits } from './v5/diagnostics';
 import { matchesVariant } from './resolve';
-import type { SerializedTrigger, SerializedTransitionEffect } from './tree';
+import type { SerializedTransitionEffect } from './tree';
 
 export interface ListDiff<T> {
   added: T[];
@@ -626,60 +628,17 @@ function formatPropKind(kind: string): string {
 
 type ProjectedTransition = NonNullable<SpecHashProjection['transitions']>[number];
 
-function axisText(values: Record<string, string>): string {
-  const parts = Object.values(values);
-  return parts.length ? parts.join(', ') : 'the component';
-}
-
 /** "Transition Default to Hover, while hovering (Icon)". */
 function transitionName(t: ProjectedTransition): string {
-  const where = t.triggerPart === 'Container' ? '' : ` (${t.triggerPart})`;
-  return `Transition ${axisText(t.from)} to ${axisText(t.to)}, ${triggerText(t.trigger).toLowerCase()}${where}`;
-}
-
-function triggerText(trigger: SerializedTrigger): string {
-  switch (trigger.type) {
-    case 'on_click': return 'On click';
-    case 'on_hover': return 'While hovering';
-    case 'on_press': return 'While pressing';
-    case 'on_drag': return 'On drag';
-    case 'after_timeout': return `After delay ${durationLabel(trigger.timeout)}`;
-    case 'mouse_up': return trigger.delay > 0 ? `Mouse up after ${durationLabel(trigger.delay)}` : 'Mouse up';
-    case 'mouse_down': return trigger.delay > 0 ? `Mouse down after ${durationLabel(trigger.delay)}` : 'Mouse down';
-    case 'mouse_enter': return trigger.delay > 0 ? `Mouse enter after ${durationLabel(trigger.delay)}` : 'Mouse enter';
-    case 'mouse_leave': return trigger.delay > 0 ? `Mouse leave after ${durationLabel(trigger.delay)}` : 'Mouse leave';
-    case 'on_key_down': return `Key press ${trigger.keyCodes.join(', ')}`;
-    case 'on_media_hit': return `Media hit ${durationLabel(trigger.mediaHitTime)}`;
-    case 'on_media_end': return 'Media end';
-    default: {
-      const exhaustive: never = trigger;
-      return exhaustive;
-    }
-  }
+  const yaml = transitionYaml({ ...t, fromVariantId: '', toVariantId: '', triggerPath: t.triggerPart });
+  const onPart = t.triggerPart === 'Container' ? null : t.triggerPart;
+  return `Transition ${axisLabel(t.from) || 'the component'} to ${axisLabel(t.to) || 'the component'}, ${triggerLabel(yaml.trigger, onPart).replace(/^./, (c) => c.toLowerCase())}`;
 }
 
 function transitionText(t: SerializedTransitionEffect): string {
-  if (t.type === 'instant') return 'Instant';
-  const easing = t.easing.type === 'unsupported' ? `Not supported: ${t.easing.figma_type}` : easingLabel(t.easing);
-  const base = `${transitionKind(t)} ${durationLabel(t.duration)}, ${easing}`;
-  return base;
-}
-
-function transitionKind(t: Exclude<SerializedTransitionEffect, { type: 'instant' }>): string {
-  switch (t.type) {
-    case 'dissolve': return 'Dissolve';
-    case 'smart_animate': return 'Smart animate';
-    case 'scroll_animate': return 'Scroll animate';
-    case 'move_in': return `Move in from ${t.direction}${t.matchLayers ? ', matching layers' : ''}`;
-    case 'move_out': return `Move out to ${t.direction}${t.matchLayers ? ', matching layers' : ''}`;
-    case 'push': return `Push from ${t.direction}${t.matchLayers ? ', matching layers' : ''}`;
-    case 'slide_in': return `Slide in from ${t.direction}${t.matchLayers ? ', matching layers' : ''}`;
-    case 'slide_out': return `Slide out to ${t.direction}${t.matchLayers ? ', matching layers' : ''}`;
-    default: {
-      const exhaustive: never = t;
-      return exhaustive;
-    }
-  }
+  const yaml = transitionYaml({ from: {}, to: {}, fromVariantId: '', toVariantId: '', trigger: { type: 'on_click' }, triggerPart: '', triggerPath: '', transition: t }).transition;
+  const cells = [transitionLabel(yaml), durationCell(yaml), easingCell(yaml)].filter((c) => c !== '');
+  return cells.length === 1 ? cells[0] : `${cells[0]} ${cells[1]}, ${cells[2]}`;
 }
 
 /** Figma's layer type as the layers panel says it, lowercase: FRAME reads "frame". */

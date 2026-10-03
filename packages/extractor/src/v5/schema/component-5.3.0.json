@@ -24,19 +24,82 @@
     "layout": { "type": "object" },
     "references": { "$ref": "#/$defs/references" },
     "effects_inline": { "type": "array" },
+    "motion": {
+      "type": "object",
+      "required": ["transitions"],
+      "additionalProperties": false,
+      "properties": {
+        "transitions": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/transition" } }
+      }
+    },
     "unbound": { "type": "array" },
     "diagnostics": { "type": "array", "items": { "$ref": "#/$defs/diagnostic" } },
     "validation": { "type": "array" },
     "guidelines": { "type": "object" }
   },
   "$defs": {
+    "axis_values": { "type": "object", "additionalProperties": { "type": "string" } },
+    "seconds": {
+      "type": "object",
+      "required": ["number", "unit"],
+      "additionalProperties": false,
+      "properties": { "number": { "type": "number", "minimum": 0 }, "unit": { "const": "s" } }
+    },
+    "motion_easing": {
+      "oneOf": [
+        { "type": "object", "required": ["type", "name"], "additionalProperties": false,
+          "properties": { "type": { "const": "named" }, "name": { "type": "string", "enum": ["ease_in", "ease_out", "ease_in_and_out", "linear", "ease_in_back", "ease_out_back", "ease_in_and_out_back", "gentle", "quick", "bouncy", "slow"] } } },
+        { "type": "object", "required": ["type", "value"], "additionalProperties": false,
+          "properties": { "type": { "const": "cubic_bezier" }, "value": { "type": "array", "minItems": 4, "maxItems": 4, "items": { "type": "number" } } } },
+        { "type": "object", "required": ["type", "bounce"], "additionalProperties": false,
+          "properties": { "type": { "const": "spring" }, "bounce": { "type": "number", "minimum": 0, "maximum": 1 } } },
+        { "type": "object", "required": ["type"], "additionalProperties": false,
+          "properties": { "type": { "const": "hold" } } },
+        { "type": "object", "required": ["type", "figma_type"], "additionalProperties": false,
+          "properties": { "type": { "const": "unsupported" }, "figma_type": { "type": "string" } } }
+      ]
+    },
+    "trigger": {
+      "type": "object",
+      "required": ["type"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "type": "string", "enum": ["on_click", "on_hover", "on_press", "on_drag", "after_timeout", "mouse_up", "mouse_down", "mouse_enter", "mouse_leave", "on_key_down", "on_media_hit", "on_media_end"] },
+        "timeout": { "type": "number", "minimum": 0 },
+        "delay": { "type": "number", "minimum": 0 },
+        "device": { "type": "string" },
+        "key_codes": { "type": "array", "items": { "type": "integer" } },
+        "media_hit_time": { "type": "number", "minimum": 0 }
+      }
+    },
+    "transition_effect": {
+      "oneOf": [
+        { "type": "object", "required": ["type"], "additionalProperties": false, "properties": { "type": { "const": "instant" } } },
+        { "type": "object", "required": ["type", "duration", "easing"], "additionalProperties": false,
+          "properties": { "type": { "enum": ["dissolve", "smart_animate", "scroll_animate"] }, "duration": { "$ref": "#/$defs/seconds" }, "easing": { "$ref": "#/$defs/motion_easing" } } },
+        { "type": "object", "required": ["type", "direction", "match_layers", "duration", "easing"], "additionalProperties": false,
+          "properties": { "type": { "enum": ["move_in", "move_out", "push", "slide_in", "slide_out"] }, "direction": { "enum": ["left", "right", "top", "bottom"] }, "match_layers": { "type": "boolean" }, "duration": { "$ref": "#/$defs/seconds" }, "easing": { "$ref": "#/$defs/motion_easing" } } }
+      ]
+    },
+    "transition": {
+      "type": "object",
+      "required": ["from", "to", "trigger", "on", "transition"],
+      "additionalProperties": false,
+      "properties": {
+        "from": { "$ref": "#/$defs/axis_values" },
+        "to": { "$ref": "#/$defs/axis_values" },
+        "trigger": { "$ref": "#/$defs/trigger" },
+        "on": { "type": "string", "minLength": 1 },
+        "transition": { "$ref": "#/$defs/transition_effect" }
+      }
+    },
     "envelope": {
       "type": "object",
       "required": ["kind", "schema_version", "schema_uri", "extractor", "export", "source"],
       "additionalProperties": false,
       "properties": {
         "kind": { "const": "component" },
-        "schema_version": { "const": "5.2.0" },
+        "schema_version": { "const": "5.3.0" },
         "schema_uri": { "const": "https://spec-layer.com/schemas/component-context/v5.json" },
         "extractor": {
           "type": "object",

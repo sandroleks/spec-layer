@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { easingOf, easingLabel, durationLabel, EASING_PRESET_NAMES } from '../src/motion';
+import {
+  easingOf, easingLabel, durationLabel, EASING_PRESET_NAMES,
+  axisLabel, triggerLabel, transitionLabel, durationCell, easingCell,
+} from '../src/motion';
 
 describe('easingOf', () => {
   it('maps every Figma preset to its snake_case name', () => {
@@ -36,5 +39,20 @@ describe('labels', () => {
     expect(easingLabel({ type: 'hold' })).toBe('Hold');
     expect(durationLabel(0.30000001192092896)).toBe('0.3 s');
     expect(durationLabel(2)).toBe('2 s');
+  });
+});
+
+describe('transition labels', () => {
+  const t = { type: 'move_in' as const, direction: 'left' as const, match_layers: true, duration: { number: 0.3, unit: 's' as const }, easing: { type: 'named' as const, name: 'ease_out' as const } };
+  it('reads as the prototype panel does', () => {
+    expect(axisLabel({ Size: 'Large', State: 'Hover' })).toBe('Large, Hover');
+    expect(triggerLabel({ type: 'on_click' }, 'Checkbox box')).toBe('On click (Checkbox box)');
+    expect(triggerLabel({ type: 'after_timeout', timeout: 0.8 }, null)).toBe('After delay 0.8 s');
+    expect(triggerLabel({ type: 'mouse_leave', delay: 0.2 }, null)).toBe('Mouse leave after 0.2 s');
+    expect(transitionLabel(t)).toBe('Move in from left, matching layers');
+    expect(transitionLabel({ type: 'instant' })).toBe('Instant');
+    expect(durationCell(t)).toBe('0.3 s');
+    expect(durationCell({ type: 'instant' })).toBe('');
+    expect(easingCell({ ...t, easing: { type: 'unsupported', figma_type: 'CUSTOM_SPRING' } })).toBe('Not supported: CUSTOM_SPRING');
   });
 });

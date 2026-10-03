@@ -352,6 +352,11 @@ function readComponentFacts(entry: LibraryBundleV1['components'][number]): Compo
     if (path === null) continue;
     values.push({ id: `effects:${path}`, value: canonicalJson(record.layers ?? null) });
   }
+  for (const item of asArray(asRecord(artifact.motion).transitions)) {
+    const record = asRecord(item);
+    const key = canonicalJson({ from: record.from ?? null, to: record.to ?? null, trigger: record.trigger ?? null, on: record.on ?? null });
+    values.push({ id: `motion:${key}`, value: canonicalJson(record.transition ?? null) });
+  }
   for (const item of asArray(artifact.unbound)) {
     const record = asRecord(item);
     const path = asString(record.path);

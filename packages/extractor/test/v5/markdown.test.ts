@@ -1316,3 +1316,26 @@ describe('componentMarkdown hostile input', () => {
     expect(out).not.toContain('[object Object]');
   });
 });
+
+describe('componentMarkdown motion', () => {
+  const hover = { trigger: { type: 'on_hover' as const }, destinationId: '1:2',
+    transition: { type: 'smart_animate' as const, duration: 0.3, easing: { type: 'named' as const, name: 'ease_out' as const } } };
+  const set: SerializedNode = {
+    id: '1:0', name: 'Button', type: 'COMPONENT_SET', visible: true,
+    children: [
+      { id: '1:1', name: 'State=Default', type: 'COMPONENT', visible: true, transitions: [hover] },
+      { id: '1:2', name: 'State=Hover', type: 'COMPONENT', visible: true },
+    ],
+  };
+  const artifactWithMotion = buildComponentArtifactV5(
+    extract(set, { figmaFile: 'F' }),
+    { exportId: 'e', generatedAt: '2026-10-03T00:00:00.000Z', build: null },
+  );
+
+  it('renders a Motion table from motion.transitions', () => {
+    const md = componentMarkdown(artifactWithMotion);
+    expect(md).toContain('## Motion');
+    expect(md).toContain('| `Container` | Default | Hover | While hovering | Smart animate | 0.3 s | Ease out |');
+    expect(md).not.toContain('[object Object]');
+  });
+});

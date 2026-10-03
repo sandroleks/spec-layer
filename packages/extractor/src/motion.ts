@@ -9,6 +9,8 @@
  * the Plugin API, so a named easing stays a name (design ruling 2026-10-03).
  */
 import { canonicalNumber } from './v5/precision';
+import type { TransitionRule } from './transitions';
+import type { SerializedTrigger, SerializedTransitionEffect, TransitionDirection } from './tree';
 
 export type EasingPresetName =
   | 'ease_in' | 'ease_out' | 'ease_in_and_out' | 'linear'
@@ -109,4 +111,103 @@ export function easingLabel(e: Easing): string {
 /** "0.3 s". Seconds as the API states them. */
 export function durationLabel(seconds: number): string {
   return `${canonicalNumber(seconds)} s`;
+}
+
+export interface MotionTriggerYaml {
+  type: SerializedTrigger['type'];
+  timeout?: number; delay?: number; device?: string; key_codes?: number[]; media_hit_time?: number;
+}
+export type MotionEasingYaml = Easing | { type: 'unsupported'; figma_type: string };
+export type MotionTransitionEffectYaml =
+  | { type: 'instant' }
+  | { type: 'dissolve' | 'smart_animate' | 'scroll_animate';
+      duration: { number: number; unit: 's' }; easing: MotionEasingYaml }
+  | { type: 'move_in' | 'move_out' | 'push' | 'slide_in' | 'slide_out'; direction: TransitionDirection;
+      match_layers: boolean; duration: { number: number; unit: 's' }; easing: MotionEasingYaml };
+export interface MotionTransitionYaml {
+  from: Record<string, string>; to: Record<string, string>;
+  trigger: MotionTriggerYaml; on: string; transition: MotionTransitionEffectYaml;
+}
+
+function triggerYaml(trigger: SerializedTrigger): MotionTriggerYaml {
+  switch (trigger.type) {
+    case 'after_timeout': return { type: trigger.type, timeout: trigger.timeout };
+    case 'mouse_up': case 'mouse_down': case 'mouse_enter': case 'mouse_leave':
+      return { type: trigger.type, delay: trigger.delay };
+    case 'on_key_down': return { type: trigger.type, device: trigger.device, key_codes: [...trigger.keyCodes] };
+    case 'on_media_hit': return { type: trigger.type, media_hit_time: trigger.mediaHitTime };
+    default: return { type: trigger.type };
+  }
+}
+
+function effectYaml(t: SerializedTransitionEffect): MotionTransitionEffectYaml {
+  if (t.type === 'instant') return { type: 'instant' };
+  const duration = { number: t.duration, unit: 's' as const };
+  if (!('direction' in t)) return { type: t.type, duration, easing: t.easing };
+  return { type: t.type, direction: t.direction, match_layers: t.matchLayers, duration, easing: t.easing };
+}
+
+/** The brief's shape for one rule: snake_case keys, duration as a typed value. */
+export function transitionYaml(rule: TransitionRule): MotionTransitionYaml {
+  return { from: rule.from, to: rule.to, trigger: triggerYaml(rule.trigger), on: rule.triggerPart, transition: effectYaml(rule.transition) };
+}
+
+/** Enough of a check to read our own artifact back; Markdown never parses anything else. */
+export function isMotionTransitionYaml(value: unknown): value is MotionTransitionYaml {
+  if (value === null || typeof value !== 'object') return false;
+  const v = value as Record<string, unknown>;
+  const trigger = v.trigger as Record<string, unknown> | undefined | null;
+  const transition = v.transition as Record<string, unknown> | undefined | null;
+  return typeof v.on === 'string' && v.from !== null && typeof v.from === 'object' && v.to !== null && typeof v.to === 'object'
+    && trigger !== undefined && trigger !== null && typeof trigger.type === 'string'
+    && transition !== undefined && transition !== null && typeof transition.type === 'string';
+}
+
+/** "Hover", or "Large, Hover" across axes; "" for a lone component. */
+export function axisLabel(values: Record<string, string>): string {
+  return Object.values(values).join(', ');
+}
+
+const TRIGGER_WORDS: Readonly<Record<SerializedTrigger['type'], string>> = {
+  on_click: 'On click', on_hover: 'While hovering', on_press: 'While pressing', on_drag: 'On drag',
+  after_timeout: 'After delay', mouse_up: 'Mouse up', mouse_down: 'Mouse down',
+  mouse_enter: 'Mouse enter', mouse_leave: 'Mouse leave', on_key_down: 'Key press',
+  on_media_hit: 'Media hit', on_media_end: 'Media end',
+};
+
+/** Figma's prototype panel words. `onPart` names a trigger layer other than the variant root. */
+export function triggerLabel(trigger: MotionTriggerYaml, onPart: string | null): string {
+  let text = TRIGGER_WORDS[trigger.type];
+  if (trigger.type === 'after_timeout' && trigger.timeout !== undefined) text = `${text} ${durationLabel(trigger.timeout)}`;
+  if (trigger.delay !== undefined && trigger.delay > 0) text = `${text} after ${durationLabel(trigger.delay)}`;
+  if (trigger.type === 'on_key_down' && trigger.key_codes) text = `${text} ${trigger.key_codes.join(', ')}`;
+  if (trigger.type === 'on_media_hit' && trigger.media_hit_time !== undefined) text = `${text} ${durationLabel(trigger.media_hit_time)}`;
+  return onPart ? `${text} (${onPart})` : text;
+}
+
+const DIRECTIONAL_WORDS: Readonly<Record<'move_in' | 'move_out' | 'push' | 'slide_in' | 'slide_out', [string, 'from' | 'to']>> = {
+  move_in: ['Move in', 'from'], move_out: ['Move out', 'to'], push: ['Push', 'from'],
+  slide_in: ['Slide in', 'from'], slide_out: ['Slide out', 'to'],
+};
+
+export function transitionLabel(t: MotionTransitionEffectYaml): string {
+  switch (t.type) {
+    case 'instant': return 'Instant';
+    case 'dissolve': return 'Dissolve';
+    case 'smart_animate': return 'Smart animate';
+    case 'scroll_animate': return 'Scroll animate';
+    default: {
+      const [word, preposition] = DIRECTIONAL_WORDS[t.type];
+      return `${word} ${preposition} ${t.direction}${t.match_layers ? ', matching layers' : ''}`;
+    }
+  }
+}
+
+export function durationCell(t: MotionTransitionEffectYaml): string {
+  return t.type === 'instant' ? '' : durationLabel(t.duration.number);
+}
+
+export function easingCell(t: MotionTransitionEffectYaml): string {
+  if (t.type === 'instant') return '';
+  return t.easing.type === 'unsupported' ? `Not supported: ${t.easing.figma_type}` : easingLabel(t.easing);
 }

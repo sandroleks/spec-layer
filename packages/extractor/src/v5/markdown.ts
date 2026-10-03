@@ -7,6 +7,9 @@
 
 import { toYaml } from '../yaml';
 import type { YamlValue } from '../yaml';
+import {
+  axisLabel, durationCell, easingCell, isMotionTransitionYaml, transitionLabel, triggerLabel,
+} from '../motion';
 import { valueText } from './aiContext';
 import type { FoundationValidationRow } from './aiContext';
 import { componentEnvelope, componentFoundationAiSlice } from './componentContext';
@@ -402,6 +405,20 @@ function effectsInlineSection(items: unknown[]): string | undefined {
   return `## Effects\n\n${table(['Part', 'Effects'], rows).trimEnd()}`;
 }
 
+/** `## Motion`: one row per variant transition, Part as its own column (the
+ *  canvas folds it into Trigger because its table is width-bound). */
+function motionSection(motion: unknown): string | undefined {
+  const transitions = asRecord(motion).transitions;
+  if (!Array.isArray(transitions) || transitions.length === 0) return undefined;
+  const rows = transitions.filter(isMotionTransitionYaml).map((t) => [
+    codeCell(t.on), escapeCell(axisLabel(t.from)), escapeCell(axisLabel(t.to)),
+    escapeCell(triggerLabel(t.trigger, null)), escapeCell(transitionLabel(t.transition)),
+    escapeCell(durationCell(t.transition)), escapeCell(easingCell(t.transition)),
+  ]);
+  if (rows.length === 0) return undefined;
+  return `## Motion\n\n${table(['Part', 'From', 'To', 'Trigger', 'Transition', 'Duration', 'Easing'], rows).trimEnd()}`;
+}
+
 /**
  * `## Unbound values`, one row per `artifact.unbound` entry. An absent `value`
  * is an empty cell, never `none` or a dash: such a finding has none to show.
@@ -771,6 +788,11 @@ export function componentMarkdown(artifact: ComponentArtifactV5): string {
     const section = effectsInlineSection(
       Array.isArray(artifact.effects_inline) ? artifact.effects_inline : [],
     );
+    if (section) blocks.push(section);
+  }
+
+  if (artifact.motion !== undefined) {
+    const section = motionSection(artifact.motion);
     if (section) blocks.push(section);
   }
 

@@ -28,7 +28,7 @@ const foundationSchema = JSON.parse(readFileSync(
   'packages/extractor/src/v5/schema/foundation-5.2.0.json', 'utf8',
 )) as Record<string, unknown>;
 const componentSchema = JSON.parse(readFileSync(
-  'packages/extractor/src/v5/schema/component-5.2.0.json', 'utf8',
+  'packages/extractor/src/v5/schema/component-5.3.0.json', 'utf8',
 )) as Record<string, unknown>;
 const ajv = addFormats(new Ajv2020({ allErrors: true, strict: true, inlineRefs: false }));
 ajv.addSchema(foundationSchema);

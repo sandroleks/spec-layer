@@ -19,6 +19,7 @@ import type { RefIdentity } from './tree';
 import { detectStateMatrix, stateAxisProps } from './statesMatrix';
 import { validate } from './validate';
 import { resolutionOf } from './resolution';
+import { transitionYaml } from './motion';
 
 /**
  * Brief schema version, bumped when the brief's shape or field meanings change.
@@ -282,6 +283,13 @@ function effectsOf(spec: IntermediateSpec): YamlValue | undefined {
   return out;
 }
 
+/** `motion.transitions`, only when the component has variant transitions. */
+function motionOf(spec: IntermediateSpec): YamlValue | undefined {
+  const rules = spec.transitions ?? [];
+  if (rules.length === 0) return undefined;
+  return { transitions: rules.map((rule) => transitionYaml(rule) as unknown as YamlValue) };
+}
+
 /** The public component brief, a projection of the internal IntermediateSpec (see the file header). */
 export function componentBrief(rawSpec: IntermediateSpec, opts: ComponentBriefOptions): YamlValue {
   // Rules for a part hidden by default are dropped: v5 `conditions` cover
@@ -307,6 +315,7 @@ export function componentBrief(rawSpec: IntermediateSpec, opts: ComponentBriefOp
     }));
   const typography = typographyOf(spec);
   const effects = effectsOf(spec);
+  const motion = motionOf(spec);
   // Joined to `unbound` and `bindings` on (path, property): one node has several rows.
   const effectsInline = spec.nodeEffects.map((n) => ({
     path: n.path,
@@ -348,6 +357,7 @@ export function componentBrief(rawSpec: IntermediateSpec, opts: ComponentBriefOp
       ? spec.layout.map((l) => ({ path: l.path, summary: l.summary }))
       : undefined,
     tokens: tokensOf(spec),
+    ...(motion !== undefined ? { motion } : {}),
     ...(effectsInline.length > 0 ? { effects_inline: effectsInline } : {}),
     ...(unbound.length > 0 ? { unbound } : {}),
     ...(typography !== undefined ? { typography } : {}),
