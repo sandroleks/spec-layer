@@ -22,6 +22,8 @@ describe('easingOf', () => {
     expect(easingOf({ type: 'CUSTOM_CUBIC_BEZIER' })).toBeNull();
     expect(easingOf(null)).toBeNull();
     expect(easingOf(0.3)).toBeNull();
+    expect(easingOf({ type: 'constructor' })).toBeNull();
+    expect(easingOf({ type: '__proto__' })).toBeNull();
   });
 });
 

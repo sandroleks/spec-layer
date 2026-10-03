@@ -70,8 +70,9 @@ export function easingOf(raw: unknown): Easing | null {
   if (raw === null || typeof raw !== 'object') return null;
   const value = raw as RawEasing;
   if (typeof value.type !== 'string') return null;
-  const preset = PRESET_BY_FIGMA_TYPE[value.type];
-  if (preset !== undefined) return { type: 'named', name: preset };
+  if (Object.prototype.hasOwnProperty.call(PRESET_BY_FIGMA_TYPE, value.type)) {
+    return { type: 'named', name: PRESET_BY_FIGMA_TYPE[value.type] };
+  }
   if (value.type === 'HOLD') return { type: 'hold' };
   if (value.type === 'CUSTOM_CUBIC_BEZIER') {
     const b = value.easingFunctionCubicBezier;
