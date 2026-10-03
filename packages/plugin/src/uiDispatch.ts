@@ -12,7 +12,7 @@
 
 /** Messages whose handlers create, replace, or delete canvas nodes. */
 export const CANVAS_EDITS: ReadonlySet<string> = new Set([
-  'renderDocFrame', 'renderFoundation', 'updateFoundationDoc', 'detachDoc', 'removeDoc',
+  'renderDocFrame', 'renderFoundation', 'updateFoundationDoc', 'detachDoc', 'removeDoc', 'applySync',
 ]);
 
 export interface DispatchDeps {

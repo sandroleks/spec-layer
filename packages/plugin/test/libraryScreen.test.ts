@@ -37,6 +37,7 @@ function row(
     canDetach: true,
     canRemove: true,
     canCopy: false,
+    canSync: false,
     changeGroups: null,
     changeState: 'idle',
     changeUnavailableReason: null,
@@ -432,6 +433,19 @@ describe('library screen presentation', () => {
     }));
     expect(markup).toContain('data-library-action="copy"');
     expect(markup).toContain('Copy for AI');
+  });
+
+  it('offers Sync to Figma on a row that allows it', () => {
+    const syncRow = row('buttonSync', 'inSync', { canSync: true });
+    const markup = libraryScrollMarkup(model({
+      allRows: [syncRow], rows: [syncRow], counts: { all: 1, updates: 0, inSync: 1 }, menuDocId: 'buttonSync',
+    }));
+    expect(markup).toContain('data-library-action="sync"');
+    expect(markup).toContain('Sync to Figma');
+    const without = libraryScrollMarkup(model({
+      allRows: [row('b', 'inSync')], rows: [row('b', 'inSync')], counts: { all: 1, updates: 0, inSync: 1 }, menuDocId: 'b',
+    }));
+    expect(without).not.toContain('data-library-action="sync"');
   });
 
   it('offers Copy for AI on a foundation row', () => {

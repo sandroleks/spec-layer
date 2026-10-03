@@ -7,6 +7,7 @@ import type { ComponentFormat } from './componentFormat';
 import type { DocFrameModel } from './ui/docModel';
 import type { DocConfig, FoundationConfig, DocBaseline } from './docLink';
 import type { FoundationIconKind } from './foundationIcon';
+import type { SyncScope, SyncPlanResult, SyncResult } from './syncFigma';
 
 /** `update` refreshes the generated lane; `rebuild` is a stale-version rebuild
  *  that may first ask the model for empty sections. Echoed on `docSource`. */
@@ -134,6 +135,12 @@ export type MainToUi =
        *  `publishInfo` reply and mint a duplicate library. */
       publishInfo: PublishInfo }
   | { type: 'publishSourcesError'; message: string }
+  /** Sync to Figma: what a run would do, for the confirm dialog. */
+  | { type: 'syncPlan'; scope: SyncScope; replaceEdited: boolean; plan: SyncPlanResult }
+  | { type: 'syncDone'; scope: SyncScope; replaceEdited: boolean; result: SyncResult }
+  | { type: 'syncError'; message: string }
+  /** `fileUrl` lives in the file, shared by every editor; `onUpdate` per user. */
+  | { type: 'syncSettings'; onUpdate: boolean; fileUrl: string | null }
   /** Nulls when the file was never published; `pullKey` null when this device
    *  lacks it. */
   | ({ type: 'publishInfo' } & PublishInfo);
@@ -211,4 +218,11 @@ export type UiToMain =
   | { type: 'stampPublished'; libraryId: string; version: string; publishedAt: string;
       components: PublishStampComponent[]; foundation: SerializedFoundation | null }
   /** After the server says the library is gone, so the next publish creates. */
-  | { type: 'clearPublishInfo' };
+  | { type: 'clearPublishInfo' }
+  /** Sync to Figma. The plan writes nothing; `applySync` plans again against
+   *  the live file and writes, so a change between the two is never missed. */
+  | { type: 'requestSyncPlan'; scope: SyncScope; replaceEdited: boolean }
+  | { type: 'applySync'; scope: SyncScope; replaceEdited: boolean }
+  | { type: 'setSyncOnUpdate'; value: boolean }
+  /** '' clears the saved link. */
+  | { type: 'setSyncFileUrl'; value: string };

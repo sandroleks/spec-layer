@@ -39,6 +39,7 @@ function row(
     canDetach: true,
     canRemove: true,
     canCopy: false,
+    canSync: false,
     changeGroups: null,
     changeState: 'idle',
     changeUnavailableReason: null,

@@ -44,6 +44,8 @@ import { DriftPassResolvers, countSerializedNodes } from './driftPass';
 import { FingerprintBaseline, foundationFingerprint } from './foundationFingerprint';
 import { BlockWatch } from './timing';
 import { SelectionCache } from './selectionCache';
+import { planSyncRun, runSync, type SyncHost, type SyncComponentNode, type SyncLayerNode, type SyncDoc, type SyncResult } from './syncFigma';
+import { fileKeyFromUrl } from './syncText';
 
 declare const __PLUGIN_VERSION__: string;
 
@@ -343,6 +345,21 @@ figma.clientStorage.getAsync('componentFormat').then((value: unknown) => {
   figma.ui.postMessage(msg);
 }).catch(() => {/* ignore */});
 
+// Sync to Figma: the per-user switch, and the file link every editor shares.
+const SYNC_ON_UPDATE_KEY = 'syncOnUpdate';
+const SYNC_FILE_URL_KEY = 'speclayer.sync.fileUrl';
+let syncOnUpdate = false;
+function syncFileUrl(): string | null {
+  return figma.root.getPluginData(SYNC_FILE_URL_KEY) || null;
+}
+function postSyncSettings(): void {
+  figma.ui.postMessage({ type: 'syncSettings', onUpdate: syncOnUpdate, fileUrl: syncFileUrl() } satisfies MainToUi);
+}
+figma.clientStorage.getAsync(SYNC_ON_UPDATE_KEY).then((value: unknown) => {
+  syncOnUpdate = value === true;
+  postSyncSettings();
+}).catch(() => postSyncSettings());
+
 // A 1.x install's two-color 'brandColors' is migrated once and left in
 // place, so a rollback still finds it.
 figma.clientStorage.getAsync('brandTheme').then(async (value: BrandTheme | undefined) => {
@@ -403,6 +420,53 @@ function collectGeneratedLane(node: BaseNode): string[] {
 function mergedProse(section: SectionNode): ProseV2 | null {
   const prose = parseProse(section.getPluginData(DOC_PROSE_KEY));
   return mergeProse(prose, readCanvasProse(section as unknown as ProseNodeLike));
+}
+
+/** Sync to Figma's view of the file. Every Figma read the sync makes goes
+ *  through here, so syncFigma.ts stays testable with plain objects. */
+const syncHost: SyncHost = {
+  async docs() {
+    const docs: SyncDoc[] = [];
+    for (const { docId, section } of await registrySections()) {
+      const link = parseDocLink(section.getPluginData(DOC_LINK_KEY));
+      if (link && !isFoundationLink(link)) docs.push({ docId, link, prose: mergedProse(section) });
+    }
+    return docs;
+  },
+  async node(id) {
+    try {
+      return await figma.getNodeByIdAsync(id) as unknown as SyncComponentNode | SyncLayerNode | null;
+    } catch { return null; }
+  },
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  serialize: (node) => serializeNode(node as any, memoizedResolver(resolver)),
+  fileUrl: syncFileUrl,
+  normalizeMarkdown: (md) => figma.util.normalizeMarkdown(md),
+  async categoryId() {
+    const label = 'Spec Layer';
+    const existing = (await figma.annotations.getAnnotationCategoriesAsync()).find((c) => c.label === label);
+    if (existing) return existing.id;
+    return (await figma.annotations.addAnnotationCategoryAsync({ label, color: 'blue' })).id;
+  },
+  now: () => new Date(),
+  pluginVersion: typeof __PLUGIN_VERSION__ === 'string' ? __PLUGIN_VERSION__ : '',
+};
+
+/** After a doc build, refresh what a manual sync already owns. Never opens a
+ *  dialog: a held component is named in a toast and left for a manual sync. */
+async function autoSync(sourceNodeId: string): Promise<void> {
+  if (!syncOnUpdate) return;
+  let result: SyncResult;
+  try {
+    result = await runSync(syncHost, { kind: 'source', sourceNodeId }, { auto: true, replaceEdited: false });
+  } catch {
+    return;
+  }
+  if (result.held.length > 0) {
+    figma.notify('Part of this doc was not synced to Figma because it was changed there or written with AI. Use Sync to Figma in the Library to review it.');
+  } else if (result.failed.length > 0) {
+    figma.notify(`Couldn’t sync to Figma: ${result.failed[0].message}`, { error: true });
+  }
 }
 
 /**
@@ -776,6 +840,7 @@ const handleUiMessage = async (raw: unknown): Promise<void> => {
         figma.ui.postMessage({
           type: 'docFrameDone', frameName: section.name, replaced: existingId !== null, docId: section.id,
         } satisfies MainToUi);
+        await autoSync(msg.nodeId);
       } catch (err) {
         // Clean up an orphan only if we failed BEFORE committing the replacement;
         // after commit the section is the live doc and must not be removed.
@@ -1498,6 +1563,51 @@ const handleUiMessage = async (raw: unknown): Promise<void> => {
           console.error('[Spec Layer] could not repaint the publish pill', err);
         }
       }
+      break;
+    }
+
+    case 'requestSyncPlan': {
+      try {
+        const plan = await planSyncRun(syncHost, msg.scope, { replaceEdited: msg.replaceEdited, auto: false });
+        figma.ui.postMessage({ type: 'syncPlan', scope: msg.scope, replaceEdited: msg.replaceEdited, plan } satisfies MainToUi);
+      } catch (err) {
+        figma.ui.postMessage({ type: 'syncError', message: err instanceof Error ? err.message : String(err) } satisfies MainToUi);
+      }
+      break;
+    }
+
+    case 'applySync': {
+      if (!canvasBuild.begin()) {
+        figma.ui.postMessage({ type: 'syncError', message: 'Another build is still running. Try again when it finishes.' } satisfies MainToUi);
+        break;
+      }
+      try {
+        const result = await runSync(syncHost, msg.scope, { replaceEdited: msg.replaceEdited, auto: false });
+        figma.ui.postMessage({ type: 'syncDone', scope: msg.scope, replaceEdited: msg.replaceEdited, result } satisfies MainToUi);
+      } catch (err) {
+        figma.ui.postMessage({ type: 'syncError', message: err instanceof Error ? err.message : String(err) } satisfies MainToUi);
+      } finally {
+        // The sync changes no selection, so a click noted meanwhile is the
+        // person's own and is replayed once the gate opens.
+        const skipped = canvasBuild.skippedSelection;
+        canvasBuild.end();
+        if (skipped) void postSelection().catch(() => {/* handled inside */});
+      }
+      break;
+    }
+
+    case 'setSyncOnUpdate': {
+      syncOnUpdate = msg.value === true;
+      if (!await writeSetting(figma.clientStorage, SYNC_ON_UPDATE_KEY, syncOnUpdate)) notifySettingNotSaved();
+      postSyncSettings();
+      break;
+    }
+
+    case 'setSyncFileUrl': {
+      const value = typeof msg.value === 'string' ? msg.value.trim() : '';
+      // The UI validates first; this guard keeps a bad value out of the file.
+      if (value === '' || fileKeyFromUrl(value)) figma.root.setPluginData(SYNC_FILE_URL_KEY, value);
+      postSyncSettings();
       break;
     }
 

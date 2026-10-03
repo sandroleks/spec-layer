@@ -18,7 +18,7 @@ function row(docId: string, status: LibraryRowPresentation['status']): LibraryRo
     docId, kind: 'component', foundationIcon: null, label: docId,
     sourceLabel: `Components · ${docId}`, sourceNodeId: `source-${docId}`, ageLabel: '3d ago',
     status, expanded: false, canOpenFrame: true, canOpenSource: true,
-    canUpdate: status === 'updateAvailable', canDetach: true, canRemove: true, canCopy: false,
+    canUpdate: status === 'updateAvailable', canDetach: true, canRemove: true, canCopy: false, canSync: false,
     changeGroups: null, changeState: 'idle', changeUnavailableReason: null,
   };
 }
