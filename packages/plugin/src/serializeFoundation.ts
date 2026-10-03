@@ -8,7 +8,7 @@ import {
   type SerializedFoundation, type RawCollection, type RawVariable, type RawTextStyle,
   type RawExternalRef, type RawVariableValue, type FoundationVariableType,
   type FoundationMode, type FoundationRead, type FoundationPublishStatus,
-  type RawEffectStyle, type RawEffect,
+  type RawEffectStyle, type RawEffect, type RawEasing,
 } from '@spec-layer/extractor';
 
 export interface ReaderCollection {
@@ -75,6 +75,26 @@ export interface FoundationReader {
 function isAlias(v: RawVariableValue): v is { type: 'VARIABLE_ALIAS'; id: string } {
   return typeof v === 'object' && v !== null
     && (v as { type?: string }).type === 'VARIABLE_ALIAS';
+}
+
+/** An EASING value as plain data: Figma's enum string and the two function
+ *  fields the extractor models, nothing a future API might add. */
+function plainEasing(value: RawVariableValue): RawVariableValue {
+  if (typeof value !== 'object' || value === null || isAlias(value) || 'r' in value) return value;
+  const raw = value as RawEasing;
+  const out: RawEasing = { type: String(raw.type) };
+  const bezier = raw.easingFunctionCubicBezier;
+  if (bezier) out.easingFunctionCubicBezier = { x1: bezier.x1, y1: bezier.y1, x2: bezier.x2, y2: bezier.y2 };
+  const spring = raw.easingFunctionSpring;
+  if (spring && typeof spring.bounce === 'number') out.easingFunctionSpring = { bounce: spring.bounce };
+  return out;
+}
+
+function plainValues(
+  values: Record<string, RawVariableValue>, resolvedType: FoundationVariableType,
+): Record<string, RawVariableValue> {
+  if (resolvedType !== 'EASING') return values;
+  return Object.fromEntries(Object.entries(values).map(([mode, v]) => [mode, plainEasing(v)]));
 }
 
 const EFFECT_BINDING_FIELDS: Record<string, string> = {
@@ -167,7 +187,7 @@ export async function serializeFoundation(
       variables.push({
         id: rv.id, name: rv.name, resolvedType: rv.resolvedType,
         description: rv.description, codeSyntax: rv.codeSyntax,
-        valuesByMode: rv.valuesByMode,
+        valuesByMode: plainValues(rv.valuesByMode, rv.resolvedType),
         scopes: [...rv.scopes],
         ...(typeof rv.hiddenFromPublishing === 'boolean'
           ? { publication: {

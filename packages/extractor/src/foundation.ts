@@ -5,6 +5,7 @@
  * included, is synchronous and fixture-testable.
  */
 import type { EffectLayer } from './effects';
+import type { RawEasing } from './motion';
 import { canonicalColor } from './v5/color';
 import { compareCodeUnits } from './v5/diagnostics';
 import { canonicalNumber } from './v5/precision';
@@ -15,9 +16,12 @@ import { canonicalNumber } from './v5/precision';
 
 export interface RawVariableAlias { type: 'VARIABLE_ALIAS'; id: string }
 export interface RawRGBA { r: number; g: number; b: number; a: number }
-export type RawVariableValue = RawRGBA | number | string | boolean | RawVariableAlias;
+/** An EASING variable's value is a RawEasing; isAlias and isRgba stay exclusive
+ *  with it because it has neither `type: 'VARIABLE_ALIAS'` nor an `r`. */
+export type RawVariableValue = RawRGBA | number | string | boolean | RawVariableAlias | RawEasing;
 
-export type FoundationVariableType = 'COLOR' | 'FLOAT' | 'STRING' | 'BOOLEAN';
+/** Figma's resolved types since Plugin API update 133 (EASING, TIMING). */
+export type FoundationVariableType = 'COLOR' | 'FLOAT' | 'STRING' | 'BOOLEAN' | 'EASING' | 'TIMING';
 export type FoundationPublishStatus = 'UNPUBLISHED' | 'CURRENT' | 'CHANGED';
 
 /** Publication facts Figma exposes. `publishStatus` is null when the async read

@@ -442,3 +442,47 @@ describe('effect styles', () => {
     expect(dump.unavailableSources).toEqual(['figma:effectStyles']);
   });
 });
+
+describe('motion variables', () => {
+  it('copies an easing value as plain data with only the modelled fields', async () => {
+    const reader = {
+      async collections() {
+        return [{ id: 'c1', name: 'Motion', modes: [{ modeId: 'm1', name: 'Value' }], defaultModeId: 'm1', variableIds: ['ease', 'fast'] }];
+      },
+      async variable(id: string) {
+        if (id === 'ease') {
+          return {
+            id, name: 'motion/ease/standard', resolvedType: 'EASING' as const, description: '',
+            variableCollectionId: 'c1', codeSyntax: {}, scopes: [], remote: false,
+            valuesByMode: { m1: {
+              type: 'CUSTOM_CUBIC_BEZIER',
+              easingFunctionCubicBezier: { x1: 0.2, y1: 0, x2: 0, y2: 1 },
+              easingFunctionSpring: { bounce: 0.3, mass: 1 },
+              internalField: 'dropped',
+            } as never },
+          };
+        }
+        if (id === 'fast') {
+          return {
+            id, name: 'motion/duration/fast', resolvedType: 'TIMING' as const, description: '',
+            variableCollectionId: 'c1', codeSyntax: {}, scopes: [], remote: false,
+            valuesByMode: { m1: 0.3 },
+          };
+        }
+        return null;
+      },
+      async textStyles() { return []; },
+      async effectStyles() { return []; },
+    };
+    const dump = await serializeFoundation(reader, 'FILE1', 'T');
+    const [ease, fast] = dump.collections[0].variables;
+    expect(ease.resolvedType).toBe('EASING');
+    expect(ease.valuesByMode.m1).toEqual({
+      type: 'CUSTOM_CUBIC_BEZIER',
+      easingFunctionCubicBezier: { x1: 0.2, y1: 0, x2: 0, y2: 1 },
+      easingFunctionSpring: { bounce: 0.3 },
+    });
+    expect(fast.resolvedType).toBe('TIMING');
+    expect(fast.valuesByMode.m1).toBe(0.3);
+  });
+});
