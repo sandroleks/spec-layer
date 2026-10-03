@@ -5,7 +5,7 @@
  */
 import {
   MAX_MODE_COLUMNS, planFoundationUnits, folderOf, groupTitles,
-  collectionAliasCounts, collectionModeNames,
+  collectionAliasCounts, collectionModeNames, durationLabel, easingLabel,
   type FoundationSpec, type FoundationSelection, type FoundationMode,
   type FoundationGroupBrief, type FoundationCollectionBrief, type FoundationValue,
   type GroupDraftInput,
@@ -287,8 +287,8 @@ function describeValue(value: FoundationValue | undefined): string {
     case 'number': return String(value.value);
     case 'string': return value.value;
     case 'boolean': return String(value.value);
-    case 'duration': return String(value.seconds);
-    case 'easing': return value.easing.type;
+    case 'duration': return durationLabel(value.seconds);
+    case 'easing': return easingLabel(value.easing);
     case 'alias': return `alias to ${value.targetName}`;
     case 'unresolved': return '';
   }

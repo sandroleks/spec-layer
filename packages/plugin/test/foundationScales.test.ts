@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
   glyphSpec, glyphValue, buildGlyph,
-  BAR_INSET, RADIUS_MIN, STROKE_MAX, FONT_MAX,
+  BAR_INSET, RADIUS_MIN, STROKE_MAX, FONT_MAX, easingCurveSpec, EASING_SIZE,
 } from '../src/foundationScales';
 import { installFakeFigma, uninstallFakeFigma, FakeFrame } from './fakeFigma';
 
@@ -79,5 +79,30 @@ describe('buildGlyph', () => {
     expect(size.textChars()).toEqual(['Ag']);
     const lh = buildGlyph({ kind: 'lineHeight', lineHeight: 20 }, 160) as unknown as FakeFrame;
     expect(lh.textChars()).toEqual(['Ag\nAg']);
+  });
+});
+
+describe('easingCurveSpec', () => {
+  it('draws only a cubic bezier, literal or alias-resolved', () => {
+    expect(easingCurveSpec({ kind: 'easing', easing: { type: 'cubic_bezier', value: [0.2, 0, 0, 1] } }))
+      .toEqual({ kind: 'easingCurve', x1: 0.2, y1: 0, x2: 0, y2: 1 });
+    expect(easingCurveSpec({ kind: 'alias', targetName: 'motion/ease/standard', targetCollection: 'Motion', external: false,
+      resolved: { kind: 'easing', easing: { type: 'cubic_bezier', value: [0.4, 0, 0.2, 1] } } }))
+      .toEqual({ kind: 'easingCurve', x1: 0.4, y1: 0, x2: 0.2, y2: 1 });
+    expect(easingCurveSpec({ kind: 'easing', easing: { type: 'named', name: 'ease_out' } })).toBeNull();
+    expect(easingCurveSpec({ kind: 'easing', easing: { type: 'spring', bounce: 0.3 } })).toBeNull();
+    expect(easingCurveSpec({ kind: 'number', value: 16 })).toBeNull();
+  });
+});
+
+describe('buildGlyph easingCurve', () => {
+  beforeEach(() => installFakeFigma());
+  afterEach(() => uninstallFakeFigma());
+  it('draws one vector path from (0,0) to (1,1) with the control points, y flipped', () => {
+    const box = buildGlyph({ kind: 'easingCurve', x1: 0.2, y1: 0, x2: 0, y2: 1 }, 160) as unknown as FakeFrame;
+    const vector = box.children[0] as unknown as { type: string; vectorPaths: Array<{ data: string }>; width: number; height: number };
+    expect(vector.type).toBe('VECTOR');
+    expect(vector.width).toBe(EASING_SIZE);
+    expect(vector.vectorPaths[0].data).toBe('M 0.00 32.00 C 6.40 32.00 0.00 0.00 32.00 0.00');
   });
 });
