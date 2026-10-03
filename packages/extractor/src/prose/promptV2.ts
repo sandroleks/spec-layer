@@ -249,7 +249,7 @@ export function parseProseResponse(text: string): ProseV2 {
   return out;
 }
 
-/** About three exemplar responses, plus Sonnet 5's low-effort thinking tokens,
+/** About three exemplar responses, plus Sonnet 5.5's low-effort thinking tokens,
  *  which count against it. */
 export const PROSE_MAX_TOKENS = 6000;
 
@@ -436,7 +436,7 @@ export interface ProseRequestMessage { role: 'user' | 'assistant'; content: stri
 /**
  * The two prior turns every request carries. The assistant turn holds the one
  * prompt-cache breakpoint ending the stable prefix (about 2,200 tokens). Sonnet
- * 5 caches from 1,024 tokens; Haiku 4.5 needs 4,096, so free requests do not
+ * 5.5 caches from 512 tokens; Haiku 4.5 needs 4,096, so free requests do not
  * cache.
  */
 export function proseFewShot(): [ProseRequestMessage, ProseRequestMessage] {

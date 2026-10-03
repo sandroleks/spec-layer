@@ -8,6 +8,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
+- **Pro AI writing moves to Claude Sonnet 5.5.** The proxy now assigns
+  `claude-sonnet-5-5` to a proved Pro license, still at
+  `output_config.effort: low`, in place of `claude-sonnet-5`. The per-token
+  price is the same. The free plan stays on Claude Haiku 4.5
+  (`claude-haiku-4-5`), which is still the current Haiku. The plugin never
+  names a model, so this needs only a proxy deploy, and every 6.0.0 plugin
+  picks it up. A 5.1.0 plugin's legacy request still names its own Haiku
+  model and is forwarded unchanged. An answer the proxy stored before the
+  deploy is replayed for an unchanged request until it expires, within 24
+  hours.
 - The `spec-layer` CLI is now published from this repository's release
   workflow through npm trusted publishing, so each version from the next
   release on carries an npm provenance attestation that names the commit and

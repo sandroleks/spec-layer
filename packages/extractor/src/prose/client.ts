@@ -208,7 +208,7 @@ async function postCompletion(
 
 /**
  * The text of the first block carrying a string `text`. Not `content[0]`:
- * Sonnet 5 can lead with a `thinking` block, which has no `text`.
+ * Sonnet 5 and 5.5 can lead with a `thinking` block, which has no `text`.
  */
 function answerText(data: { content?: Array<{ type?: unknown; text?: unknown }> } | null | undefined): string {
   const blocks = Array.isArray(data?.content) ? data.content : [];
