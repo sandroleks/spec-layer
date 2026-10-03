@@ -35,13 +35,22 @@ export function extractTransitions(
   const rules: TransitionRule[] = [];
   const issues: TransitionIssue[] = [];
   const seen = new Set<string>();
+  const seenIssues = new Set<string>();
   model.variants.forEach((variant, i) => {
     const from = model.combos[i];
     walkParts(variant, isInSet ? 'Container' : cleanPartName(variant.name), (n, part, path) => {
       for (const t of n.transitions ?? []) {
         const to = isInSet ? valuesById.get(t.destinationId) : undefined;
         if (to === undefined) {
-          issues.push({ path, destinationId: t.destinationId });
+          // Ruling: an interaction on a nested INSTANCE whose destination is outside
+          // this set belongs to the nested component's own documentation, so it is
+          // skipped silently; any other layer is reported, once per path and destination.
+          if (n.type === 'INSTANCE') continue;
+          const issueKey = `${path}\u0001${t.destinationId}`;
+          if (!seenIssues.has(issueKey)) {
+            seenIssues.add(issueKey);
+            issues.push({ path, destinationId: t.destinationId });
+          }
           continue;
         }
         const rule: TransitionRule = {

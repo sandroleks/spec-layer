@@ -160,8 +160,8 @@ function triggerOf(raw: unknown): SerializedTrigger | null {
     case 'mouse_up': case 'mouse_down': case 'mouse_enter': case 'mouse_leave':
       return finite(t.delay) ? { type, delay: canonicalNumber(t.delay) } : null;
     case 'on_key_down':
-      return Array.isArray(t.keyCodes) && t.keyCodes.every(finite)
-        ? { type, device: String(t.device ?? 'UNKNOWN_CONTROLLER'), keyCodes: [...t.keyCodes] }
+      return typeof t.device === 'string' && Array.isArray(t.keyCodes) && t.keyCodes.every(finite)
+        ? { type, device: t.device, keyCodes: [...t.keyCodes] }
         : null;
     case 'on_media_hit':
       return finite(t.mediaHitTime) ? { type, mediaHitTime: canonicalNumber(t.mediaHitTime) } : null;
@@ -170,11 +170,11 @@ function triggerOf(raw: unknown): SerializedTrigger | null {
   }
 }
 
+/** Caller guarantees `raw` is an object with a string `type`. */
 function serializedEasing(raw: unknown): SerializedEasing {
   const easing = easingOf(raw);
   if (easing) return easing;
-  const figmaType = raw !== null && typeof raw === 'object' && 'type' in raw ? String((raw as { type: unknown }).type) : String(raw);
-  return { type: 'unsupported', figma_type: figmaType };
+  return { type: 'unsupported', figma_type: (raw as { type: string }).type };
 }
 
 function transitionEffectOf(raw: unknown): SerializedTransitionEffect | null {
@@ -182,6 +182,8 @@ function transitionEffectOf(raw: unknown): SerializedTransitionEffect | null {
   if (typeof raw !== 'object') return null;
   const t = raw as { type?: unknown; duration?: unknown; easing?: unknown; direction?: unknown; matchLayers?: unknown };
   if (typeof t.type !== 'string' || !finite(t.duration)) return null;
+  // An easing that is not an object with a string type is not one this model states.
+  if (t.easing === null || typeof t.easing !== 'object' || typeof (t.easing as { type?: unknown }).type !== 'string') return null;
   const simple = own(SIMPLE_TRANSITIONS, t.type);
   if (simple) return { type: simple, duration: canonicalNumber(t.duration), easing: serializedEasing(t.easing) };
   const directional = own(DIRECTIONAL_TRANSITIONS, t.type);

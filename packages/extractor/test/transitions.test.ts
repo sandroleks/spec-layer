@@ -34,6 +34,50 @@ describe('extractTransitions', () => {
     expect(issues).toEqual([{ path: 'Container', destinationId: '9:9' }]);
   });
 
+  it('skips an off-set interaction on a nested instance without an issue', () => {
+    const nested: SerializedNode = {
+      id: '3:0', name: 'Card', type: 'COMPONENT_SET', visible: true,
+      children: [
+        { id: '3:1', name: 'State=A', type: 'COMPONENT', visible: true,
+          children: [{ id: '3:11', name: 'Inner', type: 'INSTANCE', visible: true, transitions: [away] }] },
+        { id: '3:2', name: 'State=B', type: 'COMPONENT', visible: true },
+      ],
+    };
+    const { rules, issues } = extractTransitions(nested, variantAxisModel(nested));
+    expect(rules).toEqual([]);
+    expect(issues).toEqual([]);
+  });
+
+  it('keeps an instance interaction whose destination is a variant of the set', () => {
+    const nested: SerializedNode = {
+      id: '3:0', name: 'Card', type: 'COMPONENT_SET', visible: true,
+      children: [
+        { id: '3:1', name: 'State=A', type: 'COMPONENT', visible: true,
+          children: [{ id: '3:11', name: 'Inner', type: 'INSTANCE', visible: true,
+            transitions: [{ trigger: { type: 'on_click' }, destinationId: '3:2', transition: { type: 'instant' } }] }] },
+        { id: '3:2', name: 'State=B', type: 'COMPONENT', visible: true },
+      ],
+    };
+    const { rules, issues } = extractTransitions(nested, variantAxisModel(nested));
+    expect(issues).toEqual([]);
+    expect(rules).toHaveLength(1);
+    expect(rules[0]).toMatchObject({ fromVariantId: '3:1', toVariantId: '3:2', triggerPath: 'Container/Inner' });
+  });
+
+  it('reports the same off-set interaction on several variants once', () => {
+    const layer = (id: string): SerializedNode => ({ id, name: 'Icon', type: 'FRAME', visible: true, transitions: [away] });
+    const many: SerializedNode = {
+      id: '4:0', name: 'Chip', type: 'COMPONENT_SET', visible: true,
+      children: [
+        { id: '4:1', name: 'State=A', type: 'COMPONENT', visible: true, children: [layer('4:11')] },
+        { id: '4:2', name: 'State=B', type: 'COMPONENT', visible: true, children: [layer('4:21')] },
+      ],
+    };
+    const { rules, issues } = extractTransitions(many, variantAxisModel(many));
+    expect(rules).toEqual([]);
+    expect(issues).toEqual([{ path: 'Container/Icon', destinationId: '9:9' }]);
+  });
+
   it('yields no rules for a lone component', () => {
     const lone: SerializedNode = { id: '2:1', name: 'Tag', type: 'COMPONENT', visible: true, transitions: [away] };
     const { rules, issues } = extractTransitions(lone, variantAxisModel(lone));

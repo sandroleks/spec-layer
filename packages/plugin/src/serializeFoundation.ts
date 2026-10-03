@@ -82,7 +82,8 @@ function isAlias(v: RawVariableValue): v is { type: 'VARIABLE_ALIAS'; id: string
 function plainEasing(value: RawVariableValue): RawVariableValue {
   if (typeof value !== 'object' || value === null || isAlias(value) || 'r' in value) return value;
   const raw = value as RawEasing;
-  const out: RawEasing = { type: String(raw.type) };
+  if (typeof raw.type !== 'string') return value;
+  const out: RawEasing = { type: raw.type };
   const bezier = raw.easingFunctionCubicBezier;
   if (bezier) out.easingFunctionCubicBezier = { x1: bezier.x1, y1: bezier.y1, x2: bezier.x2, y2: bezier.y2 };
   const spring = raw.easingFunctionSpring;

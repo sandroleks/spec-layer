@@ -346,17 +346,19 @@ function provenanceLiteral(
   raw: RawVariableValue, resolvedType: FoundationVariableType,
 ): FoundationProvenanceValue {
   if (resolvedType === 'TIMING') {
-    return typeof raw === 'number' && Number.isFinite(raw)
-      ? { kind: 'duration', seconds: canonicalNumber(raw) }
-      : { kind: 'unresolved', reason: 'invalid_source_value', detail: String(raw) };
+    if (typeof raw === 'number' && Number.isFinite(raw)) return { kind: 'duration', seconds: canonicalNumber(raw) };
+    const timingDetail = typeof raw === 'string' ? raw : typeof raw === 'number' ? String(raw) : undefined;
+    return { kind: 'unresolved', reason: 'invalid_source_value', ...(timingDetail !== undefined ? { detail: timingDetail } : {}) };
   }
   if (resolvedType === 'EASING') {
     const easing = isRgba(raw) ? null : easingOf(raw);
     if (easing) return { kind: 'easing', easing };
-    const detail = typeof raw === 'object' && raw !== null && typeof (raw as { type?: unknown }).type === 'string'
-      ? (raw as { type: string }).type
-      : String(raw);
-    return { kind: 'unresolved', reason: 'invalid_source_value', detail };
+    const detail = typeof raw === 'string' ? raw
+      : typeof raw === 'number' ? String(raw)
+      : typeof raw === 'object' && raw !== null && typeof (raw as { type?: unknown }).type === 'string'
+        ? (raw as { type: string }).type
+        : undefined;
+    return { kind: 'unresolved', reason: 'invalid_source_value', ...(detail !== undefined ? { detail } : {}) };
   }
   if (isRgba(raw)) {
     const color = canonicalColor(raw);

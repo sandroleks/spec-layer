@@ -1234,4 +1234,34 @@ describe('motion variables', () => {
     expect(byName['motion/duration/bad'].provenance.valuesByMode.m1)
       .toEqual({ kind: 'unresolved', reason: 'invalid_source_value', detail: 'soon' });
   });
+
+  it('omits detail when Figma returned nothing printable, and for colour and FLOAT values', () => {
+    const dump = motionDump();
+    const vars = dump.collections[0].variables;
+    const set = (id: string, value: unknown) => { vars.find((v) => v.id === id)!.valuesByMode.m1 = value as never; };
+    set('unknown', { type: 42 });
+    set('bad-timing', { type: 'EASE_OUT' });
+    const byName = () => Object.fromEntries(buildFoundation(dump).collections[0].variables.map((v) => [v.name, v]));
+    const first = byName();
+    for (const name of ['motion/ease/unknown', 'motion/duration/bad']) {
+      const value = first[name].provenance.valuesByMode.m1;
+      expect(value).toEqual({ kind: 'unresolved', reason: 'invalid_source_value' });
+      expect('detail' in value).toBe(false);
+    }
+    set('unknown', undefined);
+    expect('detail' in byName()['motion/ease/unknown'].provenance.valuesByMode.m1).toBe(false);
+
+    vars.push(
+      { id: 'badcolor', name: 'c/bad', resolvedType: 'COLOR', description: '', codeSyntax: {}, scopes: [],
+        valuesByMode: { m1: { r: 1.2, g: 0, b: 0, a: 1 } } },
+      { id: 'nan', name: 'n/nan', resolvedType: 'FLOAT', description: '', codeSyntax: {}, scopes: [],
+        valuesByMode: { m1: Number.NaN } },
+    );
+    const second = byName();
+    for (const name of ['c/bad', 'n/nan']) {
+      const value = second[name].provenance.valuesByMode.m1;
+      expect(value).toEqual({ kind: 'unresolved', reason: 'invalid_source_value' });
+      expect('detail' in value).toBe(false);
+    }
+  });
 });

@@ -89,7 +89,9 @@ export function easingOf(raw: unknown): Easing | null {
     // bounce; converting them is Figma's function, not available here.
     const bounce = value.easingFunctionSpring?.bounce;
     if (!isFinite(bounce)) return null;
-    return { type: 'spring', bounce: canonicalNumber(bounce) };
+    const canonical = canonicalNumber(bounce);
+    if (canonical < 0 || canonical > 1) return null;
+    return { type: 'spring', bounce: canonical };
   }
   return null;
 }
@@ -168,6 +170,13 @@ export function axisLabel(values: Record<string, string>): string {
   return Object.values(values).join(', ');
 }
 
+/** An artifact read back from elsewhere may carry a type this build does not know:
+ *  say it plainly ("Wobble in") rather than throw or print "undefined". */
+function rawTypeWord(type: unknown): string {
+  const words = String(type).replace(/_/g, ' ');
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
 const TRIGGER_WORDS: Readonly<Record<SerializedTrigger['type'], string>> = {
   on_click: 'On click', on_hover: 'While hovering', on_press: 'While pressing', on_drag: 'On drag',
   after_timeout: 'After delay', mouse_up: 'Mouse up', mouse_down: 'Mouse down',
@@ -177,7 +186,9 @@ const TRIGGER_WORDS: Readonly<Record<SerializedTrigger['type'], string>> = {
 
 /** Figma's prototype panel words. `onPart` names a trigger layer other than the variant root. */
 export function triggerLabel(trigger: MotionTriggerYaml, onPart: string | null): string {
-  let text = TRIGGER_WORDS[trigger.type];
+  let text = Object.prototype.hasOwnProperty.call(TRIGGER_WORDS, trigger.type)
+    ? TRIGGER_WORDS[trigger.type]
+    : rawTypeWord(trigger.type);
   if (trigger.type === 'after_timeout' && trigger.timeout !== undefined) text = `${text} ${durationLabel(trigger.timeout)}`;
   if (trigger.delay !== undefined && trigger.delay > 0) text = `${text} after ${durationLabel(trigger.delay)}`;
   if (trigger.type === 'on_key_down' && trigger.key_codes) text = `${text} ${trigger.key_codes.join(', ')}`;
@@ -197,17 +208,20 @@ export function transitionLabel(t: MotionTransitionEffectYaml): string {
     case 'smart_animate': return 'Smart animate';
     case 'scroll_animate': return 'Scroll animate';
     default: {
-      const [word, preposition] = DIRECTIONAL_WORDS[t.type];
+      const entry = Object.prototype.hasOwnProperty.call(DIRECTIONAL_WORDS, t.type) ? DIRECTIONAL_WORDS[t.type] : undefined;
+      if (!entry) return rawTypeWord((t as { type: unknown }).type);
+      const [word, preposition] = entry;
       return `${word} ${preposition} ${t.direction}${t.match_layers ? ', matching layers' : ''}`;
     }
   }
 }
 
 export function durationCell(t: MotionTransitionEffectYaml): string {
-  return t.type === 'instant' ? '' : durationLabel(t.duration.number);
+  if (t.type === 'instant' || !t.duration) return '';
+  return durationLabel(t.duration.number);
 }
 
 export function easingCell(t: MotionTransitionEffectYaml): string {
-  if (t.type === 'instant') return '';
+  if (t.type === 'instant' || !t.easing) return '';
   return t.easing.type === 'unsupported' ? `Not supported: ${t.easing.figma_type}` : easingLabel(t.easing);
 }

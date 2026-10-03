@@ -19,6 +19,11 @@ describe('easingOf', () => {
     expect(easingOf({ type: 'CUSTOM_SPRING', easingFunctionSpring: { bounce: 0.3 } })).toEqual({ type: 'spring', bounce: 0.3 });
     expect(easingOf({ type: 'CUSTOM_SPRING', easingFunctionSpring: { mass: 1, stiffness: 100, damping: 10, initialVelocity: 0 } })).toBeNull();
   });
+  it('rejects a spring bounce outside 0 to 1', () => {
+    expect(easingOf({ type: 'CUSTOM_SPRING', easingFunctionSpring: { bounce: 1.5 } })).toBeNull();
+    expect(easingOf({ type: 'CUSTOM_SPRING', easingFunctionSpring: { bounce: -0.1 } })).toBeNull();
+    expect(easingOf({ type: 'CUSTOM_SPRING', easingFunctionSpring: { bounce: 1 } })).toEqual({ type: 'spring', bounce: 1 });
+  });
   it('maps HOLD and rejects anything else', () => {
     expect(easingOf({ type: 'HOLD' })).toEqual({ type: 'hold' });
     expect(easingOf({ type: 'WOBBLE' })).toBeNull();
@@ -54,5 +59,16 @@ describe('transition labels', () => {
     expect(durationCell(t)).toBe('0.3 s');
     expect(durationCell({ type: 'instant' })).toBe('');
     expect(easingCell({ ...t, easing: { type: 'unsupported', figma_type: 'CUSTOM_SPRING' } })).toBe('Not supported: CUSTOM_SPRING');
+  });
+});
+
+describe('labels for values this build does not know', () => {
+  it('falls back to the raw type word and never throws', () => {
+    expect(triggerLabel({ type: 'wobble_in' } as unknown as Parameters<typeof triggerLabel>[0], null)).toBe('Wobble in');
+    expect(transitionLabel({ type: 'wobble_in' } as unknown as Parameters<typeof transitionLabel>[0])).toBe('Wobble in');
+    const noDuration = { type: 'dissolve', easing: { type: 'hold' } } as unknown as Parameters<typeof durationCell>[0];
+    expect(durationCell(noDuration)).toBe('');
+    const noEasing = { type: 'dissolve', duration: { number: 0.3, unit: 's' } } as unknown as Parameters<typeof easingCell>[0];
+    expect(easingCell(noEasing)).toBe('');
   });
 });

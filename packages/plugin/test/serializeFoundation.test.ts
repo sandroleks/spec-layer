@@ -485,4 +485,23 @@ describe('motion variables', () => {
     expect(fast.resolvedType).toBe('TIMING');
     expect(fast.valuesByMode.m1).toBe(0.3);
   });
+
+  it('leaves an easing without a string type unchanged instead of writing "undefined"', async () => {
+    const reader = {
+      async collections() {
+        return [{ id: 'c1', name: 'Motion', modes: [{ modeId: 'm1', name: 'Value' }], defaultModeId: 'm1', variableIds: ['ease'] }];
+      },
+      async variable(id: string) {
+        return {
+          id, name: 'motion/ease/odd', resolvedType: 'EASING' as const, description: '',
+          variableCollectionId: 'c1', codeSyntax: {}, scopes: [], remote: false,
+          valuesByMode: { m1: { easingFunctionSpring: { bounce: 0.3 } } as never },
+        };
+      },
+      async textStyles() { return []; },
+      async effectStyles() { return []; },
+    };
+    const dump = await serializeFoundation(reader, 'FILE1', 'T');
+    expect(dump.collections[0].variables[0].valuesByMode.m1).toEqual({ easingFunctionSpring: { bounce: 0.3 } });
+  });
 });

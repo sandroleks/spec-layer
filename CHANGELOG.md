@@ -31,7 +31,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   `motion` key exists only when a component has transitions, so every
   document without them keeps a byte-identical hash and `EXTRACTOR_VERSION`
   stays `'3'`: the content hash of an affected document moves on its own,
-  which is what drift detection reports.
+  which is what drift detection reports. An easing on a prototype
+  transition that Figma stores as a physical spring (mass, stiffness,
+  damping) is reported as not supported, never converted to a bounce,
+  because the conversion is Figma's own and not available to a plugin.
 
 ### Changed
 

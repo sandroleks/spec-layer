@@ -899,7 +899,7 @@ describe('runPull report summary and --strict', () => {
     const code = await runPull(cwd, { key: KEY }, {}, io, stub200());
     expect(code).toBe(0);
     // 5 from outputs/web-css.report.json (2 mode_selector_shared + 3
-    // unitless_number, one per mode) plus 14 from tokens/report.json.
+    // unitless_number, one per mode) plus 13 from tokens/report.json.
     expect(io.errLines.join('\n')).toContain('0 errors, 18 warnings in the token output.');
   });
 

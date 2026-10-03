@@ -629,6 +629,22 @@ describe('variant transitions', () => {
     expect('transitions' in out).toBe(false);
   });
 
+  it('skips a transition whose easing is not an object with a string type', async () => {
+    const reaction = (easing: unknown) => ({ trigger: { type: 'ON_CLICK' },
+      actions: [{ type: 'NODE', destinationId: '1:1', navigation: 'CHANGE_TO',
+        transition: { type: 'DISSOLVE', duration: 0.2, easing } }] });
+    const out = await serializeNode({ id: '1:1', name: 'x', type: 'FRAME', visible: true,
+      reactions: [reaction(undefined), reaction('LINEAR'), reaction({ type: 3 })] } as never, resolver);
+    expect('transitions' in out).toBe(false);
+  });
+
+  it('skips a key press trigger that names no device', async () => {
+    const out = await serializeNode({ id: '1:1', name: 'x', type: 'FRAME', visible: true,
+      reactions: [{ trigger: { type: 'ON_KEY_DOWN', keyCodes: [13] },
+        actions: [{ type: 'NODE', destinationId: '1:1', navigation: 'CHANGE_TO', transition: null }] }] } as never, resolver);
+    expect('transitions' in out).toBe(false);
+  });
+
   it('treats an inherited property name as not modelled', async () => {
     const hostileTrigger = { trigger: { type: 'constructor' },
       actions: [{ type: 'NODE', destinationId: '1:1', navigation: 'CHANGE_TO', transition: null }] };
