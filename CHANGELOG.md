@@ -209,6 +209,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- A component with a Figma slot property no longer stops its Properties
+  section from building. The extractor did not know Figma's `SLOT`
+  property type, so the property reached the canvas with no type, and
+  Figma refuses an empty text value. A slot property now reads Type "Slot"
+  on the canvas and in Markdown, and `type: slot` under `api.slots` in the
+  YAML brief and Component Context v5. Only a component with a slot
+  property sees a hash move, so `EXTRACTOR_VERSION` stays `'3'`; a doc
+  saved before this fix lists the change as "type not recognised changed
+  to slot". A slot's description, preferred content and limits are not
+  read yet, and its placeholder content is still documented as anatomy.
 - Undo in Figma now reverts one Spec Layer action at a time. Plugin edits
   were never closed as undo steps, so one Undo after building a second doc
   could take the first doc away too. Each build, Foundation build, update,

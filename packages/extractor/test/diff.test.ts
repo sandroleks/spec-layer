@@ -446,6 +446,16 @@ describe('componentChangeGroups', () => {
     ]);
   });
 
+  it('reads a property kind a baseline never recorded as not recognised', () => {
+    // A slot property saved before SLOT was mapped has no kind at all.
+    const before = projection({
+      props: [{ name: 'Content' } as unknown as SpecHashProjection['props'][number]],
+    });
+    expect(componentChangeGroups(before, projection({ props: [{ name: 'Content', kind: 'slot' }] }))).toEqual([
+      G('Properties', 'Property Content: type not recognised changed to slot'),
+    ]);
+  });
+
   it('treats states and related as sets', () => {
     expect(componentChangeGroups(projection(), projection({ states: ['default', 'disabled'], related: [] }))).toEqual([
       G('States', 'State disabled added', 'State hover removed'),

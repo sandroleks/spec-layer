@@ -430,6 +430,13 @@ describe('componentBrief', () => {
     expect(brief.api.slots.icon.type).toBe('instanceSwap');
   });
 
+  it('puts a Figma slot prop in slots, typed slot', () => {
+    const spec = { ...baseSpec(), variants: [],
+      props: [{ name: 'Content', kind: 'slot' as const }] };
+    const brief = componentBrief(spec, { generatedAt: 'T' }) as unknown as BriefShape;
+    expect(brief.api.slots).toEqual({ Content: { type: 'slot' } });
+  });
+
   it('omits slots when the component has no such props', () => {
     const spec = { ...baseSpec(), variants: [{ prop: 'size', values: ['Large', 'Small'] }],
       props: [{ name: 'size', kind: 'variant' as const,

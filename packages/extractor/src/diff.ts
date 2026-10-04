@@ -621,8 +621,10 @@ function formatGapValue(value: number | string | undefined): string {
   return value === undefined ? 'no value' : String(value);
 }
 
-/** Figma's words for a property type; `instanceSwap` is a code name. */
-function formatPropKind(kind: string): string {
+/** Figma's words for a property type; `instanceSwap` is a code name. A
+ *  baseline saved before SLOT was mapped holds a slot property with no kind. */
+function formatPropKind(kind: string | undefined): string {
+  if (kind === undefined) return 'not recognised';
   return kind === 'instanceSwap' ? 'instance swap' : kind;
 }
 

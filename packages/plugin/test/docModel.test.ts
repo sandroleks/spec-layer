@@ -258,6 +258,14 @@ describe('buildDocModel without prose', () => {
     expect(find(model, 'properties')).toMatchObject({ kind: 'propertiesTable', hasDescriptions: false });
   });
 
+  it('names a Figma slot property in the properties table', () => {
+    // Before SLOT was mapped, the Type cell was undefined and Figma rejected it.
+    const slotted = { ...spec, props: [...spec.props, { name: 'Content', kind: 'slot' as const }] };
+    const block = find(buildDocModel(slotted, null, new Set<SectionId>(['properties']), new Set()), 'properties');
+    if (block?.kind !== 'propertiesTable') throw new Error('expected propertiesTable');
+    expect(block.rows.at(-1)).toEqual({ name: 'Content', type: 'Slot', values: '', defaultValue: '', description: null });
+  });
+
   it('emits only selected sections, in canonical order', () => {
     const model = buildDocModel(spec, prose, new Set<SectionId>(['variants', 'definition']));
     expect(model.sections.map((s) => s.id)).toEqual(['definition', 'variants']);
