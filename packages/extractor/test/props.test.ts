@@ -14,6 +14,15 @@ describe('props/variants/states', () => {
     expect(props.find((p) => p.name === 'Label')?.kind).toBe('text');
   });
 
+  it('maps a Figma SLOT property to the slot kind, with no default', () => {
+    // Figma's SLOT definition has no `defaultValue` key (probed 2026-10-04).
+    const slotted: SerializedNode = {
+      ...root,
+      propertyDefinitions: { ...root.propertyDefinitions, 'Content#2:0': { type: 'SLOT' } },
+    };
+    expect(extractProps(slotted)).toContainEqual({ name: 'Content', kind: 'slot', default: undefined });
+  });
+
   it('builds the variant matrix from variant props only', () => {
     expect(extractVariants(root)).toEqual([
       { prop: 'Style', values: ['Filled', 'Outlined'] },

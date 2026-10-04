@@ -77,7 +77,7 @@ export interface SerializedTransition {
 }
 
 export interface PropertyDefinition {
-  type: 'VARIANT' | 'BOOLEAN' | 'TEXT' | 'INSTANCE_SWAP';
+  type: 'VARIANT' | 'BOOLEAN' | 'TEXT' | 'INSTANCE_SWAP' | 'SLOT';
   defaultValue?: string | boolean;
   variantOptions?: string[];
 }

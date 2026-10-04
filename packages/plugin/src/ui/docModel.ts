@@ -224,7 +224,7 @@ function defaultAxisValues(spec: IntermediateSpec): Record<string, string> {
 
 /** An unrecognised kind falls through as typed rather than being guessed at. */
 const TYPE_WORDS: Record<string, string> = {
-  variant: 'Variant', boolean: 'Boolean', text: 'Text', instanceSwap: 'Instance swap',
+  variant: 'Variant', boolean: 'Boolean', text: 'Text', instanceSwap: 'Instance swap', slot: 'Slot',
 };
 
 /**

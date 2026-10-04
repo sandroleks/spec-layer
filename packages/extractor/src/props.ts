@@ -2,7 +2,7 @@ import type { SerializedNode } from './tree';
 import { detectStateMatrix } from './statesMatrix';
 import { cleanPropName } from './naming';
 
-export type PropKind = 'variant' | 'boolean' | 'text' | 'instanceSwap';
+export type PropKind = 'variant' | 'boolean' | 'text' | 'instanceSwap' | 'slot';
 
 export interface ComponentProp {
   name: string;
@@ -21,6 +21,8 @@ const KIND_MAP: Record<string, PropKind> = {
   BOOLEAN: 'boolean',
   TEXT: 'text',
   INSTANCE_SWAP: 'instanceSwap',
+  // Figma gives a SLOT definition no `defaultValue` key, so it carries no default.
+  SLOT: 'slot',
 };
 
 export function extractProps(root: SerializedNode): ComponentProp[] {
