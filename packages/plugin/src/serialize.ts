@@ -4,6 +4,7 @@ import type {
   SerializedTransition, TransitionDirection,
 } from '@spec-layer/extractor';
 import { effectLayerOf, easingOf, canonicalNumber } from '@spec-layer/extractor';
+import { SYNC_RECORD_KEY, parseSyncRecord, ownDescription, ownDocumentationLink } from './syncRecord';
 
 /** VariableBindableEffectField. Shadows bind all five, blurs only `radius`,
  *  others none; a field an effect cannot bind simply has no entry. */
@@ -74,6 +75,8 @@ interface RawNode {
   key?: string;
   description?: string;
   documentationLinks?: Array<{ uri?: string }>;
+  /** Read only on component roots, for the Annotate in Dev Mode record. */
+  getPluginData?(key: string): string;
   // `| symbol`: Figma returns figma.mixed from these four when a TEXT node's
   // ranges are not uniform. Without it tsc lets `fills.some(...)` throw.
   fills?: Array<{ type: string; color?: { r: number; g: number; b: number }; opacity?: number }> | symbol;
@@ -382,16 +385,25 @@ export async function serializeNode(node: RawNode, resolver: NodeResolver): Prom
   }
 
   // Component roots only; findComponent() already resolves a variant to its set.
-  const description = (node.type === 'COMPONENT' || node.type === 'COMPONENT_SET')
+  const isComponent = node.type === 'COMPONENT' || node.type === 'COMPONENT_SET';
+  // What Annotate in Dev Mode wrote is the doc's own text, not source: read as
+  // absent, it never moves the drift baseline or feeds the prompt its own
+  // output. A value a person changed has another hash and reads as today.
+  let syncRecord = null;
+  if (isComponent && typeof node.getPluginData === 'function') {
+    try { syncRecord = parseSyncRecord(node.getPluginData(SYNC_RECORD_KEY)); } catch { syncRecord = null; }
+  }
+  const description = isComponent
     && typeof node.description === 'string' && node.description.trim() !== ''
+    && !ownDescription(node.description, syncRecord)
     ? node.description.trim()
     : undefined;
-  const documentationLinks = (node.type === 'COMPONENT' || node.type === 'COMPONENT_SET')
-    && Array.isArray(node.documentationLinks)
+  const liveLinks = isComponent && Array.isArray(node.documentationLinks)
     ? node.documentationLinks
         .map((l) => (typeof l?.uri === 'string' ? l.uri.trim() : ''))
         .filter((uri) => uri !== '')
     : [];
+  const documentationLinks = ownDocumentationLink(liveLinks, syncRecord) ? [] : liveLinks;
 
   // Wrapped: a node type without the mixin, or a Figma read that throws,
   // means no transitions, not a failed serialization.

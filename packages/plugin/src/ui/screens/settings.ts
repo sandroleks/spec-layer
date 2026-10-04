@@ -52,6 +52,13 @@ export interface SettingsScreenState {
   tab?: SettingsTab;
   /** How components leave the plugin. Absent reads as YAML, the default. */
   componentFormat?: ComponentFormat;
+  /** Annotate in Dev Mode. Absent until main reports, which reads as off and no link. */
+  syncOnUpdate?: boolean;
+  syncFileUrl?: string | null;
+  /** Why the typed file link was refused; cleared by the next save. */
+  syncFileUrlError?: string | undefined;
+  /** A sync run is planning or writing. */
+  syncBusy?: boolean;
 }
 
 /** The "Default (Inter)" row's value: clearing the field back to the default. */
@@ -252,6 +259,51 @@ function exportSection(format: ComponentFormat): string {
 }
 
 /**
+ * Annotate in Dev Mode: the switch for Updates, the file link documentation links
+ * are built from, and a run over every documented component. Every run but
+ * the automatic one asks first.
+ */
+function syncSection(state: SettingsScreenState): string {
+  const on = state.syncOnUpdate === true;
+  const url = state.syncFileUrl ?? '';
+  return (
+    '<section class="sl-settings-section sl-sync-setting" aria-labelledby="sl-sync-heading">' +
+    '<div class="sl-settings-section-heading">' +
+    '<h2 id="sl-sync-heading">Annotate in Dev Mode</h2>' +
+    '<p>Writes each doc’s usage text into the component description and annotates its parts, ' +
+    'so Dev Mode shows what your docs show. You confirm each run.</p>' +
+    '</div>' +
+    '<div class="sl-ai-control">' +
+    '<span class="sl-ai-control-copy"><strong>Annotate again when a doc is updated</strong></span>' +
+    '<label class="sl-switch-control">' +
+    '<input class="sl-switch-input" id="sl-sync-on-update" type="checkbox" role="switch" ' +
+    `aria-label="Annotate again when a doc is updated"${on ? ' checked' : ''} />` +
+    '<span class="sl-switch-track" aria-hidden="true"><span class="sl-switch-thumb"></span></span>' +
+    '</label>' +
+    '</div>' +
+    '<p class="sl-settings-hint">Only refreshes components you have annotated before. ' +
+    'Edits made in Figma and text written with AI wait for you to review them.</p>' +
+    '<label class="sl-theme-color-field sl-sync-file-field"><span>File link</span>' +
+    `<input id="sl-sync-file-url" data-sync-file-url value="${esc(url)}" spellcheck="false" ` +
+    'placeholder="https://www.figma.com/design/…" aria-describedby="sl-sync-file-hint"></label>' +
+    '<div class="sl-logo-actions">' +
+    '<button class="sl-button" data-tone="secondary" type="button" data-sync-file-save>Save link</button>' +
+    (url ? '<button class="sl-button" data-tone="quiet" type="button" data-sync-file-clear>Remove</button>' : '') +
+    '</div>' +
+    '<p class="sl-settings-hint" id="sl-sync-file-hint">Copy it from Share, then Copy link. ' +
+    'Each component’s documentation link then opens its doc. Without it, no link is written.</p>' +
+    (state.syncFileUrlError
+      ? `<p class="sl-settings-hint" data-tone="danger" role="alert">${esc(state.syncFileUrlError)}</p>`
+      : '') +
+    '<div class="sl-logo-actions">' +
+    `<button class="sl-button" data-tone="primary" type="button" data-sync-all${state.syncBusy ? ' disabled' : ''}>` +
+    `${icon('upload', 15)}<span>${state.syncBusy ? 'Annotating…' : 'Annotate all components'}</span></button>` +
+    '</div>' +
+    '</section>'
+  );
+}
+
+/**
  * The About section: two labelled versions and the way out to the docs. The
  * plugin version is what the TESTING.md release gate compares against the
  * Figma listing; the extractor version is what a Library-wide rebuild request
@@ -326,7 +378,7 @@ export function settingsScrollMarkup(state: SettingsScreenState): string {
   const body = tab === 'about'
     ? aboutSection(state)
     : tab === 'export'
-      ? exportSection(state.componentFormat ?? DEFAULT_COMPONENT_FORMAT)
+      ? exportSection(state.componentFormat ?? DEFAULT_COMPONENT_FORMAT) + syncSection(state)
       : framesPanel(state);
   return (
     `<div class="sl-settings-panel" role="tabpanel" id="sl-settings-panel" ` +

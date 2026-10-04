@@ -190,6 +190,7 @@ interface MenuItem {
     | 'open-frame'
     | 'open-source'
     | 'copy'
+    | 'sync'
     | 'detach'
     | 'remove';
   glyph:
@@ -200,6 +201,7 @@ interface MenuItem {
     | 'puzzle'
     | 'download'
     | 'copy'
+    | 'upload'
     | 'alertCircle';
   danger?: boolean;
 }
@@ -242,6 +244,13 @@ function menuGroups(row: LibraryRowPresentation): MenuItem[][] {
       action: 'copy',
       label: 'Copy for AI',
       glyph: 'copy',
+    });
+  }
+  if (row.canSync) {
+    navigation.push({
+      action: 'sync',
+      label: 'Annotate in Dev Mode',
+      glyph: 'upload',
     });
   }
 

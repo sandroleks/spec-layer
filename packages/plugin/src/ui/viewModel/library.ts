@@ -72,6 +72,9 @@ export interface LibraryRowModel {
    * `unavailable`: Copy re-reads the source whose live read just failed.
    */
   canCopy: boolean;
+  /** Component rows whose source is here and whose doc is current: a stale
+   *  doc may number its anatomy parts differently from a fresh read. */
+  canSync: boolean;
   changeState: LibraryChangeState;
   /** Set only in the `ready` state. */
   changeGroups: ChangeGroup[] | null;
@@ -250,6 +253,7 @@ export function buildLibraryRow(
         && status !== 'unavailable'
         && status !== 'orphaned'
       : componentSourceAvailable && status !== 'unavailable',
+    canSync: componentSourceAvailable && status !== 'rebuildNeeded' && status !== 'unavailable',
     changeState: change ? change.state : 'idle',
     changeGroups: change?.state === 'ready' ? change.groups : null,
     changeUnavailableReason: change?.state === 'unavailable' ? change.reason : null,

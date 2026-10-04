@@ -29,7 +29,10 @@ import { keepFocus } from './focusRestore';
 import { installErrorReporting } from './errorReporting';
 import { renderAllowance } from './shell/header';
 import { setRailBadge } from './shell/sidebar';
-import { confirmDialog } from './shell/confirmDialog';
+import { confirmDialog, type ConfirmDialogOptions } from './shell/confirmDialog';
+import { planNext, replaceDialog, resultToast } from './syncDialog';
+import { fileKeyFromUrl } from '../syncText';
+import type { SyncScope } from '../syncFigma';
 import {
   createComponentSelection,
   MEASURE_LAST_VIEW_TITLE,
@@ -199,6 +202,47 @@ let settingsTab: SettingsTab = 'frames';
 let settingsColorError = '';
 let settingsFontWarning = '';
 let settingsLogoError = '';
+/** Annotate in Dev Mode, as main last reported it. */
+let syncOnUpdate = false;
+let syncFileUrl: string | null = null;
+let syncFileUrlError = '';
+/** A run is planning, confirming or writing; one at a time. */
+let syncBusy = false;
+/** Components the confirmed run kept as edited, offered for replacing next. */
+let syncPendingEdited: string[] = [];
+
+/** Plan first, confirm, then write. Main plans again before it writes. */
+function startSync(scope: SyncScope): void {
+  if (syncBusy || operation.active) return;
+  syncBusy = true;
+  syncPendingEdited = [];
+  paint();
+  send({ type: 'requestSyncPlan', scope, replaceEdited: false });
+}
+
+function endSync(): void {
+  syncBusy = false;
+  syncPendingEdited = [];
+  paint();
+}
+
+function offerReplace(scope: SyncScope, dialog: ConfirmDialogOptions): void {
+  void confirmDialog(dialog).then((ok) => {
+    if (ok) send({ type: 'applySync', scope, replaceEdited: true });
+    else endSync();
+  });
+}
+
+function saveSyncFileUrl(value: string): void {
+  const trimmed = value.trim();
+  if (trimmed !== '' && !fileKeyFromUrl(trimmed)) {
+    syncFileUrlError = 'That is not a Figma file link. Copy it from Share, then Copy link.';
+    paintAndFocus('#sl-sync-file-url');
+    return;
+  }
+  syncFileUrlError = '';
+  send({ type: 'setSyncFileUrl', value: trimmed });
+}
 let settingsFonts: string[] = [];
 let settingsFontsRequested = false;
 /**
@@ -505,6 +549,10 @@ function paintScreen(): void {
         pluginVersion: pluginBuild(),
         tab: settingsTab,
         componentFormat: state.componentFormat,
+        syncOnUpdate,
+        syncFileUrl,
+        syncBusy,
+        ...(syncFileUrlError ? { syncFileUrlError } : {}),
         ...(settingsColorError ? { colorError: settingsColorError } : {}),
         ...(settingsFontWarning ? { fontWarning: settingsFontWarning } : {}),
         ...(settingsLogoError ? { logoError: settingsLogoError } : {}),
@@ -2021,6 +2069,9 @@ document.addEventListener('click', (event) => {
       case 'copy':
         startLibraryCopy(docId);
         return;
+      case 'sync':
+        if (entry?.sourceNodeId) startSync({ kind: 'source', sourceNodeId: entry.sourceNodeId });
+        return;
       case 'detach':
         if (operation.active) return;
         void confirmDialog({
@@ -2143,6 +2194,23 @@ document.addEventListener('click', (event) => {
     return;
   }
 
+  if (target.closest('[data-sync-file-save]')) {
+    const field = document.querySelector<HTMLInputElement>('#sl-sync-file-url');
+    saveSyncFileUrl(field?.value ?? '');
+    return;
+  }
+
+  if (target.closest('[data-sync-file-clear]')) {
+    syncFileUrlError = '';
+    send({ type: 'setSyncFileUrl', value: '' });
+    return;
+  }
+
+  if (target.closest('[data-sync-all]')) {
+    startSync({ kind: 'all' });
+    return;
+  }
+
   // Component and Foundation controls are inert while a build owns UiState.
   if (operation.active) return;
 
@@ -2233,6 +2301,13 @@ document.addEventListener('click', (event) => {
 document.addEventListener('change', (event) => {
   const input = event.target as HTMLInputElement | null;
   if (!input) return;
+
+  if (input.id === 'sl-sync-on-update') {
+    syncOnUpdate = input.checked;
+    send({ type: 'setSyncOnUpdate', value: input.checked });
+    paintAndFocus('#sl-sync-on-update');
+    return;
+  }
 
   // A swatch's picker closing is the commit. Still no repaint: some engines fire
   // `change` while the picker is open, and it is the picker's own element.
@@ -2464,6 +2539,12 @@ document.addEventListener('keydown', (event) => {
         return;
       }
     }
+  }
+
+  if (event.key === 'Enter' && event.target instanceof HTMLInputElement && event.target.id === 'sl-sync-file-url') {
+    event.preventDefault();
+    saveSyncFileUrl(event.target.value);
+    return;
   }
 
   // Font field: ArrowDown opens the list. Enter with no highlight falls through
@@ -2755,6 +2836,49 @@ const handleMainMessage = (event: MessageEvent): void => {
     case 'componentFormat':
       state.componentFormat = msg.value;
       paint();
+      return;
+
+    case 'syncSettings':
+      syncOnUpdate = msg.onUpdate;
+      syncFileUrl = msg.fileUrl;
+      paint();
+      return;
+
+    case 'syncPlan': {
+      const next = planNext(msg.plan);
+      if (next.kind === 'toast') {
+        nativeNotify(next.message, next.error ? { error: true } : {});
+        endSync();
+      } else if (next.kind === 'replace') {
+        offerReplace(msg.scope, next.dialog);
+      } else {
+        const scope = msg.scope;
+        const edited = next.edited;
+        void confirmDialog(next.dialog).then((ok) => {
+          if (!ok) { endSync(); return; }
+          syncPendingEdited = edited;
+          send({ type: 'applySync', scope, replaceEdited: false });
+        });
+      }
+      return;
+    }
+
+    case 'syncDone': {
+      const toast = resultToast(msg.result);
+      nativeNotify(toast.message, toast.error ? { error: true } : {});
+      if (!msg.replaceEdited && syncPendingEdited.length > 0) {
+        const edited = syncPendingEdited;
+        syncPendingEdited = [];
+        offerReplace(msg.scope, replaceDialog(edited));
+      } else {
+        endSync();
+      }
+      return;
+    }
+
+    case 'syncError':
+      nativeNotify(`Couldn’t annotate in Dev Mode: ${msg.message}`, { error: true });
+      endSync();
       return;
 
     case 'brandTheme':

@@ -823,6 +823,47 @@ action. The rows below start there.
       runs the plugin would publish for real on every open of the Publish
       screen.
 
+## Annotate in Dev Mode
+
+Annotations, descriptions and documentation links are Figma fields the unit
+suite cannot render. Run these in a library file with at least one component
+set and one single component, each with a current doc.
+
+- [ ] First run: open a component row's menu in the Library and choose
+      **Annotate in Dev Mode**. The dialog names what it writes. Confirm. Dev Mode
+      shows the description with the provenance line, the root annotation
+      pins padding, item spacing and radius, and each anatomy part carries an
+      annotation numbered as the doc's legend numbers it.
+- [ ] No number is typed: every value in the annotations is a pinned
+      property, and a bound value shows its variable.
+- [ ] File link: save the file's link in Settings, Export, then annotate again.
+      The documentation link opens the doc's Section. A link from another
+      site is refused with the hint.
+- [ ] Drift: after a run the Library row still reads In sync, and Update
+      does not show the Overview twice in the header.
+- [ ] Hand edit: change the description in Figma, annotate again. The dialog
+      says the edit is kept, and confirming leaves it. The second step,
+      **Replace**, writes the doc's text over it.
+- [ ] AI text: annotate a component whose Overview was written with AI and not
+      edited. The dialog names it, and the provenance line says "Written with
+      AI".
+- [ ] Designer annotations: add your own annotation to a part, annotate again.
+      It stays, beside Spec Layer's.
+- [ ] Component set: the description lands on the set, the annotations on
+      the default variant's layers.
+- [ ] Undo: one undo reverts the description, link, annotations and the
+      record, and the next run plans them as writes again.
+- [ ] Annotate on Update: turn the switch on, edit an authored Overview on the
+      canvas, Update the doc. The description follows. A component never
+      annotated by hand is left alone.
+- [ ] **Annotate all components** from Settings, Export covers every current doc
+      and skips a doc that reads Rebuild needed.
+- [ ] Consumer file: publish the library, inspect an instance in another
+      file. Record whether the description and the annotations show. Both
+      are unverified until this row has a recorded result.
+- [ ] Category: the annotations carry the Spec Layer category; delete the
+      category and annotate again, and it is recreated.
+
 ## Download skill
 
 The download is a blob save from the plugin iframe. Nothing in the unit suite
