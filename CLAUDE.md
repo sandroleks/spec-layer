@@ -193,20 +193,23 @@ private Figma URLs, no proprietary component exports, no credentials. A real
 design-system artifact needs explicit approval covering ids, names,
 descriptions, and diagnostics before it can be committed.
 
-## Where things stand (2026-09-24)
+## Where things stand (2026-10-05)
 
-`npm run check` passes on the 6.0.0 cut over `ada80ee`, `npm audit` reports
-no vulnerabilities, and `npm run check:site-live` passes. Suite size lives in
-the test output, not here.
+On `main` at `c575c6e9` (#109): CI `verify` passes and `npm audit` reports
+no vulnerabilities. Suite size lives in the test output, not here.
 
-Plugin 6.0.0 is cut: `packages/plugin/package.json` and the root
-`package.json` read 6.0.0 (`manifest.json` carries no version field), and
-`CHANGELOG.md` dates `[6.0.0]` 2026-09-24, covering #59 through #88 and
-`EXTRACTOR_VERSION` `'3'`. The `v6.0.0` tag and GitHub Release are created
-from the cut's squash commit; `v5.1.0` (annotated, 0b84a9c, on 28a55c9) is
-the one before it. Whether the Figma Community listing serves 6.0.0 cannot
-be verified from this repository. `spec-layer@0.11.0` is `latest` on npm
-(published 2026-09-24).
+Released: plugin 6.0.0 (tag `v6.0.0` and GitHub Release Latest, 2026-09-24,
+`EXTRACTOR_VERSION` `'3'`) and `spec-layer@0.11.0` as npm `latest`. Whether
+the Figma Community listing serves 6.0.0 cannot be verified from this
+repository. Both were cut by hand, before the release workflows existed;
+the next plugin and CLI releases are the first through them.
+
+Unreleased: `CHANGELOG.md` `[Unreleased]` holds #90 to #109. Its plugin
+changes wait for the next plugin cut, and its CLI changes (`--json`, retries)
+for a CLI release past 0.11.0 (`packages/cli/package.json` still reads
+0.11.0). Proxy changes deploy from `main` through `deploy-proxy.yml`; #105
+(Pro prose on Claude Sonnet 5.5) is in production, and the run for #106
+passed staging and is waiting for production approval.
 
 The schemas on `main` are now `foundation-5.2.0.json` and
 `component-5.3.0.json`, and `npm run check:site-live` fails until the private
@@ -223,11 +226,8 @@ Open, in rough priority order:
    evidence; unit tests cannot reach what it covers. Two questions the
    2026-09-05 review could not answer are still open: how often the
    non-component toast fires, and the real size and paste behaviour of the
-   DTCG clipboard. The third, whether `window.confirm` shows a dialog in the
-   plugin iframe, is closed: 8eebf78 (2026-09-05) replaced it with the
-   in-shell `confirmDialog`, no `confirm(`, `alert(` or `prompt(` call site
-   remains under `packages/plugin/src/ui`, and `TESTING.md` step 10 already
-   exercises the in-shell dialog.
+   DTCG clipboard. Rows added since 6.0.0 for #95 to #101 (Library checks,
+   placeholders, selection cache, support email) are unrun too.
 2. **Component Frame Quality Round 1**, planned; the plan and design are in
    the private repository. #66 (97bfed1, 2026-09-18) landed four of its items
    with `EXTRACTOR_VERSION` `'3'`: `hash.ts` sorts by code unit, the radius
@@ -258,6 +258,66 @@ Explicitly not doing: remote MCP or agentic vision enrichment, a Markdown
 contract, a parser for the Markdown projection, or sections that exist only
 in Markdown; and a hosted composition layer. Those were considered and
 rejected; the bet is deterministic extraction depth.
+
+## Production workflow
+
+Nothing ships from a laptop in the normal path. Each surface has one GitHub
+workflow; `CONTRIBUTING.md` ("How releases happen") is the human version, this
+is what an agent does and does not do.
+
+| Surface | Trigger | Workflow | Human gate |
+|---|---|---|---|
+| Proxy (`api.spec-layer.com`) | merge to `main` touching `packages/proxy/**`, `packages/extractor/**`, `package-lock.json` or the smoke script | `deploy-proxy.yml` | approval in the `production` environment, after staging deploy and `scripts/smoke-proxy.mjs` |
+| `spec-layer` CLI on npm | push tag `cli-vX.Y.Z` | `release-cli.yml` | **none after the tag**: the `npm` environment only restricts the ref to `cli-v*` and has no required reviewer, so the tag push is the publish (as of 2026-10-03; the workflow comment and `CONTRIBUTING.md` describe an approval gate that is not configured). Trusted publishing, no stored token, provenance attached |
+| Figma plugin | push tag `vX.Y.Z` | `release-plugin.yml` | the release is a **draft**; a person runs the manual Figma pass and updates the Community listing by hand (Figma has no publishing API) |
+| Site schemas | deployed from the private repository | `site-live.yml` (weekly, advisory) | `npm run check:site-live` must pass before a release |
+
+**Order when a release spans surfaces:** proxy, then CLI, then plugin listing.
+A plugin that needs a newer CLI is not listed until that CLI is `latest` on npm.
+
+**Cutting a release** (only when the user asks for one):
+
+1. On a branch, bump the version (CLI: `packages/cli/package.json`; plugin: the
+   root and `packages/plugin/package.json`) and add a dated
+   `## [X.Y.Z] - YYYY-MM-DD` section to `CHANGELOG.md`. Merge by squash pull
+   request that passes `verify`.
+2. Run `node scripts/check-release.mjs cli cli-vX.Y.Z` or
+   `node scripts/check-release.mjs plugin vX.Y.Z` against the merged commit.
+   It is the same check the workflow runs first: tag, versions, dated
+   changelog section, and for the plugin the proxy origin in the manifest and
+   `ui/proxy.ts`.
+3. Tag the **squash commit on `main`**, then push the tag. Tags are public and
+   `v*` tags are ruleset-protected: confirm the exact tag and commit with the
+   user before pushing, and never move or delete a pushed tag.
+4. Read the workflow run's status directly and report it as it is. Do not
+   approve the `production` environment gate (required reviewer: the
+   maintainer). A proxy deploy that shows `waiting` is parked there, not
+   failed.
+5. After the plugin draft exists, hand over its checklist. Do not publish the
+   draft, and never claim the Figma listing is updated or that
+   `packages/plugin/TESTING.md` passed unless a recorded run says so.
+
+**Never, without the user naming it in this conversation:**
+
+- `npm publish`, or `wrangler deploy` / `wrangler versions deploy`, from a
+  laptop. They are emergency paths (`CONTRIBUTING.md`, `packages/proxy/README.md`);
+  a laptop CLI publish ships without provenance and must be said so in the
+  next changelog entry.
+- Pushing to `main`, pushing a release tag, or starting a workflow run.
+- Re-running `deploy-proxy.yml` by `workflow_dispatch` from `main`: unlike the
+  release workflows, where a manual run is a dry run, this one deploys to
+  staging and then queues production for approval. `rollout: upload-only`
+  uploads a version without routing traffic to it.
+- Touching secrets or environment configuration. `CLOUDFLARE_API_TOKEN`, the
+  `production` reviewers, the npm trusted publisher and the staging
+  `ANTHROPIC_API_KEY` / `FIGMA_ID_SALT` live on GitHub, Cloudflare and npm,
+  not in this repository.
+
+**Facts that save a wrong guess:** the proxy deploys before the plugin that
+depends on it, so merge and verify the proxy change first. Staging is
+`staging-api.spec-layer.com`. Concurrency groups keep releases and deploys
+serial and never cancel one half way. Release and deploy jobs use no
+dependency cache, and every action is pinned to a commit SHA.
 
 ## Working conventions
 

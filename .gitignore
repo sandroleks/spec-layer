@@ -39,3 +39,6 @@ packages/cli/LICENSE
 # Local design notes. The prose tree proper lives in the private repository;
 # this is a scratch space for a spec written alongside a branch.
 docs/
+
+# Marketing video projects are local working trees, not repo content.
+videos/
