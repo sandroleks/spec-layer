@@ -55,10 +55,15 @@ export interface SettingsScreenState {
   /** Annotate in Dev Mode. Absent until main reports, which reads as off and no link. */
   syncOnUpdate?: boolean;
   syncFileUrl?: string | null;
+  /** Text typed into the file link field and not saved yet. Shown in place of
+   *  the saved link, so a repaint never takes it away. */
+  syncFileUrlDraft?: string | undefined;
   /** Why the typed file link was refused; cleared by the next save. */
   syncFileUrlError?: string | undefined;
-  /** A sync run is planning or writing. */
+  /** A run is planning, confirming or writing. */
   syncBusy?: boolean;
+  /** Another operation holds the plugin, so no run can start. */
+  operationActive?: boolean;
 }
 
 /** The "Default (Inter)" row's value: clearing the field back to the default. */
@@ -265,16 +270,20 @@ function exportSection(format: ComponentFormat): string {
  */
 function syncSection(state: SettingsScreenState): string {
   const on = state.syncOnUpdate === true;
-  const url = state.syncFileUrl ?? '';
+  const saved = state.syncFileUrl ?? '';
+  const shown = state.syncFileUrlDraft ?? saved;
+  const error = state.syncFileUrlError ?? '';
+  const blocked = state.syncBusy === true || state.operationActive === true;
   return (
     '<section class="sl-settings-section sl-sync-setting" aria-labelledby="sl-sync-heading">' +
     '<div class="sl-settings-section-heading">' +
     '<h2 id="sl-sync-heading">Annotate in Dev Mode</h2>' +
     '<p>Writes each doc’s usage text into the component description and annotates its parts, ' +
-    'so Dev Mode shows what your docs show. You confirm each run.</p>' +
+    'so Dev Mode shows what your docs show. You confirm each run you start.</p>' +
     '</div>' +
-    '<div class="sl-ai-control">' +
-    '<span class="sl-ai-control-copy"><strong>Annotate again when a doc is updated</strong></span>' +
+    // The neutral switch row: the AI control's surface would read as an AI setting.
+    '<div class="sl-doc-option">' +
+    '<span class="sl-doc-option-copy"><strong>Annotate again when a doc is updated</strong></span>' +
     '<label class="sl-switch-control">' +
     '<input class="sl-switch-input" id="sl-sync-on-update" type="checkbox" role="switch" ' +
     `aria-label="Annotate again when a doc is updated"${on ? ' checked' : ''} />` +
@@ -283,20 +292,23 @@ function syncSection(state: SettingsScreenState): string {
     '</div>' +
     '<p class="sl-settings-hint">Only refreshes components you have annotated before. ' +
     'Edits made in Figma and text written with AI wait for you to review them.</p>' +
-    '<label class="sl-theme-color-field sl-sync-file-field"><span>File link</span>' +
-    `<input id="sl-sync-file-url" data-sync-file-url value="${esc(url)}" spellcheck="false" ` +
-    'placeholder="https://www.figma.com/design/…" aria-describedby="sl-sync-file-hint"></label>' +
+    `<label class="sl-field sl-sync-file-field"${error ? ' data-invalid="true"' : ''}>` +
+    '<span class="sl-field-label">File link</span><span class="sl-input-wrap">' +
+    `<input id="sl-sync-file-url" data-sync-file-url value="${esc(shown)}" spellcheck="false" ` +
+    // The reason is tied to the field and read when focus returns to it, so
+    // it is not re-announced on every repaint the way an alert would be.
+    `placeholder="https://www.figma.com/design/…" aria-invalid="${error ? 'true' : 'false'}" ` +
+    `aria-describedby="sl-sync-file-hint${error ? ' sl-sync-file-error' : ''}"></span></label>` +
+    (error ? `<p class="sl-settings-hint" data-tone="danger" id="sl-sync-file-error">${esc(error)}</p>` : '') +
     '<div class="sl-logo-actions">' +
     '<button class="sl-button" data-tone="secondary" type="button" data-sync-file-save>Save link</button>' +
-    (url ? '<button class="sl-button" data-tone="quiet" type="button" data-sync-file-clear>Remove</button>' : '') +
+    (saved ? '<button class="sl-button" data-tone="quiet" type="button" data-sync-file-clear>Remove</button>' : '') +
     '</div>' +
     '<p class="sl-settings-hint" id="sl-sync-file-hint">Copy it from Share, then Copy link. ' +
-    'Each component’s documentation link then opens its doc. Without it, no link is written.</p>' +
-    (state.syncFileUrlError
-      ? `<p class="sl-settings-hint" data-tone="danger" role="alert">${esc(state.syncFileUrlError)}</p>`
-      : '') +
+    'Each component’s documentation link then opens its doc. Without it, no link is written. ' +
+    'A copy of this file keeps this link until you save its own.</p>' +
     '<div class="sl-logo-actions">' +
-    `<button class="sl-button" data-tone="primary" type="button" data-sync-all${state.syncBusy ? ' disabled' : ''}>` +
+    `<button class="sl-button" data-tone="primary" type="button" data-sync-all${blocked ? ' disabled' : ''}>` +
     `${icon('upload', 15)}<span>${state.syncBusy ? 'Annotating…' : 'Annotate all components'}</span></button>` +
     '</div>' +
     '</section>'

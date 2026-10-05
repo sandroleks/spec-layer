@@ -20,8 +20,14 @@ export interface SyncedAnnotation {
   /** The layer the annotation sits on. */
   nodeId: string;
   hash: string;
+  /** Hash of the annotation that was proposed, the way `bodyHash` is for the
+   *  description: a read-back Figma normalized still compares as unchanged.
+   *  Absent on records written before it existed. */
+  proposed?: string;
 }
 
+/** Fields are only ever added under `v: 1`, so an older build still reads a
+ *  newer record. One it cannot read is left untouched (see syncFigma.ts). */
 export interface SyncRecord {
   v: 1;
   syncedAt: number;
@@ -32,6 +38,9 @@ export interface SyncRecord {
   description?: { hash: string; bodyHash: string; origin: SyncOrigin };
   link?: { uri: string };
   annotations: SyncedAnnotation[];
+  /** The held state the last run reported (`SyncPlanItem.heldKey`), so an
+   *  automatic run names a held value once, not on every Update. */
+  held?: string;
 }
 
 const ORIGINS: ReadonlySet<string> = new Set(['authored', 'ai', 'mixed']);
@@ -53,11 +62,16 @@ export function parseSyncRecord(raw: string): SyncRecord | null {
   const annotations: SyncedAnnotation[] = [];
   for (const a of o.annotations) {
     if (!a || typeof a !== 'object') return null;
-    const { nodeId, hash } = a as Record<string, unknown>;
+    const { nodeId, hash, proposed } = a as Record<string, unknown>;
     if (typeof nodeId !== 'string' || typeof hash !== 'string') return null;
-    annotations.push({ nodeId, hash });
+    if (proposed !== undefined && typeof proposed !== 'string') return null;
+    annotations.push({ nodeId, hash, ...(proposed !== undefined ? { proposed } : {}) });
   }
   const record: SyncRecord = { v: 1, syncedAt: o.syncedAt, pluginVersion: o.pluginVersion, annotations };
+  if (o.held !== undefined) {
+    if (typeof o.held !== 'string') return null;
+    record.held = o.held;
+  }
   const d = o.description as Record<string, unknown> | undefined;
   if (d !== undefined) {
     if (!d || typeof d.hash !== 'string' || typeof d.bodyHash !== 'string'
@@ -72,6 +86,21 @@ export function parseSyncRecord(raw: string): SyncRecord | null {
   return record;
 }
 
+/** True when two records claim the same values. When and by which build a
+ *  record was written are left out, so a run that changes nothing writes
+ *  nothing. */
+export function sameClaims(a: SyncRecord, b: SyncRecord): boolean {
+  const claims = (r: SyncRecord): string => JSON.stringify([
+    r.description ? [r.description.hash, r.description.bodyHash, r.description.origin] : null,
+    r.link ? r.link.uri : null,
+    r.annotations
+      .map((x) => [x.nodeId, x.hash, x.proposed ?? null])
+      .sort((x, y) => (x.join(' ') < y.join(' ') ? -1 : x.join(' ') > y.join(' ') ? 1 : 0)),
+    r.held ?? null,
+  ]);
+  return claims(a) === claims(b);
+}
+
 /** Hash of a description exactly as Figma returns it, untrimmed. */
 export function descriptionHash(text: string): string {
   return contentHash(['description', text]);
@@ -82,13 +111,35 @@ export function bodyHash(body: string): string {
   return contentHash(['body', body]);
 }
 
-/** The parts of an annotation the sync controls. The category is left out:
- *  a category recreated after a designer deleted it gets a new id, and the
- *  annotation is still the sync's own. */
+/** The parts of an annotation the sync reads. The hash leaves the category
+ *  out: a category recreated after a designer deleted it gets a new id, and
+ *  the annotation is still the sync's own. The category only tells the sync
+ *  which annotation it placed once a person has edited the text. */
 export interface AnnotationLike {
   label?: string;
   labelMarkdown?: string;
   properties?: ReadonlyArray<{ type: string }>;
+  categoryId?: string;
+}
+
+/** An annotation as Figma accepts it back. Figma may read an annotation with
+ *  both `label` and `labelMarkdown` set but refuses a write that sets both, so
+ *  a kept annotation goes back with one: the Markdown, which keeps a
+ *  designer's formatting, else the plain label. */
+export interface WritableAnnotation {
+  label?: string;
+  labelMarkdown?: string;
+  properties?: Array<{ type: string }>;
+  categoryId?: string;
+}
+
+export function writableAnnotation(a: AnnotationLike): WritableAnnotation {
+  const out: WritableAnnotation = {};
+  if (typeof a.labelMarkdown === 'string' && a.labelMarkdown !== '') out.labelMarkdown = a.labelMarkdown;
+  else if (typeof a.label === 'string' && a.label !== '') out.label = a.label;
+  if (a.properties?.length) out.properties = a.properties.map((p) => ({ type: p.type }));
+  if (typeof a.categoryId === 'string' && a.categoryId !== '') out.categoryId = a.categoryId;
+  return out;
 }
 
 export function annotationHash(a: AnnotationLike): string {

@@ -2089,7 +2089,8 @@
 
 /*
  * A panel's first section has nothing above it to be separated from, so the
- * divider every later section carries (.sl-logo-setting, .sl-about-section)
+ * divider every later section carries (.sl-logo-setting, .sl-about-section,
+ * .sl-sync-setting)
  * is dropped there. That is what lets About open its own tab cleanly.
  */
 .sl-settings-panel > .sl-settings-section:first-child {
@@ -2383,10 +2384,24 @@
 
 /* Every section after the first is separated the same way. */
 .sl-logo-setting,
-.sl-about-section {
+.sl-about-section,
+.sl-sync-setting {
   margin-top: var(--sl-space-16);
   padding-top: var(--sl-space-14);
   border-top: 1px solid var(--sl-color-border-muted);
+}
+
+/* Annotate in Dev Mode stacks a field and two button rows under its hints,
+   so each gets the gap a hint already keeps above itself. Its switch row
+   drops the inset the component screen gives it: Settings pads its own
+   scroll region, so the row lines up with the copy above it. */
+.sl-sync-setting .sl-sync-file-field,
+.sl-sync-setting .sl-logo-actions {
+  margin-top: var(--sl-space-10);
+}
+
+.sl-sync-setting .sl-doc-option {
+  margin: 0;
 }
 
 /*

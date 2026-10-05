@@ -57,6 +57,8 @@ export interface LibraryScreenPresentation
   checkProgress?: ProgressPresentation | null;
   updatingAll?: boolean;
   updatingDocId?: string | null;
+  /** An Annotate in Dev Mode run is planning, confirming or writing. */
+  annotating?: boolean;
   /** An Update or Update all run. The footer card floats this above the
    * buttons it came from; a source check goes in the check line instead. */
   progress?: ProgressPresentation | null;
@@ -293,7 +295,7 @@ function menuMarkup(
     group.map((item) => (
       `<button${item.danger ? ' class="is-danger"' : ''} role="menuitem" type="button" ` +
       `data-library-action="${item.action}" data-doc-id="${esc(row.docId)}"` +
-      `${busy && item.action === 'update' ? ' disabled' : ''}>` +
+      `${busy && (item.action === 'update' || item.action === 'sync') ? ' disabled' : ''}>` +
       `${icon(item.glyph, 15)}<span>${item.label}</span></button>`
     )).join(''),
   ).join('<span class="sl-library-menu-separator" aria-hidden="true"></span>');
@@ -584,13 +586,19 @@ function libraryCheckLineMarkup(model: LibraryScreenPresentation): string {
   );
 }
 
-export function libraryScrollMarkup(model: LibraryScreenPresentation): string {
-  const busy = Boolean(
+/** Something owns the Library, so actions that start work are disabled. */
+function libraryBusy(model: LibraryScreenPresentation): boolean {
+  return Boolean(
     model.refreshing ||
     model.probing ||
     model.updatingAll ||
-    model.updatingDocId,
+    model.updatingDocId ||
+    model.annotating,
   );
+}
+
+export function libraryScrollMarkup(model: LibraryScreenPresentation): string {
+  const busy = libraryBusy(model);
 
   const filterMarkup =
     '<div class="sl-library-filters" role="group" aria-label="Library filters">' +
@@ -641,12 +649,7 @@ export function libraryScrollMarkup(model: LibraryScreenPresentation): string {
 }
 
 export function libraryFooterMarkup(model: LibraryScreenPresentation): string {
-  const busy = Boolean(
-    model.refreshing ||
-    model.probing ||
-    model.updatingAll ||
-    model.updatingDocId,
-  );
+  const busy = libraryBusy(model);
   const refreshLabel = model.refreshing ? 'Refreshing…' : 'Refresh library';
   /**
    * Only the label varies; the glyph stays `fileCheck`, since one slot must not
@@ -846,8 +849,8 @@ export function patchLibraryDrift(refs: ShellRefs, model: LibraryScreenPresentat
   }
   if (drawn.size !== model.rows.length || model.rows.some((row) => !drawn.has(row.docId))) return false;
 
-  const busy = Boolean(model.refreshing || model.probing || model.updatingAll || model.updatingDocId);
-  // Only an open menu's "Update this doc" item depends on `busy`, so a row
+  const busy = libraryBusy(model);
+  // Only an open menu's Update and Annotate items depend on `busy`, so a row
   // whose status held still is redrawn when busy changes under its open menu.
   const busyChanged = list.dataset.busy !== String(busy);
   let redrewAny = false;

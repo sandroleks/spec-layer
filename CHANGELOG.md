@@ -10,22 +10,31 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - **Annotate in Dev Mode.** A Library row's menu and Settings, Export can now write a
   component doc back into Figma's own fields, so Dev Mode and the REST API
-  show what the canvas shows. The Usage text (Overview, When to use, When not
-  to use) goes into the component description with one provenance line; when
-  a file link is saved in Settings, the documentation link opens the doc's
-  Section; and anatomy parts get native annotations numbered as the legend
-  numbers them, with padding, spacing, radius and type pinned as live
-  properties, so no number is ever typed. Every run asks first and names AI
-  text nobody has edited. A description, link or annotation changed in Figma
-  is kept, and replacing it is a separate, labelled step. A record of what
-  was written lives in the component's plugin data, and the serializer reads
-  a description or link that matches it as absent, so an annotated doc never
-  reports drift against its own words and the AI prompt is never fed its own
-  output. Nothing it writes enters a hash or an artifact, and
-  `EXTRACTOR_VERSION` is unchanged. An optional switch annotates again after an
-  Update, for components already annotated by hand, and never writes text that
-  was edited in Figma or written with AI. Whether Figma's MCP server or Make
-  reads the descriptions is not verified.
+  show what the canvas shows. The Usage text the doc shows (Overview, When to
+  use, When not to use) goes into the component description with one
+  provenance line, and is cleared again once the doc no longer has it. When a
+  file link is saved in Settings, the documentation link opens the doc's
+  Section, follows it when an Update rebuilds the Section, and is cleared when
+  the doc is deleted. When the doc draws its Anatomy legend, each top-level
+  part gets a native annotation numbered as the legend numbers it, with
+  padding, spacing, radius and type pinned as live properties, so no number is
+  ever typed; an annotation on a part the legend no longer numbers is removed,
+  and a doc whose parts changed since it was built places no annotation until
+  it is updated. Every run you start asks first and names AI text nobody has
+  edited. A description, link or annotation set, changed or removed in Figma
+  is kept, and replacing it is a separate, labelled step that also names AI
+  text. A record of what was written lives in the component's plugin data,
+  and the serializer reads a description or link that matches it as absent,
+  so an annotated doc never reports drift against its own words and the AI
+  prompt is never fed the sync's own text. A description a person edits in
+  Figma becomes theirs and reads as source like any other, without the
+  provenance line. A record from a newer build is left untouched. Nothing it
+  writes enters a hash or an artifact, and `EXTRACTOR_VERSION` is unchanged.
+  An optional switch annotates again after an Update, only for components
+  already annotated by hand, never writes text that was edited in Figma or
+  written with AI, and names a component it held back once, not on every
+  Update. Whether Figma's MCP server or Make reads the descriptions is not
+  verified.
 
 - **Motion variables in the Foundation.** Figma's `TIMING` and `EASING`
   variable types (Plugin API update 133) are read as `duration` tokens in

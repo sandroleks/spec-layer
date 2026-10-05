@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import type { ProseV2 } from '@spec-layer/extractor';
-import { descriptionText, provenanceLine, calendarDate, fileKeyFromUrl, sectionLink } from '../src/syncText';
+import {
+  descriptionText, provenanceLine, calendarDate, fileKeyFromUrl, sectionLink, withoutProvenance, relinkedSection,
+} from '../src/syncText';
 
 const PROSE: ProseV2 = {
   v: 2,
@@ -41,9 +43,37 @@ describe('descriptionText', () => {
     expect(descriptionText(PROSE, '2026-10-03')?.body).toBe(descriptionText(PROSE, '2027-01-01')?.body);
   });
 
+  it('carries only the sections the doc shows', () => {
+    const usage = descriptionText(PROSE, 'd', new Set(['whenToUse', 'whenNotToUse']));
+    expect(usage?.body).toBe('**When to use**\n- To submit a form.\n\n**When not to use**\n- To navigate to another page.');
+    expect(descriptionText(PROSE, 'd', new Set(['anatomyParts']))).toBeNull();
+  });
+
+  it('names the origin from the sections it carries', () => {
+    const prose = { ...PROSE, authored: ['whenToUse' as const, 'whenNotToUse' as const] };
+    expect(descriptionText(prose, 'd')?.origin).toBe('mixed');
+    expect(descriptionText(prose, 'd', new Set(['whenToUse', 'whenNotToUse']))?.origin).toBe('authored');
+  });
+
   it('never writes an em dash', () => {
     expect(descriptionText(PROSE, '2026-10-03')?.markdown).not.toMatch(/—/);
     expect(provenanceLine('authored', 'x')).not.toMatch(/—/);
+  });
+});
+
+describe('withoutProvenance', () => {
+  it('drops the provenance line a description ends with, and nothing else', () => {
+    expect(withoutProvenance('A button starts an action!\n\nWritten in Spec Layer · 2026-10-03')).toBe('A button starts an action!');
+    expect(withoutProvenance('Mine.\nWritten with AI in Spec Layer · 2026-10-03  \n')).toBe('Mine.');
+    expect(withoutProvenance('Written with AI in Spec Layer · 2026-10-03')).toBe('');
+    expect(withoutProvenance('Mine.')).toBe('Mine.');
+    expect(withoutProvenance('Written in Spec Layer · 2026-10-03, then edited')).toBe('Written in Spec Layer · 2026-10-03, then edited');
+    expect(withoutProvenance('I like what is Written in Spec Layer · 2026-10-03')).toBe('I like what is Written in Spec Layer · 2026-10-03');
+  });
+
+  it('matches every line provenanceLine writes', () => {
+    expect(withoutProvenance(`Body\n\n${provenanceLine('authored', '2026-10-03')}`)).toBe('Body');
+    expect(withoutProvenance(`Body\n\n${provenanceLine('mixed', '2026-10-03')}`)).toBe('Body');
   });
 });
 
@@ -58,6 +88,13 @@ describe('links', () => {
 
   it('builds the doc Section link with dashes in the node id', () => {
     expect(sectionLink('AbCdEf1234567890', '12:34')).toBe('https://www.figma.com/design/AbCdEf1234567890/?node-id=12-34');
+  });
+
+  it('moves a Section link to the Section that replaced it, and only a link to that Section', () => {
+    const old = sectionLink('AbCdEf1234567890', '12:34');
+    expect(relinkedSection(old, '12:34', '56:78')).toBe(sectionLink('AbCdEf1234567890', '56:78'));
+    expect(relinkedSection(old, '99:1', '56:78')).toBeNull();
+    expect(relinkedSection('https://zeroheight.com/x?node-id=12-34', '12:34', '56:78')).toBeNull();
   });
 
   it('formats a local calendar date', () => {

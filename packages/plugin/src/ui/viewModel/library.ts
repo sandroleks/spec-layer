@@ -72,8 +72,8 @@ export interface LibraryRowModel {
    * `unavailable`: Copy re-reads the source whose live read just failed.
    */
   canCopy: boolean;
-  /** Component rows whose source is here and whose doc is current: a stale
-   *  doc may number its anatomy parts differently from a fresh read. */
+  /** Component rows whose source is here and whose doc is current: a stale or
+   *  drifted doc may number its anatomy parts differently from a fresh read. */
   canSync: boolean;
   changeState: LibraryChangeState;
   /** Set only in the `ready` state. */
@@ -253,7 +253,9 @@ export function buildLibraryRow(
         && status !== 'unavailable'
         && status !== 'orphaned'
       : componentSourceAvailable && status !== 'unavailable',
-    canSync: componentSourceAvailable && status !== 'rebuildNeeded' && status !== 'unavailable',
+    // A source change can renumber the parts, so a doc that needs an Update
+    // cannot annotate them. Pending rows are offered: the run checks itself.
+    canSync: componentSourceAvailable && (status === 'inSync' || status === 'edited' || status === 'pending'),
     changeState: change ? change.state : 'idle',
     changeGroups: change?.state === 'ready' ? change.groups : null,
     changeUnavailableReason: change?.state === 'unavailable' ? change.reason : null,
