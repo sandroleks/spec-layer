@@ -226,6 +226,11 @@ describe('buildLibraryRow capabilities', () => {
   it('offers Annotate in Dev Mode only on a current component doc with its source here', () => {
     expect(buildLibraryRow(entry(), { drift: new Map([['doc-1', 'inSync']]), now: NOW }).canSync).toBe(true);
     expect(buildLibraryRow(entry(), { drift: new Map([['doc-1', 'staleVersion']]), now: NOW }).canSync).toBe(false);
+    // A drifted doc's legend may number the parts differently from the component.
+    expect(buildLibraryRow(entry(), { drift: new Map([['doc-1', 'drifted']]), now: NOW }).canSync).toBe(false);
+    expect(buildLibraryRow(entry({ selfEdited: true }), { drift: new Map([['doc-1', 'inSync']]), now: NOW }).canSync).toBe(true);
+    // Before the check lands the run itself checks the legend, and says so.
+    expect(buildLibraryRow(entry(), { now: NOW }).canSync).toBe(true);
     expect(buildLibraryRow(entry({ sourceExists: false }), { now: NOW }).canSync).toBe(false);
     expect(buildLibraryRow(entry({ kind: 'foundation', sourceNodeId: '' }), { now: NOW }).canSync).toBe(false);
   });

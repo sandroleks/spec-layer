@@ -44,7 +44,10 @@ import { DriftPassResolvers, countSerializedNodes } from './driftPass';
 import { FingerprintBaseline, foundationFingerprint } from './foundationFingerprint';
 import { BlockWatch } from './timing';
 import { SelectionCache } from './selectionCache';
-import { planSyncRun, runSync, type SyncHost, type SyncComponentNode, type SyncLayerNode, type SyncDoc, type SyncResult } from './syncFigma';
+import {
+  planSyncRun, runSync, relinkDoc, unlinkDoc,
+  type SyncHost, type SyncComponentNode, type SyncLayerNode, type SyncDoc, type SyncResult,
+} from './syncFigma';
 import { fileKeyFromUrl } from './syncText';
 
 declare const __PLUGIN_VERSION__: string;
@@ -429,7 +432,16 @@ const syncHost: SyncHost = {
     const docs: SyncDoc[] = [];
     for (const { docId, section } of await registrySections()) {
       const link = parseDocLink(section.getPluginData(DOC_LINK_KEY));
-      if (link && !isFoundationLink(link)) docs.push({ docId, link, prose: mergedProse(section) });
+      if (!link || isFoundationLink(link)) continue;
+      docs.push({
+        docId, link, name: section.name,
+        // Read only for a doc the run covers: a canvas walk and a JSON parse.
+        prose: () => mergedProse(section),
+        baseline: () => {
+          const stored = baselineFor(link, section.getPluginData(DOC_BASELINE_KEY));
+          return stored?.kind === 'component' ? stored.projection : null;
+        },
+      });
     }
     return docs;
   },
@@ -438,34 +450,45 @@ const syncHost: SyncHost = {
       return await figma.getNodeByIdAsync(id) as unknown as SyncComponentNode | SyncLayerNode | null;
     } catch { return null; }
   },
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  serialize: (node) => serializeNode(node as any, memoizedResolver(resolver)),
+  serializer() {
+    // One memo per run, as every other pass shares one.
+    const memo = memoizedResolver(resolver);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (node) => serializeNode(node as any, memo);
+  },
+  fileKey: currentFileKey,
   fileUrl: syncFileUrl,
   normalizeMarkdown: (md) => figma.util.normalizeMarkdown(md),
-  async categoryId() {
+  async categoryId(create) {
     const label = 'Spec Layer';
     const existing = (await figma.annotations.getAnnotationCategoriesAsync()).find((c) => c.label === label);
     if (existing) return existing.id;
-    return (await figma.annotations.addAnnotationCategoryAsync({ label, color: 'blue' })).id;
+    return create ? (await figma.annotations.addAnnotationCategoryAsync({ label, color: 'blue' })).id : null;
   },
   now: () => new Date(),
   pluginVersion: typeof __PLUGIN_VERSION__ === 'string' ? __PLUGIN_VERSION__ : '',
 };
 
-/** After a doc build, refresh what a manual sync already owns. Never opens a
- *  dialog: a held component is named in a toast and left for a manual sync. */
+/** After a doc build, refresh what a manual run already annotated. Never
+ *  opens a dialog: a held component is named once, in a toast, and left for a
+ *  manual run. */
 async function autoSync(sourceNodeId: string): Promise<void> {
   if (!syncOnUpdate) return;
   let result: SyncResult;
   try {
     result = await runSync(syncHost, { kind: 'source', sourceNodeId }, { auto: true, replaceEdited: false });
-  } catch {
+  } catch (err) {
+    figma.notify(`Couldn’t annotate in Dev Mode: ${err instanceof Error ? err.message : String(err)}`, { error: true });
     return;
   }
-  if (result.held.length > 0) {
-    figma.notify('Part of this doc was not annotated in Dev Mode because it was changed in Figma or written with AI. Use Annotate in Dev Mode in the Library to review it.');
-  } else if (result.failed.length > 0) {
-    figma.notify(`Couldn’t annotate in Dev Mode: ${result.failed[0].message}`, { error: true });
+  if (result.failed.length > 0) {
+    figma.notify(`Couldn’t annotate ${result.failed[0].name} in Dev Mode: ${result.failed[0].message}`, { error: true });
+  } else if (result.heldNew.length > 0) {
+    // One source per run, so one name.
+    figma.notify(
+      `${result.heldNew[0]} was not fully annotated in Dev Mode, because part of it was changed in Figma ` +
+      'or written with AI. Use Annotate in Dev Mode in the Library to review it.',
+    );
   }
 }
 
@@ -814,6 +837,12 @@ const handleUiMessage = async (raw: unknown): Promise<void> => {
         reg = addDoc(reg, section.id);
         writeRegistry(reg);
 
+        // A documentation link Annotate in Dev Mode set points at the replaced
+        // Section by id; move it to this one. Best effort, like the tail below.
+        if (existingId && existingId !== section.id) {
+          try { await relinkDoc(syncHost, msg.nodeId, existingId, section.id); } catch { /* the next run plans it */ }
+        }
+
         // Cosmetic tail: a focus/zoom hiccup must never fail a placed doc.
         try {
           programmaticDocSelection.expect(section.id);
@@ -836,11 +865,16 @@ const handleUiMessage = async (raw: unknown): Promise<void> => {
           figma.viewport.scrollAndZoomIntoView([section]);
         } catch { /* zoom is non-essential */ }
 
+        // Before docFrameDone, while the gate is still held: the UI sends an
+        // Update all run's next doc on docFrameDone, which must not meet a
+        // gate this build still holds. autoSync reports its own failures, and
+        // none may fail a placed doc.
+        await autoSync(msg.nodeId).catch(() => {/* reported inside */});
+
         // `replaced` lets the UI say "Updated" rather than "Created".
         figma.ui.postMessage({
           type: 'docFrameDone', frameName: section.name, replaced: existingId !== null, docId: section.id,
         } satisfies MainToUi);
-        await autoSync(msg.nodeId);
       } catch (err) {
         // Clean up an orphan only if we failed BEFORE committing the replacement;
         // after commit the section is the live doc and must not be removed.
@@ -1312,14 +1346,26 @@ const handleUiMessage = async (raw: unknown): Promise<void> => {
     }
 
     case 'removeDoc': {
+      // Read before remove(): a removed node throws on every read but `.removed`.
+      let sourceNodeId: string | null = null;
       try {
         const node = await figma.getNodeByIdAsync(msg.docId);
+        if (node && node.type === 'SECTION') {
+          const link = parseDocLink((node as SectionNode).getPluginData(DOC_LINK_KEY));
+          if (link && !isFoundationLink(link)) sourceNodeId = link.sourceNodeId;
+        }
         if (node) node.remove();
       } catch { /* gone already */ }
       try {
         writeRegistry(removeDoc(readRegistry(), msg.docId));
       } catch (err) {
         console.error('[Spec Layer] could not update the doc registry after deleting', msg.docId, err);
+      }
+      // A documentation link Annotate in Dev Mode set to this doc would now
+      // open nothing. The description and annotations stay: they still say
+      // something true about the component.
+      if (sourceNodeId) {
+        try { await unlinkDoc(syncHost, sourceNodeId, msg.docId); } catch { /* best effort */ }
       }
       const groupDescriptions = await liveFoundationGroupDescriptions();
       figma.ui.postMessage({ type: 'docRemoved', docId: msg.docId, groupDescriptions } as MainToUi);

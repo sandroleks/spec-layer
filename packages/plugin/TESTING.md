@@ -832,37 +832,88 @@ set and one single component, each with a current doc.
 - [ ] First run: open a component row's menu in the Library and choose
       **Annotate in Dev Mode**. The dialog names what it writes. Confirm. Dev Mode
       shows the description with the provenance line, the root annotation
-      pins padding, item spacing and radius, and each anatomy part carries an
-      annotation numbered as the doc's legend numbers it.
+      pins padding, item spacing and radius, and each top-level anatomy part
+      (the parts pinned on the canvas) carries an annotation numbered as the
+      doc's legend numbers it.
+- [ ] Second run: annotate the same component again with nothing changed,
+      including a part whose name contains `_` or `*`. The toast says Dev
+      Mode already matches, and no annotation is doubled.
 - [ ] No number is typed: every value in the annotations is a pinned
       property, and a bound value shows its variable.
 - [ ] File link: save the file's link in Settings, Export, then annotate again.
-      The documentation link opens the doc's Section. A link from another
-      site is refused with the hint.
-- [ ] Drift: after a run the Library row still reads In sync, and Update
-      does not show the Overview twice in the header.
+      The documentation link opens the doc's Section in the browser. A link
+      from another site is refused with the hint, and the typed text stays in
+      the field.
+- [ ] Update after annotating: Update the doc, then open the documentation
+      link. It opens the new Section, not a removed one.
+- [ ] Delete a doc after annotating: its documentation link is cleared; the
+      description and the annotations stay.
+- [ ] Drift: after a run that writes into an empty description, the Library
+      row still reads In sync, and Update does not show the Overview twice in
+      the header.
 - [ ] Hand edit: change the description in Figma, annotate again. The dialog
       says the edit is kept, and confirming leaves it. The second step,
-      **Replace**, writes the doc's text over it.
+      **Replace**, writes the doc's text over it, and the row then reads
+      Update available, as the dialog says.
+- [ ] Declined Replace: decline it, annotate again. The dialog names the kept
+      description again. With Annotate on Update on, Update the doc twice:
+      the toast names the component on the first Update only.
+- [ ] Removed link: remove the documentation link in Figma, annotate again.
+      The link stays removed, and the dialog says it is kept.
 - [ ] AI text: annotate a component whose Overview was written with AI and not
       edited. The dialog names it, and the provenance line says "Written with
-      AI".
+      AI". Edit that description in Figma, then **Replace**: the Replace dialog
+      names the AI text too.
 - [ ] Designer annotations: add your own annotation to a part, annotate again.
-      It stays, beside Spec Layer's.
+      It stays, beside Spec Layer's. Repeat with a note that has bold text:
+      the formatting survives, and no "Couldn't annotate" toast appears.
+- [ ] Edited Spec Layer annotation: change the text of one Spec Layer
+      annotation, annotate again. The dialog keeps it; **Replace** rewrites it
+      in place, leaving one annotation on the layer, not two.
+- [ ] Legend changes: hide or remove a part and Update the doc, then annotate.
+      The part's Spec Layer annotation is removed and the others renumber.
+      Without the Update first, the row offers no Annotate, and **Annotate
+      all components** says the doc needs an Update before its parts are
+      annotated.
+- [ ] Grid auto layout: annotate a component whose root or part uses grid
+      auto layout. Record whether Figma accepts padding, row gap and column
+      gap as pinned properties there.
 - [ ] Component set: the description lands on the set, the annotations on
       the default variant's layers.
 - [ ] Undo: one undo reverts the description, link, annotations and the
-      record, and the next run plans them as writes again.
+      record, and the next run plans them as writes again. Save a file link,
+      annotate, and undo once: Settings still shows the link, and the next
+      run writes documentation links.
 - [ ] Annotate on Update: turn the switch on, edit an authored Overview on the
       canvas, Update the doc. The description follows. A component never
-      annotated by hand is left alone.
-- [ ] **Annotate all components** from Settings, Export covers every current doc
-      and skips a doc that reads Rebuild needed.
+      annotated by hand is left alone, however many times it is updated.
+- [ ] Annotate on Update with **Update all**: with the switch on and several
+      components annotated, Update all over 20 or more docs. Every doc
+      updates, and none fails with "Another build is still running".
+- [ ] **Annotate all components** from Settings, Export covers every current doc,
+      and the dialog names each doc it skips and why (Rebuild needed, Update
+      first). While it runs, the Library's Update and Annotate actions are
+      disabled.
+- [ ] Large library: run **Annotate all components** on a file with 100 or
+      more component docs. Record how long the dialog takes to appear and how
+      long the run takes.
+- [ ] Edits during a run: start **Annotate all components** on a large file
+      and delete an annotation on a component later in the list while it
+      reads. No designer annotation is replaced.
 - [ ] Consumer file: publish the library, inspect an instance in another
       file. Record whether the description and the annotations show. Both
       are unverified until this row has a recorded result.
-- [ ] Category: the annotations carry the Spec Layer category; delete the
-      category and annotate again, and it is recreated.
+- [ ] Category: the annotations carry the Spec Layer category. Delete the
+      category, change the doc's Usage text or rename a part so annotations
+      are rewritten, and annotate again: the rewritten annotations carry the
+      recreated category.
+- [ ] Duplicated variant: duplicate the default variant after a run. Record
+      whether Figma copies the annotations onto the copy, and confirm later
+      runs leave the copy's annotations alone.
+- [ ] Copied file and branches: duplicate the file. Settings still shows the
+      original file's link, as its hint says; save the copy's own link before
+      annotating. In a branch, record which file a documentation link built
+      from the branch's Copy link opens.
 
 ## Download skill
 

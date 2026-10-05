@@ -448,6 +448,16 @@ describe('library screen presentation', () => {
     expect(without).not.toContain('data-library-action="sync"');
   });
 
+  it('disables Annotate in Dev Mode and the Library actions while a run annotates', () => {
+    const syncRow = row('buttonSync', 'inSync', { canSync: true, canUpdate: true });
+    const base = { allRows: [syncRow], rows: [syncRow], counts: { all: 1, updates: 0, inSync: 1 }, menuDocId: 'buttonSync' };
+    expect(libraryScrollMarkup(model(base))).not.toContain('data-library-action="sync" data-doc-id="buttonSync" disabled');
+    const annotating = model({ ...base, annotating: true });
+    expect(libraryScrollMarkup(annotating)).toContain('data-library-action="sync" data-doc-id="buttonSync" disabled');
+    expect(libraryScrollMarkup(annotating)).toContain('data-busy="true"');
+    expect(libraryFooterMarkup(annotating)).toMatch(/data-library-refresh disabled/);
+  });
+
   it('offers Copy for AI on a foundation row', () => {
     const foundationRow = row('foundSemantic', 'inSync', {
       kind: 'foundation',

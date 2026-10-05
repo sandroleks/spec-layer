@@ -53,13 +53,39 @@ describe('settings screen presentation', () => {
     const markup = settingsScrollMarkup({
       theme: { ...THEME_PRESETS[2].theme }, customMode: false, logoAttached: false, pluginVersion: '6.1.0',
       tab: 'export', syncOnUpdate: true, syncFileUrl: 'https://www.figma.com/design/K1234567890/F',
-      syncFileUrlError: 'That is not a Figma file link.', syncBusy: true,
+      syncBusy: true,
     });
     expect(markup).toContain(' checked />');
     expect(markup).toContain('value="https://www.figma.com/design/K1234567890/F"');
     expect(markup).toContain('data-sync-file-clear');
-    expect(markup).toContain('role="alert">That is not a Figma file link.');
+    expect(markup).toContain('aria-invalid="false"');
     expect(markup).toMatch(/data-sync-all disabled>.*Annotating…/);
+  });
+
+  it('keeps refused text in the field and ties the reason to it', () => {
+    const markup = settingsScrollMarkup({
+      theme: { ...THEME_PRESETS[2].theme }, customMode: false, logoAttached: false, pluginVersion: '6.1.0',
+      tab: 'export', syncFileUrl: 'https://www.figma.com/design/K1234567890/F',
+      syncFileUrlDraft: 'https://example.com/not-figma', syncFileUrlError: 'That is not a Figma file link.',
+    });
+    expect(markup).toContain('value="https://example.com/not-figma"');
+    expect(markup).toContain('aria-invalid="true"');
+    expect(markup).toMatch(/aria-describedby="sl-sync-file-hint sl-sync-file-error"/);
+    expect(markup).toContain('id="sl-sync-file-error"');
+    expect(markup).toContain('That is not a Figma file link.');
+    expect(markup).not.toContain('role="alert"');
+    // Remove follows what is saved, not what is typed.
+    expect(markup).toContain('data-sync-file-clear');
+  });
+
+  it('cannot start a run while another operation holds the plugin', () => {
+    const markup = settingsScrollMarkup({
+      theme: { ...THEME_PRESETS[2].theme }, customMode: false, logoAttached: false, pluginVersion: '6.1.0',
+      tab: 'export', operationActive: true,
+    });
+    expect(markup).toMatch(/data-sync-all disabled>.*Annotate all components/);
+    expect(markup).toContain('You confirm each run you start.');
+    expect(markup).toContain('A copy of this file keeps this link until you save its own.');
   });
 
   it('renders custom color/font controls and attached-logo actions', () => {
@@ -408,7 +434,7 @@ describe('settings tabs', () => {
     );
     expect(patterns).toMatch(/\n\.sl-settings-panel \{[^}]*padding-top:\s*var\(--sl-space-8\)/);
     expect(patterns).toMatch(/\n\.sl-page-header \{[^}]*padding:\s*var\(--sl-space-10\) var\(--sl-space-12\) var\(--sl-space-6\)/);
-    expect(patterns).toMatch(/\n\.sl-about-section \{[^}]*padding-top:\s*var\(--sl-space-14\)|\n\.sl-logo-setting,\n\.sl-about-section \{[^}]*padding-top:\s*var\(--sl-space-14\)/);
+    expect(patterns).toMatch(/\n\.sl-about-section \{[^}]*padding-top:\s*var\(--sl-space-14\)|\n\.sl-logo-setting,\n\.sl-about-section(?:,\n\.sl-[a-z-]+)* \{[^}]*padding-top:\s*var\(--sl-space-14\)/);
   });
 });
 

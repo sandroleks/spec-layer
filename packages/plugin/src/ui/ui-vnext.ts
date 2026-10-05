@@ -206,23 +206,24 @@ let settingsLogoError = '';
 let syncOnUpdate = false;
 let syncFileUrl: string | null = null;
 let syncFileUrlError = '';
+/** What is typed in the file link field and not saved yet; null shows the saved link. */
+let syncFileUrlDraft: string | null = null;
 /** A run is planning, confirming or writing; one at a time. */
 let syncBusy = false;
-/** Components the confirmed run kept as edited, offered for replacing next. */
-let syncPendingEdited: string[] = [];
 
-/** Plan first, confirm, then write. Main plans again before it writes. */
+/** Plan first, confirm, then write. Main plans again before it writes. A run
+ *  holds the operation gate throughout, dialogs included, so no build,
+ *  Update, Detach or Delete starts while it writes. */
 function startSync(scope: SyncScope): void {
-  if (syncBusy || operation.active) return;
+  if (syncBusy || !beginOperation(operation)) return;
   syncBusy = true;
-  syncPendingEdited = [];
   paint();
   send({ type: 'requestSyncPlan', scope, replaceEdited: false });
 }
 
 function endSync(): void {
   syncBusy = false;
-  syncPendingEdited = [];
+  completeOperation();
   paint();
 }
 
@@ -236,10 +237,13 @@ function offerReplace(scope: SyncScope, dialog: ConfirmDialogOptions): void {
 function saveSyncFileUrl(value: string): void {
   const trimmed = value.trim();
   if (trimmed !== '' && !fileKeyFromUrl(trimmed)) {
+    // The typed text stays in the field, so it can be corrected.
+    syncFileUrlDraft = value;
     syncFileUrlError = 'That is not a Figma file link. Copy it from Share, then Copy link.';
     paintAndFocus('#sl-sync-file-url');
     return;
   }
+  syncFileUrlDraft = null;
   syncFileUrlError = '';
   send({ type: 'setSyncFileUrl', value: trimmed });
 }
@@ -552,6 +556,8 @@ function paintScreen(): void {
         syncOnUpdate,
         syncFileUrl,
         syncBusy,
+        operationActive: operation.active,
+        ...(syncFileUrlDraft !== null ? { syncFileUrlDraft } : {}),
         ...(syncFileUrlError ? { syncFileUrlError } : {}),
         ...(settingsColorError ? { colorError: settingsColorError } : {}),
         ...(settingsFontWarning ? { fontWarning: settingsFontWarning } : {}),
@@ -632,6 +638,7 @@ function libraryPresentation(): LibraryScreenPresentation {
     checkProgress,
     updatingAll: Boolean(update?.batch),
     updatingDocId: update?.currentDocId ?? null,
+    annotating: syncBusy,
     progress,
   };
 }
@@ -2070,7 +2077,8 @@ document.addEventListener('click', (event) => {
         startLibraryCopy(docId);
         return;
       case 'sync':
-        if (entry?.sourceNodeId) startSync({ kind: 'source', sourceNodeId: entry.sourceNodeId });
+        // This row's doc, even when its component has a newer one.
+        if (entry?.sourceNodeId) startSync({ kind: 'doc', docId });
         return;
       case 'detach':
         if (operation.active) return;
@@ -2202,7 +2210,10 @@ document.addEventListener('click', (event) => {
 
   if (target.closest('[data-sync-file-clear]')) {
     syncFileUrlError = '';
+    syncFileUrlDraft = null;
     send({ type: 'setSyncFileUrl', value: '' });
+    // The Remove button goes with the link, so focus moves to the field.
+    paintAndFocus('#sl-sync-file-url');
     return;
   }
 
@@ -2424,6 +2435,11 @@ document.addEventListener('input', (event) => {
     searchQuery = input.value;
     searchActiveIndex = 0;
     renderGlobalSearch(true);
+    return;
+  }
+  if (input.matches('[data-sync-file-url]')) {
+    // Kept, not painted: a repaint for anything else redraws the field with it.
+    syncFileUrlDraft = input.value;
     return;
   }
   if (input.matches('[data-publish-initial-version]')) {
@@ -2853,11 +2869,9 @@ const handleMainMessage = (event: MessageEvent): void => {
         offerReplace(msg.scope, next.dialog);
       } else {
         const scope = msg.scope;
-        const edited = next.edited;
         void confirmDialog(next.dialog).then((ok) => {
-          if (!ok) { endSync(); return; }
-          syncPendingEdited = edited;
-          send({ type: 'applySync', scope, replaceEdited: false });
+          if (ok) send({ type: 'applySync', scope, replaceEdited: false });
+          else endSync();
         });
       }
       return;
@@ -2866,10 +2880,11 @@ const handleMainMessage = (event: MessageEvent): void => {
     case 'syncDone': {
       const toast = resultToast(msg.result);
       nativeNotify(toast.message, toast.error ? { error: true } : {});
-      if (!msg.replaceEdited && syncPendingEdited.length > 0) {
-        const edited = syncPendingEdited;
-        syncPendingEdited = [];
-        offerReplace(msg.scope, replaceDialog(edited));
+      // Replace is offered from what this run actually kept, and never on top
+      // of a failure, which the toast is still reporting.
+      const { held, heldAi, failed } = msg.result;
+      if (!msg.replaceEdited && held.length > 0 && failed.length === 0) {
+        offerReplace(msg.scope, replaceDialog(held, heldAi));
       } else {
         endSync();
       }

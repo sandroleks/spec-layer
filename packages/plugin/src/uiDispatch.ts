@@ -10,9 +10,11 @@
  * this one Undo after a second build reverted the first build too.
  */
 
-/** Messages whose handlers create, replace, or delete canvas nodes. */
+/** Messages whose handlers create, replace, or delete canvas nodes, or change
+ *  file data a later canvas edit's Undo would otherwise revert with it. */
 export const CANVAS_EDITS: ReadonlySet<string> = new Set([
   'renderDocFrame', 'renderFoundation', 'updateFoundationDoc', 'detachDoc', 'removeDoc', 'applySync',
+  'setSyncFileUrl',
 ]);
 
 export interface DispatchDeps {

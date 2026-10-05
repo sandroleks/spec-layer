@@ -5,6 +5,7 @@ import type {
 } from '@spec-layer/extractor';
 import { effectLayerOf, easingOf, canonicalNumber } from '@spec-layer/extractor';
 import { SYNC_RECORD_KEY, parseSyncRecord, ownDescription, ownDocumentationLink } from './syncRecord';
+import { withoutProvenance } from './syncText';
 
 /** VariableBindableEffectField. Shadows bind all five, blurs only `radius`,
  *  others none; a field an effect cannot bind simply has no entry. */
@@ -388,16 +389,17 @@ export async function serializeNode(node: RawNode, resolver: NodeResolver): Prom
   const isComponent = node.type === 'COMPONENT' || node.type === 'COMPONENT_SET';
   // What Annotate in Dev Mode wrote is the doc's own text, not source: read as
   // absent, it never moves the drift baseline or feeds the prompt its own
-  // output. A value a person changed has another hash and reads as today.
+  // output. A value a person changed has another hash and reads as source,
+  // like any description, but never with the sync's provenance line in it.
   let syncRecord = null;
   if (isComponent && typeof node.getPluginData === 'function') {
     try { syncRecord = parseSyncRecord(node.getPluginData(SYNC_RECORD_KEY)); } catch { syncRecord = null; }
   }
-  const description = isComponent
-    && typeof node.description === 'string' && node.description.trim() !== ''
-    && !ownDescription(node.description, syncRecord)
-    ? node.description.trim()
-    : undefined;
+  const ownText = isComponent && typeof node.description === 'string' && ownDescription(node.description, syncRecord);
+  const sourceText = isComponent && typeof node.description === 'string' && !ownText
+    ? withoutProvenance(node.description).trim()
+    : '';
+  const description = sourceText !== '' ? sourceText : undefined;
   const liveLinks = isComponent && Array.isArray(node.documentationLinks)
     ? node.documentationLinks
         .map((l) => (typeof l?.uri === 'string' ? l.uri.trim() : ''))
