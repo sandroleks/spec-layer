@@ -433,7 +433,7 @@ export function componentHeaderMarkup(state: ComponentScreenState): string {
 }
 
 /**
- * `hasDoc` makes the button say Replace. Unknown counts as no doc: "Create
+ * `hasDoc` makes the button say Update. Unknown counts as no doc: "Create
  * docs" is never false, since Create also replaces.
  */
 export function componentFooterMarkup(state: ComponentScreenState, hasDoc = false): string {
@@ -442,8 +442,8 @@ export function componentFooterMarkup(state: ComponentScreenState, hasDoc = fals
   const progress = componentStatusMarkup(state);
   // Both busy labels take the ellipsis: the same button working, not a new action.
   const createLabel = state.kind === 'building'
-    ? (hasDoc ? 'Replacing docs…' : 'Creating docs…')
-    : (hasDoc ? 'Replace docs' : 'Create docs');
+    ? (hasDoc ? 'Updating docs…' : 'Creating docs…')
+    : (hasDoc ? 'Update docs' : 'Create docs');
   // Both footer buttons carry a glyph, and this one keeps `filePlus` through
   // every state: one button, one glyph (design-system/components.css).
   return (
