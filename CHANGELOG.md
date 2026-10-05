@@ -71,6 +71,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   non-SPDX string "MIT License", which GitHub reports as
   `LicenseRef-bad-mit-license`, so every version bump failed the gate. The
   terms are unchanged; only the metadata is exempted.
+- The component screen's main button says **Update docs** (and
+  **Updating docs…** while it runs) when the component already has a doc,
+  in place of Replace docs. It runs the same build as the Library's Update.
 - **Pro AI writing moves to Claude Sonnet 5.5.** The proxy now assigns
   `claude-sonnet-5-5` to a proved Pro license, still at
   `output_config.effort: low`, in place of `claude-sonnet-5`. The per-token

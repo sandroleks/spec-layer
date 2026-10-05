@@ -496,12 +496,12 @@ describe('component screen markup', () => {
       .toContain('id="sl-create" type="button" disabled');
   });
 
-  it('says Replace docs when the component already has a doc, and Create docs otherwise', () => {
+  it('says Update docs when the component already has a doc, and Create docs otherwise', () => {
     const building = { kind: 'building', componentName: 'Button', action: 'create', phase: 'Composing sections' } as const;
     expect(componentFooterMarkup(READY)).toContain('<span>Create docs</span>');
-    expect(componentFooterMarkup(READY, true)).toContain('<span>Replace docs</span>');
+    expect(componentFooterMarkup(READY, true)).toContain('<span>Update docs</span>');
     expect(componentFooterMarkup(building)).toContain('<span>Creating docs…</span>');
-    expect(componentFooterMarkup(building, true)).toContain('<span>Replacing docs…</span>');
+    expect(componentFooterMarkup(building, true)).toContain('<span>Updating docs…</span>');
   });
 
   it('offers Copy for AI beside Create docs whenever the screen is not busy', () => {
