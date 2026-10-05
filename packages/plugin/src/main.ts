@@ -306,7 +306,7 @@ async function postSelection(force = false): Promise<void> {
     // Only when the UI does not already hold this exact dump (FoundationPostGate).
     ...(foundation && foundationPosts.fresh(foundation) ? { foundation } : {}),
   } satisfies MainToUi);
-  // Whether Create would replace a doc ("Replace docs"). Sent separately so
+  // Whether Create would replace a doc ("Update docs"). Sent separately so
   // the panel never waits on the registry.
   void findExistingDoc(componentId, `${component.name}: Documentation`).then((doc) => {
     if (selectionTarget !== componentId) return;

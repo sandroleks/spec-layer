@@ -263,7 +263,7 @@ let libraryEntries: LibraryEntry[] = [];
 /**
  * Whether each selected component has a doc (`selectionDoc`), keyed by component
  * so an answer that lands while a build defers the selection survives. Only a
- * known doc turns Create docs into Replace docs.
+ * known doc turns Create docs into Update docs.
  */
 const componentHasDoc = new Map<string, boolean>();
 const currentHasDoc = (): boolean => {
