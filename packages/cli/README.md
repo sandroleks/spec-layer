@@ -83,7 +83,11 @@ versions recorded an absolute `--out` in `speclayer.json` as-is and wrote
 every pull to that path inside the working directory, so
 `outDir: "/abs/x"` meant `abs/x`. 0.11.0 refuses that value and names the
 relative path to change it to; `setup` with no `--out`, the command the plugin
-copies, rewrites it to that path, where the files already are.
+copies, rewrites it to that path, where the files already are. `--json` on
+`pull`, `status` and `list`, and retries in `pull` and `status`, need 0.12.0
+or later. A library with an `EASING` variable needs 0.12.0 too: earlier
+versions do not know the `easing` token type, so they refuse the Foundation
+as failing schema validation and ask for a republish that cannot help.
 
 ## Commands
 

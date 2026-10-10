@@ -205,11 +205,11 @@ repository. Both were cut by hand, before the release workflows existed;
 the next plugin and CLI releases are the first through them.
 
 Unreleased: `CHANGELOG.md` `[Unreleased]` holds #90 to #109. Its plugin
-changes wait for the next plugin cut, and its CLI changes (`--json`, retries)
-for a CLI release past 0.11.0 (`packages/cli/package.json` still reads
-0.11.0). Proxy changes deploy from `main` through `deploy-proxy.yml`; #105
-(Pro prose on Claude Sonnet 5.5) is in production, and the run for #106
-passed staging and is waiting for production approval.
+changes wait for the next plugin cut, and its CLI changes (`--json`,
+retries, the `easing` token type) for the `cli-v0.12.0` tag
+(`packages/cli/package.json` reads 0.12.0; npm `latest` is still 0.11.0).
+Proxy changes deploy from `main` through `deploy-proxy.yml`; #105 and #106
+are in production (#106 approved 2026-10-10).
 
 The schemas on `main` are now `foundation-5.2.0.json` and
 `component-5.3.0.json`, and `npm run check:site-live` fails until the private
