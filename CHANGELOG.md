@@ -6,6 +6,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+The CLI portion of this section ships as 0.12.0, a minor release because
+`pull`, `status` and `list` gain `--json`, and because `--help` and
+`--version` now print to stdout and exit 0. It is also the first CLI that can
+pull a library with an `EASING` variable: 0.11.0 does not know the `easing`
+token type, refuses the Foundation as failing schema validation, and asks for
+a republish that cannot help. A plugin build that exports `easing` tokens must
+not reach the listing before 0.12.0 is `latest` on npm. A repository on 0.11.0
+re-projects once on its first pull with 0.12.0 through the
+`manifest.cliVersion` check. 0.12.0 is the first version published by the
+release workflow, so it is the first to carry npm provenance.
+
 ### Added
 
 - **Annotate in Dev Mode.** A Library row's menu and Settings, Export can now write a
