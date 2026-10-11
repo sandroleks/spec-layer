@@ -63,16 +63,22 @@ export function provenanceLine(origin: SyncOrigin, syncedOn: string): string {
     : `Written with AI in Spec Layer · ${syncedOn}`;
 }
 
-/** A provenanceLine on the last line of a text, alone on its line. */
-const TRAILING_PROVENANCE = /(?:^|\n)[^\S\n]*Written (?:with AI )?in Spec Layer · \d{4}-\d{2}-\d{2}\s*$/;
+/** A provenanceLine alone on its line. */
+const PROVENANCE_LINE = /^[^\S\n]*Written (?:with AI )?in Spec Layer · \d{4}-\d{2}-\d{2}[^\S\n]*$/;
 
 /**
- * A description without the provenance line the sync appends. Once a person
- * edits a synced description it reads as theirs, but the line is still Spec
- * Layer's stamp, not their words, so it never becomes source.
+ * A description without the provenance line the sync appends, wherever it
+ * stands alone: a person may write under it. Once a person edits a synced
+ * description it reads as theirs, but the line is still Spec Layer's stamp,
+ * not their words, so it never becomes source.
  */
 export function withoutProvenance(text: string): string {
-  return text.replace(TRAILING_PROVENANCE, '').trimEnd();
+  return text
+    .split('\n')
+    .filter((line) => !PROVENANCE_LINE.test(line))
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trimEnd();
 }
 
 /** Up to three names, then a count, so a long file never floods a sentence. */
