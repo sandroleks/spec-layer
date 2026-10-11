@@ -37,7 +37,7 @@ function row(
     canDetach: true,
     canRemove: true,
     canCopy: false,
-    canSync: false,
+    canAnnotate: false,
     changeGroups: null,
     changeState: 'idle',
     changeUnavailableReason: null,
@@ -436,24 +436,24 @@ describe('library screen presentation', () => {
   });
 
   it('offers Annotate in Dev Mode on a row that allows it', () => {
-    const syncRow = row('buttonSync', 'inSync', { canSync: true });
+    const syncRow = row('buttonSync', 'inSync', { canAnnotate: true });
     const markup = libraryScrollMarkup(model({
       allRows: [syncRow], rows: [syncRow], counts: { all: 1, updates: 0, inSync: 1 }, menuDocId: 'buttonSync',
     }));
-    expect(markup).toContain('data-library-action="sync"');
+    expect(markup).toContain('data-library-action="annotate"');
     expect(markup).toContain('Annotate in Dev Mode');
     const without = libraryScrollMarkup(model({
       allRows: [row('b', 'inSync')], rows: [row('b', 'inSync')], counts: { all: 1, updates: 0, inSync: 1 }, menuDocId: 'b',
     }));
-    expect(without).not.toContain('data-library-action="sync"');
+    expect(without).not.toContain('data-library-action="annotate"');
   });
 
   it('disables Annotate in Dev Mode and the Library actions while a run annotates', () => {
-    const syncRow = row('buttonSync', 'inSync', { canSync: true, canUpdate: true });
+    const syncRow = row('buttonSync', 'inSync', { canAnnotate: true, canUpdate: true });
     const base = { allRows: [syncRow], rows: [syncRow], counts: { all: 1, updates: 0, inSync: 1 }, menuDocId: 'buttonSync' };
-    expect(libraryScrollMarkup(model(base))).not.toContain('data-library-action="sync" data-doc-id="buttonSync" disabled');
+    expect(libraryScrollMarkup(model(base))).not.toContain('data-library-action="annotate" data-doc-id="buttonSync" disabled');
     const annotating = model({ ...base, annotating: true });
-    expect(libraryScrollMarkup(annotating)).toContain('data-library-action="sync" data-doc-id="buttonSync" disabled');
+    expect(libraryScrollMarkup(annotating)).toContain('data-library-action="annotate" data-doc-id="buttonSync" disabled');
     expect(libraryScrollMarkup(annotating)).toContain('data-busy="true"');
     expect(libraryFooterMarkup(annotating)).toMatch(/data-library-refresh disabled/);
   });

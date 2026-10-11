@@ -377,17 +377,17 @@ figma.clientStorage.getAsync('componentFormat').then((value: unknown) => {
 // Annotate in Dev Mode: the per-user switch, and the file link every editor shares.
 const SYNC_ON_UPDATE_KEY = 'syncOnUpdate';
 const SYNC_FILE_URL_KEY = 'speclayer.sync.fileUrl';
-let syncOnUpdate = false;
-function syncFileUrl(): string | null {
+let annotateOnUpdate = false;
+function annotateFileUrl(): string | null {
   return figma.root.getPluginData(SYNC_FILE_URL_KEY) || null;
 }
-function postSyncSettings(): void {
-  figma.ui.postMessage({ type: 'syncSettings', onUpdate: syncOnUpdate, fileUrl: syncFileUrl() } satisfies MainToUi);
+function postAnnotateSettings(): void {
+  figma.ui.postMessage({ type: 'annotateSettings', onUpdate: annotateOnUpdate, fileUrl: annotateFileUrl() } satisfies MainToUi);
 }
 figma.clientStorage.getAsync(SYNC_ON_UPDATE_KEY).then((value: unknown) => {
-  syncOnUpdate = value === true;
-  postSyncSettings();
-}).catch(() => postSyncSettings());
+  annotateOnUpdate = value === true;
+  postAnnotateSettings();
+}).catch(() => postAnnotateSettings());
 
 // A 1.x install's two-color 'brandColors' is migrated once and left in
 // place, so a rollback still finds it.
@@ -453,7 +453,7 @@ function mergedProse(section: SectionNode): ProseV2 | null {
 
 /** Annotate in Dev Mode's view of the file. Every Figma read the sync makes goes
  *  through here, so syncFigma.ts stays testable with plain objects. */
-const syncHost: SyncHost = {
+const annotateHost: SyncHost = {
   async docs() {
     const docs: SyncDoc[] = [];
     for (const { docId, section } of await registrySections()) {
@@ -483,7 +483,7 @@ const syncHost: SyncHost = {
     return (node) => serializeNode(node as any, memo);
   },
   fileKey: currentFileKey,
-  fileUrl: syncFileUrl,
+  fileUrl: annotateFileUrl,
   normalizeMarkdown: (md) => figma.util.normalizeMarkdown(md),
   async categoryId(create) {
     const label = 'Spec Layer';
@@ -498,11 +498,11 @@ const syncHost: SyncHost = {
 /** After a doc build, refresh what a manual run already annotated. Never
  *  opens a dialog: a held component is named once, in a toast, and left for a
  *  manual run. */
-async function autoSync(sourceNodeId: string): Promise<void> {
-  if (!syncOnUpdate) return;
+async function autoAnnotate(sourceNodeId: string): Promise<void> {
+  if (!annotateOnUpdate) return;
   let result: SyncResult;
   try {
-    result = await runSync(syncHost, { kind: 'source', sourceNodeId }, { auto: true, replaceEdited: false });
+    result = await runSync(annotateHost, { kind: 'source', sourceNodeId }, { auto: true, replaceEdited: false });
   } catch (err) {
     figma.notify(`Couldn’t annotate in Dev Mode: ${err instanceof Error ? err.message : String(err)}`, { error: true });
     return;
@@ -866,7 +866,7 @@ const handleUiMessage = async (raw: unknown): Promise<void> => {
         // A documentation link Annotate in Dev Mode set points at the replaced
         // Section by id; move it to this one. Best effort, like the tail below.
         if (existingId && existingId !== section.id) {
-          try { await relinkDoc(syncHost, msg.nodeId, existingId, section.id); } catch { /* the next run plans it */ }
+          try { await relinkDoc(annotateHost, msg.nodeId, existingId, section.id); } catch { /* the next run plans it */ }
         }
 
         // Cosmetic tail: a focus/zoom hiccup must never fail a placed doc.
@@ -893,9 +893,9 @@ const handleUiMessage = async (raw: unknown): Promise<void> => {
 
         // Before docFrameDone, while the gate is still held: the UI sends an
         // Update all run's next doc on docFrameDone, which must not meet a
-        // gate this build still holds. autoSync reports its own failures, and
+        // gate this build still holds. autoAnnotate reports its own failures, and
         // none may fail a placed doc.
-        await autoSync(msg.nodeId).catch(() => {/* reported inside */});
+        await autoAnnotate(msg.nodeId).catch(() => {/* reported inside */});
 
         // `replaced` lets the UI say "Updated" rather than "Created".
         figma.ui.postMessage({
@@ -1391,7 +1391,7 @@ const handleUiMessage = async (raw: unknown): Promise<void> => {
       // open nothing. The description and annotations stay: they still say
       // something true about the component.
       if (sourceNodeId) {
-        try { await unlinkDoc(syncHost, sourceNodeId, msg.docId); } catch { /* best effort */ }
+        try { await unlinkDoc(annotateHost, sourceNodeId, msg.docId); } catch { /* best effort */ }
       }
       const groupDescriptions = await liveFoundationGroupDescriptions();
       figma.ui.postMessage({ type: 'docRemoved', docId: msg.docId, groupDescriptions } as MainToUi);
@@ -1638,26 +1638,26 @@ const handleUiMessage = async (raw: unknown): Promise<void> => {
       break;
     }
 
-    case 'requestSyncPlan': {
+    case 'requestAnnotatePlan': {
       try {
-        const plan = await planSyncRun(syncHost, msg.scope, { replaceEdited: msg.replaceEdited, auto: false });
-        figma.ui.postMessage({ type: 'syncPlan', scope: msg.scope, replaceEdited: msg.replaceEdited, plan } satisfies MainToUi);
+        const plan = await planSyncRun(annotateHost, msg.scope, { replaceEdited: msg.replaceEdited, auto: false });
+        figma.ui.postMessage({ type: 'annotatePlan', scope: msg.scope, replaceEdited: msg.replaceEdited, plan } satisfies MainToUi);
       } catch (err) {
-        figma.ui.postMessage({ type: 'syncError', message: err instanceof Error ? err.message : String(err) } satisfies MainToUi);
+        figma.ui.postMessage({ type: 'annotateError', message: err instanceof Error ? err.message : String(err) } satisfies MainToUi);
       }
       break;
     }
 
-    case 'applySync': {
+    case 'applyAnnotate': {
       if (!canvasBuild.begin()) {
-        figma.ui.postMessage({ type: 'syncError', message: 'Another build is still running. Try again when it finishes.' } satisfies MainToUi);
+        figma.ui.postMessage({ type: 'annotateError', message: 'Another build is still running. Try again when it finishes.' } satisfies MainToUi);
         break;
       }
       try {
-        const result = await runSync(syncHost, msg.scope, { replaceEdited: msg.replaceEdited, auto: false });
-        figma.ui.postMessage({ type: 'syncDone', scope: msg.scope, replaceEdited: msg.replaceEdited, result } satisfies MainToUi);
+        const result = await runSync(annotateHost, msg.scope, { replaceEdited: msg.replaceEdited, auto: false });
+        figma.ui.postMessage({ type: 'annotateDone', scope: msg.scope, replaceEdited: msg.replaceEdited, result } satisfies MainToUi);
       } catch (err) {
-        figma.ui.postMessage({ type: 'syncError', message: err instanceof Error ? err.message : String(err) } satisfies MainToUi);
+        figma.ui.postMessage({ type: 'annotateError', message: err instanceof Error ? err.message : String(err) } satisfies MainToUi);
       } finally {
         // The sync changes no selection, so a click noted meanwhile is the
         // person's own and is replayed once the gate opens.
@@ -1668,18 +1668,18 @@ const handleUiMessage = async (raw: unknown): Promise<void> => {
       break;
     }
 
-    case 'setSyncOnUpdate': {
-      syncOnUpdate = msg.value === true;
-      if (!await writeSetting(figma.clientStorage, SYNC_ON_UPDATE_KEY, syncOnUpdate)) notifySettingNotSaved();
-      postSyncSettings();
+    case 'setAnnotateOnUpdate': {
+      annotateOnUpdate = msg.value === true;
+      if (!await writeSetting(figma.clientStorage, SYNC_ON_UPDATE_KEY, annotateOnUpdate)) notifySettingNotSaved();
+      postAnnotateSettings();
       break;
     }
 
-    case 'setSyncFileUrl': {
+    case 'setAnnotateFileUrl': {
       const value = typeof msg.value === 'string' ? msg.value.trim() : '';
       // The UI validates first; this guard keeps a bad value out of the file.
       if (value === '' || fileKeyFromUrl(value)) figma.root.setPluginData(SYNC_FILE_URL_KEY, value);
-      postSyncSettings();
+      postAnnotateSettings();
       break;
     }
 

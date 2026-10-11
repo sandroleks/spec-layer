@@ -52,8 +52,8 @@ describe('settings screen presentation', () => {
   it('shows a saved link, a refused link and a running sync', () => {
     const markup = settingsScrollMarkup({
       theme: { ...THEME_PRESETS[2].theme }, customMode: false, logoAttached: false, pluginVersion: '6.1.0',
-      tab: 'export', syncOnUpdate: true, syncFileUrl: 'https://www.figma.com/design/K1234567890/F',
-      syncBusy: true,
+      tab: 'export', annotateOnUpdate: true, annotateFileUrl: 'https://www.figma.com/design/K1234567890/F',
+      annotateBusy: true,
     });
     expect(markup).toContain(' checked />');
     expect(markup).toContain('value="https://www.figma.com/design/K1234567890/F"');
@@ -65,8 +65,8 @@ describe('settings screen presentation', () => {
   it('keeps refused text in the field and ties the reason to it', () => {
     const markup = settingsScrollMarkup({
       theme: { ...THEME_PRESETS[2].theme }, customMode: false, logoAttached: false, pluginVersion: '6.1.0',
-      tab: 'export', syncFileUrl: 'https://www.figma.com/design/K1234567890/F',
-      syncFileUrlDraft: 'https://example.com/not-figma', syncFileUrlError: 'That is not a Figma file link.',
+      tab: 'export', annotateFileUrl: 'https://www.figma.com/design/K1234567890/F',
+      annotateFileUrlDraft: 'https://example.com/not-figma', annotateFileUrlError: 'That is not a Figma file link.',
     });
     expect(markup).toContain('value="https://example.com/not-figma"');
     expect(markup).toContain('aria-invalid="true"');

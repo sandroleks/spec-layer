@@ -192,7 +192,7 @@ interface MenuItem {
     | 'open-frame'
     | 'open-source'
     | 'copy'
-    | 'sync'
+    | 'annotate'
     | 'detach'
     | 'remove';
   glyph:
@@ -248,9 +248,9 @@ function menuGroups(row: LibraryRowPresentation): MenuItem[][] {
       glyph: 'copy',
     });
   }
-  if (row.canSync) {
+  if (row.canAnnotate) {
     navigation.push({
-      action: 'sync',
+      action: 'annotate',
       label: 'Annotate in Dev Mode',
       glyph: 'upload',
     });
@@ -295,7 +295,7 @@ function menuMarkup(
     group.map((item) => (
       `<button${item.danger ? ' class="is-danger"' : ''} role="menuitem" type="button" ` +
       `data-library-action="${item.action}" data-doc-id="${esc(row.docId)}"` +
-      `${busy && (item.action === 'update' || item.action === 'sync') ? ' disabled' : ''}>` +
+      `${busy && (item.action === 'update' || item.action === 'annotate') ? ' disabled' : ''}>` +
       `${icon(item.glyph, 15)}<span>${item.label}</span></button>`
     )).join(''),
   ).join('<span class="sl-library-menu-separator" aria-hidden="true"></span>');

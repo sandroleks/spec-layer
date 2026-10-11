@@ -244,7 +244,7 @@ describe('runSync', () => {
     f.component.children = [f.label];
     await f.stamp();
     const r = await runSync(f.host, ALL, MANUAL);
-    expect(r.annotations).toBe(2);
+    expect(r).toMatchObject({ annotations: 1, removed: 1 });
     expect(f.icon.annotations).toEqual([]);
     expect(texts(f.label)).toEqual(['1 Label']);
     expect(f.record()?.annotations.map((a) => a.nodeId).sort()).toEqual(['1:1', '1:2']);
