@@ -9,6 +9,7 @@ import type { LayoutSummary } from './layout';
 import type { VariantAxis } from './props';
 import { isModifierAxis, ruleMatchesConfig } from './pivot';
 import { isStateLike, isStateVocabName } from './statesMatrix';
+import { cleanPropName } from './naming';
 
 export type FindingId =
   | 'default-state-uses-state-token'
@@ -16,7 +17,10 @@ export type FindingId =
   | 'duplicate-conflicting-binding'
   | 'ambiguous-state-axis'
   | 'unbound-value'
-  | 'transition-target-outside-set';
+  | 'transition-target-outside-set'
+  | 'unresolved-slot-content'
+  | 'unlinked-slot'
+  | 'unsupported-property-type';
 
 export interface Finding {
   id: FindingId;
@@ -210,6 +214,32 @@ export function validate(
       path: issue.path, property: 'reactions',
       message: 'A prototype interaction on this layer changes to a node outside this component set, so it is not listed as a variant transition.',
     });
+  }
+
+  // 7. What Figma states about a property that this extraction cannot carry.
+  for (const issue of spec.propertyIssues ?? []) {
+    switch (issue.kind) {
+      case 'unresolved-slot-content':
+        findings.push({
+          id: 'unresolved-slot-content', severity: 'warning', property: issue.property,
+          message: `A preferred component for the ${issue.property} slot (key ${issue.key}) is not in this file and no instance in the component shows it, so it is listed without a name.`,
+        });
+        break;
+      case 'unlinked-slot':
+        findings.push({
+          id: 'unlinked-slot', severity: 'warning', path: issue.part,
+          message: issue.slotProperty === null
+            ? 'This slot is not linked to a slot property, so it is documented without one.'
+            : `This slot is linked to a property named ${cleanPropName(issue.slotProperty)}, which the component does not define, so it is documented without one.`,
+        });
+        break;
+      case 'unsupported-property-type':
+        findings.push({
+          id: 'unsupported-property-type', severity: 'warning', property: issue.property,
+          message: `${issue.property} is a ${issue.figmaType} property, a type this version of Spec Layer does not read, so it is left out of the properties.`,
+        });
+        break;
+    }
   }
 
   return findings;

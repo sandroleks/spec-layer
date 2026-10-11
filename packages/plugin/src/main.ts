@@ -109,7 +109,33 @@ const resolver: NodeResolver = {
       return null;
     }
   },
+  async localComponents(keys) {
+    const wanted = new Set(keys);
+    const names = new Map<string, string>();
+    // The current page first, already loaded; another page only while a key
+    // is still unnamed, since loading one is the slow part.
+    const pages = [figma.currentPage, ...figma.root.children.filter((p) => p !== figma.currentPage)];
+    for (const page of pages) {
+      if (names.size === wanted.size) break;
+      try {
+        // documentAccess is dynamic-page: a page's nodes exist only once loaded.
+        await page.loadAsync();
+        for (const node of page.findAllWithCriteria({ types: ['COMPONENT', 'COMPONENT_SET'] })) {
+          if (wanted.has(node.key)) names.set(node.key, componentName(node));
+        }
+      } catch {
+        // A page that will not load names nothing; its keys stay unnamed.
+      }
+    }
+    return names;
+  },
 };
+
+/** A variant answers with its set's name, as an instance's main component does. */
+function componentName(node: ComponentNode | ComponentSetNode): string {
+  const parent = node.parent;
+  return node.type === 'COMPONENT' && parent?.type === 'COMPONENT_SET' ? parent.name : node.name;
+}
 
 // ---------------------------------------------------------------------------
 // Foundation dump, cached for the session to feed token values into the

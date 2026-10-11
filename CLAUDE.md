@@ -137,9 +137,10 @@ shared core, and the piece a future `spec-layer diff` reuses.
 
 **`EXTRACTOR_VERSION` is a rebuild request.** Bump it only when extraction
 output can change for unchanged source. A spurious bump asks every user to
-regenerate every document. It is `'3'` on `main` since #66 (97bfed1,
-2026-09-18) and first ships in 6.0.0; `v5.1.0` shipped `'2'`, so 6.0.0 asks
-existing documents to rebuild. Any further extraction change needs `'4'`.
+regenerate every document. 6.0.0 shipped `'3'` (#66, 97bfed1). `main` reads
+`'4'` since the Figma slots change, so the next plugin release asks existing
+documents to rebuild; another extraction change before that release needs no
+further bump, and one after it needs `'5'`.
 
 **Do not use `localeCompare` under `src/v5`.** Use `compareCodeUnits` from
 `v5/diagnostics.ts`. Locale ordering makes hashes machine-dependent.

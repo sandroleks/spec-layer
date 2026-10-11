@@ -3,7 +3,7 @@ import Ajv2020 from 'ajv/dist/2020';
 import addFormats from 'ajv-formats';
 import { describe, expect, it } from 'vitest';
 import { COMPONENT_SCHEMA_URI } from '../../src/v5/componentContext';
-import { buildComponentV5GoldenArtifact } from '../fixtures/componentV5';
+import { buildComponentV5GoldenArtifact, buildComponentV5SlotsArtifact } from '../fixtures/componentV5';
 
 const componentSchemaText = readFileSync(
   'packages/extractor/src/v5/schema/component-5.3.0.json', 'utf8',
@@ -56,5 +56,23 @@ describe('Component Context v5 schema', () => {
     expect(validate(artifact), ajv.errorsText(validate.errors)).toBe(true);
     (artifact.motion as { transitions: Array<{ trigger: { type: string } }> }).transitions[0].trigger.type = 'on_sneeze';
     expect(validate(artifact)).toBe(false);
+  });
+
+  it('accepts slot properties and slot parts, and rejects a malformed slot', () => {
+    const slotted = buildComponentV5SlotsArtifact();
+    expect(validate(slotted), ajv.errorsText(validate.errors)).toBe(true);
+
+    type Slots = { api: { slots: Record<string, Record<string, unknown>> }; anatomy: Array<Record<string, unknown>> };
+    const negative = structuredClone(slotted) as unknown as Slots;
+    negative.api.slots.Content.min_children = -1;
+    expect(validate(negative)).toBe(false);
+
+    const keyless = structuredClone(slotted) as unknown as Slots;
+    keyless.api.slots.Content.preferred = [{ component: 'List' }];
+    expect(validate(keyless)).toBe(false);
+
+    const extra = structuredClone(slotted) as unknown as Slots;
+    extra.anatomy[2].default_content = [{ part: 'Badge', type: 'INSTANCE', guessed: true }];
+    expect(validate(extra)).toBe(false);
   });
 });

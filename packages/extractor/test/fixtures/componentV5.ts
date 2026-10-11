@@ -18,6 +18,7 @@ import type {
 } from '../../src/index';
 import type { ComponentArtifactV5 } from '../../src/index';
 import button from './button.json';
+import card from './card-slots.json';
 
 export const COMPONENT_V5_GOLDEN_PATH = fileURLToPath(
   new URL('./v5/button-component-ai-v5.yaml', import.meta.url),
@@ -354,9 +355,33 @@ export function writeComponentV5MarkdownProseGolden(): void {
   writeFileSync(COMPONENT_V5_MARKDOWN_PROSE_GOLDEN_PATH, renderComponentV5MarkdownProseGolden());
 }
 
+/** A Card with Figma slots, to pin `api.slots` and slot anatomy. Built
+ *  without a Foundation, so its two tokens read as no_foundation warnings. */
+export const COMPONENT_V5_SLOTS_GOLDEN_PATH = fileURLToPath(
+  new URL('./v5/card-slots-component-ai-v5.yaml', import.meta.url),
+);
+
+export function buildComponentV5SlotsArtifact(): ComponentArtifactV5 {
+  const spec = extract(card as SerializedNode, {
+    figmaFile: 'FILE1', figmaFileName: 'Design System',
+  });
+  return buildComponentArtifactV5(spec, {
+    exportId: 'component:slots', generatedAt: GENERATED_AT, build: 'test',
+  });
+}
+
+export function renderComponentV5SlotsGolden(): string {
+  return toYaml(componentAiContext(buildComponentV5SlotsArtifact()) as unknown as YamlValue);
+}
+
+export function writeComponentV5SlotsGolden(): void {
+  writeFileSync(COMPONENT_V5_SLOTS_GOLDEN_PATH, renderComponentV5SlotsGolden());
+}
+
 if (process.argv[1] !== undefined
   && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   writeComponentV5Golden();
+  writeComponentV5SlotsGolden();
   writeComponentV5MarkdownGolden();
   writeComponentV5MarkdownProseGolden();
 }

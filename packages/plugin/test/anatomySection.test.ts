@@ -83,6 +83,20 @@ describe('buildAnatomyLegend', () => {
     ]);
   });
 
+  it('marks a slot, naming its property only when the names differ, beside an AI role too', () => {
+    const legend = buildAnatomyLegend([
+      { label: '1', name: 'Content', nested: false, id: '1:2', depth: 0, tokens: [], type: 'SLOT', slot: 'Content' },
+      { label: '2', name: 'Body area', nested: false, id: '1:3', depth: 0, tokens: [], type: 'SLOT', slot: 'Body', role: 'Holds the body.' },
+      { label: '3', name: 'Footer', nested: false, id: '1:4', depth: 0, tokens: [], type: 'SLOT', shownBy: 'Show footer' },
+    ]) as unknown as FakeFrame;
+    const rows = legend.children.filter((c) => c instanceof FakeFrame && c.getPluginData(SLOT_KEY) === 'anatomyPart') as FakeFrame[];
+    expect(rows.map((r) => (r.children[1] as FakeText).characters)).toEqual([
+      'Content  ·  Slot',
+      'Body area: Holds the body.  ·  Slot: Body',
+      'Footer  ·  Slot  ·  Shown when Show footer is true',
+    ]);
+  });
+
   it('renders the scale note text', async () => {
     const note = scaleNote(0.6) as unknown as FakeText;
     expect(note.characters).toBe('Shown at 60% of actual size');

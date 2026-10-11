@@ -1,4 +1,4 @@
-import { categorize } from '@spec-layer/extractor';
+import { categorize, slotDefaultText, slotValuesText } from '@spec-layer/extractor';
 import type { IntermediateSpec, ProseV2Key, ProseV2, GuidelinePair, VariantInstance, StateColumn } from '@spec-layer/extractor';
 import {
   cleanPartName, formatConditions, resolveTokensForVariant,
@@ -122,6 +122,8 @@ export interface AnatomyPartBlock {
   role?: string | undefined;
   /** Only on a part hidden by default: the boolean property that shows it. */
   shownBy?: string | undefined;
+  /** Only on a slot linked to its property: the SLOT property's name. */
+  slot?: string | undefined;
 }
 
 /** Each selected view becomes its own measure mini-diagram. */
@@ -138,7 +140,12 @@ export interface DocModelOptions {
 /** A section the result line reports: `nothingToShow` was left out, and
  *  `placeholder` is a writing section drawn without prose. */
 export interface OmittedSection { id: SectionId; label: string; reason: 'nothingToShow' | 'placeholder' }
-export interface PropertyRow { name: string; type: string; values: string; defaultValue: string; description: string | null }
+export interface PropertyRow {
+  name: string; type: string; values: string; defaultValue: string; description: string | null;
+  /** The description is the designer's own, from Figma: source, never prose,
+   *  so it is not tagged for read-back. */
+  descriptionFromFigma?: true;
+}
 export interface KeyboardRow { keys: string[]; action: string }
 export interface ColumnBlock { heading: string; items: Bullet[]; slot: 'whenToUse' | 'whenNotToUse' }
 
@@ -404,13 +411,24 @@ function buildSection(
         const key = p.name.trim().toLowerCase();
         if (!descByName.has(key)) descByName.set(key, p.description);
       }
-      const rows: PropertyRow[] = spec.props.map((pr) => ({
-        name: pr.name,
-        type: TYPE_WORDS[pr.kind] ?? pr.kind,
-        values: pr.kind === 'boolean' ? 'true · false' : pr.options?.length ? pr.options.join(' · ') : '',
-        defaultValue: pr.default === undefined ? '' : String(pr.default),
-        description: descByName.get(pr.name.trim().toLowerCase()) ?? null,
-      }));
+      const rows: PropertyRow[] = spec.props.map((pr) => {
+        const aiDescription = descByName.get(pr.name.trim().toLowerCase()) ?? null;
+        if (pr.kind === 'slot') {
+          // A designer's slot description is source, so it comes before AI prose.
+          const figma = pr.slot?.description;
+          return {
+            name: pr.name, type: TYPE_WORDS.slot, values: slotValuesText(pr), defaultValue: slotDefaultText(pr),
+            description: figma ?? aiDescription, ...(figma !== undefined ? { descriptionFromFigma: true as const } : {}),
+          };
+        }
+        return {
+          name: pr.name,
+          type: TYPE_WORDS[pr.kind] ?? pr.kind,
+          values: pr.kind === 'boolean' ? 'true · false' : pr.options?.length ? pr.options.join(' · ') : '',
+          defaultValue: pr.default === undefined ? '' : String(pr.default),
+          description: aiDescription,
+        };
+      });
       return { id, heading: label, kind: 'propertiesTable', rows, hasDescriptions: rows.some((r) => r.description !== null) };
     }
 
@@ -429,7 +447,7 @@ function buildSection(
         label: labels[i], name: a.name, nested: a.nested, id: a.id, depth: a.depth, component: a.component,
         // Same filter as Tokens: an undrawn part lends no token names.
         tokens: [...new Set(tokensFor(spec.tokens, { includeHidden }).filter((t) => t.part === a.name).map((t) => t.name))],
-        type: a.type, shownBy: a.shownBy,
+        type: a.type, shownBy: a.shownBy, slot: a.slot,
         role: roleByName.get(a.name.trim().toLowerCase()),
       }));
       return {

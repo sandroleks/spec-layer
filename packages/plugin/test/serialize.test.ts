@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { serializeNode, mainComponentRef } from '../src/serialize';
 
 const resolver = {
@@ -8,6 +8,7 @@ const resolver = {
       : null),
   style: async (_id: string) => null,
   mainComponent: async (_node: unknown) => null,
+  localComponents: async () => new Map<string, string>(),
 };
 
 const mockRect = {
@@ -165,8 +166,89 @@ describe('serializeNode', () => {
   });
 });
 
+describe('slots', () => {
+  // The shapes Figma returned in the 2026-10-04 probe: no `defaultValue` on a
+  // SLOT definition, `null` description, and once any setting is saved, every
+  // setting with `null` or `false` for the unset ones.
+  const slotted = {
+    id: '2:4', name: 'Card', type: 'COMPONENT', visible: true,
+    componentPropertyDefinitions: {
+      'Content#2:0': {
+        type: 'SLOT', description: '  Body of the card.  ',
+        preferredValues: [
+          { type: 'COMPONENT', key: 'local-list' },
+          { type: 'COMPONENT_SET', key: 'library-badge' },
+          { type: 'COMPONENT', key: 'nowhere' },
+          { type: 'SOMETHING_NEW', key: 'ignored' },
+        ],
+        slotSettings: { minChildren: 1, maxChildren: null, allowPreferredValuesOnly: true, displayEmptyByDefault: false, stretchChildOnInsert: false },
+      },
+      'Actions#2:1': { type: 'SLOT', description: null, preferredValues: [] },
+    },
+    children: [
+      {
+        id: '2:5', name: 'Content', type: 'SLOT', visible: true, componentPropertyReferences: { slotContentId: 'Content#2:0' },
+        children: [{ id: '2:6', name: 'Badge', type: 'INSTANCE', visible: true }],
+      },
+    ],
+  };
+  const lookups = () => ({
+    ...resolver,
+    // The default content is an instance of the library Badge.
+    mainComponent: async (node: unknown) => ((node as { id: string }).id === '2:6' ? { name: 'Badge', key: 'library-badge' } : null),
+    localComponents: vi.fn(async (keys: readonly string[]) => new Map(keys.includes('local-list') ? [['local-list', 'List']] : [])),
+  });
+
+  it('reads a SLOT definition: description, preferred content named from the document, and set limits', async () => {
+    const r = lookups();
+    const out = await serializeNode(slotted as never, r);
+    expect(out.propertyDefinitions?.['Content#2:0']).toEqual({
+      type: 'SLOT',
+      slot: {
+        description: 'Body of the card.',
+        preferred: [
+          { kind: 'component', key: 'local-list', name: 'List' },
+          { kind: 'componentSet', key: 'library-badge', name: 'Badge' },
+          { kind: 'component', key: 'nowhere', name: null },
+        ],
+        minChildren: 1,
+        preferredOnly: true,
+      },
+    });
+    // Named by the instance inside the component first; only the rest are
+    // looked up in the file, and never over the network.
+    expect(r.localComponents).toHaveBeenCalledTimes(1);
+    expect(r.localComponents).toHaveBeenCalledWith(['local-list', 'nowhere']);
+  });
+
+  it('keeps an unset slot definition empty, and asks for no component index without preferred content', async () => {
+    const r = lookups();
+    const out = await serializeNode({ ...slotted, componentPropertyDefinitions: { 'Actions#2:1': slotted.componentPropertyDefinitions['Actions#2:1'] } } as never, r);
+    expect(out.propertyDefinitions?.['Actions#2:1']).toEqual({ type: 'SLOT', slot: { preferred: [] } });
+    expect(r.localComponents).not.toHaveBeenCalled();
+  });
+
+  it('records which SLOT property a slot node is for', async () => {
+    const out = await serializeNode(slotted as never, lookups());
+    expect(out.children?.[0].slotProperty).toBe('Content#2:0');
+    expect('slotProperty' in out).toBe(false);
+  });
+
+  it('keeps only whole, non-negative limits', async () => {
+    const odd = { ...slotted, componentPropertyDefinitions: { 'Content#2:0': { type: 'SLOT', slotSettings: { minChildren: -1, maxChildren: 1.5 } } } };
+    const out = await serializeNode(odd as never, lookups());
+    expect(out.propertyDefinitions?.['Content#2:0']).toEqual({ type: 'SLOT', slot: { preferred: [] } });
+  });
+
+  it('still reads a component whose definitions throw, as a variant does', async () => {
+    const variant = { ...mockRect, id: '3:7', type: 'COMPONENT', get componentPropertyDefinitions() { throw new Error('in get_componentPropertyDefinitions'); } };
+    const out = await serializeNode(variant as never, lookups());
+    expect('propertyDefinitions' in out).toBe(false);
+  });
+});
+
 describe('unbound paint detection', () => {
-  const resolver = { variable: async () => null, style: async () => null, mainComponent: async () => null };
+  const resolver = { variable: async () => null, style: async () => null, mainComponent: async () => null, localComponents: async () => new Map<string, string>() };
 
   it('flags a hardcoded stroke and records its hex', async () => {
     const n = await serializeNode({
@@ -301,7 +383,7 @@ describe('mainComponentRef', () => {
 });
 
 describe('text metrics and fill alpha', () => {
-  const resolver = { variable: async () => null, style: async () => null, mainComponent: async () => null };
+  const resolver = { variable: async () => null, style: async () => null, mainComponent: async () => null, localComponents: async () => new Map<string, string>() };
 
   it('records font size and weight for a TEXT node', async () => {
     const n = await serializeNode({
@@ -359,7 +441,7 @@ describe('text metrics and fill alpha', () => {
 // unavailable", neither of which names a cause. Observed on a 44-variant set
 // that had documented cleanly days earlier.
 describe('mixed values from non-uniform text ranges', () => {
-  const resolver = { variable: async () => null, style: async () => null, mainComponent: async () => null };
+  const resolver = { variable: async () => null, style: async () => null, mainComponent: async () => null, localComponents: async () => new Map<string, string>() };
   const mixed = Symbol('figma.mixed');
 
   it('survives a TEXT node with mixed fills', async () => {
@@ -442,6 +524,7 @@ describe('NodeResolver identity', () => {
       }),
       style: async () => null,
       mainComponent: async () => null,
+      localComponents: async () => new Map<string, string>(),
     };
     const out = await serializeNode(
       { id: '1', name: 'N', type: 'FRAME', boundVariables: { fills: { id: 'VariableID:7' } } } as never,
@@ -464,6 +547,7 @@ describe('NodeResolver identity', () => {
         return { id, name: 'Focused/Primary', remote: false, kind: 'effect-style' as const };
       },
       mainComponent: async () => null,
+      localComponents: async () => new Map<string, string>(),
     };
     const out = await serializeNode(
       { id: '1', name: 'N', type: 'FRAME', effectStyleId: 'S:effect,1:1' } as never, r,
@@ -476,7 +560,7 @@ describe('NodeResolver identity', () => {
   });
 
   it('drops a binding whose resolver returns null, exactly as before', async () => {
-    const r = { variable: async () => null, style: async () => null, mainComponent: async () => null };
+    const r = { variable: async () => null, style: async () => null, mainComponent: async () => null, localComponents: async () => new Map<string, string>() };
     const out = await serializeNode(
       { id: '1', name: 'N', type: 'FRAME', fillStyleId: 'S:paint,1:1' } as never, r,
     );
@@ -491,6 +575,7 @@ describe('NodeResolver identity', () => {
       variable: async () => null,
       style: async (id: string) => ({ id, name: '8pt Grid', remote: false, kind: 'grid-style' as const }),
       mainComponent: async () => null,
+      localComponents: async () => new Map<string, string>(),
     };
     const out = await serializeNode(
       { id: '1', name: 'N', type: 'FRAME', fillStyleId: 'S:grid,1:1' } as never, r,
@@ -503,6 +588,7 @@ describe('NodeResolver identity', () => {
       variable: async (id: string) => ({ id, name: 'color/brand', remote: false, collectionId: '' }),
       style: async () => null,
       mainComponent: async () => null,
+      localComponents: async () => new Map<string, string>(),
     };
     const out = await serializeNode(
       { id: '1', name: 'N', type: 'FRAME', boundVariables: { fills: { id: 'VariableID:7' } } } as never, r,
@@ -518,7 +604,7 @@ describe('inline node effects', () => {
   });
 
   it('emits the layers when the node has effects and no effect style', async () => {
-    const r = { variable: async () => null, style: async () => null, mainComponent: async () => null };
+    const r = { variable: async () => null, style: async () => null, mainComponent: async () => null, localComponents: async () => new Map<string, string>() };
     const out = await serializeNode(
       { id: '1', name: 'N', type: 'FRAME', effects: [shadow()] } as never, r,
     );
@@ -535,6 +621,7 @@ describe('inline node effects', () => {
       }),
       style: async () => null,
       mainComponent: async () => null,
+      localComponents: async () => new Map<string, string>(),
     };
     const out = await serializeNode({
       id: '1', name: 'N', type: 'FRAME',
@@ -557,6 +644,7 @@ describe('inline node effects', () => {
       variable: async () => null,
       style: async (id: string) => ({ id, name: 'Focused/Primary', remote: false, kind: 'effect-style' as const }),
       mainComponent: async () => null,
+      localComponents: async () => new Map<string, string>(),
     };
     const out = await serializeNode({
       id: '1', name: 'N', type: 'FRAME', effects: [shadow()], effectStyleId: 'S:effect,1:1',
@@ -568,7 +656,7 @@ describe('inline node effects', () => {
   });
 
   it('degrades a malformed effect to unknown instead of losing the whole node', async () => {
-    const r = { variable: async () => null, style: async () => null, mainComponent: async () => null };
+    const r = { variable: async () => null, style: async () => null, mainComponent: async () => null, localComponents: async () => new Map<string, string>() };
     // Missing color/offset/radius: effectLayerOf's shadow branch throws
     // reading it. serializeNode recurses through Promise.all, so an
     // unguarded throw here would reject the whole tree and return an empty

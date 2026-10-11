@@ -1,0 +1,188 @@
+{
+  "id": "40:1",
+  "name": "Card",
+  "type": "COMPONENT_SET",
+  "visible": true,
+  "key": "synthetic-card-slots",
+  "description": "Groups content about one subject.",
+  "propertyDefinitions": {
+    "Size": { "type": "VARIANT", "defaultValue": "Small", "variantOptions": ["Small", "Large"] },
+    "Title#40:10": { "type": "TEXT", "defaultValue": "Card title" },
+    "Show footer#40:11": { "type": "BOOLEAN", "defaultValue": false },
+    "Content#40:12": {
+      "type": "SLOT",
+      "slot": {
+        "description": "Body of the card. One list or one text block.",
+        "preferred": [
+          { "kind": "component", "key": "synthetic-list", "name": "List" },
+          { "kind": "componentSet", "key": "synthetic-missing", "name": null }
+        ],
+        "minChildren": 1,
+        "maxChildren": 1,
+        "preferredOnly": true
+      }
+    },
+    "Actions#40:13": {
+      "type": "SLOT",
+      "slot": { "preferred": [], "emptyByDefault": true }
+    }
+  },
+  "children": [
+    {
+      "id": "40:2",
+      "name": "Size=Small",
+      "type": "COMPONENT",
+      "visible": true,
+      "layout": { "mode": "VERTICAL", "paddingTop": 16, "paddingBottom": 16, "itemSpacing": 12 },
+      "children": [
+        { "id": "40:3", "name": "Title", "type": "TEXT", "visible": true, "text": { "fontSize": 16, "fontWeight": 600 } },
+        {
+          "id": "40:4",
+          "name": "Body",
+          "type": "FRAME",
+          "visible": true,
+          "children": [
+            {
+              "id": "40:5",
+              "name": "Content",
+              "type": "SLOT",
+              "visible": true,
+              "slotProperty": "Content#40:12",
+              "layout": { "mode": "VERTICAL", "itemSpacing": 8 },
+              "bindings": [
+                { "property": "itemSpacing", "id": "VariableID:card-gap", "name": "space/gap", "kind": "variable", "remote": false, "collectionId": "VariableCollectionId:card" }
+              ],
+              "children": [
+                {
+                  "id": "40:6",
+                  "name": "List",
+                  "type": "INSTANCE",
+                  "visible": true,
+                  "mainComponent": { "name": "List", "key": "synthetic-list" },
+                  "bindings": [
+                    { "property": "fills", "id": "VariableID:card-surface", "name": "color/surface", "kind": "variable", "remote": false, "collectionId": "VariableCollectionId:card" }
+                  ],
+                  "hasUnboundStroke": true,
+                  "unboundStroke": "#cccccc"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "40:7",
+          "name": "Actions",
+          "type": "SLOT",
+          "visible": true,
+          "slotProperty": "Actions#40:13",
+          "children": [
+            { "id": "40:8", "name": "Badge", "type": "INSTANCE", "visible": true, "mainComponent": { "name": "Badge", "key": "synthetic-badge" } }
+          ]
+        },
+        {
+          "id": "40:9",
+          "name": "Footer",
+          "type": "SLOT",
+          "visible": false,
+          "visibleProperty": "Show footer#40:11",
+          "slotProperty": "Footer#40:99",
+          "children": []
+        },
+        {
+          "id": "40:30",
+          "name": "Media",
+          "type": "INSTANCE",
+          "visible": true,
+          "mainComponent": { "name": "Media", "key": "synthetic-media" },
+          "children": [
+            {
+              "id": "I40:30;5:1",
+              "name": "Image",
+              "type": "SLOT",
+              "visible": true,
+              "slotProperty": "Image#5:2",
+              "children": [
+                {
+                  "id": "I40:30;5:3",
+                  "name": "Photo",
+                  "type": "FRAME",
+                  "visible": true,
+                  "bindings": [
+                    { "property": "topLeftRadius", "id": "VariableID:card-radius", "name": "radius/md", "kind": "variable", "remote": false, "collectionId": "VariableCollectionId:card" }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "40:20",
+      "name": "Size=Large",
+      "type": "COMPONENT",
+      "visible": true,
+      "layout": { "mode": "VERTICAL", "paddingTop": 24, "paddingBottom": 24, "itemSpacing": 16 },
+      "children": [
+        { "id": "40:21", "name": "Title", "type": "TEXT", "visible": true, "text": { "fontSize": 20, "fontWeight": 600 } },
+        {
+          "id": "40:22",
+          "name": "Body",
+          "type": "FRAME",
+          "visible": true,
+          "children": [
+            {
+              "id": "40:23",
+              "name": "Content",
+              "type": "SLOT",
+              "visible": true,
+              "slotProperty": "Content#40:12",
+              "layout": { "mode": "VERTICAL", "itemSpacing": 8 },
+              "bindings": [
+                { "property": "itemSpacing", "id": "VariableID:card-gap", "name": "space/gap", "kind": "variable", "remote": false, "collectionId": "VariableCollectionId:card" }
+              ],
+              "children": [
+                {
+                  "id": "40:24",
+                  "name": "List",
+                  "type": "INSTANCE",
+                  "visible": true,
+                  "mainComponent": { "name": "List", "key": "synthetic-list" },
+                  "bindings": [
+                    { "property": "fills", "id": "VariableID:card-surface", "name": "color/surface", "kind": "variable", "remote": false, "collectionId": "VariableCollectionId:card" }
+                  ],
+                  "hasUnboundStroke": true,
+                  "unboundStroke": "#cccccc"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "40:25",
+          "name": "Actions",
+          "type": "SLOT",
+          "visible": true,
+          "slotProperty": "Actions#40:13",
+          "children": []
+        },
+        {
+          "id": "40:26",
+          "name": "Footer",
+          "type": "SLOT",
+          "visible": false,
+          "visibleProperty": "Show footer#40:11",
+          "slotProperty": "Footer#40:99",
+          "children": []
+        },
+        {
+          "id": "40:31",
+          "name": "Media",
+          "type": "INSTANCE",
+          "visible": true,
+          "mainComponent": { "name": "Media", "key": "synthetic-media" }
+        }
+      ]
+    }
+  ]
+}

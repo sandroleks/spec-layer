@@ -13,6 +13,7 @@ import { EXTRACTOR_VERSION } from './version';
 import type { YamlValue } from './yaml';
 import type { IntermediateSpec } from './extract';
 import type { AnatomyPart } from './anatomy';
+import type { ComponentProp } from './props';
 import type { ProseDrafts } from './prose/prompt';
 import { tokensFor, type TokenRule } from './tokens';
 import type { RefIdentity } from './tree';
@@ -202,6 +203,29 @@ function tokensOf(spec: IntermediateSpec): YamlValue {
 }
 
 /**
+ * A Figma slot in `api.slots`, beside the text and instance-swap props that
+ * already live there. Every key but `type` appears only when Figma states it,
+ * so an unset limit never reads as a choice. A preferred component Figma's
+ * key could not name keeps `component: null`; validate() says why.
+ */
+function slotApi(p: ComponentProp): YamlValue {
+  const s = p.slot;
+  if (!s) return { type: 'slot' };
+  return {
+    type: 'slot',
+    ...(s.description !== undefined ? { description: s.description } : {}),
+    ...(s.preferred.length > 0
+      ? { preferred: s.preferred.map((x) => ({ component: x.name, key: x.key })) }
+      : {}),
+    ...(s.preferredOnly ? { preferred_only: true } : {}),
+    ...(s.minChildren !== undefined ? { min_children: s.minChildren } : {}),
+    ...(s.maxChildren !== undefined ? { max_children: s.maxChildren } : {}),
+    ...(s.emptyByDefault ? { empty_by_default: true } : {}),
+    ...(s.stretchChildOnInsert ? { stretch_child_on_insert: true } : {}),
+  };
+}
+
+/**
  * The component's API: configurable variants, interaction states, boolean
  * toggles, and slots; every prop lands in exactly one. `stateAxisProps` (shared
  * with the canvas Variants and States sections) decides states, and a boolean
@@ -226,6 +250,8 @@ function apiOf(spec: IntermediateSpec): YamlValue | undefined {
     if (p.kind === 'variant') continue; // handled via spec.variants above
     if (p.kind === 'boolean') {
       booleans[p.name] = { default: p.default };
+    } else if (p.kind === 'slot') {
+      slots[p.name] = slotApi(p);
     } else {
       slots[p.name] = { type: p.kind, default: p.default, options: p.options };
     }

@@ -222,3 +222,49 @@ describe('the toggle-off canvas hash is pinned', () => {
     expect(specContentHash(spec, { includeHidden: false })).toBe(CHIP_HIDDEN_OFF_HASH);
   });
 });
+
+describe('a slotted component', () => {
+  const card = (): SerializedNode =>
+    JSON.parse(readFileSync('packages/extractor/test/fixtures/card-slots.json', 'utf8')) as SerializedNode;
+  const hashOf = (node: SerializedNode): string => specContentHash(extract(node, { figmaFile: 'FILE1' }));
+  const withContent = (edit: (def: Record<string, unknown>) => void): SerializedNode => {
+    const node = card();
+    edit(node.propertyDefinitions!['Content#40:12'].slot as unknown as Record<string, unknown>);
+    return node;
+  };
+
+  /** Cut with the Figma slots change, EXTRACTOR_VERSION '4'. Only a task
+   *  that says it re-cuts the baseline may change this constant. */
+  const CARD_SLOTS_HASH = 'dd2a0deaf0592e250e1d00a5064cb1596c5e4e5b8626f93c0a36168bccff3303';
+
+  it('hashes what the Properties row draws', () => {
+    expect(hashOf(card())).toBe(CARD_SLOTS_HASH);
+  });
+
+  it('moves on a renamed preferred component, never on its key', () => {
+    const rekeyed = withContent((s) => {
+      (s.preferred as Array<{ key: string }>)[0].key = 'another-key';
+    });
+    expect(hashOf(rekeyed)).toBe(CARD_SLOTS_HASH);
+    const renamed = withContent((s) => {
+      (s.preferred as Array<{ name: string }>)[0].name = 'Item list';
+    });
+    expect(hashOf(renamed)).not.toBe(CARD_SLOTS_HASH);
+  });
+
+  it('ignores stretch-on-insert, which no canvas draws, and moves on a limit', () => {
+    expect(hashOf(withContent((s) => { s.stretchChildOnInsert = true; }))).toBe(CARD_SLOTS_HASH);
+    expect(hashOf(withContent((s) => { s.maxChildren = 2; }))).not.toBe(CARD_SLOTS_HASH);
+  });
+
+  it('moves when the default content changes, and ignores slot issues', () => {
+    const swapped = card();
+    const small = swapped.children![0];
+    const slot = small.children![1].children![0];
+    slot.children![0].mainComponent = { name: 'Text block', key: 'synthetic-text' };
+    expect(hashOf(swapped)).not.toBe(CARD_SLOTS_HASH);
+
+    const spec = extract(card(), { figmaFile: 'FILE1' });
+    expect(specContentHash({ ...spec, propertyIssues: [] })).toBe(CARD_SLOTS_HASH);
+  });
+});

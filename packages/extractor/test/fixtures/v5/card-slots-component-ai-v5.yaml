@@ -1,0 +1,125 @@
+spec_layer:
+  kind: component
+  version: 5
+  profile: ai
+  content_hash: sha256:81121f542be5d8fb7f7f639839d070688867566e0938bbabd26714ec4af1e479
+  source: { provider: figma, file_name: Design System }
+source: { node_id: 40:1, node_name: Card, component_key: synthetic-card-slots }
+component:
+  name: Card
+  description: Groups content about one subject.
+  related: [Media]
+api:
+  variants:
+    Size: { options: [Small, Large], default: Small }
+  booleans: { Show footer: { default: false } }
+  slots:
+    Title: { type: text, default: Card title }
+    Content:
+      type: slot
+      description: Body of the card. One list or one text block.
+      preferred:
+        - { component: List, key: synthetic-list }
+        - { component: null, key: synthetic-missing }
+      preferred_only: true
+      min_children: 1
+      max_children: 1
+    Actions: { type: slot, empty_by_default: true }
+anatomy:
+  - { part: Title, path: Container/Title, type: TEXT }
+  - part: Body
+    path: Container/Body
+    type: FRAME
+    children:
+      - part: Content
+        path: Container/Body/Content
+        type: SLOT
+        slot: Content
+        default_content: [{ part: List, type: INSTANCE, component: List }]
+  - part: Actions
+    path: Container/Actions
+    type: SLOT
+    slot: Actions
+    default_content: [{ part: Badge, type: INSTANCE, component: Badge }]
+  - part: Footer
+    path: Container/Footer
+    type: SLOT
+    shown_by: Show footer
+    default_content: []
+  - { part: Media, path: Container/Media, type: INSTANCE, component: Media }
+layout:
+  scope: default_variant
+  items:
+    - path: Container
+      summary: vertical, padding 16/0/16/0, gap 12
+      values: { gap: 12 }
+    - path: Container/Body/Content
+      summary: vertical, gap 8
+      values: { gap: 8 }
+references:
+  used:
+    - source_id: VariableID:card-gap
+      name: space/gap
+      kind: variable
+      remote: false
+      collection_id: VariableCollectionId:card
+      status: no_foundation
+    - source_id: VariableID:card-radius
+      name: radius/md
+      kind: variable
+      remote: false
+      collection_id: VariableCollectionId:card
+      status: no_foundation
+  bindings:
+    - path: Container/Body/Content
+      property: gap
+      source_id: VariableID:card-gap
+      kind: variable
+    - path: Container/Media/Image/Photo
+      property: border-top-left-radius
+      source_id: VariableID:card-radius
+      kind: variable
+      when: { Size: [Small] }
+  foundation: { status: not_read }
+unbound:
+  - { path: Container, property: gap, issue: hardcoded-value, value: 12 }
+  - path: Container
+    property: padding-y
+    issue: hardcoded-value
+    value: 16
+  - path: Container/Title
+    property: typography
+    issue: missing-token-binding
+validation:
+  - id: unbound-value
+    severity: warning
+    path: Container
+    property: gap
+    message: gap is a hardcoded 12 rather than a bound token.
+  - id: unbound-value
+    severity: warning
+    path: Container
+    property: padding-y
+    message: padding-y is a hardcoded 16 rather than a bound token.
+  - id: unbound-value
+    severity: warning
+    path: Container/Title
+    property: typography
+    message: typography is not bound to a token.
+  - id: unresolved-slot-content
+    severity: warning
+    property: Content
+    message: A preferred component for the Content slot (key synthetic-missing) is not in this file and no instance in the component shows it, so it is listed without a name.
+  - id: unlinked-slot
+    severity: warning
+    path: Footer
+    message: This slot is linked to a property named Footer, which the component does not define, so it is documented without one.
+  - id: unresolved-reference
+    severity: warning
+    path: radius/md
+    message: No Foundation snapshot was available for this component copy.
+  - id: unresolved-reference
+    severity: warning
+    path: space/gap
+    message: No Foundation snapshot was available for this component copy.
+issue_counts: { warning: { UNRESOLVED_REFERENCE: 2 } }

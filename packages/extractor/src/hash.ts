@@ -6,6 +6,7 @@ import {
   unitContent, type FoundationSpec, type FoundationScope, type FoundationUnitContent,
 } from './foundation';
 import { anatomyFor } from './anatomy';
+import { slotContentLabel } from './slots';
 import { canonicalJson } from './v5/canonical';
 import type { SerializedTrigger, SerializedTransitionEffect } from './tree';
 
@@ -34,6 +35,22 @@ export interface SpecHashOptions {
  * with the badge. The legacy `token` key and the depth-0 anatomy reduction are
  * contract: every committed baseline was hashed over this shape.
  */
+/** A slot property as the Properties row draws it. Preferred keys and
+ *  `stretchChildOnInsert` reach no pixel, so they stay out. */
+export interface HashedSlot {
+  description?: string;
+  /** Preferred components by name, in Figma's order; null where unnamed. */
+  preferred: (string | null)[];
+  preferredOnly?: true;
+  minChildren?: number;
+  maxChildren?: number;
+  emptyByDefault?: true;
+  /** The default variant's content, as the Default cell names it. */
+  defaultContent?: string[];
+}
+
+export type HashedProp = Omit<ComponentProp, 'slot' | 'defaultContent'> & { slot?: HashedSlot };
+
 export interface SpecHashProjection {
   name: string;
   figmaKey: string;
@@ -41,8 +58,10 @@ export interface SpecHashProjection {
   figmaNode: string;
   description: string;
   anatomyComponentId: string;
-  anatomy: { id: string; name: string; type: string; nested: boolean }[];
-  props: ComponentProp[];
+  /** `slot` only on a slot part linked to its property, so every other
+   *  part keeps the shape every committed baseline was hashed over. */
+  anatomy: { id: string; name: string; type: string; nested: boolean; slot?: string }[];
+  props: HashedProp[];
   variants: VariantAxis[];
   variantInstances: VariantInstance[];
   states: string[];
@@ -71,8 +90,10 @@ export function specHashProjection(spec: IntermediateSpec, options: SpecHashOpti
     nodeEffects: _nodeEffects,
     figmaFileName: _figmaFileName,
     documentationLinks: _documentationLinks,
-    // Excluded: transitionIssues are reported by validate(); no canvas draws them.
+    // Excluded: transitionIssues and propertyIssues are reported by
+    // validate(); no canvas draws them.
     transitionIssues: _transitionIssues,
+    propertyIssues: _propertyIssues,
     name, figmaKey, figmaFile, figmaNode, description, anatomyComponentId,
     props, variants, variantInstances, states, related,
     // Hashed through the reductions below.
@@ -85,10 +106,12 @@ export function specHashProjection(spec: IntermediateSpec, options: SpecHashOpti
   void _everyFieldRouted;
   return {
     name, figmaKey, figmaFile, figmaNode, description, anatomyComponentId,
-    props, variants, variantInstances, states, related,
+    // A non-slot prop keeps the exact shape its baselines were hashed over.
+    props: props.map(hashedProp),
+    variants, variantInstances, states, related,
     anatomy: anatomyFor(anatomy, { includeHidden: options.includeHidden === true })
       .filter((p) => p.depth === 0)
-      .map(({ id, name, type, nested }) => ({ id, name, type, nested })),
+      .map(({ id, name, type, nested, slot }) => ({ id, name, type, nested, ...(slot ? { slot } : {}) })),
     // `path` and the identity fields (`id`, `kind`, `remote`, `collectionId`)
     // re-identify data already hashed under `part`, so they stay out or every
     // committed doc drifts. The OLD key `token` carries the NEW field `name`
@@ -115,6 +138,24 @@ export function specHashProjection(spec: IntermediateSpec, options: SpecHashOpti
       ? { transitions: (transitions ?? []).map(({ from, to, trigger, triggerPart, transition }) =>
           ({ from, to, trigger, triggerPart, transition })) }
       : {}),
+  };
+}
+
+function hashedProp(p: ComponentProp): HashedProp {
+  const { slot, defaultContent, ...rest } = p;
+  if (p.kind !== 'slot' || (!slot && !defaultContent)) return rest;
+  return {
+    ...rest,
+    slot: {
+      ...(slot?.description !== undefined ? { description: slot.description } : {}),
+      preferred: (slot?.preferred ?? []).map((x) => x.name),
+      // Drawn as ", only these" after a name, so only hashed beside one.
+      ...(slot?.preferredOnly && slot.preferred.length > 0 ? { preferredOnly: true as const } : {}),
+      ...(slot?.minChildren !== undefined ? { minChildren: slot.minChildren } : {}),
+      ...(slot?.maxChildren !== undefined ? { maxChildren: slot.maxChildren } : {}),
+      ...(slot?.emptyByDefault ? { emptyByDefault: true as const } : {}),
+      ...(defaultContent ? { defaultContent: defaultContent.map(slotContentLabel) } : {}),
+    },
   };
 }
 

@@ -7,7 +7,8 @@
  * specContentHash and foundationContentHash hash, so a list can never disagree
  * with the "Update available" badge.
  */
-import { canonicalEqual, type SpecHashProjection } from './hash';
+import { canonicalEqual, type HashedSlot, type SpecHashProjection } from './hash';
+import { slotLimitsText } from './slots';
 import type {
   FoundationGlyph, FoundationRow, FoundationTextMetrics, FoundationUnitContent,
   FoundationValue, FoundationVariableRow,
@@ -621,6 +622,33 @@ function formatGapValue(value: number | string | undefined): string {
   return value === undefined ? 'no value' : String(value);
 }
 
+const preferredNames = (slot: HashedSlot | undefined): string[] =>
+  (slot?.preferred ?? []).map((name) => name ?? 'a component not found');
+
+const switchItem = (name: string, label: string, before: boolean, after: boolean): string[] =>
+  before === after ? [] : [`Property ${name}: ${label} turned ${after ? 'on' : 'off'}`];
+
+/** One line per slot fact the Properties row draws, so a slot change that
+ *  moves the hash is always itemized. A description is named, not quoted. */
+function slotChangeItems(name: string, b: HashedSlot | undefined, a: HashedSlot | undefined): string[] {
+  const items: string[] = [];
+  if (b?.description !== a?.description) {
+    items.push(`Property ${name}: description ${b?.description === undefined ? 'added' : a?.description === undefined ? 'removed' : 'changed'}`);
+  }
+  if (!canonicalEqual(preferredNames(b), preferredNames(a))) {
+    items.push(`Property ${name}: preferred content ${formatList(preferredNames(b))} changed to ${formatList(preferredNames(a))}`);
+  }
+  items.push(...switchItem(name, 'only preferred content', b?.preferredOnly === true, a?.preferredOnly === true));
+  const limitsBefore = slotLimitsText(b?.minChildren, b?.maxChildren) ?? 'none';
+  const limitsAfter = slotLimitsText(a?.minChildren, a?.maxChildren) ?? 'none';
+  if (limitsBefore !== limitsAfter) items.push(`Property ${name}: limits ${limitsBefore} changed to ${limitsAfter}`);
+  items.push(...switchItem(name, 'display empty by default', b?.emptyByDefault === true, a?.emptyByDefault === true));
+  if (!canonicalEqual(b?.defaultContent, a?.defaultContent)) {
+    items.push(`Property ${name}: default content ${formatList(b?.defaultContent)} changed to ${formatList(a?.defaultContent)}`);
+  }
+  return items;
+}
+
 /** Figma's words for a property type; `instanceSwap` is a code name. A
  *  baseline saved before SLOT was mapped holds a slot property with no kind. */
 function formatPropKind(kind: string | undefined): string {
@@ -691,6 +719,7 @@ export function componentChangeGroups(
     if (b.default !== a.default) {
       properties.push(`Property ${a.name}: default ${formatDefault(b.default)} changed to ${formatDefault(a.default)}`);
     }
+    properties.push(...slotChangeItems(a.name, b.slot, a.slot));
   }
   if (props.reordered) pushReordered(properties);
 
@@ -722,6 +751,9 @@ export function componentChangeGroups(
     // `nested` derives from the type, so the type line covers it.
     if (b.type !== a.type) {
       anatomy.push(`Part ${a.name}: type ${formatLayerType(b.type)} changed to ${formatLayerType(a.type)}`);
+    }
+    if (b.slot !== a.slot) {
+      anatomy.push(`Part ${a.name}: slot property ${b.slot ?? 'none'} changed to ${a.slot ?? 'none'}`);
     }
   }
   if (parts.reordered) pushReordered(anatomy);
