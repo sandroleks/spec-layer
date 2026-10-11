@@ -62,8 +62,10 @@ describe('descriptionText', () => {
 });
 
 describe('withoutProvenance', () => {
-  it('drops the provenance line a description ends with, and nothing else', () => {
+  it('drops the provenance line wherever it stands alone, and nothing else', () => {
     expect(withoutProvenance('A button starts an action!\n\nWritten in Spec Layer · 2026-10-03')).toBe('A button starts an action!');
+    expect(withoutProvenance('Body\n\nWritten in Spec Layer · 2026-10-03\n\nMy note')).toBe('Body\n\nMy note');
+    expect(withoutProvenance('Written with AI in Spec Layer · 2026-10-03\nMine.')).toBe('Mine.');
     expect(withoutProvenance('Mine.\nWritten with AI in Spec Layer · 2026-10-03  \n')).toBe('Mine.');
     expect(withoutProvenance('Written with AI in Spec Layer · 2026-10-03')).toBe('');
     expect(withoutProvenance('Mine.')).toBe('Mine.');

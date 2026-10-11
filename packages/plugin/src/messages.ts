@@ -136,11 +136,11 @@ export type MainToUi =
       publishInfo: PublishInfo }
   | { type: 'publishSourcesError'; message: string }
   /** Annotate in Dev Mode: what a run would do, for the confirm dialog. */
-  | { type: 'syncPlan'; scope: SyncScope; replaceEdited: boolean; plan: SyncPlanResult }
-  | { type: 'syncDone'; scope: SyncScope; replaceEdited: boolean; result: SyncResult }
-  | { type: 'syncError'; message: string }
+  | { type: 'annotatePlan'; scope: SyncScope; replaceEdited: boolean; plan: SyncPlanResult }
+  | { type: 'annotateDone'; scope: SyncScope; replaceEdited: boolean; result: SyncResult }
+  | { type: 'annotateError'; message: string }
   /** `fileUrl` lives in the file, shared by every editor; `onUpdate` per user. */
-  | { type: 'syncSettings'; onUpdate: boolean; fileUrl: string | null }
+  | { type: 'annotateSettings'; onUpdate: boolean; fileUrl: string | null }
   /** Nulls when the file was never published; `pullKey` null when this device
    *  lacks it. */
   | ({ type: 'publishInfo' } & PublishInfo);
@@ -219,10 +219,10 @@ export type UiToMain =
       components: PublishStampComponent[]; foundation: SerializedFoundation | null }
   /** After the server says the library is gone, so the next publish creates. */
   | { type: 'clearPublishInfo' }
-  /** Annotate in Dev Mode. The plan writes nothing; `applySync` plans again against
+  /** Annotate in Dev Mode. The plan writes nothing; `applyAnnotate` plans again against
    *  the live file and writes, so a change between the two is never missed. */
-  | { type: 'requestSyncPlan'; scope: SyncScope; replaceEdited: boolean }
-  | { type: 'applySync'; scope: SyncScope; replaceEdited: boolean }
-  | { type: 'setSyncOnUpdate'; value: boolean }
+  | { type: 'requestAnnotatePlan'; scope: SyncScope; replaceEdited: boolean }
+  | { type: 'applyAnnotate'; scope: SyncScope; replaceEdited: boolean }
+  | { type: 'setAnnotateOnUpdate'; value: boolean }
   /** '' clears the saved link. */
-  | { type: 'setSyncFileUrl'; value: string };
+  | { type: 'setAnnotateFileUrl'; value: string };

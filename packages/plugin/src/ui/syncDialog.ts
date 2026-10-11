@@ -3,7 +3,7 @@
  * second step that replaces what was set in Figma, and the result toast. Pure,
  * so every sentence is tested. Sentence case, second person, no em dashes.
  */
-import type { SyncPlanResult, SyncResult, SyncSkip, SyncSkipReason } from '../syncFigma';
+import type { SyncPlanResult, SyncResult, SyncScope, SyncSkip, SyncSkipReason } from '../syncFigma';
 import { countPlan, type SyncCounts } from '../syncPlan';
 import { nameList } from '../syncText';
 import type { ConfirmDialogOptions } from './shell/confirmDialog';
@@ -21,14 +21,16 @@ export type SyncNext =
   | { kind: 'toast'; message: string; error?: boolean };
 
 function aiReplaceSentence(names: readonly string[]): string {
-  return `The doc’s text for ${nameList(names)} includes text written with AI that nobody has edited, so replacing is your review.`;
+  return `The doc’s text for ${nameList(names)} includes text written with AI that nobody has edited, so replace it only once you have read it.`;
 }
 
-/** Writes the doc's text over values a person set, changed or removed in Figma. */
-export function replaceDialog(held: readonly string[], heldAi: readonly string[] = []): ConfirmDialogOptions {
+/** Writes the doc's text over values a person set, changed or removed in Figma.
+ *  `lead` opens the body, for a run that found nothing else to do. */
+export function replaceDialog(held: readonly string[], heldAi: readonly string[] = [], lead?: string): ConfirmDialogOptions {
   const sentences = [
+    ...(lead ? [lead] : []),
     `${nameList(held)} ${verb(held, 'has', 'have')} a description, link or annotation that was set or removed in Figma.`,
-    'Replacing writes the doc’s text in its place.',
+    'Replacing writes the doc’s text over it.',
     ...(heldAi.length ? [aiReplaceSentence(heldAi)] : []),
     // The description is part of the drift baseline, so replacing one moves it.
     'A doc whose description is replaced then shows Update available.',
@@ -84,8 +86,11 @@ function skippedSentences(skipped: readonly SyncSkip[]): string[] {
   return out;
 }
 
-/** What to show for a fresh plan. */
-export function planNext(plan: SyncPlanResult): SyncNext {
+/** What to show for a fresh plan. A run that finds only kept values offers
+ *  Replace from a row, where a person asked about that component; a run over
+ *  every component names them instead, so a library full of hand-written
+ *  descriptions is never asked to replace them on every run. */
+export function planNext(plan: SyncPlanResult, scope: SyncScope): SyncNext {
   const c = countPlan(plan.items);
   const skipped = skippedSentences(plan.skipped);
   if (plan.items.length === 0) {
@@ -103,13 +108,20 @@ export function planNext(plan: SyncPlanResult): SyncNext {
   const changes = changeSentences(c);
   const waiting = c.updateFirst.length ? [updateFirstSentence(c.updateFirst)] : [];
   if (changes.length === 0) {
-    if (c.edited.length) return { kind: 'replace', dialog: replaceDialog(c.edited, c.keptAi) };
+    if (c.edited.length) {
+      if (scope.kind !== 'all') return { kind: 'replace', dialog: replaceDialog(c.edited, c.keptAi, 'Nothing new to annotate.') };
+      return {
+        kind: 'toast',
+        message: `Nothing new to annotate. What was set in Figma is kept for ${nameList(c.edited)}. `
+          + `To replace ${verb(c.edited, 'it', 'them')}, annotate ${verb(c.edited, 'the component', 'each component')} from its Library row.`,
+      };
+    }
     if (!waiting.length && !skipped.length) return { kind: 'toast', message: 'Dev Mode already matches these docs.' };
     return { kind: 'toast', message: ['Nothing to annotate in Dev Mode yet.', ...waiting, ...skipped].join(' ') };
   }
   const sentences = [...changes];
   if (c.aiWritten.length) {
-    sentences.push(`Some of the text for ${nameList(c.aiWritten)} was written with AI and nobody has edited it. Confirming is your review.`);
+    sentences.push(`Some of the text for ${nameList(c.aiWritten)} was written with AI and nobody has edited it. Confirm only once you have read it.`);
   }
   if (c.edited.length) {
     sentences.push(`Descriptions, links and annotations set or removed in Figma are kept for ${nameList(c.edited)}. You can replace them next.`);

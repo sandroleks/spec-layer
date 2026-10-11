@@ -130,10 +130,11 @@ function planDescription(f: SyncFacts, o: SyncOptions): SyncPlanItem['descriptio
     if (o.auto && origin !== 'authored') return { action: 'skip', reason: 'aiNotReviewed', origin };
     return { action: 'write', origin };
   }
-  if (o.auto) return { action: 'skip', reason: rec ? 'editedInFigma' : 'notSyncedYet', origin };
+  const changed: SyncReason = live.trim() === '' ? 'removedInFigma' : 'editedInFigma';
+  if (o.auto) return { action: 'skip', reason: rec ? changed : 'notSyncedYet', origin };
   if (live.trim() === '' && !rec) return { action: 'write', origin };
   if (o.replaceEdited) return { action: 'write', origin };
-  return { action: 'keep', reason: rec ? 'editedInFigma' : 'writtenBeforeSync', origin };
+  return { action: 'keep', reason: rec ? changed : 'writtenBeforeSync', origin };
 }
 
 function planLink(f: SyncFacts, o: SyncOptions): SyncPlanItem['link'] {
@@ -315,7 +316,7 @@ export function annotationFor(layer: LayerFacts): AnnotationSpec | null {
   if (layer.hasRadius) properties.push('cornerRadius');
   if (layer.type === 'INSTANCE') properties.push('mainComponent');
   const label = layer.label && layer.name
-    ? `${layer.label} ${layer.name}${layer.shownBy ? ` · shown by ${layer.shownBy}` : ''}`
+    ? `${layer.label} ${layer.name}${layer.shownBy ? ` · Shown when ${layer.shownBy} is true` : ''}`
     : '';
   if (!label && !properties.length) return null;
   return { label, properties };

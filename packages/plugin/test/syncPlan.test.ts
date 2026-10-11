@@ -43,11 +43,13 @@ describe('description', () => {
     const r = record({ description: { hash: descriptionHash('Old ours'), bodyHash: bodyHash('Body'), origin: 'authored' } });
     expect(planSync(facts({ liveDescription: 'Old ours', record: r }), MANUAL).description.action).toBe('same');
   });
-  it('keeps a description edited after the last sync, including a cleared one', () => {
-    for (const live of ['Edited', '']) {
-      expect(planSync(facts({ liveDescription: live, record: record() }), MANUAL).description)
-        .toMatchObject({ action: 'keep', reason: 'editedInFigma' });
-    }
+  it('keeps a description edited after the last sync, and names a cleared one as removed', () => {
+    expect(planSync(facts({ liveDescription: 'Edited', record: record() }), MANUAL).description)
+      .toMatchObject({ action: 'keep', reason: 'editedInFigma' });
+    expect(planSync(facts({ liveDescription: '', record: record() }), MANUAL).description)
+      .toMatchObject({ action: 'keep', reason: 'removedInFigma' });
+    expect(planSync(facts({ liveDescription: '', record: record() }), AUTO).description)
+      .toMatchObject({ action: 'skip', reason: 'removedInFigma' });
   });
   it('replaces edits only in the confirmed replace run', () => {
     expect(planSync(facts({ liveDescription: 'Edited', record: record() }), REPLACE).description.action).toBe('write');
@@ -221,7 +223,11 @@ describe('annotationFor', () => {
     expect(annotationFor({ type: 'COMPONENT', autoLayout: true, hasRadius: true }))
       .toEqual({ label: '', properties: ['padding', 'itemSpacing', 'cornerRadius'] });
     expect(annotationFor({ label: '2', name: 'Icon', shownBy: 'Has icon', type: 'INSTANCE', autoLayout: false, hasRadius: false }))
-      .toEqual({ label: '2 Icon · shown by Has icon', properties: ['mainComponent'] });
+      .toEqual({ label: '2 Icon · Shown when Has icon is true', properties: ['mainComponent'] });
+  });
+  it('names a conditional part the way the legend does', () => {
+    expect(annotationFor({ label: '2', name: 'Icon', shownBy: 'hasIcon', type: 'FRAME', autoLayout: false, hasRadius: false }))
+      .toEqual({ label: '2 Icon · Shown when hasIcon is true', properties: [] });
   });
   it('is null for a root with nothing to pin', () => {
     expect(annotationFor({ type: 'COMPONENT', autoLayout: false, hasRadius: false })).toBeNull();

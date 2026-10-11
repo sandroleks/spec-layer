@@ -34,7 +34,11 @@ release workflow, so it is the first to carry npm provenance.
   it is updated. Every run you start asks first and names AI text nobody has
   edited. A description, link or annotation set, changed or removed in Figma
   is kept, and replacing it is a separate, labelled step that also names AI
-  text. A record of what was written lives in the component's plugin data,
+  text: it is offered once, when a run finds a value newly changed in
+  Figma, and again from a component's Library row; a run over every
+  component names what it kept in a toast instead. A part shown by a
+  property is labelled "Shown when … is true", as the legend says. A record
+  of what was written lives in the component's plugin data,
   and the serializer reads a description or link that matches it as absent,
   so an annotated doc never reports drift against its own words and the AI
   prompt is never fed the sync's own text. A description a person edits in

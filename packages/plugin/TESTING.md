@@ -855,9 +855,18 @@ set and one single component, each with a current doc.
       says the edit is kept, and confirming leaves it. The second step,
       **Replace**, writes the doc's text over it, and the row then reads
       Update available, as the dialog says.
-- [ ] Declined Replace: decline it, annotate again. The dialog names the kept
-      description again. With Annotate on Update on, Update the doc twice:
-      the toast names the component on the first Update only.
+- [ ] Declined Replace: decline it, annotate the row again with nothing else
+      changed. The Replace dialog opens again, starting "Nothing new to
+      annotate". Decline, then run **Annotate all components**: a toast
+      names the kept component and points at its Library row, and no dialog
+      opens. Edit the description in Figma once more and annotate the row:
+      after the run, Replace is offered once; a further run with writes
+      does not offer it again. With Annotate on Update on, Update the doc
+      twice: the toast names the component on the first Update only.
+- [ ] Pre-sync description: on a component whose description a person wrote
+      before any run, annotate with the doc's annotations still to write.
+      The confirm dialog says the description is kept, and no Replace dialog
+      follows the run. Only the row's own run offers it.
 - [ ] Removed link: remove the documentation link in Figma, annotate again.
       The link stays removed, and the dialog says it is kept.
 - [ ] AI text: annotate a component whose Overview was written with AI and not
@@ -871,7 +880,9 @@ set and one single component, each with a current doc.
       annotation, annotate again. The dialog keeps it; **Replace** rewrites it
       in place, leaving one annotation on the layer, not two.
 - [ ] Legend changes: hide or remove a part and Update the doc, then annotate.
-      The part's Spec Layer annotation is removed and the others renumber.
+      The part's Spec Layer annotation is removed and the others renumber. A
+      part shown by a property reads "Shown when X is true", as the legend
+      does.
       Without the Update first, the row offers no Annotate, and **Annotate
       all components** says the doc needs an Update before its parts are
       annotated.

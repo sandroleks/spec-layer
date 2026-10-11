@@ -101,8 +101,10 @@ export interface SyncResult {
   /** Descriptions written or cleared. */
   descriptions: number;
   links: number;
-  /** Annotations placed, rewritten or removed. */
+  /** Annotations placed or rewritten. */
   annotations: number;
+  /** Spec Layer's own annotations taken off layers the doc no longer numbers. */
+  removed: number;
   /** Components with at least one write. */
   components: number;
   failed: Array<{ name: string; message: string }>;
@@ -403,7 +405,7 @@ async function applyOne(
     attempt(() => {
       target.annotations = live.filter((_, i) => i !== orphan.ownIndex).map(writableAnnotation);
       touched.add(orphan.nodeId);
-      result.annotations++; wrote = true;
+      result.removed++; wrote = true;
     });
   }
 
@@ -431,7 +433,7 @@ async function applyOne(
  *  read or written is named with the message, and the run carries on. */
 export async function runSync(host: SyncHost, scope: SyncScope, options: SyncOptions): Promise<SyncResult> {
   const result: SyncResult = {
-    descriptions: 0, links: 0, annotations: 0, components: 0, failed: [], noCategory: false,
+    descriptions: 0, links: 0, annotations: 0, removed: 0, components: 0, failed: [], noCategory: false,
     held: [], heldAi: [], heldNew: [],
   };
   let ctx: RunContext | null = null;
