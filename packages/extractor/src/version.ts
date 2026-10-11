@@ -11,4 +11,4 @@
  * An opaque identifier compared for equality, never ordered, so it need not
  * look like semver.
  */
-export const EXTRACTOR_VERSION = '3';
+export const EXTRACTOR_VERSION = '4';

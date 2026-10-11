@@ -8,6 +8,7 @@ function base(): NodeResolver {
     variable: vi.fn(async (id: string) => ({ id, name: `var ${id}`, remote: false, collectionId: 'c1' })),
     style: vi.fn(async (id: string) => ({ id, name: `style ${id}`, remote: false, kind: 'paint-style' as const })),
     mainComponent: vi.fn(async () => ({ name: 'Main', key: 'k' })),
+    localComponents: vi.fn(async () => new Map<string, string>()),
   };
 }
 

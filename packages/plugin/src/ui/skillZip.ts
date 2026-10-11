@@ -77,10 +77,17 @@ export function renderSnapshotSkill(inv: SnapshotInventory): string {
       ? '1. Building or changing a component: read its page under `components/`. **Properties** gives '
         + 'variants, states, booleans, and slots; **Anatomy** names the parts; **Token bindings** says which '
         + "token each part's property uses and under which **When** conditions; **Unbound values** lists "
-        + 'values that are hardcoded in Figma.'
+        + 'values that are hardcoded in Figma. A property of type **Slot** is a place for content the consumer '
+        + 'supplies: build it as your framework\'s children or a named slot, accept only the components its '
+        + 'Options name when they say "only these", keep to its item limits, and treat its Default as an '
+        + 'example, never as fixed markup.'
       : '1. Building or changing a component: read its YAML under `components/`. `api` gives variants, states, '
         + 'booleans, and slots; `anatomy` names the parts; `references.bindings` says which token each part\'s '
-        + 'property uses and under which `when` conditions; `unbound` lists values that are hardcoded in Figma.',
+        + 'property uses and under which `when` conditions; `unbound` lists values that are hardcoded in Figma. '
+        + 'An `api.slots` entry with `type: slot` is a place for content the consumer supplies: build it as '
+        + 'your framework\'s children or a named slot, accept only its `preferred` components when '
+        + '`preferred_only` is true, keep to `min_children` and `max_children`, and treat `default_content` as '
+        + 'an example, never as fixed markup.',
     );
   } else {
     lines.push('1. This download includes no components, so it has no `components/` folder.');

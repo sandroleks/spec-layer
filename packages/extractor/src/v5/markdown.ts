@@ -10,6 +10,7 @@ import type { YamlValue } from '../yaml';
 import {
   axisLabel, durationCell, easingCell, isMotionTransitionYaml, transitionLabel, triggerLabel,
 } from '../motion';
+import { slotContentLabel, slotDefaultText, slotValuesText, type SlotContentItem, type SlotView } from '../slots';
 import { valueText } from './aiContext';
 import type { FoundationValidationRow } from './aiContext';
 import { componentEnvelope, componentFoundationAiSlice } from './componentContext';
@@ -157,8 +158,39 @@ function layoutSection(layout: Record<string, unknown>): string | undefined {
   return parts.join('\n\n');
 }
 
+/** The words a Properties row uses for each `api.slots` type. */
+const SLOT_TYPE_LABEL: Readonly<Record<string, string>> = {
+  text: 'Text', instanceSwap: 'Instance swap', slot: 'Slot',
+};
+
+/** A `default_content` list from the artifact, in its order. */
+function contentItems(value: unknown): SlotContentItem[] {
+  return (Array.isArray(value) ? value : []).map((raw) => {
+    const item = asRecord(raw);
+    const component = str(item.component);
+    return { part: str(item.part) ?? '', type: str(item.type) ?? '', ...(component ? { component } : {}) };
+  });
+}
+
+/** An `api.slots` slot entry as the canvas row reads it, so both print alike. */
+function slotViewOf(slot: Record<string, unknown>): SlotView {
+  const preferred = (Array.isArray(slot.preferred) ? slot.preferred : [])
+    .map((p) => str(asRecord(p).component) ?? null);
+  return {
+    preferred,
+    ...(slot.preferred_only === true ? { preferredOnly: true } : {}),
+    ...(typeof slot.min_children === 'number' ? { minChildren: slot.min_children } : {}),
+    ...(typeof slot.max_children === 'number' ? { maxChildren: slot.max_children } : {}),
+    ...(slot.empty_by_default === true ? { emptyByDefault: true } : {}),
+    ...(Array.isArray(slot.default_content) ? { defaultContent: contentItems(slot.default_content) } : {}),
+  };
+}
+
 function propertiesSection(api: Record<string, unknown>): string | undefined {
   const rows: string[][] = [];
+  // A Description column only for what Figma states, as the canvas draws a
+  // slot's own description; it never holds prose.
+  const descriptions: string[] = [];
 
   for (const [name, raw] of Object.entries(asRecord(api.variants))) {
     const axis = asRecord(raw);
@@ -166,18 +198,26 @@ function propertiesSection(api: Record<string, unknown>): string | undefined {
       ? axis.options.map((o) => escapeCell(String(o))).join(', ')
       : '';
     rows.push([escapeCell(name), 'Variant', options, escapeCell(String(axis.default ?? ''))]);
+    descriptions.push('');
   }
   for (const [name, raw] of Object.entries(asRecord(api.booleans))) {
     const b = asRecord(raw);
     rows.push([escapeCell(name), 'Boolean', '',
       b.default === undefined ? '' : escapeCell(String(b.default))]);
+    descriptions.push('');
   }
   for (const [name, raw] of Object.entries(asRecord(api.slots))) {
     const slot = asRecord(raw);
     const type = str(slot.type);
-    const label = type ? type.charAt(0).toUpperCase() + type.slice(1) : 'Slot';
-    rows.push([escapeCell(name), label, '',
-      slot.default === undefined ? '' : escapeCell(String(slot.default))]);
+    const label = type ? SLOT_TYPE_LABEL[type] ?? type.charAt(0).toUpperCase() + type.slice(1) : '';
+    if (type === 'slot') {
+      const view = slotViewOf(slot);
+      rows.push([escapeCell(name), label, escapeCell(slotValuesText(view)), escapeCell(slotDefaultText(view))]);
+    } else {
+      rows.push([escapeCell(name), label, '',
+        slot.default === undefined ? '' : escapeCell(String(slot.default))]);
+    }
+    descriptions.push(escapeCell(str(slot.description) ?? ''));
   }
 
   const states = Array.isArray(api.states)
@@ -188,7 +228,10 @@ function propertiesSection(api: Record<string, unknown>): string | undefined {
 
   const parts = ['## Properties'];
   if (rows.length > 0) {
-    parts.push(table(['Property', 'Type', 'Options', 'Default'], rows).trimEnd());
+    const described = descriptions.some((d) => d !== '');
+    parts.push(described
+      ? table(['Property', 'Type', 'Options', 'Default', 'Description'], rows.map((r, i) => [...r, descriptions[i]])).trimEnd()
+      : table(['Property', 'Type', 'Options', 'Default'], rows).trimEnd());
   }
   if (states.length > 0) parts.push(`States: ${states.join(', ')}`);
   return parts.join('\n\n');
@@ -204,8 +247,14 @@ function anatomyBullets(nodes: unknown[], depth: number): string[] {
     const parts: string[] = [];
     if (path) parts.push(code(path));
     const component = str(node.component);
+    const slot = str(node.slot);
     if (component) parts.push(`instance of ${escapeInline(component)}`);
+    else if (slot) parts.push(`slot for ${code(slot)}`);
     else if (type) parts.push(escapeInline(type.toLowerCase()));
+    if (Array.isArray(node.default_content)) {
+      const held = contentItems(node.default_content).map((c) => escapeInline(slotContentLabel(c)));
+      parts.push(held.length > 0 ? `holds ${held.join(', ')} in the default variant` : 'holds nothing in the default variant');
+    }
     const shownBy = str(node.shown_by);
     if (shownBy) parts.push(`shown when ${code(shownBy)} is true`);
     lines.push(`${'  '.repeat(depth)}- ${part}: ${parts.join(', ')}`);

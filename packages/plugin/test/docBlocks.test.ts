@@ -58,6 +58,15 @@ describe('docBlocks', () => {
     });
   });
 
+  it('never reads a slot\'s Figma description back as prose', () => {
+    const doc = new FakeFrame();
+    doc.appendChild(buildPropertiesTable([
+      { name: 'Content', type: 'Slot', values: '', defaultValue: 'List', description: 'From Figma.', descriptionFromFigma: true },
+      { name: 'Actions', type: 'Slot', values: '', defaultValue: 'Empty', description: 'From prose.' },
+    ], true, 768));
+    expect(readCanvasProse(asNode(doc)).properties).toEqual([{ name: 'Actions', description: 'From prose.' }]);
+  });
+
   it('gives the properties table a Values column wide enough for a two-word option', () => {
     const table = buildPropertiesTable([
       { name: 'Style', type: 'Variant', values: 'Default · Color Background · Status', defaultValue: 'Default', description: 'Sets the treatment.' },

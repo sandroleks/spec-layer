@@ -74,12 +74,54 @@ release workflow, so it is the first to carry npm provenance.
   `transition-target-outside-set`. The section is marked Beta in the
   section picker; existing documents gain it when it is ticked on. The
   `motion` key exists only when a component has transitions, so every
-  document without them keeps a byte-identical hash and `EXTRACTOR_VERSION`
-  stays `'3'`: the content hash of an affected document moves on its own,
-  which is what drift detection reports. An easing on a prototype
+  document without them keeps a byte-identical hash: the content hash of an
+  affected document moves on its own, which is what drift detection
+  reports. (The release still moves `EXTRACTOR_VERSION` to `'4'`, for Figma
+  slots, below.) An easing on a prototype
   transition that Figma stores as a physical spring (mass, stiffness,
   damping) is reported as not supported, never converted to a bounce,
   because the conversion is Figma's own and not available to a plugin.
+- **Figma slots.** A component's slot properties and slot layers are read
+  and documented. Each slot is a property under `api.slots` with
+  `type: slot`, and Figma's own facts about it: the designer's
+  description, the preferred components (named from the instances inside
+  the component, then the file's own components, and never over the
+  network, so a drift check does not depend on library access), "only
+  preferred", the minimum and maximum, "display empty
+  by default" and "stretch child on insert". Each slot layer is one anatomy
+  part carrying `slot` (its property) and `default_content`, what it holds
+  in the default variant. Default content is an example, so it is no longer
+  documented as anatomy parts, related components, token bindings or
+  unbound values; a slot inside a nested instance keeps its content, which
+  is fixed content of the component. On canvas, Properties reads Type
+  **Slot** with the preferred names, "only these", the limits and the
+  default content, and the Anatomy legend marks each slot. A preferred key
+  the document cannot name is counted, never named, and reported as
+  `unresolved-slot-content`; a slot linked to no property is reported as
+  `unlinked-slot`; a property type the extractor does not know is left out
+  and reported as `unsupported-property-type`. The Library's change list
+  itemizes each slot change. Component Context v5 schema **5.3.0** gains
+  `anatomy_node.slot`, `anatomy_node.default_content` and a typed
+  `api.slots` entry. `EXTRACTOR_VERSION` moves to `'4'`, so every document
+  built by 6.0.0 reads **Rebuild needed** once. Annotate in Dev Mode never
+  pins a corner radius on a slot, which Figma refuses. Each `api.slots` slot
+  entry also carries `default_content`, so the Markdown page prints the same
+  Values and Default text as the canvas, adds a Description column only for
+  a slot's own description, and says in Anatomy what each slot holds. A
+  published library versions a slot by direction: narrowing what may go in
+  it (only preferred turned on, a raised minimum, a lowered or new maximum, a
+  preferred component removed while only preferred is on) is major,
+  widening is minor, and its default content and display settings are
+  patch; each is a property change in the history, named by its facet, so a
+  6.0.0 plugin's history pane still reads it. The AI writing prompt gets
+  each slot's facts in the same words. An instance swap property now reads
+  "Instance swap" in Markdown rather than "InstanceSwap". The agent guide
+  `spec-layer skill` writes, and the plugin's skill download, say what a
+  slot asks of code: build it as the framework's children or a named slot,
+  accept only the preferred components when only preferred is on, keep to
+  the limits, and treat default content as an example, never as fixed
+  markup. The guide uses the YAML keys or the Markdown page's words,
+  whichever format the components were written in.
 
 ### Changed
 
@@ -257,6 +299,11 @@ release workflow, so it is the first to carry npm provenance.
 
 ### Fixed
 
+- A component with a Figma slot property no longer stops its Properties
+  section from building. The extractor did not know Figma's `SLOT`
+  property type, so the property reached the canvas with no type, and
+  Figma refuses an empty text value. A baseline saved before this fix lists
+  the change as "type not recognised changed to slot".
 - Undo in Figma now reverts one Spec Layer action at a time. Plugin edits
   were never closed as undo steps, so one Undo after building a second doc
   could take the first doc away too. Each build, Foundation build, update,

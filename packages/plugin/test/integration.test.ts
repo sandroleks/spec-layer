@@ -38,6 +38,7 @@ const resolver: NodeResolver = {
   style: async (id) =>
     (id === 'S:type,1:1' ? { id, name: 'md.sys.typescale.label-large', remote: false, kind: 'text-style' as const } : null),
   mainComponent: async () => ({ name: 'Icon', key: 'm3-icon' }),
+  localComponents: async () => new Map<string, string>(),
 };
 
 describe('full pipeline: serialize → extract → render → parse', () => {

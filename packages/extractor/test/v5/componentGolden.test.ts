@@ -3,9 +3,13 @@ import { describe, expect, it } from 'vitest';
 import { load } from 'js-yaml';
 import {
   COMPONENT_V5_GOLDEN_PATH, renderComponentV5Golden, writeComponentV5Golden,
+  COMPONENT_V5_SLOTS_GOLDEN_PATH, renderComponentV5SlotsGolden, writeComponentV5SlotsGolden,
 } from '../fixtures/componentV5';
 
-if (process.env.UPDATE_COMPONENT_V5_GOLDEN === '1') writeComponentV5Golden();
+if (process.env.UPDATE_COMPONENT_V5_GOLDEN === '1') {
+  writeComponentV5Golden();
+  writeComponentV5SlotsGolden();
+}
 
 describe('Component Context v5 reviewed golden', () => {
   it('matches the deterministic AI profile byte for byte', () => {
@@ -24,5 +28,11 @@ describe('Component Context v5 reviewed golden', () => {
     expect(parsed.references.used.every((reference) => reference.source_id.length > 0)).toBe(true);
     expect(parsed.references.foundation.collections.flatMap((collection) => collection.tokens)
       .some((token) => token.source_id === 'VariableID:unrelated')).toBe(false);
+  });
+});
+
+describe('Component Context v5 slots golden', () => {
+  it('matches the deterministic AI profile byte for byte', () => {
+    expect(renderComponentV5SlotsGolden()).toBe(readFileSync(COMPONENT_V5_SLOTS_GOLDEN_PATH, 'utf8'));
   });
 });

@@ -282,6 +282,52 @@ describe('libraryDiff: components', () => {
     expect(only(libraryDiff(base, newDefault), 'property')).toEqual([expect.objectContaining({ kind: 'changed', id: 'showIcon', from: 'boolean, default false', to: 'boolean, default true', bump: 'patch' })]);
   });
 
+  it('slot: narrowing is major, widening is minor, the rest is patch, and the description is never read', () => {
+    const api = () => componentArtifact().api as Record<string, unknown>;
+    const slot = (over: Record<string, unknown>) => withComponent((a) => {
+      a.api = { ...api(), slots: { label: { type: 'text', default: 'Button' }, content: { type: 'slot', ...over } } };
+    });
+    const from = slot({
+      description: 'Body.', preferred: [{ component: 'List', key: 'k-list' }, { component: 'Text', key: 'k-text' }],
+      min_children: 1, max_children: 3, default_content: [{ part: 'List', type: 'INSTANCE', component: 'List' }],
+    });
+    const changes = (to: LibraryBundleV1) => only(libraryDiff(from, to), 'property')
+      .map(({ id, scope, from: f, to: t, bump }) => ({ id, scope, from: f, to: t, bump }));
+
+    const narrowed = slot({
+      description: 'Body.', preferred: [{ component: 'List', key: 'k-list' }], preferred_only: true,
+      min_children: 1, max_children: 1, default_content: [{ part: 'List', type: 'INSTANCE', component: 'List' }],
+    });
+    expect(changes(narrowed)).toEqual([
+      { id: 'content/limits', scope: 'Slot limits', from: '1 to 3 items', to: 'exactly 1 item', bump: 'major' },
+      { id: 'content/preferred', scope: 'Preferred content', from: 'List, Text', to: 'List', bump: 'major' },
+      { id: 'content/preferred_only', scope: 'Only preferred content', from: 'off', to: 'on', bump: 'major' },
+    ]);
+    expect(libraryDiff(from, narrowed).minimumBump).toBe('major');
+
+    const widened = slot({
+      description: 'Body.', preferred: [{ component: 'List', key: 'k-list' }, { component: 'Text', key: 'k-text' }],
+      default_content: [{ part: 'List', type: 'INSTANCE', component: 'List' }],
+    });
+    expect(changes(widened)).toEqual([
+      { id: 'content/limits', scope: 'Slot limits', from: '1 to 3 items', to: 'none', bump: 'minor' },
+    ]);
+
+    const cosmetic = slot({
+      description: 'Another description.', preferred: [{ component: 'Item list', key: 'k-list' }, { component: 'Text', key: 'k-text' }],
+      min_children: 1, max_children: 3, empty_by_default: true, default_content: [],
+    });
+    // A renamed component keeps its key, so it is no removal; the description is prose.
+    expect(changes(cosmetic)).toEqual([
+      { id: 'content/default_content', scope: 'Default content', from: 'List', to: 'empty', bump: 'patch' },
+      { id: 'content/empty_by_default', scope: 'Display empty by default', from: 'off', to: 'on', bump: 'patch' },
+    ]);
+    expect(libraryDiff(from, slot({
+      description: 'Changed.', preferred: [{ component: 'List', key: 'k-list' }, { component: 'Text', key: 'k-text' }],
+      min_children: 1, max_children: 3, default_content: [{ part: 'List', type: 'INSTANCE', component: 'List' }],
+    })).changes).toEqual([]);
+  });
+
   it('state: removed is major, added is minor', () => {
     const api = () => componentArtifact().api as Record<string, unknown>;
     const gone = withComponent((a) => { a.api = { ...api(), states: [] }; });

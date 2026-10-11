@@ -19,7 +19,16 @@
         "related": { "type": "array", "items": { "type": "string" } }
       }
     },
-    "api": { "type": "object" },
+    "api": {
+      "type": "object",
+      "properties": {
+        "slots": {
+          "type": "object",
+          "description": "Content a consumer supplies: text and instance-swap properties, and Figma slot properties (type slot).",
+          "additionalProperties": { "$ref": "#/$defs/api_slot" }
+        }
+      }
+    },
     "anatomy": { "type": "array", "items": { "$ref": "#/$defs/anatomy_node" } },
     "layout": { "type": "object" },
     "references": { "$ref": "#/$defs/references" },
@@ -154,7 +163,62 @@
           "type": "string",
           "description": "The boolean component property that shows this part. The part is hidden when the property is false. Present only on parts hidden by default in the default variant."
         },
+        "slot": {
+          "type": "string",
+          "description": "Slot parts only: the slot property under api.slots that this part is the slot for. Absent when the slot's link names no slot property."
+        },
+        "default_content": {
+          "type": "array",
+          "description": "Slot parts only: what the slot holds in the default variant. An example of its content, never parts of this component.",
+          "items": { "$ref": "#/$defs/slot_content_item" }
+        },
         "children": { "type": "array", "items": { "$ref": "#/$defs/anatomy_node" } }
+      }
+    },
+    "api_slot": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": { "type": "string", "description": "text, instanceSwap or slot." },
+        "default": { "anyOf": [{ "type": "string" }, { "type": "boolean" }] },
+        "options": { "type": "array", "items": { "type": "string" } },
+        "description": { "type": "string", "description": "Slot only: the designer's description of the slot property." },
+        "preferred": {
+          "type": "array",
+          "description": "Slot only: the components Figma lists as preferred content, in Figma's order. component is null when neither the file nor its libraries could name the key.",
+          "items": {
+            "type": "object",
+            "required": ["component", "key"],
+            "additionalProperties": false,
+            "properties": {
+              "component": { "anyOf": [{ "type": "string" }, { "type": "null" }] },
+              "key": { "type": "string" }
+            }
+          }
+        },
+        "preferred_only": { "const": true, "description": "Slot only: only the preferred components may be inserted." },
+        "min_children": { "type": "integer", "minimum": 0 },
+        "max_children": { "type": "integer", "minimum": 0 },
+        "empty_by_default": {
+          "const": true,
+          "description": "Slot only: Figma's display-empty-by-default setting is on. It does not remove the component's own default content."
+        },
+        "stretch_child_on_insert": { "const": true, "description": "Slot only: Figma's setting that makes an inserted child fill the slot." },
+        "default_content": {
+          "type": "array",
+          "description": "Slot only: what the property's slot holds in the default variant, an example of its content. Absent when that variant has no slot for the property.",
+          "items": { "$ref": "#/$defs/slot_content_item" }
+        }
+      }
+    },
+    "slot_content_item": {
+      "type": "object",
+      "required": ["part", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "part": { "type": "string" },
+        "type": { "type": "string" },
+        "component": { "type": "string" }
       }
     },
     "reference_status": {

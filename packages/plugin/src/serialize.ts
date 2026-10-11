@@ -1,7 +1,7 @@
 import type {
   SerializedNode, PropertyDefinition, TokenRef, RefIdentity, LayoutInfo, RawEffect,
   EffectLayer, EffectBindings, SerializedTrigger, SerializedEasing, SerializedTransitionEffect,
-  SerializedTransition, TransitionDirection,
+  SerializedTransition, TransitionDirection, SerializedSlotDefinition, SlotPreferred,
 } from '@spec-layer/extractor';
 import { effectLayerOf, easingOf, canonicalNumber } from '@spec-layer/extractor';
 import { SYNC_RECORD_KEY, parseSyncRecord, ownDescription, ownDocumentationLink } from './syncRecord';
@@ -64,6 +64,12 @@ export interface NodeResolver {
   variable(id: string): Promise<ResolvedVariable | null>;
   style(id: string): Promise<ResolvedStyle | null>;
   mainComponent(node: unknown): Promise<{ name: string; key: string } | null>;
+  /** Names for those of `keys` that are this file's own components or
+   *  component sets, a variant answering with its set's name. A key the file
+   *  does not hold is absent. Read from the document only, never the network:
+   *  Figma's import by key would make a drift hash depend on library access,
+   *  and it refuses an unpublished local key anyway (probed 2026-10-04). */
+  localComponents(keys: readonly string[]): Promise<ReadonlyMap<string, string>>;
 }
 
 interface RawBoundVar { id: string }
@@ -104,15 +110,95 @@ interface RawNode {
     type: string;
     defaultValue?: string | boolean;
     variantOptions?: string[];
+    // SLOT only. Figma returns `null` for an unset description.
+    description?: string | null;
+    preferredValues?: Array<{ type?: string; key?: string }>;
+    slotSettings?: RawSlotSettings;
   }>;
   componentPropertyReferences?: {
     visible?: string;
     characters?: string;
     mainComponent?: string;
+    // Untyped in @figma/plugin-typings; Figma's own guide documents it.
+    slotContentId?: string;
   } | null;
   // Prototype reactions; absent on node types without the mixin, and the read can throw.
   reactions?: unknown;
   children?: RawNode[];
+}
+
+/** Absent until a setting is saved; then every member, `null` or `false` when unset. */
+interface RawSlotSettings {
+  minChildren?: number | null;
+  maxChildren?: number | null;
+  allowPreferredValuesOnly?: boolean;
+  displayEmptyByDefault?: boolean;
+  stretchChildOnInsert?: boolean;
+}
+
+const PREFERRED_KINDS: Readonly<Record<string, SlotPreferred['kind']>> = {
+  COMPONENT: 'component', COMPONENT_SET: 'componentSet',
+};
+
+/** A child count Figma states: a whole number of zero or more. `null` (no
+ *  limit) and anything else read as absent. */
+const limitOf = (v: unknown): number | undefined =>
+  typeof v === 'number' && Number.isInteger(v) && v >= 0 ? v : undefined;
+
+/**
+ * A SLOT definition as plain JSON, its preferred keys not yet named (see
+ * namePreferredContent). An entry of a type Figma does not document is dropped.
+ */
+export function slotDefinitionOf(
+  raw: { description?: string | null; preferredValues?: Array<{ type?: string; key?: string }>; slotSettings?: RawSlotSettings },
+): SerializedSlotDefinition {
+  const description = typeof raw.description === 'string' ? raw.description.trim() : '';
+  const preferred: SlotPreferred[] = (Array.isArray(raw.preferredValues) ? raw.preferredValues : [])
+    .flatMap((p) => {
+      const kind = typeof p?.type === 'string' ? PREFERRED_KINDS[p.type] : undefined;
+      return kind && typeof p.key === 'string' && p.key !== '' ? [{ kind, key: p.key, name: null }] : [];
+    });
+  const s = raw.slotSettings ?? {};
+  const minChildren = limitOf(s.minChildren);
+  const maxChildren = limitOf(s.maxChildren);
+  return {
+    ...(description !== '' ? { description } : {}),
+    preferred,
+    ...(minChildren !== undefined ? { minChildren } : {}),
+    ...(maxChildren !== undefined ? { maxChildren } : {}),
+    ...(s.allowPreferredValuesOnly === true ? { preferredOnly: true as const } : {}),
+    ...(s.displayEmptyByDefault === true ? { emptyByDefault: true as const } : {}),
+    ...(s.stretchChildOnInsert === true ? { stretchChildOnInsert: true as const } : {}),
+  };
+}
+
+/** Every instance's main component in a serialized subtree, key to name. */
+function instanceNames(nodes: readonly SerializedNode[], out = new Map<string, string>()): Map<string, string> {
+  for (const n of nodes) {
+    if (n.mainComponent && !out.has(n.mainComponent.key)) out.set(n.mainComponent.key, n.mainComponent.name);
+    if (n.children) instanceNames(n.children, out);
+  }
+  return out;
+}
+
+/**
+ * Names each slot's preferred keys, from the document only, so the same file
+ * always reads the same: first the instances inside this component (a slot's
+ * default content is usually one of its preferred components), then the
+ * file's own components. A key neither names keeps `name: null`, never a
+ * guess, and validate() reports it.
+ */
+export async function namePreferredContent(
+  defs: Record<string, PropertyDefinition>,
+  children: readonly SerializedNode[],
+  resolver: NodeResolver,
+): Promise<void> {
+  const preferred = Object.values(defs).flatMap((d) => d.slot?.preferred ?? []);
+  if (preferred.length === 0) return;
+  const inTree = instanceNames(children);
+  const remaining = [...new Set(preferred.filter((p) => !inTree.has(p.key)).map((p) => p.key))];
+  const inFile = remaining.length > 0 ? await resolver.localComponents(remaining) : new Map<string, string>();
+  for (const p of preferred) p.name = inTree.get(p.key) ?? inFile.get(p.key) ?? null;
 }
 
 /** Figma gives weight as a style name. Unknown falls back to 400, the stricter
@@ -339,21 +425,24 @@ export async function serializeNode(node: RawNode, resolver: NodeResolver): Prom
     }
   }
 
-  let propertyDefinitions: Record<string, PropertyDefinition> | undefined;
+  let rawDefinitions: NonNullable<RawNode['componentPropertyDefinitions']> | undefined;
   try {
-    if (node.componentPropertyDefinitions) {
-      const defs: Record<string, PropertyDefinition> = {};
-      for (const [k, v] of Object.entries(node.componentPropertyDefinitions)) {
-        defs[k] = {
-          type: v.type as PropertyDefinition['type'],
-          ...(v.defaultValue !== undefined ? { defaultValue: v.defaultValue } : {}),
-          ...(v.variantOptions ? { variantOptions: v.variantOptions } : {}),
-        };
-      }
-      if (Object.keys(defs).length > 0) propertyDefinitions = defs;
-    }
+    rawDefinitions = node.componentPropertyDefinitions;
   } catch {
     // Figma throws on variant children.
+  }
+  let propertyDefinitions: Record<string, PropertyDefinition> | undefined;
+  if (rawDefinitions) {
+    const defs: Record<string, PropertyDefinition> = {};
+    for (const [k, v] of Object.entries(rawDefinitions)) {
+      defs[k] = {
+        type: v.type as PropertyDefinition['type'],
+        ...(v.defaultValue !== undefined ? { defaultValue: v.defaultValue } : {}),
+        ...(v.variantOptions ? { variantOptions: v.variantOptions } : {}),
+        ...(v.type === 'SLOT' ? { slot: slotDefinitionOf(v) } : {}),
+      };
+    }
+    if (Object.keys(defs).length > 0) propertyDefinitions = defs;
   }
 
   let mainComponent: { name: string; key: string } | undefined;
@@ -378,9 +467,13 @@ export async function serializeNode(node: RawNode, resolver: NodeResolver): Prom
 
   // Null outside a component; wrapped in case a node type rejects the read.
   let visibleProperty: string | undefined;
+  let slotProperty: string | undefined;
   try {
-    const ref = node.componentPropertyReferences?.visible;
-    if (typeof ref === 'string' && ref.length > 0) visibleProperty = ref;
+    const refs = node.componentPropertyReferences;
+    const visible = refs?.visible;
+    if (typeof visible === 'string' && visible.length > 0) visibleProperty = visible;
+    const slot = refs?.slotContentId;
+    if (typeof slot === 'string' && slot.length > 0) slotProperty = slot;
   } catch {
     // Not a property-bearing node.
   }
@@ -419,6 +512,7 @@ export async function serializeNode(node: RawNode, resolver: NodeResolver): Prom
   const children = node.children
     ? await Promise.all(node.children.map(c => serializeNode(c, resolver)))
     : undefined;
+  if (propertyDefinitions) await namePreferredContent(propertyDefinitions, children ?? [], resolver);
 
   const result: SerializedNode = {
     id: node.id,
@@ -426,6 +520,7 @@ export async function serializeNode(node: RawNode, resolver: NodeResolver): Prom
     type: node.type,
     visible: node.visible ?? true,
     ...(visibleProperty !== undefined ? { visibleProperty } : {}),
+    ...(slotProperty !== undefined ? { slotProperty } : {}),
     ...(node.key !== undefined ? { key: node.key } : {}),
     ...(description !== undefined ? { description } : {}),
     ...(documentationLinks.length > 0 ? { documentationLinks } : {}),

@@ -459,6 +459,11 @@ interface AnatomyNodeV5 extends YamlObject {
   type: string;
   /** Only on a part hidden by default: the boolean property that shows it. */
   shown_by?: string;
+  /** Slot parts only: the SLOT property, under `api.slots`, it is the slot for. */
+  slot?: string;
+  /** Slot parts only: what the slot holds in the default variant, an example
+   *  of its content and never parts of this component. */
+  default_content?: YamlValue[];
   children?: YamlValue[];
 }
 
@@ -470,6 +475,12 @@ function componentAnatomy(spec: IntermediateSpec): YamlValue[] {
       part: part.name, path: part.path, type: part.type,
       ...(part.component ? { component: part.component } : {}),
       ...(part.shownBy ? { shown_by: part.shownBy } : {}),
+      ...(part.slot ? { slot: part.slot } : {}),
+      ...(part.defaultContent
+        ? { default_content: part.defaultContent.map((c) => ({
+            part: c.part, type: c.type, ...(c.component ? { component: c.component } : {}),
+          })) }
+        : {}),
     };
     while (stack.length > 0 && stack[stack.length - 1].depth >= part.depth) stack.pop();
     if (stack.length === 0) roots.push(node);

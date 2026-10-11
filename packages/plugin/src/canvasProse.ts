@@ -189,6 +189,16 @@ function stripShownWhenNote(role: string): string {
   return role.slice(0, at).trim();
 }
 
+const SLOT_NOTE = '  ·  Slot';
+
+/** A slot part's "Slot" or "Slot: Content" note sits after the role and
+ *  before any shown note, and is not editorial either. */
+function stripSlotNote(role: string): string {
+  if (role.endsWith(SLOT_NOTE)) return role.slice(0, -SLOT_NOTE.length).trim();
+  const at = role.lastIndexOf(`${SLOT_NOTE}: `);
+  return at >= 0 ? role.slice(0, at).trim() : role;
+}
+
 /** Walk a Section and collect what its editorial slots currently say. */
 export function readCanvasProse(root: ProseNodeLike): CanvasProse {
   const lists = new Map<string, string[]>();
@@ -265,7 +275,7 @@ export function readCanvasProse(root: ProseNodeLike): CanvasProse {
         else if (chars.startsWith(`${shown}: `)) role = chars.slice(shown.length + 2).trim();
         else { const i = chars.indexOf(': '); if (i >= 0) role = chars.slice(i + 2).trim(); }
         // A revealed part's "Shown when X is true" note is not editorial.
-        if (role) role = stripShownWhenNote(role);
+        if (role) role = stripSlotNote(stripShownWhenNote(role));
         if (role) parts.push({ name: key, role });
         return;
       }

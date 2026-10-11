@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { extractProps, extractVariants, extractStates } from '../src/props';
+import { extractProps, extractVariants, extractStates, unsupportedProperties } from '../src/props';
 import button from './fixtures/button.json';
 import chip from './fixtures/chip.json';
 import type { SerializedNode } from '../src/tree';
@@ -12,6 +12,25 @@ describe('props/variants/states', () => {
     expect(props).toContainEqual({ name: 'Style', kind: 'variant', options: ['Filled', 'Outlined'], default: 'Filled' });
     expect(props).toContainEqual({ name: 'Show icon', kind: 'boolean', options: undefined, default: false });
     expect(props.find((p) => p.name === 'Label')?.kind).toBe('text');
+  });
+
+  it('maps a Figma SLOT property to the slot kind, with no default', () => {
+    // Figma's SLOT definition has no `defaultValue` key (probed 2026-10-04).
+    const slotted: SerializedNode = {
+      ...root,
+      propertyDefinitions: { ...root.propertyDefinitions, 'Content#2:0': { type: 'SLOT' } },
+    };
+    expect(extractProps(slotted)).toContainEqual({ name: 'Content', kind: 'slot', default: undefined });
+  });
+
+  it('leaves out a property type it does not know, and reports it', () => {
+    const future: SerializedNode = {
+      ...root,
+      propertyDefinitions: { ...root.propertyDefinitions, 'Pattern#9:9': { type: 'PATTERN' as never } },
+    };
+    expect(extractProps(future).some((p) => p.name === 'Pattern')).toBe(false);
+    expect(unsupportedProperties(future)).toEqual([{ kind: 'unsupported-property-type', property: 'Pattern', figmaType: 'PATTERN' }]);
+    expect(unsupportedProperties(root)).toEqual([]);
   });
 
   it('builds the variant matrix from variant props only', () => {

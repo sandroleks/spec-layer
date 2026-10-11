@@ -104,7 +104,11 @@ facts only (component properties, variant axes and options, states, anatomy
 parts, token bindings, layout and effect values, collections, modes, tokens
 and their per-mode values, styles), and derives the minimum bump: a removal
 or rename of a structural entity is `major`, an addition is `minor`,
-everything else is `patch`. A bundle whose content hash moved without any
+everything else is `patch`. A Figma slot's constraints are bumped by
+direction: narrowing what may go in the slot (only preferred turned on, a
+raised minimum, a lowered or new maximum, a preferred component removed while
+only preferred is on) is `major`, widening is `minor`, and its default
+content and display settings are `patch`. A bundle whose content hash moved without any
 property change (a description edit) is a `patch`. The client may raise the
 bump and never lower it; a `bump` below the minimum answers
 `400 {"error":"bump_below_minimum","minimumBump":…,"proposedVersion":…}` with

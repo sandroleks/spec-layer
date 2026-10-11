@@ -151,6 +151,18 @@ describe('readCanvasProse', () => {
     ]);
   });
 
+  it('reads a slot part\'s role without the "Slot" note, so an update never repeats it', () => {
+    const doc = frame([
+      keyed('anatomyPart', 'Content', [text('Content: Holds the body.  ·  Slot')]),
+      keyed('anatomyPart', 'Body area', [text('Body area: Holds the body.  ·  Slot: Body  ·  Shown when Show body is true')]),
+      keyed('anatomyPart', 'Footer', [text('Footer  ·  Slot')]),
+    ]);
+    expect(readCanvasProse(doc).anatomyParts).toEqual([
+      { name: 'Content', role: 'Holds the body.' },
+      { name: 'Body area', role: 'Holds the body.' },
+    ]);
+  });
+
   it('does not invent a role from a nested part whose component name contains a colon', () => {
     // The legend prints the DISPLAY name ("Icon leading") while the tag keeps
     // the raw key ("iconLeading"); the nested note here ("Icon: 24") itself
