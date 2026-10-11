@@ -53,15 +53,15 @@ export interface SettingsScreenState {
   /** How components leave the plugin. Absent reads as YAML, the default. */
   componentFormat?: ComponentFormat;
   /** Annotate in Dev Mode. Absent until main reports, which reads as off and no link. */
-  syncOnUpdate?: boolean;
-  syncFileUrl?: string | null;
+  annotateOnUpdate?: boolean;
+  annotateFileUrl?: string | null;
   /** Text typed into the file link field and not saved yet. Shown in place of
    *  the saved link, so a repaint never takes it away. */
-  syncFileUrlDraft?: string | undefined;
+  annotateFileUrlDraft?: string | undefined;
   /** Why the typed file link was refused; cleared by the next save. */
-  syncFileUrlError?: string | undefined;
+  annotateFileUrlError?: string | undefined;
   /** A run is planning, confirming or writing. */
-  syncBusy?: boolean;
+  annotateBusy?: boolean;
   /** Another operation holds the plugin, so no run can start. */
   operationActive?: boolean;
 }
@@ -269,11 +269,11 @@ function exportSection(format: ComponentFormat): string {
  * the automatic one asks first.
  */
 function syncSection(state: SettingsScreenState): string {
-  const on = state.syncOnUpdate === true;
-  const saved = state.syncFileUrl ?? '';
-  const shown = state.syncFileUrlDraft ?? saved;
-  const error = state.syncFileUrlError ?? '';
-  const blocked = state.syncBusy === true || state.operationActive === true;
+  const on = state.annotateOnUpdate === true;
+  const saved = state.annotateFileUrl ?? '';
+  const shown = state.annotateFileUrlDraft ?? saved;
+  const error = state.annotateFileUrlError ?? '';
+  const blocked = state.annotateBusy === true || state.operationActive === true;
   return (
     '<section class="sl-settings-section sl-sync-setting" aria-labelledby="sl-sync-heading">' +
     '<div class="sl-settings-section-heading">' +
@@ -309,7 +309,7 @@ function syncSection(state: SettingsScreenState): string {
     'A copy of this file keeps this link until you save its own.</p>' +
     '<div class="sl-logo-actions">' +
     `<button class="sl-button" data-tone="primary" type="button" data-sync-all${blocked ? ' disabled' : ''}>` +
-    `${icon('fileDescription', 15)}<span>${state.syncBusy ? 'Annotating…' : 'Annotate all components'}</span></button>` +
+    `${icon('fileDescription', 15)}<span>${state.annotateBusy ? 'Annotating…' : 'Annotate all components'}</span></button>` +
     '</div>' +
     '</section>'
   );

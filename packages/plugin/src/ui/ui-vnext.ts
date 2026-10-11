@@ -203,49 +203,49 @@ let settingsColorError = '';
 let settingsFontWarning = '';
 let settingsLogoError = '';
 /** Annotate in Dev Mode, as main last reported it. */
-let syncOnUpdate = false;
-let syncFileUrl: string | null = null;
-let syncFileUrlError = '';
+let annotateOnUpdate = false;
+let annotateFileUrl: string | null = null;
+let annotateFileUrlError = '';
 /** What is typed in the file link field and not saved yet; null shows the saved link. */
-let syncFileUrlDraft: string | null = null;
+let annotateFileUrlDraft: string | null = null;
 /** A run is planning, confirming or writing; one at a time. */
-let syncBusy = false;
+let annotateBusy = false;
 
 /** Plan first, confirm, then write. Main plans again before it writes. A run
  *  holds the operation gate throughout, dialogs included, so no build,
  *  Update, Detach or Delete starts while it writes. */
-function startSync(scope: SyncScope): void {
-  if (syncBusy || !beginOperation(operation)) return;
-  syncBusy = true;
+function startAnnotate(scope: SyncScope): void {
+  if (annotateBusy || !beginOperation(operation)) return;
+  annotateBusy = true;
   paint();
-  send({ type: 'requestSyncPlan', scope, replaceEdited: false });
+  send({ type: 'requestAnnotatePlan', scope, replaceEdited: false });
 }
 
-function endSync(): void {
-  syncBusy = false;
+function endAnnotate(): void {
+  annotateBusy = false;
   completeOperation();
   paint();
 }
 
 function offerReplace(scope: SyncScope, dialog: ConfirmDialogOptions): void {
   void confirmDialog(dialog).then((ok) => {
-    if (ok) send({ type: 'applySync', scope, replaceEdited: true });
-    else endSync();
+    if (ok) send({ type: 'applyAnnotate', scope, replaceEdited: true });
+    else endAnnotate();
   });
 }
 
-function saveSyncFileUrl(value: string): void {
+function saveAnnotateFileUrl(value: string): void {
   const trimmed = value.trim();
   if (trimmed !== '' && !fileKeyFromUrl(trimmed)) {
     // The typed text stays in the field, so it can be corrected.
-    syncFileUrlDraft = value;
-    syncFileUrlError = 'That is not a Figma file link. Copy it from Share, then Copy link.';
+    annotateFileUrlDraft = value;
+    annotateFileUrlError = 'That is not a Figma file link. Copy it from Share, then Copy link.';
     paintAndFocus('#sl-sync-file-url');
     return;
   }
-  syncFileUrlDraft = null;
-  syncFileUrlError = '';
-  send({ type: 'setSyncFileUrl', value: trimmed });
+  annotateFileUrlDraft = null;
+  annotateFileUrlError = '';
+  send({ type: 'setAnnotateFileUrl', value: trimmed });
 }
 let settingsFonts: string[] = [];
 let settingsFontsRequested = false;
@@ -553,12 +553,12 @@ function paintScreen(): void {
         pluginVersion: pluginBuild(),
         tab: settingsTab,
         componentFormat: state.componentFormat,
-        syncOnUpdate,
-        syncFileUrl,
-        syncBusy,
+        annotateOnUpdate,
+        annotateFileUrl,
+        annotateBusy,
         operationActive: operation.active,
-        ...(syncFileUrlDraft !== null ? { syncFileUrlDraft } : {}),
-        ...(syncFileUrlError ? { syncFileUrlError } : {}),
+        ...(annotateFileUrlDraft !== null ? { annotateFileUrlDraft } : {}),
+        ...(annotateFileUrlError ? { annotateFileUrlError } : {}),
         ...(settingsColorError ? { colorError: settingsColorError } : {}),
         ...(settingsFontWarning ? { fontWarning: settingsFontWarning } : {}),
         ...(settingsLogoError ? { logoError: settingsLogoError } : {}),
@@ -638,7 +638,7 @@ function libraryPresentation(): LibraryScreenPresentation {
     checkProgress,
     updatingAll: Boolean(update?.batch),
     updatingDocId: update?.currentDocId ?? null,
-    annotating: syncBusy,
+    annotating: annotateBusy,
     progress,
   };
 }
@@ -2076,9 +2076,9 @@ document.addEventListener('click', (event) => {
       case 'copy':
         startLibraryCopy(docId);
         return;
-      case 'sync':
+      case 'annotate':
         // This row's doc, even when its component has a newer one.
-        if (entry?.sourceNodeId) startSync({ kind: 'doc', docId });
+        if (entry?.sourceNodeId) startAnnotate({ kind: 'doc', docId });
         return;
       case 'detach':
         if (operation.active) return;
@@ -2204,21 +2204,21 @@ document.addEventListener('click', (event) => {
 
   if (target.closest('[data-sync-file-save]')) {
     const field = document.querySelector<HTMLInputElement>('#sl-sync-file-url');
-    saveSyncFileUrl(field?.value ?? '');
+    saveAnnotateFileUrl(field?.value ?? '');
     return;
   }
 
   if (target.closest('[data-sync-file-clear]')) {
-    syncFileUrlError = '';
-    syncFileUrlDraft = null;
-    send({ type: 'setSyncFileUrl', value: '' });
+    annotateFileUrlError = '';
+    annotateFileUrlDraft = null;
+    send({ type: 'setAnnotateFileUrl', value: '' });
     // The Remove button goes with the link, so focus moves to the field.
     paintAndFocus('#sl-sync-file-url');
     return;
   }
 
   if (target.closest('[data-sync-all]')) {
-    startSync({ kind: 'all' });
+    startAnnotate({ kind: 'all' });
     return;
   }
 
@@ -2314,8 +2314,8 @@ document.addEventListener('change', (event) => {
   if (!input) return;
 
   if (input.id === 'sl-sync-on-update') {
-    syncOnUpdate = input.checked;
-    send({ type: 'setSyncOnUpdate', value: input.checked });
+    annotateOnUpdate = input.checked;
+    send({ type: 'setAnnotateOnUpdate', value: input.checked });
     paintAndFocus('#sl-sync-on-update');
     return;
   }
@@ -2439,7 +2439,7 @@ document.addEventListener('input', (event) => {
   }
   if (input.matches('[data-sync-file-url]')) {
     // Kept, not painted: a repaint for anything else redraws the field with it.
-    syncFileUrlDraft = input.value;
+    annotateFileUrlDraft = input.value;
     return;
   }
   if (input.matches('[data-publish-initial-version]')) {
@@ -2559,7 +2559,7 @@ document.addEventListener('keydown', (event) => {
 
   if (event.key === 'Enter' && event.target instanceof HTMLInputElement && event.target.id === 'sl-sync-file-url') {
     event.preventDefault();
-    saveSyncFileUrl(event.target.value);
+    saveAnnotateFileUrl(event.target.value);
     return;
   }
 
@@ -2854,30 +2854,30 @@ const handleMainMessage = (event: MessageEvent): void => {
       paint();
       return;
 
-    case 'syncSettings':
-      syncOnUpdate = msg.onUpdate;
-      syncFileUrl = msg.fileUrl;
+    case 'annotateSettings':
+      annotateOnUpdate = msg.onUpdate;
+      annotateFileUrl = msg.fileUrl;
       paint();
       return;
 
-    case 'syncPlan': {
+    case 'annotatePlan': {
       const next = planNext(msg.plan, msg.scope);
       if (next.kind === 'toast') {
         nativeNotify(next.message, next.error ? { error: true } : {});
-        endSync();
+        endAnnotate();
       } else if (next.kind === 'replace') {
         offerReplace(msg.scope, next.dialog);
       } else {
         const scope = msg.scope;
         void confirmDialog(next.dialog).then((ok) => {
-          if (ok) send({ type: 'applySync', scope, replaceEdited: false });
-          else endSync();
+          if (ok) send({ type: 'applyAnnotate', scope, replaceEdited: false });
+          else endAnnotate();
         });
       }
       return;
     }
 
-    case 'syncDone': {
+    case 'annotateDone': {
       const toast = resultToast(msg.result);
       nativeNotify(toast.message, toast.error ? { error: true } : {});
       // Replace is offered from what this run kept and had not reported
@@ -2888,14 +2888,14 @@ const handleMainMessage = (event: MessageEvent): void => {
       if (!msg.replaceEdited && heldNew.length > 0 && failed.length === 0) {
         offerReplace(msg.scope, replaceDialog(heldNew, heldAi.filter((name) => heldNew.includes(name))));
       } else {
-        endSync();
+        endAnnotate();
       }
       return;
     }
 
-    case 'syncError':
+    case 'annotateError':
       nativeNotify(`Couldn’t annotate in Dev Mode: ${msg.message}`, { error: true });
-      endSync();
+      endAnnotate();
       return;
 
     case 'brandTheme':
