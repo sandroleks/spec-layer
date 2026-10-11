@@ -313,7 +313,7 @@ export function annotationFor(layer: LayerFacts): AnnotationSpec | null {
   const properties: string[] = [];
   if (layer.type === 'TEXT') properties.push('fontSize', 'lineHeight');
   if (layer.autoLayout) properties.push('padding', ...(layer.grid ? ['gridRowGap', 'gridColumnGap'] : ['itemSpacing']));
-  // Figma refuses a pinned cornerRadius on a SLOT node (probed 2026-10-04),
+  // Figma refuses a pinned cornerRadius on a SLOT node (probed 2026-10-11),
   // and the refusal would take the whole annotation with it.
   if (layer.hasRadius && layer.type !== 'SLOT') properties.push('cornerRadius');
   if (layer.type === 'INSTANCE') properties.push('mainComponent');
