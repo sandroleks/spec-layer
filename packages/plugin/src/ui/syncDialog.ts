@@ -20,23 +20,45 @@ export type SyncNext =
   | { kind: 'replace'; dialog: ConfirmDialogOptions }
   | { kind: 'toast'; message: string; error?: boolean };
 
-function aiReplaceSentence(names: readonly string[]): string {
-  return `The doc’s text for ${nameList(names)} includes text written with AI that nobody has edited, so replace it only once you have read it.`;
+export type KeptKinds = SyncCounts['keptKinds'];
+
+/** The kinds of value kept, plural when more than one component is named. */
+function keptKindList(kinds: KeptKinds | undefined, many: boolean): string {
+  const parts: string[] = [];
+  if (!kinds || kinds.description) parts.push(many ? 'descriptions' : 'description');
+  if (!kinds || kinds.link) parts.push(many ? 'links' : 'link');
+  if (!kinds || kinds.annotations) parts.push('annotations');
+  return kinds ? nameList(parts) : `${parts.slice(0, -1).join(', ')} or ${parts[parts.length - 1]}`;
+}
+
+function aiNote(names: readonly string[], action: string): string {
+  return names.length === 1
+    ? `The description for ${names[0]} includes text written with AI that nobody has edited. Read it in the doc before you ${action}.`
+    : `The descriptions for ${nameList(names)} include text written with AI that nobody has edited. Read them in the docs before you ${action}.`;
 }
 
 /** Writes the doc's text over values a person set, changed or removed in Figma.
- *  `lead` opens the body, for a run that found nothing else to do. */
-export function replaceDialog(held: readonly string[], heldAi: readonly string[] = [], lead?: string): ConfirmDialogOptions {
-  const sentences = [
-    ...(lead ? [lead] : []),
-    `${nameList(held)} ${verb(held, 'has', 'have')} a description, link or annotation that was set or removed in Figma.`,
-    'Replacing writes the doc’s text over it.',
-    ...(heldAi.length ? [aiReplaceSentence(heldAi)] : []),
+ *  `lead` opens the body, for a run that found nothing else to do. `kinds`
+ *  names what was kept when the plan knows it. */
+export function replaceDialog(
+  held: readonly string[], heldAi: readonly string[] = [], lead?: string, kinds?: KeptKinds,
+): ConfirmDialogOptions {
+  const changed = held.length > 1
+    ? `${nameList(held)} have changes made in Figma to their ${keptKindList(kinds, true)}.`
+    : `${held[0]} has changes made in Figma to its ${keptKindList(kinds, false)}.`;
+  const notes = [
+    ...(heldAi.length ? [aiNote(heldAi, 'replace')] : []),
     // The description is part of the drift baseline, so replacing one moves it.
-    'A doc whose description is replaced then shows Update available.',
+    ...(!kinds || kinds.description ? ['A replaced description makes its doc show Update available.'] : []),
     'You can undo this right after.',
   ];
-  return { title: 'Replace what was set in Figma?', body: sentences.join(' '), confirmLabel: 'Replace', tone: 'danger' };
+  return {
+    title: 'Replace changes made in Figma?',
+    body: [...(lead ? [lead] : []), changed, 'Replacing writes the doc’s text over them.'].join(' '),
+    notes,
+    confirmLabel: 'Replace',
+    tone: 'danger',
+  };
 }
 
 function changeSentences(c: SyncCounts): string[] {
@@ -109,7 +131,7 @@ export function planNext(plan: SyncPlanResult, scope: SyncScope): SyncNext {
   const waiting = c.updateFirst.length ? [updateFirstSentence(c.updateFirst)] : [];
   if (changes.length === 0) {
     if (c.edited.length) {
-      if (scope.kind !== 'all') return { kind: 'replace', dialog: replaceDialog(c.edited, c.keptAi, 'Nothing new to annotate.') };
+      if (scope.kind !== 'all') return { kind: 'replace', dialog: replaceDialog(c.edited, c.keptAi, 'Nothing new to annotate.', c.keptKinds) };
       return {
         kind: 'toast',
         message: `Nothing new to annotate. What was set in Figma is kept for ${nameList(c.edited)}. `
@@ -119,24 +141,22 @@ export function planNext(plan: SyncPlanResult, scope: SyncScope): SyncNext {
     if (!waiting.length && !skipped.length) return { kind: 'toast', message: 'Dev Mode already matches these docs.' };
     return { kind: 'toast', message: ['Nothing to annotate in Dev Mode yet.', ...waiting, ...skipped].join(' ') };
   }
-  const sentences = [...changes];
-  if (c.aiWritten.length) {
-    sentences.push(`Some of the text for ${nameList(c.aiWritten)} was written with AI and nobody has edited it. Confirm only once you have read it.`);
-  }
+  const notes: string[] = [];
+  if (c.aiWritten.length) notes.push(aiNote(c.aiWritten, 'annotate'));
   if (c.edited.length) {
-    sentences.push(`Descriptions, links and annotations set or removed in Figma are kept for ${nameList(c.edited)}. You can replace them next.`);
+    notes.push(c.edited.length > 1
+      ? `${nameList(c.edited)} keep the changes made in Figma to their ${keptKindList(c.keptKinds, true)}. You can replace them after this.`
+      : `${c.edited[0]} keeps the changes made in Figma to its ${keptKindList(c.keptKinds, false)}. You can replace them after this.`);
   }
-  sentences.push(...waiting, ...skipped);
-  if (!plan.fileLinkKnown) {
-    sentences.push('To set documentation links too, save this file’s link in Settings, Export.');
-  }
-  if (c.descriptions || c.cleared) sentences.push('Other files see the descriptions after you publish the library.');
+  notes.push(...waiting, ...skipped);
+  if (!plan.fileLinkKnown) notes.push('To add documentation links too, save this file’s link in Settings, on the Export tab.');
   const one = plan.items.length === 1;
   return {
     kind: 'confirm',
     dialog: {
       title: one ? `Annotate ${plan.items[0].name} in Dev Mode?` : `Annotate ${plural(plan.items.length, 'component', 'components')} in Dev Mode?`,
-      body: sentences.join(' '),
+      body: changes.join(' '),
+      notes,
       confirmLabel: 'Annotate',
     },
   };
