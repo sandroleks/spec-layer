@@ -278,7 +278,7 @@ function syncSection(state: SettingsScreenState): string {
     '<section class="sl-settings-section sl-sync-setting" aria-labelledby="sl-sync-heading">' +
     '<div class="sl-settings-section-heading">' +
     '<h2 id="sl-sync-heading">Annotate in Dev Mode</h2>' +
-    '<p>Writes each doc’s usage text into the component description and annotates its parts, ' +
+    '<p>Writes each doc’s Usage text into the component description and annotates its parts, ' +
     'so Dev Mode shows what your docs show. You confirm each run you start.</p>' +
     '</div>' +
     // The neutral switch row: the AI control's surface would read as an AI setting.
@@ -309,7 +309,7 @@ function syncSection(state: SettingsScreenState): string {
     'A copy of this file keeps this link until you save its own.</p>' +
     '<div class="sl-logo-actions">' +
     `<button class="sl-button" data-tone="primary" type="button" data-sync-all${blocked ? ' disabled' : ''}>` +
-    `${icon('upload', 15)}<span>${state.syncBusy ? 'Annotating…' : 'Annotate all components'}</span></button>` +
+    `${icon('fileDescription', 15)}<span>${state.syncBusy ? 'Annotating…' : 'Annotate all components'}</span></button>` +
     '</div>' +
     '</section>'
   );
