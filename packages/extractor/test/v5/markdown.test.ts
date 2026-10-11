@@ -152,6 +152,20 @@ describe('componentMarkdown properties', () => {
     expect(out).toContain('States: Enabled, Hovered, Disabled');
   });
 
+  it('words an instance swap as Figma does, and adds a Description column only for a slot description', () => {
+    const artifact = structuredClone(buildComponentV5GoldenArtifact()) as unknown as { api: { slots: Record<string, unknown> } };
+    artifact.api.slots.icon = { type: 'instanceSwap' };
+    const swapped = componentMarkdown(artifact as never);
+    expect(swapped).toContain('| icon | Instance swap |  |  |');
+    expect(swapped).toContain('| Property | Type | Options | Default |\n');
+
+    artifact.api.slots.content = { type: 'slot', description: 'Body | footer.', preferred: [{ component: null, key: 'k' }] };
+    const described = componentMarkdown(artifact as never);
+    expect(described).toContain('| Property | Type | Options | Default | Description |');
+    expect(described).toContain('| content | Slot | 1 component not found |  | Body \\| footer. |');
+    expect(described).toContain('| Label | Text |  | Button |  |');
+  });
+
   it('omits the section entirely when there is no api', () => {
     const artifact = buildComponentV5GoldenArtifact();
     const out = componentMarkdown(omit(artifact, 'api'));

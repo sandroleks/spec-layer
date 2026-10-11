@@ -209,8 +209,7 @@ function tokensOf(spec: IntermediateSpec): YamlValue {
  * key could not name keeps `component: null`; validate() says why.
  */
 function slotApi(p: ComponentProp): YamlValue {
-  const s = p.slot;
-  if (!s) return { type: 'slot' };
+  const s = p.slot ?? { preferred: [] };
   return {
     type: 'slot',
     ...(s.description !== undefined ? { description: s.description } : {}),
@@ -222,6 +221,11 @@ function slotApi(p: ComponentProp): YamlValue {
     ...(s.maxChildren !== undefined ? { max_children: s.maxChildren } : {}),
     ...(s.emptyByDefault ? { empty_by_default: true } : {}),
     ...(s.stretchChildOnInsert ? { stretch_child_on_insert: true } : {}),
+    ...(p.defaultContent
+      ? { default_content: p.defaultContent.map((c) => ({
+          part: c.part, type: c.type, ...(c.component ? { component: c.component } : {}),
+        })) }
+      : {}),
   };
 }
 

@@ -6,6 +6,8 @@
  */
 import { extract, type IntermediateSpec } from '../extract';
 import type { AnatomyPart } from '../anatomy';
+import type { ComponentProp } from '../props';
+import { slotDefaultText, slotValuesText, slotView } from '../slots';
 import type { SerializedNode } from '../tree';
 import { detectStateMatrix } from '../statesMatrix';
 import { formatConditions } from '../tokens';
@@ -15,6 +17,18 @@ import { fencedBlock } from './prompt';
 
 /** The proxy anchors its final-message check on this exact string. */
 export const PROMPT_RETURN_ANCHOR = '\nReturn ONLY a JSON object with these keys: ';
+
+/** A slot's facts in the words its Properties row uses, so prose about what
+ *  goes in the slot starts from what Figma states rather than a guess. */
+function slotFacts(p: ComponentProp): string {
+  const view = slotView(p);
+  const facts = [
+    slotValuesText(view) ? `accepts ${slotValuesText(view)}` : '',
+    slotDefaultText(view) ? `holds ${slotDefaultText(view)}` : '',
+    p.slot?.description ? `designer's description: ${p.slot.description}` : '',
+  ].filter((f) => f !== '');
+  return facts.length > 0 ? ` (${facts.join('; ')})` : '';
+}
 
 /** In words: the model reasons better about "text" than `TEXT`. */
 export function partKind(part: AnatomyPart): string {
@@ -142,7 +156,7 @@ export function buildProsePrompt(spec: IntermediateSpec, requested?: ReadonlySet
     lines.push('Properties:');
     for (const p of otherProps) {
       const def = p.default !== undefined ? ` (default: ${p.default})` : '';
-      lines.push(`  ${p.name} [${p.kind}]${def}`);
+      lines.push(`  ${p.name} [${p.kind}]${def}${p.kind === 'slot' ? slotFacts(p) : ''}`);
     }
   }
 

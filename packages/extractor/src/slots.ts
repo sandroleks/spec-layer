@@ -133,20 +133,46 @@ export function slotDefaultsByProperty(
 }
 
 /**
+ * The slot facts a Properties row draws, from either source: the extracted
+ * prop on canvas (`slotView`) or the artifact's `api.slots` entry in
+ * Markdown, so both print the same words.
+ */
+export interface SlotView {
+  /** Preferred components by name, in Figma's order; null where unnamed. */
+  preferred: (string | null)[];
+  preferredOnly?: boolean;
+  minChildren?: number;
+  maxChildren?: number;
+  emptyByDefault?: boolean;
+  /** Absent when the default variant has no slot for the property. */
+  defaultContent?: SlotContentItem[];
+}
+
+export function slotView(prop: ComponentProp): SlotView {
+  const s = prop.slot;
+  return {
+    preferred: (s?.preferred ?? []).map((p) => p.name),
+    ...(s?.preferredOnly ? { preferredOnly: true } : {}),
+    ...(s?.minChildren !== undefined ? { minChildren: s.minChildren } : {}),
+    ...(s?.maxChildren !== undefined ? { maxChildren: s.maxChildren } : {}),
+    ...(s?.emptyByDefault ? { emptyByDefault: true } : {}),
+    ...(prop.defaultContent ? { defaultContent: prop.defaultContent } : {}),
+  };
+}
+
+/**
  * A slot's Values cell: preferred components by name, an unnamed key counted
  * and never named, "only these" when Figma allows nothing else, then the
  * limits. Empty when Figma states none of these.
  */
-export function slotValuesText(prop: ComponentProp): string {
-  const s = prop.slot;
-  if (!s) return '';
-  const named = s.preferred.flatMap((p) => (p.name === null ? [] : [p.name]));
-  const missing = s.preferred.length - named.length;
+export function slotValuesText(view: SlotView): string {
+  const named = view.preferred.filter((name): name is string => name !== null);
+  const missing = view.preferred.length - named.length;
   const listed = [...named, ...(missing > 0 ? [`${missing} ${missing === 1 ? 'component' : 'components'} not found`] : [])];
   const preferred = listed.length > 0
-    ? `${listed.join(' · ')}${s.preferredOnly ? ', only these' : ''}`
+    ? `${listed.join(' · ')}${view.preferredOnly ? ', only these' : ''}`
     : '';
-  return [preferred, slotLimitsText(s.minChildren, s.maxChildren) ?? ''].filter((t) => t !== '').join('; ');
+  return [preferred, slotLimitsText(view.minChildren, view.maxChildren) ?? ''].filter((t) => t !== '').join('; ');
 }
 
 /**
@@ -155,12 +181,12 @@ export function slotValuesText(prop: ComponentProp): string {
  * (probed 2026-10-04), so it is named beside the content, not instead of it.
  * Blank when the default variant has no slot for the property.
  */
-export function slotDefaultText(prop: ComponentProp): string {
-  const emptyByDefault = prop.slot?.emptyByDefault === true;
-  if (!prop.defaultContent) return emptyByDefault ? 'Display empty by default' : '';
+export function slotDefaultText(view: SlotView): string {
+  const emptyByDefault = view.emptyByDefault === true;
+  if (!view.defaultContent) return emptyByDefault ? 'Display empty by default' : '';
   const note = emptyByDefault ? ' (display empty by default)' : '';
-  const content = prop.defaultContent.length > 0
-    ? prop.defaultContent.map(slotContentLabel).join(' · ')
+  const content = view.defaultContent.length > 0
+    ? view.defaultContent.map(slotContentLabel).join(' · ')
     : 'Empty';
   return `${content}${note}`;
 }

@@ -2,7 +2,7 @@ spec_layer:
   kind: component
   version: 5
   profile: ai
-  content_hash: sha256:81121f542be5d8fb7f7f639839d070688867566e0938bbabd26714ec4af1e479
+  content_hash: sha256:e4d84b7ee4d3cbda3af5f132ee5c40c0ae5b25ac13e5bde2f8319c4dda3661b2
   source: { provider: figma, file_name: Design System }
 source: { node_id: 40:1, node_name: Card, component_key: synthetic-card-slots }
 component:
@@ -24,7 +24,11 @@ api:
       preferred_only: true
       min_children: 1
       max_children: 1
-    Actions: { type: slot, empty_by_default: true }
+      default_content: [{ part: List, type: INSTANCE, component: List }]
+    Actions:
+      type: slot
+      empty_by_default: true
+      default_content: [{ part: Badge, type: INSTANCE, component: Badge }]
 anatomy:
   - { part: Title, path: Container/Title, type: TEXT }
   - part: Body

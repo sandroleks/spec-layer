@@ -13,6 +13,7 @@ import { matchesVariant } from './resolve';
 import { canonicalJson } from './v5/canonical';
 import { compareCodeUnits } from './v5/diagnostics';
 import { easingLabel } from './motion';
+import { slotLimitsText } from './slots';
 import type { LibraryBundleV1 } from './libraryBundle';
 import type { CanonicalValue, TypedValue } from './v5/value';
 
@@ -228,7 +229,19 @@ export function formatCanonicalValue(value: CanonicalValue): string {
 // ---------------------------------------------------------------------------
 
 interface AxisFact { name: string; options: string[]; default: string | null }
-interface PropertyFact { name: string; kind: string; default: string | null; options: string[] | null }
+interface PropertyFact { name: string; kind: string; default: string | null; options: string[] | null; slot?: SlotFact }
+/** A Figma slot's constraints, as `api.slots` states them. The description is
+ *  prose, so it is never read, as a component description is not. */
+interface SlotFact {
+  /** Keyed by component key, so a renamed component is not a removal. */
+  preferred: { key: string; name: string | null }[];
+  preferredOnly: boolean;
+  min: number | null;
+  max: number | null;
+  emptyByDefault: boolean;
+  stretchChildOnInsert: boolean;
+  defaultContent: string[] | null;
+}
 /** Keyed by `path`, not `name`: a name repeats across anatomy branches, and
  *  positional matching would fabricate a `changed` between unrelated nodes. */
 interface PartFact { path: string; name: string; type: string; shownBy: string | null; component: string | null }
@@ -283,6 +296,83 @@ function formatPart(fact: PartFact): string {
   return parts.join(', ');
 }
 
+function readSlotFact(record: Record<string, unknown>): SlotFact {
+  const count = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+  return {
+    preferred: asArray(record.preferred).flatMap((raw) => {
+      const p = asRecord(raw);
+      const key = asString(p.key);
+      return key === null ? [] : [{ key, name: asString(p.component) }];
+    }),
+    preferredOnly: record.preferred_only === true,
+    min: count(record.min_children),
+    max: count(record.max_children),
+    emptyByDefault: record.empty_by_default === true,
+    stretchChildOnInsert: record.stretch_child_on_insert === true,
+    defaultContent: Array.isArray(record.default_content)
+      ? asArray(record.default_content).map((raw) => {
+        const c = asRecord(raw);
+        return asString(c.component) ?? asString(c.part) ?? '';
+      })
+      : null,
+  };
+}
+
+const maxBump = (bumps: Bump[]): Bump => bumps.reduce((a, b) => (compareBump(b, a) > 0 ? b : a), 'patch');
+
+/**
+ * One change per slot constraint, each bumped by its direction. Narrowing what
+ * a consumer may put in the slot breaks that consumer, so it is major: only
+ * preferred turned on, a raised minimum, a lowered or new maximum, a preferred
+ * component removed while only preferred is on. Widening is minor. Default
+ * content and the two display settings change no contract, so they are patch.
+ * Every change is a `property` change, which every plugin's history pane can
+ * already word; the facet is its scope.
+ */
+function slotChanges(component: string, name: string, b: SlotFact, a: SlotFact): LibraryChange[] {
+  const out: LibraryChange[] = [];
+  const push = (facet: string, scope: string, from: string, to: string, bump: Bump): void => {
+    out.push({ kind: 'changed', entity: 'property', component, id: `${name}/${facet}`, name, from, to, scope, bump });
+  };
+  const names = (s: SlotFact): string =>
+    s.preferred.length > 0 ? s.preferred.map((p) => p.name ?? 'a component not found').join(', ') : 'none';
+  const before = new Set(b.preferred.map((p) => p.key));
+  const after = new Set(a.preferred.map((p) => p.key));
+  const removed = [...before].some((k) => !after.has(k));
+  const added = [...after].some((k) => !before.has(k));
+  if (removed || added) {
+    push('preferred', 'Preferred content', names(b), names(a), maxBump([
+      removed && a.preferredOnly ? 'major' : 'patch',
+      added && b.preferredOnly ? 'minor' : 'patch',
+    ]));
+  }
+  if (b.preferredOnly !== a.preferredOnly) {
+    push('preferred_only', 'Only preferred content', b.preferredOnly ? 'on' : 'off', a.preferredOnly ? 'on' : 'off',
+      a.preferredOnly ? 'major' : 'minor');
+  }
+  if (b.min !== a.min || b.max !== a.max) {
+    const minBump: Bump = (a.min ?? 0) > (b.min ?? 0) ? 'major' : (a.min ?? 0) < (b.min ?? 0) ? 'minor' : 'patch';
+    const tighter = a.max !== null && (b.max === null || a.max < b.max);
+    const looser = b.max !== null && (a.max === null || a.max > b.max);
+    const maxLimitBump: Bump = tighter ? 'major' : looser ? 'minor' : 'patch';
+    push('limits', 'Slot limits',
+      slotLimitsText(b.min ?? undefined, b.max ?? undefined) ?? 'none',
+      slotLimitsText(a.min ?? undefined, a.max ?? undefined) ?? 'none',
+      maxBump([minBump, maxLimitBump]));
+  }
+  if (b.emptyByDefault !== a.emptyByDefault) {
+    push('empty_by_default', 'Display empty by default', b.emptyByDefault ? 'on' : 'off', a.emptyByDefault ? 'on' : 'off', 'patch');
+  }
+  if (b.stretchChildOnInsert !== a.stretchChildOnInsert) {
+    push('stretch_child_on_insert', 'Stretch child on insert', b.stretchChildOnInsert ? 'on' : 'off', a.stretchChildOnInsert ? 'on' : 'off', 'patch');
+  }
+  if (canonicalJson(b.defaultContent) !== canonicalJson(a.defaultContent)) {
+    const list = (c: string[] | null): string => (c === null ? 'none' : c.length > 0 ? c.join(', ') : 'empty');
+    push('default_content', 'Default content', list(b.defaultContent), list(a.defaultContent), 'patch');
+  }
+  return out;
+}
+
 function readComponentFacts(entry: LibraryBundleV1['components'][number]): ComponentFacts {
   const artifact = asRecord(entry.artifact);
   const source = asRecord(asRecord(artifact.spec_layer).source);
@@ -307,11 +397,13 @@ function readComponentFacts(entry: LibraryBundleV1['components'][number]): Compo
   }
   for (const [prop, def] of Object.entries(asRecord(api.slots))) {
     const record = asRecord(def);
+    const kind = asString(record.type) ?? 'slot';
     properties.push({
       name: prop,
-      kind: asString(record.type) ?? 'slot',
+      kind,
       default: record.default === undefined || record.default === null ? null : String(record.default),
       options: Array.isArray(record.options) ? record.options.map(String) : null,
+      ...(kind === 'slot' ? { slot: readSlotFact(record) } : {}),
     });
   }
 
@@ -483,6 +575,10 @@ function diffComponentPair(before: ComponentFacts, after: ComponentFacts, out: L
   for (const p of properties.added) out.push(change({ kind: 'added', entity: 'property', component, id: p.name, name: p.name, from: null, to: p.kind, scope: null }));
   for (const p of properties.removed) out.push(change({ kind: 'removed', entity: 'property', component, id: p.name, name: p.name, from: p.kind, to: null, scope: null }));
   for (const { before: b, after: a } of properties.changed) {
+    if (b.slot && a.slot) {
+      out.push(...slotChanges(component, a.name, b.slot, a.slot));
+      continue;
+    }
     out.push(change({ kind: 'changed', entity: 'property', component, id: a.name, name: a.name, from: formatProperty(b), to: formatProperty(a), scope: null }));
   }
 

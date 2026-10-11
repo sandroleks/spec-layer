@@ -170,16 +170,7 @@
         "default_content": {
           "type": "array",
           "description": "Slot parts only: what the slot holds in the default variant. An example of its content, never parts of this component.",
-          "items": {
-            "type": "object",
-            "required": ["part", "type"],
-            "additionalProperties": false,
-            "properties": {
-              "part": { "type": "string" },
-              "type": { "type": "string" },
-              "component": { "type": "string" }
-            }
-          }
+          "items": { "$ref": "#/$defs/slot_content_item" }
         },
         "children": { "type": "array", "items": { "$ref": "#/$defs/anatomy_node" } }
       }
@@ -212,7 +203,22 @@
           "const": true,
           "description": "Slot only: Figma's display-empty-by-default setting is on. It does not remove the component's own default content."
         },
-        "stretch_child_on_insert": { "const": true, "description": "Slot only: Figma's setting that makes an inserted child fill the slot." }
+        "stretch_child_on_insert": { "const": true, "description": "Slot only: Figma's setting that makes an inserted child fill the slot." },
+        "default_content": {
+          "type": "array",
+          "description": "Slot only: what the property's slot holds in the default variant, an example of its content. Absent when that variant has no slot for the property.",
+          "items": { "$ref": "#/$defs/slot_content_item" }
+        }
+      }
+    },
+    "slot_content_item": {
+      "type": "object",
+      "required": ["part", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "part": { "type": "string" },
+        "type": { "type": "string" },
+        "component": { "type": "string" }
       }
     },
     "reference_status": {
