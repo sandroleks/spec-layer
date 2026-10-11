@@ -563,8 +563,8 @@ export function buildSkillGuide(input: SkillInput): string {
   lines.push('## How to use it', '');
   lines.push(`1. Run ${code('npx spec-layer status')}. Exit 0 means the local copy is current; exit 2 means run ${code('npx spec-layer pull')} first.`);
   lines.push(markdown
-    ? `2. Building or changing a component: read its page under ${code(`${componentSpecsDir}/`)}, or ${code('npx spec-layer show component NAME')}. **Properties** gives variants, states, booleans, and slots; **Anatomy** names the parts; **Token bindings** says which token each part's property uses and under which **When** conditions; **Unbound values** lists values that are hardcoded in Figma.`
-    : `2. Building or changing a component: read its YAML under ${code(`${componentSpecsDir}/`)}, or ${code('npx spec-layer show component NAME')}. ${code('api')} gives variants, states, booleans, and slots; ${code('anatomy')} names the parts; ${code('references.bindings')} says which token each part's property uses and under which ${code('when')} conditions; ${code('unbound')} lists values that are hardcoded in Figma.`);
+    ? `2. Building or changing a component: read its page under ${code(`${componentSpecsDir}/`)}, or ${code('npx spec-layer show component NAME')}. **Properties** gives variants, states, booleans, and slots; **Anatomy** names the parts; **Token bindings** says which token each part's property uses and under which **When** conditions; **Unbound values** lists values that are hardcoded in Figma. ${SLOT_GUIDE_MARKDOWN}`
+    : `2. Building or changing a component: read its YAML under ${code(`${componentSpecsDir}/`)}, or ${code('npx spec-layer show component NAME')}. ${code('api')} gives variants, states, booleans, and slots; ${code('anatomy')} names the parts; ${code('references.bindings')} says which token each part's property uses and under which ${code('when')} conditions; ${code('unbound')} lists values that are hardcoded in Figma. ${SLOT_GUIDE_YAML}`);
   lines.push(`3. Working with colors, spacing, type, or effects: start at ${code(`${outDir}/tokens/resolver.json`)}, load the set and mode files it names, and look up ${code('code_syntax')} in ${code('spec-layer.meta.json')} for the name the designer declared for your platform.`);
   lines.push(`4. Reference tokens by name in code; never paste a resolved value where a token exists. A value the design system does not define is not a token: say so in your change rather than adding one.`);
   lines.push(markdown
@@ -586,6 +586,18 @@ export function buildSkillGuide(input: SkillInput): string {
 // ---------------------------------------------------------------------------
 // Installing
 // ---------------------------------------------------------------------------
+
+/** What a Figma slot asks of code, in each format's words. Mirrored in the
+ *  plugin's snapshot guide (`packages/plugin/src/ui/skillZip.ts`). */
+export const SLOT_GUIDE_YAML =
+  'An `api.slots` entry with `type: slot` is a place for content the consumer supplies: build it as your '
+  + 'framework\'s children or a named slot, accept only its `preferred` components when `preferred_only` is '
+  + 'true, keep to `min_children` and `max_children`, and treat `default_content` as an example, never as '
+  + 'fixed markup.';
+export const SLOT_GUIDE_MARKDOWN =
+  'A property of type **Slot** is a place for content the consumer supplies: build it as your framework\'s '
+  + 'children or a named slot, accept only the components its Options name when they say "only these", keep '
+  + 'to its item limits, and treat its Default as an example, never as fixed markup.';
 
 export const SKILL_DESCRIPTION =
   'Use the design-system context the Spec Layer Figma plugin published into this repository: component variants, states, anatomy, token bindings, and design tokens. Read this before building or changing UI, using tokens, or running the spec-layer CLI.';
