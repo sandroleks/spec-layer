@@ -3,7 +3,8 @@ import { mkdtempSync, mkdirSync, rmSync, readFileSync, writeFileSync, existsSync
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
-  BLOCK_BEGIN, BLOCK_END, buildSkillGuide, installSkill, installTarget, renderForHost, summarizePull, upsertBlock,
+  BLOCK_BEGIN, BLOCK_END, SLOT_GUIDE_MARKDOWN, SLOT_GUIDE_YAML, buildSkillGuide, installSkill, installTarget, renderForHost,
+  summarizePull, upsertBlock,
   type SkillInput,
 } from '../src/skill';
 import type { RepoProfile } from '../src/detect';
@@ -175,6 +176,8 @@ describe('buildSkillGuide', () => {
     const guide = buildSkillGuide(input({ pull }));
     expect(guide).toContain('- `component-specs/`: one Markdown page per component.');
     expect(guide).toContain('2. Building or changing a component: read its page under `component-specs/`, or `npx spec-layer show component NAME`. **Properties** gives variants, states, booleans, and slots; **Anatomy** names the parts; **Token bindings** says which token each part\'s property uses and under which **When** conditions; **Unbound values** lists values that are hardcoded in Figma.');
+    expect(guide).toContain(`hardcoded in Figma. ${SLOT_GUIDE_MARKDOWN}`);
+    expect(guide).not.toContain(SLOT_GUIDE_YAML);
     expect(guide).toContain('5. A row under **Unbound values** is a value hardcoded in Figma with no token bound to it, which is design debt. Keep the literal value, do not replace it with a token, and note in your change that Figma has no binding for it.');
     expect(guide).toContain('a section of a component page that says it was written by AI');
     expect(guide).toContain('a component\'s or the foundation\'s `guidelines` block, marked `origin: generated`');
@@ -186,6 +189,8 @@ describe('buildSkillGuide', () => {
     const guide = buildSkillGuide(input({ pull: PULL }));
     expect(guide).toContain('- `component-specs/`: one YAML per component.');
     expect(guide).toContain('2. Building or changing a component: read its YAML under `component-specs/`');
+    expect(guide).toContain(`hardcoded in Figma. ${SLOT_GUIDE_YAML}`);
+    expect(guide).not.toContain(SLOT_GUIDE_MARKDOWN);
     expect(guide).toContain('5. An `unbound` entry is a value hardcoded in Figma with no token bound to it, which is design debt. Keep the literal value, do not replace it with a token, and note in your change that Figma has no binding for it.');
     expect(guide).toContain('a component\'s or the foundation\'s `guidelines` block, marked `origin: generated`');
   });

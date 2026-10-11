@@ -113,7 +113,13 @@ release workflow, so it is the first to carry npm provenance.
   patch; each is a property change in the history, named by its facet, so a
   6.0.0 plugin's history pane still reads it. The AI writing prompt gets
   each slot's facts in the same words. An instance swap property now reads
-  "Instance swap" in Markdown rather than "InstanceSwap".
+  "Instance swap" in Markdown rather than "InstanceSwap". The agent guide
+  `spec-layer skill` writes, and the plugin's skill download, say what a
+  slot asks of code: build it as the framework's children or a named slot,
+  accept only the preferred components when only preferred is on, keep to
+  the limits, and treat default content as an example, never as fixed
+  markup. The guide uses the YAML keys or the Markdown page's words,
+  whichever format the components were written in.
 
 ### Changed
 
