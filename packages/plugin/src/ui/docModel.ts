@@ -1,4 +1,4 @@
-import { categorize, slotDefaultText, slotValuesText } from '@spec-layer/extractor';
+import { categorize, slotDefaultText, slotValuesText, slotView } from '@spec-layer/extractor';
 import type { IntermediateSpec, ProseV2Key, ProseV2, GuidelinePair, VariantInstance, StateColumn } from '@spec-layer/extractor';
 import {
   cleanPartName, formatConditions, resolveTokensForVariant,
@@ -417,7 +417,7 @@ function buildSection(
           // A designer's slot description is source, so it comes before AI prose.
           const figma = pr.slot?.description;
           return {
-            name: pr.name, type: TYPE_WORDS.slot, values: slotValuesText(pr), defaultValue: slotDefaultText(pr),
+            name: pr.name, type: TYPE_WORDS.slot, values: slotValuesText(slotView(pr)), defaultValue: slotDefaultText(slotView(pr)),
             description: figma ?? aiDescription, ...(figma !== undefined ? { descriptionFromFigma: true as const } : {}),
           };
         }

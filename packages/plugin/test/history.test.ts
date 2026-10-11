@@ -57,6 +57,8 @@ describe('describeChange', () => {
     expect(t({ component: 'Button', entity: 'option', kind: 'removed', name: 'Huge', scope: 'size' })).toEqual({ text: 'Value Huge removed from size', scope: null });
     expect(t({ component: 'Button', entity: 'property', kind: 'added', name: 'icon', to: 'instanceSwap', scope: null })).toEqual({ text: 'Property icon added', scope: null });
     expect(t({ component: 'Button', entity: 'property', kind: 'changed', name: 'icon', scope: null })).toEqual({ text: 'Property icon changed', scope: null });
+    // A slot constraint names its facet as the scope, which every plugin's pane already shows.
+    expect(t({ component: 'Card', entity: 'property', kind: 'changed', name: 'Content', scope: 'Slot limits' })).toEqual({ text: 'Property Content changed', scope: 'Slot limits' });
     expect(t({ component: 'Button', entity: 'state', kind: 'removed', name: 'Hover', scope: null })).toEqual({ text: 'State Hover removed', scope: null });
     expect(t({ component: 'Button', entity: 'anatomy_part', kind: 'added', name: 'Icon', scope: null })).toEqual({ text: 'Part Icon added', scope: null });
     expect(t({ component: 'Button', entity: 'anatomy_part', kind: 'changed', name: 'Icon', scope: null })).toEqual({ text: 'Part Icon changed', scope: null });

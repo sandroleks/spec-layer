@@ -9,6 +9,7 @@ import { PROSE_V2_KEYS, validateProseV2, KEYBOARD_KEYS } from '../src/prose/v2';
 import type { SerializedNode } from '../src/tree';
 import type { AnatomyPart } from '../src/anatomy';
 import button from './fixtures/button.json';
+import cardSlots from './fixtures/card-slots.json';
 
 const spec = extract(button as SerializedNode, { figmaFile: 'FILE1' });
 
@@ -85,6 +86,16 @@ describe('buildProsePrompt (v9)', () => {
 
   it('marks the designer description as authoritative and quotes it verbatim', () => {
     expect(prompt).toContain("Designer's description (authoritative; build on it, never contradict or restate it):\n  A single-line field where people type short, free-form text. Keep it to one value.");
+  });
+
+  it('gives a slot property the facts its Properties row draws', () => {
+    const card = extract(cardSlots as SerializedNode, { figmaFile: 'FILE1' });
+    const out = buildProsePrompt(card);
+    expect(out).toContain("  Content [slot] (accepts List · 1 component not found, only these; exactly 1 item; holds List; designer's description: Body of the card. One list or one text block.)\n");
+    expect(out).toContain('  Actions [slot] (holds Badge (display empty by default))\n');
+    // Default content is an example, never a part of its own.
+    expect(out).toContain('  Content: slot\n');
+    expect(out).not.toMatch(/^\s+List: nested component List/m);
   });
 
   it('omits the description block when there is none', () => {

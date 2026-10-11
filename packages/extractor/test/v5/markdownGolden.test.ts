@@ -4,12 +4,14 @@ import {
   COMPONENT_V5_MARKDOWN_GOLDEN_PATH, COMPONENT_V5_MARKDOWN_PROSE_GOLDEN_PATH,
   renderComponentV5MarkdownGolden, renderComponentV5MarkdownProseGolden,
   writeComponentV5MarkdownGolden, writeComponentV5MarkdownProseGolden,
+  COMPONENT_V5_SLOTS_MARKDOWN_GOLDEN_PATH, renderComponentV5SlotsMarkdownGolden, writeComponentV5SlotsMarkdownGolden,
 } from '../fixtures/componentV5';
 import { COMPONENT_MARKDOWN_MARKER } from '../../src/index';
 
 if (process.env.UPDATE_COMPONENT_V5_GOLDEN === '1') {
   writeComponentV5MarkdownGolden();
   writeComponentV5MarkdownProseGolden();
+  writeComponentV5SlotsMarkdownGolden();
 }
 
 // Built at runtime, not as a regex literal: a backslash-zero escape fails
@@ -69,5 +71,13 @@ describe('Component Context v5 reviewed markdown golden with prose', () => {
     expect(out).toContain('### Do\n');
     expect(out).toContain("### Don't\n");
     expect(out).not.toContain('[object Object]');
+  });
+});
+
+describe('Component Context v5 slots markdown golden', () => {
+  it('matches the reviewed page byte for byte, with no forbidden bytes', () => {
+    const out = renderComponentV5SlotsMarkdownGolden();
+    expect(out).toBe(readFileSync(COMPONENT_V5_SLOTS_MARKDOWN_GOLDEN_PATH, 'utf8'));
+    expect(out).not.toMatch(HOSTILE_BYTES);
   });
 });

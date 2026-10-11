@@ -102,8 +102,18 @@ release workflow, so it is the first to carry npm provenance.
   `anatomy_node.slot`, `anatomy_node.default_content` and a typed
   `api.slots` entry. `EXTRACTOR_VERSION` moves to `'4'`, so every document
   built by 6.0.0 reads **Rebuild needed** once. Annotate in Dev Mode never
-  pins a corner radius on a slot, which Figma refuses. Markdown, publish
-  versioning and the AI prompt do not yet read the slot facts.
+  pins a corner radius on a slot, which Figma refuses. Each `api.slots` slot
+  entry also carries `default_content`, so the Markdown page prints the same
+  Values and Default text as the canvas, adds a Description column only for
+  a slot's own description, and says in Anatomy what each slot holds. A
+  published library versions a slot by direction: narrowing what may go in
+  it (only preferred turned on, a raised minimum, a lowered or new maximum, a
+  preferred component removed while only preferred is on) is major,
+  widening is minor, and its default content and display settings are
+  patch; each is a property change in the history, named by its facet, so a
+  6.0.0 plugin's history pane still reads it. The AI writing prompt gets
+  each slot's facts in the same words. An instance swap property now reads
+  "Instance swap" in Markdown rather than "InstanceSwap".
 
 ### Changed
 

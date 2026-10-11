@@ -378,10 +378,25 @@ export function writeComponentV5SlotsGolden(): void {
   writeFileSync(COMPONENT_V5_SLOTS_GOLDEN_PATH, renderComponentV5SlotsGolden());
 }
 
+/** The same Card as a Markdown page: slot rows, the Description column and
+ *  slot anatomy bullets, which no Button page exercises. */
+export const COMPONENT_V5_SLOTS_MARKDOWN_GOLDEN_PATH = fileURLToPath(
+  new URL('./v5/card-slots-component-md-v5.md', import.meta.url),
+);
+
+export function renderComponentV5SlotsMarkdownGolden(): string {
+  return componentMarkdown(buildComponentV5SlotsArtifact());
+}
+
+export function writeComponentV5SlotsMarkdownGolden(): void {
+  writeFileSync(COMPONENT_V5_SLOTS_MARKDOWN_GOLDEN_PATH, renderComponentV5SlotsMarkdownGolden());
+}
+
 if (process.argv[1] !== undefined
   && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   writeComponentV5Golden();
   writeComponentV5SlotsGolden();
+  writeComponentV5SlotsMarkdownGolden();
   writeComponentV5MarkdownGolden();
   writeComponentV5MarkdownProseGolden();
 }
