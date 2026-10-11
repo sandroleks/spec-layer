@@ -108,7 +108,7 @@
       "additionalProperties": false,
       "properties": {
         "kind": { "const": "component" },
-        "schema_version": { "const": "5.3.0" },
+        "schema_version": { "const": "5.4.0" },
         "schema_uri": { "const": "https://spec-layer.com/schemas/component-context/v5.json" },
         "extractor": {
           "type": "object",

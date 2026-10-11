@@ -6,7 +6,7 @@ import { COMPONENT_SCHEMA_URI } from '../../src/v5/componentContext';
 import { buildComponentV5GoldenArtifact, buildComponentV5SlotsArtifact } from '../fixtures/componentV5';
 
 const componentSchemaText = readFileSync(
-  'packages/extractor/src/v5/schema/component-5.3.0.json', 'utf8',
+  'packages/extractor/src/v5/schema/component-5.4.0.json', 'utf8',
 );
 const componentSchema = JSON.parse(componentSchemaText) as Record<string, unknown>;
 const foundationSchema = JSON.parse(readFileSync(

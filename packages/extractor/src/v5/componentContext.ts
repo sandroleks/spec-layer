@@ -33,7 +33,7 @@ import { computeFoundationStatistics } from './statistics';
 import { validateLevel1, validateLevel2 } from './validate';
 import { resolvedValueOf } from './value';
 
-export const COMPONENT_SCHEMA_VERSION = '5.3.0';
+export const COMPONENT_SCHEMA_VERSION = '5.4.0';
 export const COMPONENT_SCHEMA_URI = 'https://spec-layer.com/schemas/component-context/v5.json';
 export const COMPONENT_EXTRACTOR_NAME = 'spec-layer-component';
 
