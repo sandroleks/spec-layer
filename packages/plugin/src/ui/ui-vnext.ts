@@ -2861,7 +2861,7 @@ const handleMainMessage = (event: MessageEvent): void => {
       return;
 
     case 'syncPlan': {
-      const next = planNext(msg.plan);
+      const next = planNext(msg.plan, msg.scope);
       if (next.kind === 'toast') {
         nativeNotify(next.message, next.error ? { error: true } : {});
         endSync();
@@ -2880,11 +2880,13 @@ const handleMainMessage = (event: MessageEvent): void => {
     case 'syncDone': {
       const toast = resultToast(msg.result);
       nativeNotify(toast.message, toast.error ? { error: true } : {});
-      // Replace is offered from what this run actually kept, and never on top
-      // of a failure, which the toast is still reporting.
-      const { held, heldAi, failed } = msg.result;
-      if (!msg.replaceEdited && held.length > 0 && failed.length === 0) {
-        offerReplace(msg.scope, replaceDialog(held, heldAi));
+      // Replace is offered from what this run kept and had not reported
+      // before, so a kept value is asked about once, and never on top of a
+      // failure, which the toast is still reporting. A row's run with
+      // nothing new offers it again, from planNext.
+      const { heldNew, heldAi, failed } = msg.result;
+      if (!msg.replaceEdited && heldNew.length > 0 && failed.length === 0) {
+        offerReplace(msg.scope, replaceDialog(heldNew, heldAi.filter((name) => heldNew.includes(name))));
       } else {
         endSync();
       }
