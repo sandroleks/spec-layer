@@ -212,8 +212,11 @@ export function buildPropertiesTable(rows: PropertyRow[], hasDescriptions: boole
     ];
     if (hasDescriptions) {
       const desc = makeCell(r.description ?? '', 'Regular', 14, palette.body);
-      tagSlot(desc, 'propertyDescription');
-      desc.setPluginData(SLOT_PART_KEY, r.name);
+      // A designer's Figma description is source text; only prose reads back.
+      if (!r.descriptionFromFigma) {
+        tagSlot(desc, 'propertyDescription');
+        desc.setPluginData(SLOT_PART_KEY, r.name);
+      }
       cells.push(desc);
     }
     cells.forEach((cell, i) => { row.appendChild(cell); applyColWidth(cell, widths[i]); });

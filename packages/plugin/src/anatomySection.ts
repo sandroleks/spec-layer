@@ -112,7 +112,10 @@ function anatomyLegendRow(part: AnatomyPartBlock): FrameNode {
   const role = part.role?.trim();
   const nestedNote = part.nested ? `  ·  ${part.component ?? 'Unknown component'}` : '';
   const shownNote = part.shownBy ? `  ·  Shown when ${part.shownBy} is true` : '';
-  const chars = role ? `${shown}: ${role}${shownNote}` : `${shown}${nestedNote}${shownNote}`;
+  // Structural, like the shown note, so it stays beside an AI role too.
+  const slotNote = part.type !== 'SLOT' && part.slot === undefined ? ''
+    : part.slot !== undefined && part.slot !== part.name ? `  ·  Slot: ${part.slot}` : '  ·  Slot';
+  const chars = role ? `${shown}: ${role}${slotNote}${shownNote}` : `${shown}${nestedNote}${slotNote}${shownNote}`;
   const text = makeText(chars, 'Regular', 15, palette.body, 150);
   row.appendChild(text);
   text.layoutSizingHorizontal = 'FILL';

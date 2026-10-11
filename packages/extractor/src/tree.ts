@@ -11,6 +11,10 @@ export interface SerializedNode {
    *  so the main thread can address the property exactly when configuring an
    *  instance; clean it with `cleanPropName` before showing it. */
   visibleProperty?: string;
+  /** Raw key (with `#id` suffix) from `componentPropertyReferences.slotContentId`:
+   *  the SLOT property this node is the slot for. Figma's typings omit the key,
+   *  but every slot carries it, in a component and in its instances. */
+  slotProperty?: string;
   children?: SerializedNode[];
   /** Present on COMPONENT_SET (or standalone COMPONENT). */
   propertyDefinitions?: Record<string, PropertyDefinition>;
@@ -77,9 +81,37 @@ export interface SerializedTransition {
 }
 
 export interface PropertyDefinition {
-  type: 'VARIANT' | 'BOOLEAN' | 'TEXT' | 'INSTANCE_SWAP';
+  type: 'VARIANT' | 'BOOLEAN' | 'TEXT' | 'INSTANCE_SWAP' | 'SLOT';
   defaultValue?: string | boolean;
   variantOptions?: string[];
+  /** SLOT only. */
+  slot?: SerializedSlotDefinition;
+}
+
+/** A preferred component, as Figma lists it on a SLOT property. `name` is null
+ *  when neither the file nor its libraries could name the key. */
+export interface SlotPreferred {
+  kind: 'component' | 'componentSet';
+  key: string;
+  name: string | null;
+}
+
+/**
+ * What Figma states about a SLOT property. Figma returns `null` for an unset
+ * description or limit and `false` for an unset switch, once any setting has
+ * been saved (probed 2026-10-04); both read as absent here, so an unset value
+ * never looks like a choice.
+ */
+export interface SerializedSlotDefinition {
+  /** Trimmed; absent when null or empty. */
+  description?: string;
+  /** In Figma's order; empty when none are listed. */
+  preferred: SlotPreferred[];
+  minChildren?: number;
+  maxChildren?: number;
+  preferredOnly?: true;
+  emptyByDefault?: true;
+  stretchChildOnInsert?: true;
 }
 
 /** A closed set: `getStyleByIdAsync` can return a GRID style, but no property

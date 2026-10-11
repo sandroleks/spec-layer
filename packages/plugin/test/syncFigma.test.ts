@@ -8,7 +8,7 @@ import { runSync, planSyncRun, relinkDoc, unlinkDoc, type SyncHost, type SyncDoc
 import { SYNC_RECORD_KEY, parseSyncRecord, serializeSyncRecord } from '../src/syncRecord';
 import type { ComponentDocLink } from '../src/docLink';
 
-const resolver = { variable: async () => null, style: async () => null, mainComponent: async () => null };
+const resolver = { variable: async () => null, style: async () => null, mainComponent: async () => null, localComponents: async () => new Map<string, string>() };
 const FILE_KEY = 'unknown-file';
 const SECTION_LINK = 'https://www.figma.com/design/AbCdEf1234567890/?node-id=9-9';
 

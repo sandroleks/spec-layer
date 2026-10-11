@@ -3,6 +3,7 @@ export * from './effects';
 export * from './motion';
 export * from './anatomy';
 export * from './props';
+export * from './slots';
 export * from './naming';
 export * from './tokens';
 export * from './transitions';

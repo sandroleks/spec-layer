@@ -111,6 +111,27 @@ requests carry token names and resolved values without an image.
     inside the same set, and press **Create docs** again: the header's AI
     count drops once, not twice. Edit the component's description and press
     **Create docs**: a new draft is requested.
+12. Build a component set with Figma slots: one slot with a description,
+    two preferred components, **Only allow preferred instances** and a
+    minimum and maximum, holding one instance of a preferred component; one
+    slot with **Display an empty slot by default** on; and a hidden slot a
+    boolean shows. **Create docs** finishes without an error. Properties
+    reads Type **Slot** for each slot, Values lists the preferred names,
+    "only these" and the limits, Default names what the slot holds (with
+    "display empty by default" where that setting is on), and the slot's own
+    description fills its Description cell. The Anatomy legend marks each
+    slot "Slot" and lists nothing inside it, and Related does not name the
+    component the slot holds. **Copy for AI** carries `type: slot` under
+    `api.slots` and `slot` and `default_content` on each slot part.
+13. Make one preferred component of that slot a library component that no
+    layer in the set shows. The Values cell reads "1 component not found"
+    and **Copy for AI** carries an `unresolved-slot-content` finding with
+    its key. Put an instance of it in the slot: the Values cell names it.
+    Disable the library: nothing changes, and a Library check reads **In
+    sync**. Record how long the component screen takes to read the set on
+    a file with many pages when a preferred key is in none of them.
+
+Rows 12 and 13 were added on 2026-10-11 for Figma slots and have not been run.
 
 Also verify a nested selection resolves to its enclosing component and a
 non-component selection shows an actionable empty state with no toast. Click
@@ -601,16 +622,24 @@ record.
     when the check finishes. The count under the filters leaves that doc
     out: it has no source check to run.
 26. On a file with docs built and checked by the previous release, open
-    Library on the new build and wait for the check: every row that read
-    **In sync** before still reads **In sync**, and no row reads **Edited**
-    that was not edited. (Hand-edit detection now finds tagged layers with
-    one native search; a mismatch here would mark every doc edited.)
+    Library on the new build and wait for the check: every doc built by
+    6.0.0 reads **Rebuild needed**, because `EXTRACTOR_VERSION` moved to
+    `'4'`, and no row reads **Edited** that was not edited. (Hand-edit
+    detection now finds tagged layers with one native search; a mismatch
+    here would mark every doc edited.)
 27. With at least five component docs checked, **Update** one drifted row.
     When it finishes, the other rows keep their badges without a new check
     count, the updated row reads **In sync**, and the line under the filters
     keeps the earlier check's time. **Update all docs** on several drifted
     rows: none of them is checked again afterwards. **Refresh library**
     then checks every row.
+28. On the component from Create component docs row 12, change a preferred
+    component, the maximum, and what the slot holds, then open **Show
+    changes** on its row. Each change has its own line ("preferred
+    content", "limits", "default content"), and the badge and the list
+    agree.
+
+Row 28 was added on 2026-10-11 for Figma slots and has not been run.
 
 ## AI-writing allowance (free plan)
 
@@ -921,6 +950,10 @@ set and one single component, each with a current doc.
 - [ ] Duplicated variant: duplicate the default variant after a run. Record
       whether Figma copies the annotations onto the copy, and confirm later
       runs leave the copy's annotations alone.
+- [ ] Slots: annotate the component from Create component docs row 12, with
+      a corner radius on one slot. Each top-level slot gets its numbered
+      annotation with padding and spacing pinned and no radius (Figma
+      refuses a radius on a slot), and the run reports no failure.
 - [ ] Copied file and branches: duplicate the file. Settings still shows the
       original file's link, as its hint says; save the copy's own link before
       annotating. In a branch, record which file a documentation link built

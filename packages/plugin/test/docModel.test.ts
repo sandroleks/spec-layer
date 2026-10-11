@@ -7,7 +7,9 @@ import {
 } from '../src/ui/docModel';
 import { placeholderShapeFor } from '../src/ui/placeholders';
 import { PROSE_V2_KEYS } from '@spec-layer/extractor';
-import type { IntermediateSpec, RefIdentity, ProseV2 } from '@spec-layer/extractor';
+import type { IntermediateSpec, RefIdentity, ProseV2, SerializedNode } from '@spec-layer/extractor';
+import { extract } from '@spec-layer/extractor';
+import cardSlots from '../../extractor/test/fixtures/card-slots.json';
 
 /** A TokenRule carries the full identity Figma stated for the reference. These
  *  tests are about the doc model, not resolution, so one identity is minted per
@@ -256,6 +258,31 @@ describe('buildDocModel without prose', () => {
   it('drops a properties description column when no row has one', () => {
     const model = buildDocModel(spec, { v: 2 }, new Set<SectionId>(['properties']), new Set(), {});
     expect(find(model, 'properties')).toMatchObject({ kind: 'propertiesTable', hasDescriptions: false });
+  });
+
+  it('names a Figma slot property in the properties table', () => {
+    // Before SLOT was mapped, the Type cell was undefined and Figma rejected it.
+    const slotted = { ...spec, props: [...spec.props, { name: 'Content', kind: 'slot' as const }] };
+    const block = find(buildDocModel(slotted, null, new Set<SectionId>(['properties']), new Set()), 'properties');
+    if (block?.kind !== 'propertiesTable') throw new Error('expected propertiesTable');
+    expect(block.rows.at(-1)).toEqual({ name: 'Content', type: 'Slot', values: '', defaultValue: '', description: null });
+  });
+
+  it('draws a slot row from the facts Figma states, and its default content', () => {
+    const card = extract(cardSlots as SerializedNode, { figmaFile: 'F' });
+    const block = find(buildDocModel(card, { v: 2, properties: [{ name: 'Content', description: 'AI text that loses.' }, { name: 'Actions', description: 'AI text that stays.' }] },
+      new Set<SectionId>(['properties']), new Set()), 'properties');
+    if (block?.kind !== 'propertiesTable') throw new Error('expected propertiesTable');
+    expect(block.rows.filter((r) => r.type === 'Slot')).toEqual([
+      {
+        name: 'Content', type: 'Slot', values: 'List · 1 component not found, only these; exactly 1 item',
+        defaultValue: 'List', description: 'Body of the card. One list or one text block.', descriptionFromFigma: true,
+      },
+      {
+        name: 'Actions', type: 'Slot', values: '', defaultValue: 'Badge (display empty by default)',
+        description: 'AI text that stays.',
+      },
+    ]);
   });
 
   it('emits only selected sections, in canonical order', () => {

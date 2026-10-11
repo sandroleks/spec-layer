@@ -9,11 +9,24 @@ function base() {
     style: vi.fn(async (id: string) =>
       id === 'missing' ? null : { id, name: `style ${id}`, remote: false, kind: 'paint-style' as const }),
     mainComponent: vi.fn(async () => ({ name: 'Main', key: 'k' })),
+    localComponents: vi.fn(async () => new Map<string, string>()),
   };
   return resolver;
 }
 
 describe('memoizedResolver', () => {
+  it('looks each component key up in the file once per pass, found or not', async () => {
+    const b = base();
+    b.localComponents = vi.fn(async (keys: readonly string[]) => new Map(keys.includes('a') ? [['a', 'A']] : []));
+    const memo = memoizedResolver(b);
+    expect(await memo.localComponents(['a', 'b'])).toEqual(new Map([['a', 'A']]));
+    expect(await memo.localComponents(['b', 'c', 'a'])).toEqual(new Map([['a', 'A']]));
+    expect(b.localComponents).toHaveBeenNthCalledWith(1, ['a', 'b']);
+    expect(b.localComponents).toHaveBeenNthCalledWith(2, ['c']);
+    await memo.localComponents(['a', 'b', 'c']);
+    expect(b.localComponents).toHaveBeenCalledTimes(2);
+  });
+
   it('asks the base once per distinct variable id', async () => {
     const b = base();
     const memo = memoizedResolver(b);

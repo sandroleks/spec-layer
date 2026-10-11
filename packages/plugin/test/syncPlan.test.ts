@@ -229,6 +229,10 @@ describe('annotationFor', () => {
     expect(annotationFor({ label: '2', name: 'Icon', shownBy: 'hasIcon', type: 'FRAME', autoLayout: false, hasRadius: false }))
       .toEqual({ label: '2 Icon · Shown when hasIcon is true', properties: [] });
   });
+  it('never pins a radius on a slot, which Figma refuses', () => {
+    expect(annotationFor({ label: '3', name: 'Content', type: 'SLOT', autoLayout: true, hasRadius: true }))
+      .toEqual({ label: '3 Content', properties: ['padding', 'itemSpacing'] });
+  });
   it('is null for a root with nothing to pin', () => {
     expect(annotationFor({ type: 'COMPONENT', autoLayout: false, hasRadius: false })).toBeNull();
   });

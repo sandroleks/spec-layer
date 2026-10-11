@@ -1,5 +1,6 @@
 import type { SerializedNode } from './tree';
 import { parseVariantName, siblingPartNames, cleanPartName, cleanPropName, joinPath } from './naming';
+import { isSlot, separateSlotContent, slotPropertyKeys, type SlotContentItem } from './slots';
 
 export interface AnatomyPart {
   id: string; name: string; type: string; nested: boolean;
@@ -20,6 +21,12 @@ export interface AnatomyPart {
   /** The boolean property that shows the part (nearest binding on it or an
    *  ancestor), cleaned as props.ts does. Present iff hiddenByDefault. */
   shownBy?: string;
+  /** Slot parts only: the SLOT property it is the slot for, cleaned as
+   *  props.ts does. Absent when the link names no SLOT definition. */
+  slot?: string;
+  /** Slot parts only: what the slot holds in this variant, as an example of
+   *  its content. Never parts of the component; `[]` when it holds nothing. */
+  defaultContent?: SlotContentItem[];
 }
 export interface AnatomyResult { parts: AnatomyPart[]; related: string[]; componentId: string }
 
@@ -104,9 +111,18 @@ export function hiddenPartRules(root: SerializedNode): HiddenPartRules {
  * after the visible children, so a doc with the option off keeps its parts,
  * names, paths and order. Depth-0 parts are listed in layer order.
  */
-export function extractAnatomy(root: SerializedNode): AnatomyResult {
+export function extractAnatomy(
+  root: SerializedNode,
+  /** From `separateSlotContent` over the unseparated tree, when `root` is
+   *  already separated; derived from `root` when absent. */
+  slotContent?: ReadonlyMap<string, SlotContentItem[]>,
+): AnatomyResult {
   const parts: AnatomyPart[] = [];
   const related = new Set<string>();
+  // Derived only from an unseparated tree: on a separated one every slot is
+  // already empty, so a caller passing one must pass its map too.
+  const defaultContent = slotContent ?? separateSlotContent(root).defaultContent;
+  const slotKeys = slotPropertyKeys(root);
 
   // The same root name as walkParts' `rootName` in tokens.ts and gaps.ts.
   const isInSet = root.type === 'COMPONENT_SET';
@@ -187,6 +203,7 @@ export function extractAnatomy(root: SerializedNode): AnatomyResult {
   ): void {
     const shownBy = hiddenBoundTo(child, booleans) ?? inheritedShownBy;
     const nested = child.type === 'INSTANCE';
+    const slot = isSlot(child);
     if (nested && child.mainComponent && shownBy === undefined) related.add(child.mainComponent.name);
     const path = joinPath(childParentPath, name);
     parts.push({
@@ -194,8 +211,12 @@ export function extractAnatomy(root: SerializedNode): AnatomyResult {
       ...(nested && child.mainComponent ? { component: child.mainComponent.name } : {}),
       ...(child.text ? { text: child.text } : {}),
       ...(shownBy !== undefined ? { hiddenByDefault: true as const, shownBy } : {}),
+      ...(slot && child.slotProperty !== undefined && slotKeys.has(child.slotProperty)
+        ? { slot: cleanPropName(child.slotProperty) } : {}),
+      ...(slot ? { defaultContent: defaultContent.get(child.id) ?? [] } : {}),
     });
-    if (!nested && depth + 1 < MAX_DEPTH && child.children?.length) {
+    // A slot's content is an example, never a part, so the walk stops there.
+    if (!nested && !slot && depth + 1 < MAX_DEPTH && child.children?.length) {
       addParts(child.children, depth + 1, path, shownBy);
     }
   }

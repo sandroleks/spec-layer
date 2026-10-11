@@ -446,6 +446,48 @@ describe('componentChangeGroups', () => {
     ]);
   });
 
+  it('reads a property kind a baseline never recorded as not recognised', () => {
+    // A slot property saved before SLOT was mapped has no kind at all.
+    const before = projection({
+      props: [{ name: 'Content' } as unknown as SpecHashProjection['props'][number]],
+    });
+    expect(componentChangeGroups(before, projection({ props: [{ name: 'Content', kind: 'slot' }] }))).toEqual([
+      G('Properties', 'Property Content: type not recognised changed to slot'),
+    ]);
+  });
+
+  it('itemizes a slot part linked to another property', () => {
+    const slotPart = (slot?: string) => projection({
+      anatomy: [{ id: '1:3', name: 'Content', type: 'SLOT', nested: false, ...(slot ? { slot } : {}) }],
+    });
+    expect(componentChangeGroups(slotPart('Content'), slotPart('Body'))).toEqual([
+      G('Anatomy', 'Part Content: slot property Content changed to Body'),
+    ]);
+    expect(componentChangeGroups(slotPart(), slotPart('Body'))).toEqual([
+      G('Anatomy', 'Part Content: slot property none changed to Body'),
+    ]);
+  });
+
+  it('itemizes every slot fact the Properties row draws', () => {
+    const before = projection({ props: [{ name: 'Content', kind: 'slot', slot: {
+      description: 'Body.', preferred: ['List', null], preferredOnly: true, minChildren: 1, maxChildren: 3,
+      defaultContent: ['List'],
+    } }] });
+    const after = projection({ props: [{ name: 'Content', kind: 'slot', slot: {
+      preferred: ['List'], maxChildren: 1, emptyByDefault: true, defaultContent: [],
+    } }] });
+    expect(componentChangeGroups(before, after)).toEqual([
+      G('Properties',
+        'Property Content: description removed',
+        'Property Content: preferred content List, a component not found changed to List',
+        'Property Content: only preferred content turned off',
+        'Property Content: limits 1 to 3 items changed to at most 1 item',
+        'Property Content: display empty by default turned on',
+        'Property Content: default content List changed to none',
+      ),
+    ]);
+  });
+
   it('treats states and related as sets', () => {
     expect(componentChangeGroups(projection(), projection({ states: ['default', 'disabled'], related: [] }))).toEqual([
       G('States', 'State disabled added', 'State hover removed'),

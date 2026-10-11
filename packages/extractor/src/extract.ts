@@ -1,6 +1,9 @@
 import type { SerializedNode } from './tree';
-import { extractAnatomy, type AnatomyPart } from './anatomy';
-import { extractProps, extractVariants, extractStates, type ComponentProp, type VariantAxis } from './props';
+import { defaultVariant, extractAnatomy, type AnatomyPart } from './anatomy';
+import {
+  extractProps, extractVariants, extractStates, unsupportedProperties, type ComponentProp, type VariantAxis,
+} from './props';
+import { separateSlotContent, slotDefaultsByProperty, type PropertyIssue } from './slots';
 import { extractTokens, extractGaps, variantAxisModel, type TokenRule, type Gap, type VariantAxisModel } from './tokens';
 import { extractLayout, type LayoutSummary } from './layout';
 import { extractRawValues, type RawValue } from './rawValues';
@@ -52,6 +55,10 @@ export interface IntermediateSpec {
   /** CHANGE_TO destinations outside the set. Not rendered, so not hashed;
    *  validate() reports them. */
   transitionIssues?: TransitionIssue[];
+  /** Properties and slots the extractor cannot document as asked. Not
+   *  rendered, so not hashed; validate() reports them. Optional like
+   *  transitionIssues; extract() always sets it. */
+  propertyIssues?: PropertyIssue[];
 }
 
 function toVariantInstances(model: VariantAxisModel): VariantInstance[] {
@@ -59,15 +66,23 @@ function toVariantInstances(model: VariantAxisModel): VariantInstance[] {
 }
 
 export function extract(
-  root: SerializedNode,
+  source: SerializedNode,
   meta: { figmaFile: string; figmaFileName?: string },
 ): IntermediateSpec {
-  const { parts, related, componentId } = extractAnatomy(root);
+  // Every walk below reads the separated tree: a slot's default content is an
+  // example, so it reaches no part, related name, token rule or gap.
+  const { root, defaultContent, issues: slotIssues } = separateSlotContent(source);
+  const { parts, related, componentId } = extractAnatomy(root, defaultContent);
   // One model for extractTokens and toVariantInstances, so the Variant
   // pseudo-axis fallback fires identically and rule conditions always match the
   // instances' `values`.
   const model = variantAxisModel(root);
   const transitions = extractTransitions(root, model);
+  const slotDefaults = slotDefaultsByProperty(root, defaultVariant(root), defaultContent);
+  const props = extractProps(root).map((p) => {
+    const content = p.kind === 'slot' ? slotDefaults.get(p.name) : undefined;
+    return content ? { ...p, defaultContent: content } : p;
+  });
   return {
     name: root.name,
     figmaKey: root.key ?? '',
@@ -78,7 +93,7 @@ export function extract(
     documentationLinks: root.documentationLinks ?? [],
     anatomy: parts,
     anatomyComponentId: componentId,
-    props: extractProps(root),
+    props,
     variants: extractVariants(root),
     variantInstances: toVariantInstances(model),
     states: extractStates(root),
@@ -90,5 +105,6 @@ export function extract(
     nodeEffects: extractNodeEffects(root),
     transitions: transitions.rules,
     transitionIssues: transitions.issues,
+    propertyIssues: [...unsupportedProperties(root), ...slotIssues],
   };
 }
