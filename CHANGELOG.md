@@ -32,7 +32,9 @@ release workflow, so it is the first to carry npm provenance.
   ever typed; an annotation on a part the legend no longer numbers is removed,
   and a doc whose parts changed since it was built places no annotation until
   it is updated. Every run you start asks first and names AI text nobody has
-  edited. A description, link or annotation set, changed or removed in Figma
+  edited: the confirmation says what it writes in one line and lists each
+  caution as its own point, naming which kinds of value (description, link,
+  annotations) a change made in Figma keeps. A description, link or annotation set, changed or removed in Figma
   is kept, and replacing it is a separate, labelled step that also names AI
   text: it is offered once, when a run finds a value newly changed in
   Figma, and again from a component's Library row; a run over every
