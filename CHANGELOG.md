@@ -69,7 +69,7 @@ release workflow, so it is the first to carry npm provenance.
   change a component set's variant (hover, press, click, delay) appear as a
   Motion section after States, with From, To, Trigger, Transition, Duration
   and Easing, and as `motion.transitions` in the YAML brief, Component
-  Context v5 (schema **5.3.0**, `component-5.3.0.json`), Markdown and the AI
+  Context v5 (since schema **5.3.0**), Markdown and the AI
   profile. A `CHANGE_TO` outside the set is reported as
   `transition-target-outside-set`. The section is marked Beta in the
   section picker; existing documents gain it when it is ticked on. The
@@ -100,10 +100,13 @@ release workflow, so it is the first to carry npm provenance.
   `unresolved-slot-content`; a slot linked to no property is reported as
   `unlinked-slot`; a property type the extractor does not know is left out
   and reported as `unsupported-property-type`. The Library's change list
-  itemizes each slot change. Component Context v5 schema **5.3.0** gains
-  `anatomy_node.slot`, `anatomy_node.default_content` and a typed
-  `api.slots` entry. `EXTRACTOR_VERSION` moves to `'4'`, so every document
-  built by 6.0.0 reads **Rebuild needed** once. Annotate in Dev Mode never
+  itemizes each slot change. Component Context v5 schema **5.4.0**
+  (`component-5.4.0.json`) gains `anatomy_node.slot`,
+  `anatomy_node.default_content` and a typed `api.slots` entry. 5.3.0,
+  the motion contract above, was published on spec-layer.com before
+  slots and stays there unchanged; no release writes it.
+  `EXTRACTOR_VERSION` moves to `'4'`, so every document built by 6.0.0
+  reads **Rebuild needed** once. Annotate in Dev Mode never
   pins a corner radius on a slot, which Figma refuses. Each `api.slots` slot
   entry also carries `default_content`, so the Markdown page prints the same
   Values and Default text as the canvas, adds a Description column only for

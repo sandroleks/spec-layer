@@ -84,7 +84,7 @@ These all live in this repository:
 | How the system fits together | `ARCHITECTURE.md` |
 | What shipped, in detail | `CHANGELOG.md` |
 | Foundation Context v5 contract | `packages/extractor/src/v5/schema/foundation-5.2.0.json` |
-| Component Context v5 contract | `packages/extractor/src/v5/schema/component-5.3.0.json` |
+| Component Context v5 contract | `packages/extractor/src/v5/schema/component-5.4.0.json` |
 | Manual Figma test matrix and release gate | `packages/plugin/TESTING.md` |
 | Shared brand and UI design system | `packages/brand/README.md` |
 | Proxy behaviour and accepted risks | `packages/proxy/README.md` |
@@ -194,9 +194,9 @@ private Figma URLs, no proprietary component exports, no credentials. A real
 design-system artifact needs explicit approval covering ids, names,
 descriptions, and diagnostics before it can be committed.
 
-## Where things stand (2026-10-05)
+## Where things stand (2026-10-11)
 
-On `main` at `c575c6e9` (#109): CI `verify` passes and `npm audit` reports
+On `main` at `1be83e6` (#119): CI `verify` passes and `npm audit` reports
 no vulnerabilities. Suite size lives in the test output, not here.
 
 Released: plugin 6.0.0 (tag `v6.0.0` and GitHub Release Latest, 2026-09-24,
@@ -205,16 +205,21 @@ the Figma Community listing serves 6.0.0 cannot be verified from this
 repository. Both were cut by hand, before the release workflows existed;
 the next plugin and CLI releases are the first through them.
 
-Unreleased: `CHANGELOG.md` `[Unreleased]` holds #90 to #109. Its plugin
+Unreleased: `CHANGELOG.md` `[Unreleased]` holds #90 to #119. Its plugin
 changes wait for the next plugin cut, and its CLI changes (`--json`,
-retries, the `easing` token type) for the `cli-v0.12.0` tag
+retries, the `easing` token type, Figma slots in pulled Markdown and in
+`spec-layer skill`) for the `cli-v0.12.0` tag
 (`packages/cli/package.json` reads 0.12.0; npm `latest` is still 0.11.0).
-Proxy changes deploy from `main` through `deploy-proxy.yml`; #105 and #106
-are in production (#106 approved 2026-10-10).
+Proxy changes deploy from `main` through `deploy-proxy.yml`; production
+runs `eabee66` (#118, approved 2026-10-11).
 
 The schemas on `main` are now `foundation-5.2.0.json` and
-`component-5.3.0.json`, and `npm run check:site-live` fails until the private
-site repository serves both; a release must wait for that.
+`component-5.4.0.json`. The private site serves foundation 5.2.0 and has
+archived component 5.3.0, the motion contract from before Figma slots, so
+`npm run check:site-live` fails until it serves 5.4.0; a release must wait
+for that. The site treats a published schema version as immutable: a
+contract change after the site has archived a version takes a new version,
+even when no release has written the old one.
 
 **`CHANGELOG.md` is the record of what shipped and why.** This section restated
 it once and went stale for its trouble. Keep it to what is not yet in the
