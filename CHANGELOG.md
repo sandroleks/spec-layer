@@ -17,6 +17,14 @@ re-projects once on its first pull with 0.12.0 through the
 `manifest.cliVersion` check. 0.12.0 is the first version published by the
 release workflow, so it is the first to carry npm provenance.
 
+The CLI changes merged after 0.12.0 ship as 0.13.0, a minor release: pulled
+Markdown prints each Figma slot's facts (preferred components, "only
+preferred", the limits and default content) where 0.12.0 lists a slot with
+its type alone, and `spec-layer skill` says what a slot asks of code (Figma
+slots, under Added). A plugin build that documents slots should not reach the
+listing before 0.13.0 is `latest` on npm, so a pulled Markdown page says what
+the canvas says.
+
 ### Added
 
 - **Annotate in Dev Mode.** A Library row's menu and Settings, Export can now write a
