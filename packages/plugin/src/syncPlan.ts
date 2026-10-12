@@ -260,6 +260,8 @@ export interface SyncCounts {
   removed: number;
   /** Components with a value kept because a person set, changed or removed it. */
   edited: string[];
+  /** Which kinds of value were kept, across every component in `edited`. */
+  keptKinds: { description: boolean; link: boolean; annotations: boolean };
   /** Components whose description to write has AI text nobody edited. */
   aiWritten: string[];
   /** Components whose kept description a Replace would write over with such text. */
@@ -271,7 +273,7 @@ export interface SyncCounts {
 export function countPlan(items: readonly SyncPlanItem[]): SyncCounts {
   const c: SyncCounts = {
     components: items.length, descriptions: 0, cleared: 0, links: 0, annotations: 0, removed: 0,
-    edited: [], aiWritten: [], keptAi: [], updateFirst: [],
+    edited: [], keptKinds: { description: false, link: false, annotations: false }, aiWritten: [], keptAi: [], updateFirst: [],
   };
   const ai = (origin: DescriptionText['origin'] | undefined): boolean => origin !== undefined && origin !== 'authored';
   for (const it of items) {
@@ -284,8 +286,13 @@ export function countPlan(items: readonly SyncPlanItem[]): SyncCounts {
     if (it.link.action === 'write') c.links++;
     c.annotations += it.layers.filter((l) => l.action === 'write').length;
     c.removed += it.orphans.filter((p) => p.action === 'remove').length;
-    const kept = it.description.action === 'keep' || it.link.action === 'keep' || it.layers.some((l) => l.action === 'keep');
-    if (kept) c.edited.push(it.name);
+    const keptDescription = it.description.action === 'keep';
+    const keptLink = it.link.action === 'keep';
+    const keptAnnotations = it.layers.some((l) => l.action === 'keep');
+    if (keptDescription) c.keptKinds.description = true;
+    if (keptLink) c.keptKinds.link = true;
+    if (keptAnnotations) c.keptKinds.annotations = true;
+    if (keptDescription || keptLink || keptAnnotations) c.edited.push(it.name);
     if (it.updateFirst) c.updateFirst.push(it.name);
   }
   return c;

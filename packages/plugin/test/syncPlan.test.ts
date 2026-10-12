@@ -251,7 +251,8 @@ describe('countPlan', () => {
     const b = planSync(facts({ name: 'Input', liveDescription: 'Mine', link: null, layers: [] }), MANUAL);
     expect(countPlan([a, b])).toEqual({
       components: 2, descriptions: 1, cleared: 0, links: 1, annotations: 1, removed: 0,
-      edited: ['Input'], aiWritten: ['Button'], keptAi: [], updateFirst: [],
+      edited: ['Input'], keptKinds: { description: true, link: false, annotations: false },
+      aiWritten: ['Button'], keptAi: [], updateFirst: [],
     });
   });
   it('names AI text that a replace would write over a kept description', () => {

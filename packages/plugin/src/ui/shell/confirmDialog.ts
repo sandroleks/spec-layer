@@ -7,6 +7,8 @@
 export interface ConfirmDialogOptions {
   title: string;
   body: string;
+  /** Short points shown as a list under the body, most important first. */
+  notes?: readonly string[];
   confirmLabel: string;
   cancelLabel?: string;
   tone?: 'danger' | 'primary';
@@ -37,7 +39,7 @@ export function confirmDialog(options: ConfirmDialogOptions): Promise<boolean> {
   dialog.setAttribute('role', 'dialog');
   dialog.setAttribute('aria-modal', 'true');
   dialog.setAttribute('aria-labelledby', 'sl-confirm-title');
-  dialog.setAttribute('aria-describedby', 'sl-confirm-body');
+  dialog.setAttribute('aria-describedby', options.notes?.length ? 'sl-confirm-body sl-confirm-notes' : 'sl-confirm-body');
 
   const title = document.createElement('h2');
   title.id = 'sl-confirm-title';
@@ -47,6 +49,15 @@ export function confirmDialog(options: ConfirmDialogOptions): Promise<boolean> {
   body.id = 'sl-confirm-body';
   body.textContent = options.body;
 
+  const notes = document.createElement('ul');
+  notes.id = 'sl-confirm-notes';
+  notes.className = 'sl-confirm-notes';
+  for (const note of options.notes ?? []) {
+    const li = document.createElement('li');
+    li.textContent = note;
+    notes.appendChild(li);
+  }
+
   const actions = document.createElement('div');
   actions.className = 'sl-dialog-actions';
   const cancel = button(options.cancelLabel ?? 'Cancel', 'secondary');
@@ -55,7 +66,9 @@ export function confirmDialog(options: ConfirmDialogOptions): Promise<boolean> {
   accept.setAttribute('data-confirm-accept', '');
   actions.append(cancel, accept);
 
-  dialog.append(title, body, actions);
+  dialog.append(title, body);
+  if (options.notes?.length) dialog.appendChild(notes);
+  dialog.appendChild(actions);
   host.appendChild(dialog);
 
   return new Promise<boolean>((resolve) => {

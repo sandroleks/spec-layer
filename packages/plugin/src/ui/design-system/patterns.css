@@ -2997,6 +2997,16 @@
   line-height: var(--sl-line-height-body);
 }
 
+.sl-confirm-notes {
+  display: grid;
+  gap: var(--sl-space-6);
+  margin: var(--sl-space-10) 0 0;
+  padding-left: var(--sl-space-16);
+  color: var(--sl-color-text-muted);
+  font-size: var(--sl-font-size-control);
+  line-height: var(--sl-line-height-body);
+}
+
 .sl-dialog-actions {
   display: flex;
   justify-content: flex-end;

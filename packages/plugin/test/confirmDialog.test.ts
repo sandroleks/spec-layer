@@ -95,6 +95,17 @@ describe('confirmDialog', () => {
     expect(await first).toBe(true);
   });
 
+  it('lists notes under the body as text, and leaves the list out when there are none', () => {
+    void confirmDialog({ ...OPTIONS, notes: ['First <b>note</b>', 'Second note'] });
+    const items = [...dialog().querySelectorAll('ul li')].map((li) => li.innerHTML);
+    expect(items).toEqual(['First &lt;b&gt;note&lt;/b&gt;', 'Second note']);
+    expect(dialog().getAttribute('aria-describedby')).toBe('sl-confirm-body sl-confirm-notes');
+    document.body.innerHTML = '';
+    void confirmDialog({ ...OPTIONS, notes: [] });
+    expect(dialog().querySelector('ul')).toBeNull();
+    expect(dialog().getAttribute('aria-describedby')).toBe('sl-confirm-body');
+  });
+
   it('defaults to the primary tone and a Cancel label', () => {
     void confirmDialog({ title: 'Update?', body: 'Edits are replaced.', confirmLabel: 'Update' });
     const accept = dialog().querySelector<HTMLButtonElement>('[data-confirm-accept]');
