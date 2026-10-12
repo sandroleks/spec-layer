@@ -88,6 +88,8 @@ copies, rewrites it to that path, where the files already are. `--json` on
 or later. A library with an `EASING` variable needs 0.12.0 too: earlier
 versions do not know the `easing` token type, so they refuse the Foundation
 as failing schema validation and ask for a republish that cannot help.
+A component with a Figma slot needs 0.13.0 for its pulled Markdown to print
+the slot's facts, and for `spec-layer skill` to say what a slot asks of code.
 
 ## Commands
 

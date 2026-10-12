@@ -194,32 +194,32 @@ private Figma URLs, no proprietary component exports, no credentials. A real
 design-system artifact needs explicit approval covering ids, names,
 descriptions, and diagnostics before it can be committed.
 
-## Where things stand (2026-10-11)
+## Where things stand (2026-10-12)
 
-On `main` at `1be83e6` (#119): CI `verify` passes and `npm audit` reports
+On `main` at `1d28322` (#120): CI `verify` passes and `npm audit` reports
 no vulnerabilities. Suite size lives in the test output, not here.
 
 Released: plugin 6.0.0 (tag `v6.0.0` and GitHub Release Latest, 2026-09-24,
-`EXTRACTOR_VERSION` `'3'`) and `spec-layer@0.11.0` as npm `latest`. Whether
-the Figma Community listing serves 6.0.0 cannot be verified from this
-repository. Both were cut by hand, before the release workflows existed;
-the next plugin and CLI releases are the first through them.
+`EXTRACTOR_VERSION` `'3'`), cut by hand, and `spec-layer@0.12.0` as npm
+`latest` (2026-10-11), the first CLI published by `release-cli.yml`, with
+provenance. Whether the Figma Community listing serves 6.0.0 cannot be
+verified from this repository. The next plugin release is the first through
+`release-plugin.yml`.
 
-Unreleased: `CHANGELOG.md` `[Unreleased]` holds #90 to #119. Its plugin
-changes wait for the next plugin cut, and its CLI changes (`--json`,
-retries, the `easing` token type, Figma slots in pulled Markdown and in
-`spec-layer skill`) for the `cli-v0.12.0` tag
-(`packages/cli/package.json` reads 0.12.0; npm `latest` is still 0.11.0).
-Proxy changes deploy from `main` through `deploy-proxy.yml`; production
-runs `eabee66` (#118, approved 2026-10-11).
+Unreleased: `CHANGELOG.md` `[Unreleased]` holds #90 to #121. Its plugin
+changes wait for the next plugin cut, and its CLI changes since 0.12.0 (Figma
+slots in pulled Markdown and in `spec-layer skill`) for the `cli-v0.13.0`
+tag (`packages/cli/package.json` reads 0.13.0). A plugin build that documents
+slots waits for 0.13.0 to be `latest`. Proxy changes deploy from `main`
+through `deploy-proxy.yml`; production runs `eabee66` (#118, approved
+2026-10-11). The #120 deploy failed at staging on a Cloudflare API `504`;
+#120 changes nothing the proxy reads, so production behaves as `main` does.
 
-The schemas on `main` are now `foundation-5.2.0.json` and
-`component-5.4.0.json`. The private site serves foundation 5.2.0 and has
-archived component 5.3.0, the motion contract from before Figma slots, so
-`npm run check:site-live` fails until it serves 5.4.0; a release must wait
-for that. The site treats a published schema version as immutable: a
-contract change after the site has archived a version takes a new version,
-even when no release has written the old one.
+The schemas on `main` are `foundation-5.2.0.json` and
+`component-5.4.0.json`, and spec-layer.com serves both:
+`npm run check:site-live` passed on 2026-10-12. The site treats a published
+schema version as immutable: a contract change after the site has archived a
+version takes a new version, even when no release has written the old one.
 
 **`CHANGELOG.md` is the record of what shipped and why.** This section restated
 it once and went stale for its trouble. Keep it to what is not yet in the
