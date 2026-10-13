@@ -6,6 +6,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [7.0.0] - 2026-10-14
+
+Plugin 7.0.0 is a major release because every existing document asks to
+be updated once. `EXTRACTOR_VERSION` moves from `'3'` to `'4'` for Figma
+slots, so a component doc built by 6.0.0 or earlier reads "Rebuild
+needed". Annotate in Dev Mode, motion variables and the Motion section,
+Figma slots, placeholders for empty writing sections and the Library's
+incremental source check all ship here, with Foundation Context v5 schema
+5.2.0 and Component Context v5 schema 5.4.0. It is the first plugin built
+and attested by `release-plugin.yml`. The proxy it needs deploys from
+`main` ahead of it, and `spec-layer@0.13.0` is `latest` on npm, which a
+pulled Markdown page needs before it says what the canvas says about a
+slot.
+
 The CLI portion of this section ships as 0.12.0, a minor release because
 `pull`, `status` and `list` gain `--json`, and because `--help` and
 `--version` now print to stdout and exit 0. It is also the first CLI that can
@@ -2709,6 +2723,7 @@ path, where the files already are, and says so in one line.
 - Workspace packages are private implementation modules and are not published to npm.
 - GitHub synchronization, drift detection, and an MCP server remain roadmap items.
 
+[7.0.0]: https://github.com/sandroleks/spec-layer/releases/tag/v7.0.0
 [6.0.0]: https://github.com/sandroleks/spec-layer/releases/tag/v6.0.0
 [5.1.0]: https://github.com/sandroleks/spec-layer/releases/tag/v5.1.0
 [5.0.0]: https://github.com/sandroleks/spec-layer/releases/tag/v5.0.0
