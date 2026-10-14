@@ -53,8 +53,9 @@ describe('releaseProblems', () => {
   it('passes the releases already cut from this checkout', () => {
     const real = Object.fromEntries(Object.keys(files()).map((p) => [p, read(p)]));
     const cli = JSON.parse(real['packages/cli/package.json']).version;
+    const plugin = JSON.parse(real['packages/plugin/package.json']).version;
     expect(releaseProblems('cli', `cli-v${cli}`, real)).toEqual([]);
-    expect(releaseProblems('plugin', 'v6.0.0', real)).toEqual([]);
+    expect(releaseProblems('plugin', `v${plugin}`, real)).toEqual([]);
   });
 
   it('refuses a tag the package versions do not carry', () => {

@@ -137,10 +137,10 @@ shared core, and the piece a future `spec-layer diff` reuses.
 
 **`EXTRACTOR_VERSION` is a rebuild request.** Bump it only when extraction
 output can change for unchanged source. A spurious bump asks every user to
-regenerate every document. 6.0.0 shipped `'3'` (#66, 97bfed1). `main` reads
-`'4'` since the Figma slots change, so the next plugin release asks existing
-documents to rebuild; another extraction change before that release needs no
-further bump, and one after it needs `'5'`.
+regenerate every document. 6.0.0 shipped `'3'` (#66, 97bfed1) and 7.0.0
+ships `'4'` for the Figma slots change (#117), so every document built by
+6.0.0 reads Rebuild needed once. The next extraction change after 7.0.0
+needs `'5'`.
 
 **Do not use `localeCompare` under `src/v5`.** Use `compareCodeUnits` from
 `v5/diagnostics.ts`. Locale ordering makes hashes machine-dependent.
@@ -194,30 +194,29 @@ private Figma URLs, no proprietary component exports, no credentials. A real
 design-system artifact needs explicit approval covering ids, names,
 descriptions, and diagnostics before it can be committed.
 
-## Where things stand (2026-10-12)
+## Where things stand (2026-10-14)
 
-On `main` at `1d28322` (#120): CI `verify` passes and `npm audit` reports
+On `main` at `3a863ef` (#122): CI `verify` passes and `npm audit` reports
 no vulnerabilities. Suite size lives in the test output, not here.
 
 Released: plugin 6.0.0 (tag `v6.0.0` and GitHub Release Latest, 2026-09-24,
-`EXTRACTOR_VERSION` `'3'`), cut by hand, and `spec-layer@0.12.0` as npm
-`latest` (2026-10-11), the first CLI published by `release-cli.yml`, with
-provenance. Whether the Figma Community listing serves 6.0.0 cannot be
-verified from this repository. The next plugin release is the first through
-`release-plugin.yml`.
+`EXTRACTOR_VERSION` `'3'`), cut by hand, and `spec-layer@0.13.0` as npm
+`latest` (2026-10-12) through `release-cli.yml`, with provenance. Whether
+the Figma Community listing serves 6.0.0 cannot be verified from this
+repository.
 
-Unreleased: `CHANGELOG.md` `[Unreleased]` holds #90 to #121. Its plugin
-changes wait for the next plugin cut, and its CLI changes since 0.12.0 (Figma
-slots in pulled Markdown and in `spec-layer skill`) for the `cli-v0.13.0`
-tag (`packages/cli/package.json` reads 0.13.0). A plugin build that documents
-slots waits for 0.13.0 to be `latest`. Proxy changes deploy from `main`
-through `deploy-proxy.yml`; production runs `eabee66` (#118, approved
-2026-10-11). The #120 deploy failed at staging on a Cloudflare API `504`;
-#120 changes nothing the proxy reads, so production behaves as `main` does.
+Cut, not yet tagged: `CHANGELOG.md` `[7.0.0]` (#90 to #122, `EXTRACTOR_VERSION`
+`'4'`). Pushing `v7.0.0` on its squash commit runs `release-plugin.yml` for
+the first time; that workflow has never run, and a `workflow_dispatch` run
+of it is a dry run that builds the zip and creates no release. Everything
+7.0.0 needs is in place: the proxy on production is `main` (#122, approved
+2026-10-12) and CLI 0.13.0 is `latest`. The listing is updated by hand
+after the manual pass. Proxy changes deploy from `main` through
+`deploy-proxy.yml`.
 
 The schemas on `main` are `foundation-5.2.0.json` and
 `component-5.4.0.json`, and spec-layer.com serves both:
-`npm run check:site-live` passed on 2026-10-12. The site treats a published
+`npm run check:site-live` passed on 2026-10-14. The site treats a published
 schema version as immutable: a contract change after the site has archived a
 version takes a new version, even when no release has written the old one.
 
@@ -233,7 +232,10 @@ Open, in rough priority order:
    2026-09-05 review could not answer are still open: how often the
    non-component toast fires, and the real size and paste behaviour of the
    DTCG clipboard. Rows added since 6.0.0 for #95 to #101 (Library checks,
-   placeholders, selection cache, support email) are unrun too.
+   placeholders, selection cache, support email), the Annotate in Dev
+   Mode section (#108, #116), the motion rows (#106) and the Figma slots
+   rows (Create 12 and 13, Library 28) are unrun too, and 7.0.0 is the
+   first build that carries them.
 2. **Component Frame Quality Round 1**, planned; the plan and design are in
    the private repository. #66 (97bfed1, 2026-09-18) landed four of its items
    with `EXTRACTOR_VERSION` `'3'`: `hash.ts` sorts by code unit, the radius
