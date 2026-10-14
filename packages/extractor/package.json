@@ -8,6 +8,6 @@
     "js-sha256": "^1.0.0"
   },
   "devDependencies": {
-    "postcss": "^8.5.28"
+    "postcss": "^8.5.29"
   }
 }
