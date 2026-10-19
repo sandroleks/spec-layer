@@ -10,6 +10,7 @@ import {
   type FoundationScope, type FoundationSpec, type FoundationValue,
 } from '@spec-layer/extractor';
 import { ALL_SECTIONS, type SectionId } from './ui/docModel';
+import { PLACEHOLDER_SECTION_IDS } from './ui/placeholders';
 
 export type WritingGapKind = 'component' | 'slot' | 'section' | 'variable' | 'style';
 
@@ -27,9 +28,9 @@ export interface WritingGap {
   facts?: string[];
 }
 
-/** The sections a person writes: the ones the plugin draws as placeholders
- *  (placeholders.ts SHAPES). Frame order. */
-export const WRITING_SECTIONS: readonly SectionId[] = ['definition', 'whenToUse', 'dosDonts', 'keyboard'];
+/** The sections a person writes: every one the plugin draws as a placeholder
+ *  (ui/placeholders.ts), so the two lists can never disagree. Frame order. */
+export const WRITING_SECTIONS: readonly SectionId[] = PLACEHOLDER_SECTION_IDS;
 
 export interface RawComponentFields {
   id: string;

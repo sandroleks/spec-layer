@@ -670,6 +670,9 @@ record.
     the batches that ran get drafts, the no-uses-left note names the
     allowance, and no note claims those drafts did not come back. Press it
     again: the drafts already shown stay and the allowance does not move.
+38. Build a doc whose Pointer and touch, Semantics and focus, and Content
+    sections are placeholders. Its Needs writing row lists each of the three
+    by its heading, and **Open in doc** on each focuses that placeholder.
 
 Row 28 was added on 2026-10-11 for Figma slots and has not been run. Rows 29
 onward were added on 2026-10-19 for Needs writing and have not been run

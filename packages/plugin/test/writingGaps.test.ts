@@ -3,6 +3,8 @@ import type { FoundationSpec } from '@spec-layer/extractor';
 import {
   componentWritingGaps, sectionWritingGaps, foundationWritingGaps, valueLabel, gapSummary, WRITING_SECTIONS,
 } from '../src/writingGaps';
+import { ALL_SECTIONS } from '../src/ui/docModel';
+import { placeholderShapeFor } from '../src/ui/placeholders';
 
 describe('componentWritingGaps', () => {
   it('names an empty description and each slot without one', () => {
@@ -35,8 +37,19 @@ describe('sectionWritingGaps', () => {
     expect(sectionWritingGaps('doc-1', undefined, ['definition'])).toEqual([]);
   });
   it('never lists a section that is not a writing section', () => {
-    expect(WRITING_SECTIONS).toEqual(['definition', 'whenToUse', 'dosDonts', 'keyboard']);
+    expect(WRITING_SECTIONS).toEqual([
+      'definition', 'whenToUse', 'dosDonts', 'keyboard', 'pointer', 'accessibility', 'contentConsiderations',
+    ]);
     expect(sectionWritingGaps('doc-1', ['anatomy'], ['anatomy'])).toEqual([]);
+  });
+  it('is every section drawn as a placeholder, in frame order', () => {
+    const drawn = ALL_SECTIONS.filter((s) => placeholderShapeFor(s.id) !== null).map((s) => s.id);
+    expect(WRITING_SECTIONS).toEqual(drawn);
+  });
+  it('lists a Pointer and touch placeholder', () => {
+    expect(sectionWritingGaps('doc-1', ['pointer'], ['pointer', 'keyboard'])).toEqual([
+      { kind: 'section', id: 'doc-1', sectionId: 'pointer', name: 'Pointer and touch' },
+    ]);
   });
 });
 

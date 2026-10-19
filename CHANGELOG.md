@@ -24,7 +24,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   change waits for this proxy to be in production.
 - **Needs writing, in the Library.** A fourth filter lists, per doc, what a
   person still has to write: an empty component or slot description, a doc
-  section still showing its placeholder, and for a Foundation doc each
+  section still showing its placeholder (any of the seven the plugin draws
+  one for, from Overview to Content), and for a Foundation doc each
   variable or style in its scope with no description. Each description gap
   is a one-line field; **Save** writes it into Figma's own field, so Dev
   Mode, Figma's agent and the next extraction all see it, and the doc then
