@@ -190,6 +190,23 @@ function changeContentMarkup(row: LibraryRowPresentation): string {
   }
 }
 
+/**
+ * What the Writing parts of a row draw from, for patchLibraryDrift to compare:
+ * the summary line, the drafting flag, and for a row with items the busy flag
+ * and whether its details are open.
+ */
+function writingSignature(row: LibraryRowPresentation, busy: boolean): string {
+  const withItems = row.writingItems.length > 0;
+  const parts = [
+    row.writingSummary,
+    row.drafting ? 'drafting' : '',
+    withItems ? (busy ? 'busy' : '') : '',
+    withItems && row.expanded ? 'open' : '',
+  ];
+  // Empty for a row with nothing to write, so its markup stays unchanged.
+  return parts.every((part) => part === '') ? '' : parts.join('|');
+}
+
 function writingItemMarkup(item: LibraryWritingItem, docId: string, busy: boolean): string {
   const g = item.gap;
   if (g.kind === 'section') {
@@ -440,10 +457,13 @@ export function libraryRowMarkup(
       '</span></div>'
     );
 
+  const sig = writingSignature({ ...row, expanded }, busy);
+  const sigAttr = sig ? ` data-writing-sig="${esc(sig)}"` : '';
+
   return (
     '<article class="sl-library-row' +
     `${expanded ? ' is-expanded' : ''}${revealed ? ' is-revealed' : ''}" ` +
-    `data-doc-id="${esc(row.docId)}" data-expanded="${expanded}">` +
+    `data-doc-id="${esc(row.docId)}" data-expanded="${expanded}"${sigAttr}>` +
     '<div class="sl-library-summary">' +
     jump +
     status +
@@ -938,7 +958,8 @@ export function patchLibraryDrift(refs: ShellRefs, model: LibraryScreenPresentat
     const article = drawn.get(row.docId)!;
     const status = article.querySelector('[data-library-status]')?.getAttribute('data-library-status');
     const openMenuBusyMoved = busyChanged && model.menuDocId === row.docId;
-    if (status === row.status && !openMenuBusyMoved) continue;
+    const writingMoved = (article.dataset.writingSig ?? '') !== writingSignature(row, busy);
+    if (status === row.status && !openMenuBusyMoved && !writingMoved) continue;
     const active = document.activeElement;
     const focused = active && article.contains(active) ? rowControlSelector(active) : null;
     article.outerHTML = libraryRowMarkup(row, model.menuDocId, busy, row.docId === model.revealedDocId);

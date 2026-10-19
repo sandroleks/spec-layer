@@ -210,4 +210,28 @@ describe('patchLibraryDrift', () => {
     expect(ok).toBe(true);
     expect(document.activeElement).toBe(refs.footer.querySelector('[data-library-update-all]'));
   });
+
+  describe('writing state', () => {
+    const items = [
+      { key: 'variable:V1', gap: { kind: 'variable' as const, id: 'V1', name: 'color/surface' }, draft: null },
+    ];
+    const writingRow = (over: Partial<LibraryRowPresentation> = {}): LibraryRowPresentation => ({
+      ...row('a', 'inSync'), expanded: true, writingSummary: '1 description to write', writingItems: items, ...over,
+    });
+
+    it('redraws a row whose writing summary changed, without a status change', () => {
+      const refs = mount([writingRow()]);
+      const ok = patchLibraryDrift(refs, model([writingRow({ writingSummary: '2 descriptions to write' })]));
+      expect(ok).toBe(true);
+      expect(refs.scroll.querySelector('.sl-library-writing-summary')?.textContent).toBe('2 descriptions to write');
+    });
+
+    it('redraws an expanded row with items when busy flips, disabling its field', () => {
+      const refs = mount([writingRow()]);
+      expect(refs.scroll.querySelector('.sl-writing-field')?.hasAttribute('disabled')).toBe(false);
+      const ok = patchLibraryDrift(refs, model([writingRow()], { refreshing: true }));
+      expect(ok).toBe(true);
+      expect(refs.scroll.querySelector('.sl-writing-field')?.hasAttribute('disabled')).toBe(true);
+    });
+  });
 });
