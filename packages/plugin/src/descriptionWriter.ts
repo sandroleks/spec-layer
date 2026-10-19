@@ -4,7 +4,7 @@
  * branch is tested without Figma (the pattern syncFigma.ts uses). The text
  * is source: nothing claims it as the doc's own, so the next extraction reads
  * it like any designer's description. One mark only: AI text saved without an
- * edit is recorded by hash, so the product can say so until someone edits it.
+ * edit is recorded by hash in plugin data. Nothing reads the mark yet.
  * Nothing here enters a hash or an artifact.
  */
 import { contentHash } from '@spec-layer/extractor';
@@ -60,17 +60,15 @@ function writeMarks(node: WritableDescribed, marks: Record<string, string>): voi
   node.setPluginData(AI_DESCRIPTION_KEY, Object.keys(marks).length ? JSON.stringify(marks) : '');
 }
 
-/** True while the field still holds the AI text that was saved unedited. */
-export function aiTextUnedited(node: WritableDescribed, field: string, liveText: string): boolean {
-  const mark = readMarks(node)[field];
-  return typeof mark === 'string' && mark === contentHash(liveText);
-}
-
+/** Best effort: the field write already landed, so a refused plugin data
+ *  write must not report the description as unwritten. */
 function mark(node: WritableDescribed, field: string, item: DescriptionWrite): void {
-  const marks = readMarks(node);
-  if (item.origin === 'ai') marks[field] = contentHash(item.text);
-  else delete marks[field];
-  writeMarks(node, marks);
+  try {
+    const marks = readMarks(node);
+    if (item.origin === 'ai') marks[field] = contentHash(item.text);
+    else delete marks[field];
+    writeMarks(node, marks);
+  } catch { /* the mark is a note, not the write */ }
 }
 
 async function target(host: DescriptionHost, item: DescriptionWrite): Promise<WritableDescribed | WritableComponent | null> {

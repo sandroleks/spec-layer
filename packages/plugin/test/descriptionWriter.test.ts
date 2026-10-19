@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { contentHash } from '@spec-layer/extractor';
 import {
-  writeDescriptions, writeKey, aiTextUnedited, AI_DESCRIPTION_KEY,
+  writeDescriptions, writeKey, AI_DESCRIPTION_KEY,
   type DescriptionHost, type WritableComponent, type WritableDescribed,
 } from '../src/descriptionWriter';
 
@@ -69,10 +69,19 @@ describe('writeDescriptions', () => {
     const v = described();
     await writeDescriptions(host({ variable: async () => v }), [{ kind: 'variable', id: 'V1', text: 'Drafted.', origin: 'ai' }]);
     expect(JSON.parse(v.getPluginData(AI_DESCRIPTION_KEY))).toEqual({ description: contentHash('Drafted.') });
-    expect(aiTextUnedited(v, 'description', 'Drafted.')).toBe(true);
-    expect(aiTextUnedited(v, 'description', 'Drafted, then edited.')).toBe(false);
     await writeDescriptions(host({ variable: async () => v }), [{ kind: 'variable', id: 'V1', text: 'Mine.', origin: 'person' }]);
     expect(v.getPluginData(AI_DESCRIPTION_KEY)).toBe('');
+  });
+
+  it('counts the write as written when only the mark is refused', async () => {
+    const v: WritableDescribed = {
+      description: '',
+      getPluginData: () => '',
+      setPluginData: () => { throw new Error('Plugin data is read-only here.'); },
+    };
+    const out = await writeDescriptions(host({ variable: async () => v }), [{ kind: 'variable', id: 'V1', text: 'Drafted.', origin: 'ai' }]);
+    expect(out).toEqual({ written: ['variable:V1'], failed: [] });
+    expect(v.description).toBe('Drafted.');
   });
 
   it('keys a slot mark by its property name on the component', async () => {
