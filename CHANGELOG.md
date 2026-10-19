@@ -32,7 +32,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   shows Update available. A Foundation save reads the Foundation and the
   list again but keeps every component row's settled check. A section gap opens the placeholder on the canvas.
   **Draft all with AI** fills a row's open fields as drafts to review, one
-  generation per 60 fields. A batch that fails, for example when the free
+  generation per 60 fields. Each field's brief carries only facts the plugin
+  already holds: a variable's values in the doc's modes and the token every
+  mode aliases, a text style's font or an effect style's layer count, and a
+  component's or slot's properties, variant count and preferred components
+  from its last source check. A batch that fails, for example when the free
   allowance runs out partway through a row, stops the run, keeps the drafts
   the batches before it produced, and says why; a retry asks only for the
   fields still open. A draft saved unedited is recorded as AI text

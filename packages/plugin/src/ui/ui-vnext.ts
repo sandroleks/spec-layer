@@ -7,7 +7,7 @@ import {
   extract, specHashProjection, contentHash, EXTRACTOR_VERSION,
   type SpecHashProjection,
 } from '@spec-layer/extractor';
-import type { DescriptionBrief, ProseV2 } from '@spec-layer/extractor';
+import type { ProseV2 } from '@spec-layer/extractor';
 import {
   THEME_PRESETS,
   matchPreset,
@@ -74,7 +74,6 @@ import {
 } from './viewModel/componentScreen';
 import {
   buildLibraryModel,
-  writingItemKey,
   type LibraryDraft,
   type LibraryWritingItem,
   formatLibraryCheckedAt,
@@ -143,6 +142,7 @@ import {
 } from './actions';
 import { generateDescriptions, generateGroupDescriptions, resolveComponentImage } from './ai';
 import { WRITING_DRAFTS_NOTE, draftFailedNote, writtenToast } from './writingCopy';
+import { briefFor } from './writingBriefs';
 import type { WritingGap } from '../writingGaps';
 import {
   activateLicense as activateLicenseKey,
@@ -1224,35 +1224,16 @@ function saveWritingItem(docId: string, key: string): void {
   });
 }
 
-/** A variable's Figma type and scopes, read from the Foundation spec when it is loaded. */
-function variableFacts(id: string): { type: string; scopes?: string[] } {
-  for (const collection of currentFoundationSpec()?.collections ?? []) {
-    const found = collection.variables.find((v) => v.provenance.id === id);
-    if (found) return { type: found.resolvedType, scopes: found.provenance.scopes };
-  }
-  return { type: 'variable' };
-}
-
-function briefFor(gap: WritingGap): DescriptionBrief {
-  const key = writingItemKey(gap);
-  switch (gap.kind) {
-    case 'variable': {
-      const facts = variableFacts(gap.id);
-      return {
-        key, kind: 'variable', name: gap.name, type: facts.type, values: gap.facts ?? [],
-        ...(facts.scopes && facts.scopes.length > 0 ? { scopes: facts.scopes } : {}),
-      };
-    }
-    case 'style': return { key, kind: 'style', name: gap.name, type: gap.facts?.[0] ?? 'style' };
-    case 'slot': return { key, kind: 'slot', name: gap.name, type: 'slot' };
-    default: return { key, kind: 'component', name: gap.name, type: 'component' };
-  }
-}
-
 async function draftAllForRow(docId: string): Promise<void> {
   const row = currentLibraryModel().allRows.find((r) => r.docId === docId);
   if (!row || libraryDrafting.has(docId)) return;
-  const items = row.writingItems.filter((i) => i.gap.kind !== 'section' && !i.draft).map((i) => briefFor(i.gap));
+  const entry = libraryEntry(docId);
+  const context = {
+    foundation: currentFoundationSpec(),
+    scope: entry?.foundationScope,
+    projection: libraryLiveProjection.get(docId),
+  };
+  const items = row.writingItems.filter((i) => i.gap.kind !== 'section' && !i.draft).map((i) => briefFor(i.gap, context));
   if (items.length === 0) return;
   libraryDrafting.add(docId);
   paint();
