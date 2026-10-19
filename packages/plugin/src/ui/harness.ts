@@ -26,6 +26,7 @@ import type {
   PluginView,
 } from './viewModel/contracts';
 import type { LibraryEntry } from '../messages';
+import type { WritingGap } from '../writingGaps';
 import type { GroupId, SectionId } from './docModel';
 import { mountShell, setActiveView, wireShellTheme } from './shell/shell';
 import { renderAllowance } from './shell/header';
@@ -54,7 +55,9 @@ import { type ThemeMode } from './theme';
 import { NO_FACTS, type ComponentFacts } from './viewModel/componentFacts';
 import {
   buildLibraryModel,
+  writingItemKey,
   type LibraryChangeResult,
+  type LibraryDraft,
   type LibraryDriftState,
   type LibraryFilter,
 } from './viewModel/library';
@@ -444,6 +447,7 @@ const LIBRARY_NAMES = [
   'Foundations · Typography',
 ];
 const LIBRARY_NOW = Date.UTC(2026, 6, 29, 12);
+const WRITING_FIXTURE = view === 'library' && param('writing', '0') === '1';
 const LIBRARY_ENTRIES: LibraryEntry[] = LIBRARY_NAMES.map((name, index) => ({
   docId: `doc-${index + 1}`,
   kind: name.startsWith('Foundations') ? 'foundation' : 'component',
@@ -457,7 +461,7 @@ const LIBRARY_ENTRIES: LibraryEntry[] = LIBRARY_NAMES.map((name, index) => ({
   generatedAt: LIBRARY_NOW - (index + 1) * 3_600_000,
   sourceNodeId: name.startsWith('Foundations') ? '' : `source-${index + 1}`,
   sourceExists: true,
-  selfEdited: index === 6,
+  selfEdited: index === 6 || (WRITING_FIXTURE && index === 1),
   storedContentHash: `stored-${index + 1}`,
   ...(name.startsWith('Foundations')
     ? {
@@ -465,9 +469,63 @@ const LIBRARY_ENTRIES: LibraryEntry[] = LIBRARY_NAMES.map((name, index) => ({
       foundationIcon: name.endsWith('Typography')
         ? ('typography' as const)
         : ('color' as const),
+      // The scope main sends, so the Foundation row can list its blank variables.
+      ...(WRITING_FIXTURE && name.endsWith('Semantic')
+        ? {
+          foundationScope: {
+            target: 'collection' as const,
+            collectionId: 'mapped-colors',
+            collectionName: 'Mapped Colors',
+            modeIds: ['light', 'dark', 'contrast'],
+          },
+        }
+        : {}),
+    }
+    : {}),
+  // The shape main sends: sections drawn as placeholders, and the ticked ones.
+  ...(WRITING_FIXTURE && index < 2
+    ? {
+      unwrittenSections: ['whenToUse', 'dosDonts'] as SectionId[],
+      sections: ['definition', 'whenToUse', 'dosDonts', 'anatomy'] as SectionId[],
     }
     : {}),
 }));
+
+/** `?writing=1`: the Needs writing group. The gaps are the reply main sends
+ *  for the first row (`writingGaps`), and the Foundation spec is the one the UI
+ *  holds from the `foundation` reply, with one variable left without a
+ *  description. */
+const WRITING_COMPONENT_GAPS = new Map<string, WritingGap[]>(WRITING_FIXTURE
+  ? [[LIBRARY_ENTRIES[0].docId, [
+    { kind: 'component', id: '10:20', name: 'Button' },
+    { kind: 'slot', id: '10:20', propertyName: 'Content#1:2', name: 'Button / Content' },
+  ]]]
+  : []);
+const WRITING_FOUNDATION: FoundationSpec | null = WRITING_FIXTURE
+  ? ({
+    ...FOUNDATION_SPEC,
+    collections: FOUNDATION_SPEC.collections.map((collection) => ({
+      ...collection,
+      variables: collection.variables.map((variable, index) => ({
+        ...variable,
+        group: 'Mapped',
+        description: collection.id === 'mapped-colors' && index === 0 ? '' : 'Described.',
+        provenance: { id: `VariableID:${(variable as unknown as { id: string }).id}` },
+        valuesByMode: Object.fromEntries(collection.modes.map((mode) => [
+          mode.modeId,
+          { kind: 'color', hex: mode.modeId === 'light' ? '#FFFFFF' : '#101010', alpha: 1 },
+        ])),
+      })),
+    })),
+  } as unknown as FoundationSpec)
+  : null;
+/** One AI draft on the slot, so the AI tag shows. */
+const WRITING_DRAFTS = new Map<string, LibraryDraft>(WRITING_FIXTURE
+  ? [[
+    writingItemKey({ kind: 'slot', id: '10:20', propertyName: 'Content#1:2', name: 'Button / Content' }),
+    { text: 'Holds the label and an optional leading icon.', origin: 'ai' },
+  ]]
+  : []);
 
 /** Set by the Library fixture so the palette can hand off to a row; null on
  *  every other screen, as in the plugin. */
@@ -681,6 +739,9 @@ if (view === 'library') {
       filter: libraryFilter,
       expandedDocId,
       now: LIBRARY_NOW,
+      componentGaps: WRITING_COMPONENT_GAPS,
+      foundation: WRITING_FOUNDATION,
+      drafts: WRITING_DRAFTS,
     });
     // Boolean, not a count.
     setRailBadge(refs.sidebar, 'library', model.counts.updates > 0);
