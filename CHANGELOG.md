@@ -6,6 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **Empty descriptions are named in the Foundation Context.** A variable,
+  text style or effect style with no description in Figma gets a
+  `MISSING_DESCRIPTION` diagnostic, severity info, on the stable id. The code
+  was already in the vocabulary and in `foundation-5.2.0.json`, so no schema
+  version moves, and diagnostics sit outside `semanticContentHash`, so no
+  artifact identity moves. The artifact bytes change for such a file, which
+  `EXTRACTOR_VERSION` `'4'` already covers.
+
 ## [7.0.0] - 2026-10-14
 
 Plugin 7.0.0 is a major release because every existing document asks to
