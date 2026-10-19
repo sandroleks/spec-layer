@@ -665,8 +665,15 @@ record.
 35. **Open in doc** on a section line focuses that section's placeholder.
 36. A doc built before this version shows no section lines until it is
     updated; its description fields still list.
+37. On the free plan with fewer uses left than a Foundation row has batches
+    of 60 open fields, press **Draft all with AI**. Confirm the fields from
+    the batches that ran get drafts, the no-uses-left note names the
+    allowance, and no note claims those drafts did not come back. Press it
+    again: the drafts already shown stay and the allowance does not move.
 
-Row 28 was added on 2026-10-11 for Figma slots and has not been run.
+Row 28 was added on 2026-10-11 for Figma slots and has not been run. Rows 29
+onward were added on 2026-10-19 for Needs writing and have not been run
+either, so none of them is covered yet.
 
 ## AI-writing allowance (free plan)
 

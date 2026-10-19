@@ -164,7 +164,7 @@ describe('Library writing replies', () => {
   });
 
   it('keeps text typed while Draft all was out', async () => {
-    let resolve: (answers: Record<string, string>) => void = () => {};
+    let resolve: (answers: { drafts: Record<string, string>; error?: unknown }) => void = () => {};
     vi.mocked(generateDescriptions).mockReturnValue(new Promise((r) => { resolve = r; }));
     const passId = await openLibrary();
     dispatch({ type: 'driftSource', docId: 'doc-1', passId, node: serializedButton(), fileKey: 'f' });
@@ -172,13 +172,33 @@ describe('Library writing replies', () => {
     click('[data-library-disclosure="doc-1"]');
     click('[data-writing-draft-all]');
     type('[data-writing-key="component:10:20"]', 'Mine.');
-    resolve({ 'component:10:20': 'From the model.' });
+    resolve({ drafts: { 'component:10:20': 'From the model.' } });
     await new Promise((r) => setTimeout(r, 0));
     expect(document.querySelector<HTMLInputElement>('[data-writing-key="component:10:20"]')?.value).toBe('Mine.');
     click('[data-writing-save="component:10:20"]');
     expect(lastOutgoing('writeDescriptions')['items']).toEqual([
       { kind: 'component', id: '10:20', text: 'Mine.', origin: 'person' },
     ]);
+  });
+
+  it('lands the drafts that came back before a batch failed, and names the failure', async () => {
+    // The UI is imported fresh per test, so the error class comes from the same module graph.
+    const { ProseProxyError } = await import('@spec-layer/extractor');
+    vi.mocked(generateDescriptions).mockResolvedValue({
+      drafts: { 'component:10:20': 'Starts an action.' },
+      error: new ProseProxyError('quota_exhausted', '2026-11-01T00:00:00Z'),
+    });
+    const passId = await openLibrary();
+    dispatch({ type: 'driftSource', docId: 'doc-1', passId, node: serializedButton(), fileKey: 'f' });
+    const slot = { kind: 'slot', id: '10:20', propertyName: 'Icon#1:2', name: 'Button / Icon' };
+    dispatch({ type: 'writingGaps', docId: 'doc-1', passId, gaps: [gap, slot] });
+    click('[data-library-disclosure="doc-1"]');
+    click('[data-writing-draft-all]');
+    await new Promise((r) => setTimeout(r, 0));
+    expect(document.querySelector<HTMLInputElement>('[data-writing-key="component:10:20"]')?.value).toBe('Starts an action.');
+    const notes = outgoing.filter((m) => m.type === 'notify').map((m) => m['message'] as string);
+    expect(notes.some((n) => /AI writing uses this month/.test(n))).toBe(true);
+    expect(notes.some((n) => n.startsWith('No draft came back'))).toBe(false);
   });
 
   it('keeps the gaps of a check in flight across a resume', async () => {

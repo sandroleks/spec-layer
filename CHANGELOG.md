@@ -30,7 +30,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   Mode, Figma's agent and the next extraction all see it, and the doc then
   shows Update available. A section gap opens the placeholder on the canvas.
   **Draft all with AI** fills a row's open fields as drafts to review, one
-  generation per 60 fields; a draft saved unedited is recorded as AI text
+  generation per 60 fields. A batch that fails, for example when the free
+  allowance runs out partway through a row, stops the run, keeps the drafts
+  the batches before it produced, and says why; a retry asks only for the
+  fields still open. A draft saved unedited is recorded as AI text
   until someone edits it, the caution Annotate in Dev Mode already uses.
   Component gaps are read in the same pass as the drift check; section gaps
   come from the doc link, which now records which sections were drawn as

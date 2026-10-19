@@ -1252,7 +1252,7 @@ async function draftAllForRow(docId: string): Promise<void> {
   libraryDrafting.add(docId);
   paint();
   try {
-    const answers = await generateDescriptions(
+    const { drafts, error } = await generateDescriptions(
       { items },
       effectiveAuth(state.licenseKey, state.licenseInstanceId, state.figmaUserId, state.licenseActive),
       (quota) => { state.quota = quota; quotaFetched = true; paintAllowance(); },
@@ -1261,10 +1261,12 @@ async function draftAllForRow(docId: string): Promise<void> {
     // A field the person typed in while the call was out keeps their text.
     const open = items.filter((item) => !libraryDrafts.has(item.key));
     for (const item of open) {
-      const text = answers[item.key];
+      const text = drafts[item.key];
       if (text) { libraryDrafts.set(item.key, { text, origin: 'ai' }); landed++; }
     }
-    if (landed < open.length) nativeNotify(draftFailedNote(open.length - landed));
+    // A batch that failed names why; the drafts from the batches before it stay.
+    if (error !== undefined) nativeNotify(aiFailureNote(state, error, 'component'), { error: true });
+    else if (landed < open.length) nativeNotify(draftFailedNote(open.length - landed));
     if (landed > 0 && !draftsNoteShown) { draftsNoteShown = true; nativeNotify(WRITING_DRAFTS_NOTE); }
   } catch (error) {
     nativeNotify(aiFailureNote(state, error, 'component'), { error: true });
