@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { LibraryEntry } from '../src/messages';
+import type { WritingGap } from '../src/writingGaps';
 import {
+  rowWritingGaps,
   buildLibraryModel,
   buildLibraryRow,
   formatLibraryAge,
@@ -356,7 +358,7 @@ describe('buildLibraryModel filters and counts', () => {
 
   it('counts only proven source updates and proven in-sync rows', () => {
     const model = buildLibraryModel(entries, { drift, now: NOW });
-    expect(model.counts).toEqual({ all: 6, updates: 2, inSync: 1 });
+    expect(model.counts).toEqual({ all: 6, updates: 2, inSync: 1, writing: 0 });
     expect(model.rows).toHaveLength(6);
   });
 
@@ -374,7 +376,7 @@ describe('buildLibraryModel filters and counts', () => {
     // "Updates": a user relying on the filter to find rows that need action
     // must not miss the ones that need a rebuild rather than a hash-based update.
     expect(updates.rows.map((row) => row.docId).sort()).toEqual(['stale', 'update']);
-    expect(updates.counts).toEqual({ all: 6, updates: 2, inSync: 1 });
+    expect(updates.counts).toEqual({ all: 6, updates: 2, inSync: 1, writing: 0 });
 
     const sync = buildLibraryModel(entries, {
       drift, filter: 'sync', now: NOW,
@@ -636,5 +638,52 @@ describe('isLibraryFilter', () => {
     expect(isLibraryFilter('updates')).toBe(true);
     expect(isLibraryFilter('sync')).toBe(true);
     expect(isLibraryFilter('drifted')).toBe(false);
+  });
+});
+
+const gap = (over: Partial<WritingGap>): WritingGap => ({ kind: 'variable', id: 'V1', name: 'color/x', ...over });
+
+describe('writing', () => {
+  it('merges component gaps from main with section gaps from the link', () => {
+    const e = entry({ unwrittenSections: ['whenToUse'], sections: ['definition', 'whenToUse'] });
+    const gaps = rowWritingGaps(e, { componentGaps: new Map([[e.docId, [gap({ kind: 'component', id: '10:20', name: 'Button' })]]]) });
+    expect(gaps.map((g) => g.kind)).toEqual(['component', 'section']);
+  });
+
+  it('reads Foundation gaps from the spec within the row scope', () => {
+    const e = entry({ kind: 'foundation', sourceNodeId: '', foundationScope: { target: 'textStyles' } });
+    const spec = { fileKey: 'f', collections: [], textStyles: [{ id: 'S1', name: 'Body', group: 'Body', description: '' }], effectStyles: [], extractedAt: '' } as never;
+    expect(rowWritingGaps(e, { foundation: spec }).map((g) => g.id)).toEqual(['S1']);
+    expect(rowWritingGaps(e, { foundation: null })).toEqual([]);
+  });
+
+  it('counts and filters rows that need writing', () => {
+    const a = entry({ docId: 'a' });
+    const b = entry({ docId: 'b', unwrittenSections: ['definition'], sections: ['definition'] });
+    const model = buildLibraryModel([a, b], { filter: 'writing', componentGaps: new Map([['a', []]]) });
+    expect(model.counts.writing).toBe(1);
+    expect(model.rows.map((r) => r.docId)).toEqual(['b']);
+    expect(model.rows[0]!.writingSummary).toBe('1 section to write');
+    expect(model.rows[0]!.writingItems[0]!.key).toBe('section:b:definition');
+  });
+
+  it('attaches drafts by item key and the drafting flag by doc', () => {
+    const a = entry({ docId: 'a' });
+    const model = buildLibraryModel([a], {
+      componentGaps: new Map([['a', [gap({ kind: 'component', id: '10:20', name: 'Button' })]]]),
+      drafts: new Map([['component:10:20', { text: 'Starts an action.', origin: 'ai' as const }]]),
+      drafting: new Set(['a']),
+    });
+    expect(model.rows[0]!.writingItems[0]!.draft).toEqual({ text: 'Starts an action.', origin: 'ai' });
+    expect(model.rows[0]!.drafting).toBe(true);
+  });
+
+  it('marks section gaps stale on an edited row', () => {
+    const e = entry({ selfEdited: true, unwrittenSections: ['definition'], sections: ['definition'] });
+    expect(buildLibraryModel([e], {}).rows[0]!.writingStale).toBe(true);
+  });
+
+  it('accepts the new filter id', () => {
+    expect(isLibraryFilter('writing')).toBe(true);
   });
 });

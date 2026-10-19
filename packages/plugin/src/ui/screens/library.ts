@@ -529,6 +529,7 @@ function libraryFilterCount(model: LibraryScreenPresentation, id: LibraryFilter)
     case 'updates': return model.counts.updates;
     case 'sync': return model.counts.inSync;
     case 'all': return model.counts.all;
+    case 'writing': return model.counts.writing;
   }
 }
 

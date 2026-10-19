@@ -103,7 +103,7 @@ const SCREENS: Array<{ name: string; expected: string; render: (refs: ShellRefs)
     expected: 'sl-screen sl-library-screen',
     render: (refs) => renderLibraryScreen(refs, {
       allRows: [], rows: [], filter: 'all',
-      counts: { all: 0, updates: 0, inSync: 0 },
+      counts: { all: 0, updates: 0, inSync: 0, writing: 0 },
       menuDocId: null,
     }),
   },

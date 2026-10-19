@@ -39,6 +39,8 @@ export interface LibraryEntry {
   /** Component rows only: sections drawn as placeholders at the last build.
    *  Absent on older links or main threads, which reads as unknown. */
   unwrittenSections?: SectionId[];
+  /** Component rows only: the sections the doc has ticked on (`config.sections`). */
+  sections?: SectionId[];
   /** Foundation rows only: the live hash for this scope. Absent when the live
    *  extraction failed; the row must then not read as drifted. */
   currentContentHash?: string | undefined;

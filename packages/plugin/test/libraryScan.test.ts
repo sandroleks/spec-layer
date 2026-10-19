@@ -223,5 +223,6 @@ describe('libraryReply', () => {
     page('Docs', [doc]);
     const scan = await scanLibrary(['doc:1'], host({ 'doc:1': doc, 'src:1': source }, spec));
     expect(scan.entries[0]?.unwrittenSections).toEqual(['whenToUse']);
+    expect(scan.entries[0]?.sections).toEqual(link.config.sections);
   });
 });
