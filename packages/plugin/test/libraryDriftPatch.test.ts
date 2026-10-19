@@ -226,6 +226,42 @@ describe('patchLibraryDrift', () => {
       expect(refs.scroll.querySelector('.sl-library-writing-summary')?.textContent).toBe('2 descriptions to write');
     });
 
+    it('redraws an expanded row whose items changed under the same summary', () => {
+      const refs = mount([writingRow()]);
+      const swapped = [{ key: 'variable:V2', gap: { kind: 'variable' as const, id: 'V2', name: 'color/text' }, draft: null }];
+      expect(patchLibraryDrift(refs, model([writingRow({ writingItems: swapped })]))).toBe(true);
+      expect(refs.scroll.querySelector('[data-writing-key="variable:V2"]')).not.toBeNull();
+      expect(refs.scroll.querySelector('[data-writing-key="variable:V1"]')).toBeNull();
+
+      const drafted = [{ ...swapped[0]!, draft: { text: 'Body text.', origin: 'ai' as const } }];
+      expect(patchLibraryDrift(refs, model([writingRow({ writingItems: drafted })]))).toBe(true);
+      expect(refs.scroll.querySelector<HTMLInputElement>('[data-writing-key="variable:V2"]')?.value).toBe('Body text.');
+      expect(refs.scroll.querySelector('.sl-writing-ai-tag')).not.toBeNull();
+    });
+
+    it('leaves a collapsed row alone when only its items changed', () => {
+      const refs = mount([writingRow({ expanded: false })]);
+      const article = refs.scroll.querySelector('.sl-library-row');
+      const swapped = [{ key: 'variable:V2', gap: { kind: 'variable' as const, id: 'V2', name: 'color/text' }, draft: null }];
+      expect(patchLibraryDrift(refs, model([writingRow({ expanded: false, writingItems: swapped })]))).toBe(true);
+      expect(refs.scroll.querySelector('.sl-library-row')).toBe(article);
+    });
+
+    it('keeps focus and the caret in a field whose row is redrawn', () => {
+      const refs = mount([writingRow()]);
+      const field = refs.scroll.querySelector<HTMLInputElement>('[data-writing-key="variable:V1"]')!;
+      field.value = 'Surf';
+      field.focus();
+      field.setSelectionRange(2, 2);
+      const typed = [{ ...items[0]!, draft: { text: 'Surf', origin: 'person' as const } }];
+      expect(patchLibraryDrift(refs, model([writingRow({ writingItems: typed })]))).toBe(true);
+      const redrawn = refs.scroll.querySelector<HTMLInputElement>('[data-writing-key="variable:V1"]')!;
+      expect(redrawn).not.toBe(field);
+      expect(document.activeElement).toBe(redrawn);
+      expect(redrawn.value).toBe('Surf');
+      expect(redrawn.selectionStart).toBe(2);
+    });
+
     it('redraws an expanded row with items when busy flips, disabling its field', () => {
       const refs = mount([writingRow()]);
       expect(refs.scroll.querySelector('.sl-writing-field')?.hasAttribute('disabled')).toBe(false);

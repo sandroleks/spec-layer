@@ -197,15 +197,19 @@ function changeContentMarkup(row: LibraryRowPresentation): string {
 /**
  * What the Writing parts of a row draw from, for patchLibraryDrift to compare:
  * the summary line, the drafting flag, and for a row with items the busy flag
- * and whether its details are open.
+ * and whether its details are open. An open row also draws each item, so its
+ * keys and each draft's text and origin are part of it; a collapsed row draws
+ * only the summary.
  */
 function writingSignature(row: LibraryRowPresentation, busy: boolean): string {
   const withItems = row.writingItems.length > 0;
+  const open = withItems && row.expanded;
   const parts = [
     row.writingSummary,
     row.drafting ? 'drafting' : '',
     withItems ? (busy ? 'busy' : '') : '',
-    withItems && row.expanded ? 'open' : '',
+    open ? 'open' : '',
+    open ? JSON.stringify(row.writingItems.map((item) => [item.key, item.draft?.text ?? null, item.draft?.origin ?? null])) : '',
   ];
   // Empty for a row with nothing to write, so its markup stays unchanged.
   return parts.every((part) => part === '') ? '' : parts.join('|');
@@ -932,6 +936,11 @@ function rowControlSelector(element: Element): string | null {
     const action = (element as HTMLElement).dataset.libraryAction;
     return action ? `[data-library-action="${cssString(action)}"]` : null;
   }
+  // A writing field someone is typing in: its redrawn copy holds the same draft.
+  if (element.matches('[data-writing-key]')) {
+    const key = (element as HTMLElement).dataset.writingKey;
+    return key ? `[data-writing-key="${cssString(key)}"]` : null;
+  }
   return null;
 }
 
@@ -981,11 +990,15 @@ export function patchLibraryDrift(refs: ShellRefs, model: LibraryScreenPresentat
     if (status === row.status && !openMenuBusyMoved && !writingMoved) continue;
     const active = document.activeElement;
     const focused = active && article.contains(active) ? rowControlSelector(active) : null;
+    const caret = focused && active instanceof HTMLInputElement ? [active.selectionStart, active.selectionEnd] as const : null;
     article.outerHTML = libraryRowMarkup(row, model.menuDocId, busy, row.docId === model.revealedDocId);
     redrewAny = true;
     if (focused) {
-      list.querySelector<HTMLElement>(`.sl-library-row[data-doc-id="${cssString(row.docId)}"] ${focused}`)
-        ?.focus({ preventScroll: true });
+      const next = list.querySelector<HTMLElement>(`.sl-library-row[data-doc-id="${cssString(row.docId)}"] ${focused}`);
+      next?.focus({ preventScroll: true });
+      if (caret && caret[0] !== null && next instanceof HTMLInputElement && document.activeElement === next) {
+        next.setSelectionRange(caret[0], caret[1] ?? caret[0]);
+      }
     }
   }
   list.dataset.busy = String(busy);

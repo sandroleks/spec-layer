@@ -3188,7 +3188,9 @@ const handleMainMessage = (event: MessageEvent): void => {
       // one only has to belong to the current pass.
       if (driftQueue.id() !== msg.passId && !driftQueue.settledUnder(msg.docId, msg.passId)) return;
       libraryComponentGaps.set(msg.docId, msg.gaps);
-      if (view === 'library') paint();
+      // Patched in place like the drift reply it rides with: a pass of N docs
+      // must not cost N full paints.
+      paintLibraryDrift();
       return;
     }
 
