@@ -669,3 +669,20 @@ describe('baseline storage', () => {
     if (b.kind === 'foundation') expect(b.projection.modeNames).toEqual(['Light']);
   });
 });
+
+const COMPONENT_LINK = {
+  v: 1, sourceNodeId: '1:1', contentHash: 'h', selfHash: 's', generatedAt: 1, pluginVersion: '7.0.0', extractorVersion: '4',
+  config: { sections: ['definition', 'keyboard'], variantIds: [], aiEnabled: false, anatomyView: 'diagram', measureViews: [], includeHidden: false },
+};
+
+describe('unwrittenSections', () => {
+  it('round-trips the placeholder sections, dropping unknown ids', () => {
+    const raw = { ...COMPONENT_LINK, unwrittenSections: ['definition', 'nope', 'keyboard'] };
+    const parsed = parseDocLink(JSON.stringify(raw));
+    expect(parsed?.kind !== 'foundation' && parsed?.unwrittenSections).toEqual(['definition', 'keyboard']);
+  });
+  it('leaves the field absent on an older link, so it reads as unknown', () => {
+    const parsed = parseDocLink(JSON.stringify(COMPONENT_LINK));
+    expect(parsed && 'unwrittenSections' in parsed).toBe(false);
+  });
+});

@@ -4,7 +4,7 @@ import type {
 } from '@spec-layer/extractor';
 import type { BrandTheme } from './brandColors';
 import type { ComponentFormat } from './componentFormat';
-import type { DocFrameModel } from './ui/docModel';
+import type { DocFrameModel, SectionId } from './ui/docModel';
 import type { DocConfig, FoundationConfig, DocBaseline } from './docLink';
 import type { FoundationIconKind } from './foundationIcon';
 import type { SyncScope, SyncPlanResult, SyncResult } from './syncFigma';
@@ -34,6 +34,9 @@ export interface LibraryEntry {
   /** Component rows only, so drift hashes the same anatomy the baseline was
    *  computed over. Absent reads as false. */
   includeHidden?: boolean;
+  /** Component rows only: sections drawn as placeholders at the last build.
+   *  Absent on older links or main threads, which reads as unknown. */
+  unwrittenSections?: SectionId[];
   /** Foundation rows only: the live hash for this scope. Absent when the live
    *  extraction failed; the row must then not read as drifted. */
   currentContentHash?: string | undefined;

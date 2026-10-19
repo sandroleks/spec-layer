@@ -836,6 +836,9 @@ const handleUiMessage = async (raw: unknown): Promise<void> => {
           pluginVersion: typeof __PLUGIN_VERSION__ === 'string' ? __PLUGIN_VERSION__ : '',
           // See ComponentDocLink.extractorVersion.
           extractorVersion: msg.extractorVersion,
+          // What the UI drew as a placeholder; a person typing over one shows
+          // up as a hand edit, and the next Update rewrites this list.
+          unwrittenSections: msg.model.sections.filter((s) => s.kind === 'placeholder').map((s) => s.id),
         };
         section.setPluginData(DOC_LINK_KEY, serializeDocLink(data));
         // Written with the link, after the build succeeded, so a failed build

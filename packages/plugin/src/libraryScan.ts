@@ -127,6 +127,7 @@ export async function scanLibrary(
         storedContentHash: data.contentHash,
         extractorVersion: data.extractorVersion,
         includeHidden: data.config.includeHidden,
+        ...(data.unwrittenSections ? { unwrittenSections: data.unwrittenSections } : {}),
       });
     }
     return { entries, alive, error: null };
