@@ -3,6 +3,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EXTRACTOR_VERSION } from '@spec-layer/extractor';
 import type { SerializedNode } from '@spec-layer/extractor';
 import type { LibraryEntry } from '../src/messages';
+import { generateDescriptions } from '../src/ui/ai';
+
+vi.mock('../src/ui/ai', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/ui/ai')>()),
+  generateDescriptions: vi.fn(),
+}));
 
 /**
  * Mounts the real UI entry point in happy-dom, plays main-thread replies into
@@ -85,8 +91,8 @@ afterEach(() => {
 describe('Library writing replies', () => {
   it('stores component gaps from the current pass and shows the summary line', async () => {
     const passId = await openLibrary();
-    dispatch({ type: 'writingGaps', docId: 'doc-1', passId, gaps: [gap] });
     dispatch({ type: 'driftSource', docId: 'doc-1', passId, node: serializedButton(), fileKey: 'f' });
+    dispatch({ type: 'writingGaps', docId: 'doc-1', passId, gaps: [gap] });
     expect(document.querySelector('.sl-library-writing-summary')?.textContent).toBe('1 description to write');
   });
 
@@ -98,9 +104,9 @@ describe('Library writing replies', () => {
 
   it('opens a writing-only row without asking for a baseline', async () => {
     const passId = await openLibrary();
-    dispatch({ type: 'writingGaps', docId: 'doc-1', passId, gaps: [gap] });
     // A failed check reads unavailable, so the row has nothing to compare.
     dispatch({ type: 'driftError', docId: 'doc-1', passId });
+    dispatch({ type: 'writingGaps', docId: 'doc-1', passId, gaps: [gap] });
     click('[data-library-disclosure="doc-1"]');
     expect(document.querySelector('[data-writing-key]')).not.toBeNull();
     expect(outgoing.some((m) => m.type === 'requestDocBaseline')).toBe(false);
@@ -108,8 +114,8 @@ describe('Library writing replies', () => {
 
   it('a save sends one write; the reply toasts, clears the draft and checks the row again', async () => {
     const passId = await openLibrary();
-    dispatch({ type: 'writingGaps', docId: 'doc-1', passId, gaps: [gap] });
     dispatch({ type: 'driftSource', docId: 'doc-1', passId, node: serializedButton(), fileKey: 'f' });
+    dispatch({ type: 'writingGaps', docId: 'doc-1', passId, gaps: [gap] });
     click('[data-library-disclosure="doc-1"]');
     type('[data-writing-key="component:10:20"]', 'Starts an action.');
     click('[data-writing-save="component:10:20"]');
@@ -122,5 +128,66 @@ describe('Library writing replies', () => {
     expect(lastOutgoing('notify')['message']).toBe('1 description written into Figma.');
     expect(outgoing.filter((m) => m.type === 'requestDrift').length).toBe(drifts + 1);
     expect(document.querySelector<HTMLInputElement>('[data-writing-key="component:10:20"]')?.value ?? '').toBe('');
+  });
+
+  it('asks for the open row\'s change list again after a write re-checks it', async () => {
+    const passId = await openLibrary();
+    dispatch({ type: 'driftSource', docId: 'doc-1', passId, node: serializedButton(), fileKey: 'f' });
+    dispatch({ type: 'writingGaps', docId: 'doc-1', passId, gaps: [gap] });
+    click('[data-library-disclosure="doc-1"]');
+    const baselines = () => outgoing.filter((m) => m.type === 'requestDocBaseline').length;
+    expect(baselines()).toBe(1);
+    type('[data-writing-key="component:10:20"]', 'Starts an action.');
+    click('[data-writing-save="component:10:20"]');
+    dispatch({ type: 'descriptionsWritten', docId: 'doc-1', written: ['component:10:20'], failed: [] });
+    const next = lastOutgoing('requestDrift')['passId'] as string;
+    dispatch({ type: 'driftSource', docId: 'doc-1', passId: next, node: serializedButton(), fileKey: 'f' });
+    expect(baselines()).toBe(2);
+  });
+
+  it('keeps the older Checked stamp after one row is checked again', async () => {
+    const now = vi.spyOn(Date, 'now');
+    const t0 = 1_800_000_000_000;
+    now.mockReturnValue(t0);
+    const passId = await openLibrary();
+    dispatch({ type: 'driftError', docId: 'doc-1', passId });
+    dispatch({ type: 'writingGaps', docId: 'doc-1', passId, gaps: [gap] });
+    expect(document.querySelector('.sl-library-check-label')?.textContent).toBe('Checked just now');
+    now.mockReturnValue(t0 + 2 * 60 * 60_000);
+    click('[data-library-disclosure="doc-1"]');
+    type('[data-writing-key="component:10:20"]', 'Starts an action.');
+    click('[data-writing-save="component:10:20"]');
+    dispatch({ type: 'descriptionsWritten', docId: 'doc-1', written: ['component:10:20'], failed: [] });
+    const next = lastOutgoing('requestDrift')['passId'] as string;
+    dispatch({ type: 'driftError', docId: 'doc-1', passId: next });
+    expect(document.querySelector('.sl-library-check-label')?.textContent).toMatch(/^Checked at /);
+  });
+
+  it('keeps text typed while Draft all was out', async () => {
+    let resolve: (answers: Record<string, string>) => void = () => {};
+    vi.mocked(generateDescriptions).mockReturnValue(new Promise((r) => { resolve = r; }));
+    const passId = await openLibrary();
+    dispatch({ type: 'driftSource', docId: 'doc-1', passId, node: serializedButton(), fileKey: 'f' });
+    dispatch({ type: 'writingGaps', docId: 'doc-1', passId, gaps: [gap] });
+    click('[data-library-disclosure="doc-1"]');
+    click('[data-writing-draft-all]');
+    type('[data-writing-key="component:10:20"]', 'Mine.');
+    resolve({ 'component:10:20': 'From the model.' });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(document.querySelector<HTMLInputElement>('[data-writing-key="component:10:20"]')?.value).toBe('Mine.');
+    click('[data-writing-save="component:10:20"]');
+    expect(lastOutgoing('writeDescriptions')['items']).toEqual([
+      { kind: 'component', id: '10:20', text: 'Mine.', origin: 'person' },
+    ]);
+  });
+
+  it('keeps the gaps of a check in flight across a resume', async () => {
+    const passId = await openLibrary();
+    click('[data-view="component"]');
+    click('[data-view="library"]');
+    dispatch({ type: 'libraryUnchanged' });
+    dispatch({ type: 'driftSource', docId: 'doc-1', passId, node: serializedButton(), fileKey: 'f' });
+    dispatch({ type: 'writingGaps', docId: 'doc-1', passId, gaps: [gap] });
+    expect(document.querySelector('.sl-library-writing-summary')?.textContent).toBe('1 description to write');
   });
 });

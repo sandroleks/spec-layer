@@ -1190,6 +1190,10 @@ function recheckLibraryRow(docId: string): void {
   const entry = libraryEntry(docId);
   if (!entry || entry.kind !== 'component' || !entry.sourceExists) return;
   libraryDrift.set(docId, 'pending');
+  // The old diff was resolved against the projection this check replaces.
+  libraryChanges.delete(docId);
+  // One row's check must not stamp the whole library as freshly checked.
+  if (driftQueue.done() && libraryCheckedAt !== null) libraryCarriedCheckedAt = libraryCheckedAt;
   // start() forgets the check in flight, so carry it too, or its reply is
   // rejected and its row reads pending for good.
   const inFlight = driftQueue.inFlight();
@@ -1254,11 +1258,13 @@ async function draftAllForRow(docId: string): Promise<void> {
       (quota) => { state.quota = quota; quotaFetched = true; paintAllowance(); },
     );
     let landed = 0;
-    for (const item of items) {
+    // A field the person typed in while the call was out keeps their text.
+    const open = items.filter((item) => !libraryDrafts.has(item.key));
+    for (const item of open) {
       const text = answers[item.key];
       if (text) { libraryDrafts.set(item.key, { text, origin: 'ai' }); landed++; }
     }
-    if (landed < items.length) nativeNotify(draftFailedNote(items.length - landed));
+    if (landed < open.length) nativeNotify(draftFailedNote(open.length - landed));
     if (landed > 0 && !draftsNoteShown) { draftsNoteShown = true; nativeNotify(WRITING_DRAFTS_NOTE); }
   } catch (error) {
     nativeNotify(aiFailureNote(state, error, 'component'), { error: true });
@@ -3192,7 +3198,7 @@ const handleMainMessage = (event: MessageEvent): void => {
     case 'writingGaps': {
       // Rides with the drift reply; the drift reply settles the check, this
       // one only has to belong to the current pass.
-      if (driftQueue.id() !== msg.passId) return;
+      if (driftQueue.id() !== msg.passId && !driftQueue.settledUnder(msg.docId, msg.passId)) return;
       libraryComponentGaps.set(msg.docId, msg.gaps);
       if (view === 'library') paint();
       return;
@@ -3253,6 +3259,16 @@ const handleMainMessage = (event: MessageEvent): void => {
         }
       }
       libraryRefreshing = [...libraryDrift.values()].some((value) => value === 'pending');
+      // A re-check dropped the open row's change list; ask for it again, or the
+      // row reads pending for good.
+      if (
+        libraryExpandedDocId === msg.docId
+        && !libraryChanges.has(msg.docId)
+        && currentLibraryModel().allRows.find((row) => row.docId === msg.docId)?.status === 'updateAvailable'
+      ) {
+        libraryChanges.set(msg.docId, { state: 'pending' });
+        send({ type: 'requestDocBaseline', docId: msg.docId });
+      }
       syncLibraryBadge();
       paintLibraryDrift();
       return;

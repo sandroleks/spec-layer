@@ -83,6 +83,19 @@ describe('DriftQueue', () => {
     expect(q.next()).toEqual({ docId: 'b', passId: 'p2' });
   });
 
+  it('remembers the last settled check across a resume, and forgets it on start', () => {
+    const q = new DriftQueue();
+    q.start('p1', ['a', 'b']);
+    q.next();
+    q.resume('p2');
+    expect(q.settle('a', 'p1')).toBe(true);
+    expect(q.lastSettled()).toEqual({ docId: 'a', passId: 'p1' });
+    expect(q.settledUnder('a', 'p1')).toBe(true);
+    expect(q.settledUnder('b', 'p1')).toBe(false);
+    q.start('p3', ['b']);
+    expect(q.lastSettled()).toBeNull();
+  });
+
   it('rejects every reply once cleared', () => {
     const q = new DriftQueue();
     q.start('p1', ['a']);
