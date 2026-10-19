@@ -18,9 +18,11 @@ caller proves.
 
 Body: `{ "cacheKey": "prose:v9:<tier>:<hash>...", "request": <shipped prose request> }`
 
-The proxy accepts only the two request contracts built by the extractor:
-component prose (`prose:v9:`) and Foundation group descriptions
-(`prose:v3:groups:<tier>:`). Each carries the exact system prompt and few-shot
+The proxy accepts only the three request contracts built by the extractor:
+component prose (`prose:v9:`), Foundation group descriptions
+(`prose:v3:groups:<tier>:`) and one-sentence descriptions for blank fields
+(`prose:v1:descriptions:<tier>:`, one request per batch of up to 60 items).
+Each carries the exact system prompt and few-shot
 messages the extractor ships, the fixed output limit, a bounded generated
 prompt, one `cache_control` breakpoint on the exemplar answer, and supported
 base64 image blocks. The request names no model: the proxy assigns

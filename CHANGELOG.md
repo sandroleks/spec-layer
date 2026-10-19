@@ -15,6 +15,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   version moves, and diagnostics sit outside `semanticContentHash`, so no
   artifact identity moves. The artifact bytes change for such a file, which
   `EXTRACTOR_VERSION` `'4'` already covers.
+- **A descriptions prompt, for the plugin's Needs writing list.** The
+  extractor builds a third `/v1/prose` contract that drafts one sentence for
+  a blank variable, style, component or slot description from the facts it
+  is given and nothing else, in batches of up to 60 per generation, and the
+  proxy allowlists it byte for byte under the same quota and rate limits.
+  Nothing sends it until the plugin change that uses it ships, and that
+  change waits for this proxy to be in production.
 
 ## [7.0.0] - 2026-10-14
 
