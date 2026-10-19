@@ -7,7 +7,7 @@ import {
   extract, specHashProjection, contentHash, EXTRACTOR_VERSION,
   type SpecHashProjection,
 } from '@spec-layer/extractor';
-import type { ProseV2 } from '@spec-layer/extractor';
+import type { DescriptionBrief, ProseV2 } from '@spec-layer/extractor';
 import {
   THEME_PRESETS,
   matchPreset,
@@ -74,6 +74,9 @@ import {
 } from './viewModel/componentScreen';
 import {
   buildLibraryModel,
+  writingItemKey,
+  type LibraryDraft,
+  type LibraryWritingItem,
   formatLibraryCheckedAt,
   initialLibraryDrift,
   libraryCheckedLabelChangesIn,
@@ -138,7 +141,9 @@ import {
   updateFromSource,
   type BuildPresenter,
 } from './actions';
-import { generateGroupDescriptions, resolveComponentImage } from './ai';
+import { generateDescriptions, generateGroupDescriptions, resolveComponentImage } from './ai';
+import { WRITING_DRAFTS_NOTE, draftFailedNote, writtenToast } from './writingCopy';
+import type { WritingGap } from '../writingGaps';
 import {
   activateLicense as activateLicenseKey,
   deactivateLicense,
@@ -271,6 +276,13 @@ const currentHasDoc = (): boolean => {
   return id ? componentHasDoc.get(id) === true : false;
 };
 const libraryDrift = new Map<string, LibraryDriftState>();
+/** Component docs' blank descriptions and sections, from the current drift pass. */
+const libraryComponentGaps = new Map<string, WritingGap[]>();
+/** Typed or AI-drafted text, by writing key; kept until a write clears it. */
+const libraryDrafts = new Map<string, LibraryDraft>();
+/** Doc ids with a Draft all call out. */
+const libraryDrafting = new Set<string>();
+let draftsNoteShown = false;
 const libraryBaseline = new Map<string, string>();
 /** The current drift pass; see libraryPass.ts. */
 const driftQueue = new DriftQueue();
@@ -1000,6 +1012,10 @@ function currentLibraryModel() {
     filter: libraryFilter,
     expandedDocId: libraryExpandedDocId,
     changes: libraryChanges,
+    componentGaps: libraryComponentGaps,
+    foundation: currentFoundationSpec(),
+    drafts: libraryDrafts,
+    drafting: libraryDrafting,
   });
 }
 
@@ -1059,6 +1075,7 @@ function checkLibrary(): void {
 function startLibraryDriftChecks(carry: LibraryCarry | null): void {
   libraryCarriedCheckedAt = carry?.checkedAt ?? null;
   libraryDrift.clear();
+  libraryComponentGaps.clear();
   libraryBaseline.clear();
   libraryExtractorVersion.clear();
   libraryLiveProjection.clear();
@@ -1138,7 +1155,10 @@ function closeLibraryMenu(restoreFocus = false): void {
 function toggleLibraryReview(docId: string): void {
   const opening = libraryExpandedDocId !== docId;
   libraryExpandedDocId = opening ? docId : null;
-  if (opening && !libraryChanges.has(docId)) {
+  // A row that opens only to write descriptions has no changes to compare.
+  const status = currentLibraryModel().allRows.find((row) => row.docId === docId)?.status;
+  const hasChanges = status === 'updateAvailable' || status === 'rebuildNeeded';
+  if (opening && hasChanges && !libraryChanges.has(docId)) {
     libraryChanges.set(docId, { state: 'pending' });
     send({ type: 'requestDocBaseline', docId });
   }
@@ -1163,6 +1183,89 @@ function libraryPresenter(onError?: (message: string) => void): BuildPresenter {
 
 function libraryEntry(docId: string): LibraryEntry | undefined {
   return libraryEntries.find((entry) => entry.docId === docId);
+}
+
+/** One row's source check again, after a write moved its source. */
+function recheckLibraryRow(docId: string): void {
+  const entry = libraryEntry(docId);
+  if (!entry || entry.kind !== 'component' || !entry.sourceExists) return;
+  libraryDrift.set(docId, 'pending');
+  // start() forgets the check in flight, so carry it too, or its reply is
+  // rejected and its row reads pending for good.
+  const inFlight = driftQueue.inFlight();
+  const pending = [...new Set([...(inFlight ? [inFlight] : []), ...driftQueue.pending(), docId])];
+  driftQueue.start(newPassId(), pending);
+  libraryRefreshing = true;
+  pumpDriftQueue();
+}
+
+function writingItem(docId: string, key: string): LibraryWritingItem | undefined {
+  return currentLibraryModel().allRows.find((r) => r.docId === docId)?.writingItems.find((i) => i.key === key);
+}
+
+function saveWritingItem(docId: string, key: string): void {
+  const item = writingItem(docId, key);
+  const draft = libraryDrafts.get(key);
+  if (!item || !draft || draft.text.trim() === '') return;
+  const g = item.gap;
+  if (g.kind === 'section') return;
+  send({
+    type: 'writeDescriptions', docId,
+    items: [{ kind: g.kind, id: g.id, ...(g.propertyName ? { propertyName: g.propertyName } : {}), text: draft.text.trim(), origin: draft.origin }],
+  });
+}
+
+/** A variable's Figma type and scopes, read from the Foundation spec when it is loaded. */
+function variableFacts(id: string): { type: string; scopes?: string[] } {
+  for (const collection of currentFoundationSpec()?.collections ?? []) {
+    const found = collection.variables.find((v) => v.provenance.id === id);
+    if (found) return { type: found.resolvedType, scopes: found.provenance.scopes };
+  }
+  return { type: 'variable' };
+}
+
+function briefFor(gap: WritingGap): DescriptionBrief {
+  const key = writingItemKey(gap);
+  switch (gap.kind) {
+    case 'variable': {
+      const facts = variableFacts(gap.id);
+      return {
+        key, kind: 'variable', name: gap.name, type: facts.type, values: gap.facts ?? [],
+        ...(facts.scopes && facts.scopes.length > 0 ? { scopes: facts.scopes } : {}),
+      };
+    }
+    case 'style': return { key, kind: 'style', name: gap.name, type: gap.facts?.[0] ?? 'style' };
+    case 'slot': return { key, kind: 'slot', name: gap.name, type: 'slot' };
+    default: return { key, kind: 'component', name: gap.name, type: 'component' };
+  }
+}
+
+async function draftAllForRow(docId: string): Promise<void> {
+  const row = currentLibraryModel().allRows.find((r) => r.docId === docId);
+  if (!row || libraryDrafting.has(docId)) return;
+  const items = row.writingItems.filter((i) => i.gap.kind !== 'section' && !i.draft).map((i) => briefFor(i.gap));
+  if (items.length === 0) return;
+  libraryDrafting.add(docId);
+  paint();
+  try {
+    const answers = await generateDescriptions(
+      { items },
+      effectiveAuth(state.licenseKey, state.licenseInstanceId, state.figmaUserId, state.licenseActive),
+      (quota) => { state.quota = quota; quotaFetched = true; paintAllowance(); },
+    );
+    let landed = 0;
+    for (const item of items) {
+      const text = answers[item.key];
+      if (text) { libraryDrafts.set(item.key, { text, origin: 'ai' }); landed++; }
+    }
+    if (landed < items.length) nativeNotify(draftFailedNote(items.length - landed));
+    if (landed > 0 && !draftsNoteShown) { draftsNoteShown = true; nativeNotify(WRITING_DRAFTS_NOTE); }
+  } catch (error) {
+    nativeNotify(aiFailureNote(state, error, 'component'), { error: true });
+  } finally {
+    libraryDrafting.delete(docId);
+    paint();
+  }
 }
 
 /**
@@ -2045,6 +2148,28 @@ document.addEventListener('click', (event) => {
     return;
   }
 
+  const writingOpen = target.closest<HTMLButtonElement>('[data-writing-open]');
+  if (writingOpen?.dataset.writingOpen && writingOpen.dataset.docId) {
+    send({ type: 'focusDocSection', docId: writingOpen.dataset.docId, sectionId: writingOpen.dataset.writingOpen as SectionId });
+    return;
+  }
+  const writingSave = target.closest<HTMLButtonElement>('[data-writing-save]');
+  if (writingSave?.dataset.writingSave && writingSave.dataset.docId) {
+    saveWritingItem(writingSave.dataset.docId, writingSave.dataset.writingSave);
+    return;
+  }
+  const writingClear = target.closest<HTMLButtonElement>('[data-writing-clear]');
+  if (writingClear?.dataset.writingClear) {
+    libraryDrafts.delete(writingClear.dataset.writingClear);
+    paint();
+    return;
+  }
+  const writingDraftAll = target.closest<HTMLButtonElement>('[data-writing-draft-all]');
+  if (writingDraftAll?.dataset.docId) {
+    void draftAllForRow(writingDraftAll.dataset.docId);
+    return;
+  }
+
   const libraryFrame = target.closest<HTMLButtonElement>('[data-library-open-frame]');
   if (libraryFrame?.dataset.libraryOpenFrame) {
     send({ type: 'focusNode', nodeId: libraryFrame.dataset.libraryOpenFrame });
@@ -2431,6 +2556,12 @@ document.addEventListener('input', (event) => {
   }
   const input = target;
   if (!(input instanceof HTMLInputElement)) return;
+  if (input.matches('.sl-writing-field') && input.dataset.writingKey) {
+    const text = input.value;
+    if (text.trim() === '') libraryDrafts.delete(input.dataset.writingKey);
+    else libraryDrafts.set(input.dataset.writingKey, { text, origin: 'person' });
+    return; // no paint: the field already shows the text; the AI tag goes on the next paint
+  }
   if (input.matches('[data-global-search-input]')) {
     searchQuery = input.value;
     searchActiveIndex = 0;
@@ -3058,6 +3189,30 @@ const handleMainMessage = (event: MessageEvent): void => {
       if (searchOpen) renderGlobalSearch();
       return;
 
+    case 'writingGaps': {
+      // Rides with the drift reply; the drift reply settles the check, this
+      // one only has to belong to the current pass.
+      if (driftQueue.id() !== msg.passId) return;
+      libraryComponentGaps.set(msg.docId, msg.gaps);
+      if (view === 'library') paint();
+      return;
+    }
+
+    case 'descriptionsWritten': {
+      for (const key of msg.written) libraryDrafts.delete(key);
+      nativeNotify(writtenToast(msg.written.length, msg.failed), msg.failed.length > 0 ? { error: true } : {});
+      const entry = libraryEntry(msg.docId);
+      if (entry?.kind === 'foundation') {
+        foundationRequested = false;
+        send({ type: 'requestFoundation' });
+        send({ type: 'requestLibrary' });
+      } else if (msg.written.length > 0) {
+        recheckLibraryRow(msg.docId);
+      }
+      if (view === 'library') paint();
+      return;
+    }
+
     case 'libraryUnchanged':
       libraryProbeInFlight = false;
       // A pass paused by leaving resumes under a new pass id, so main's
@@ -3263,6 +3418,7 @@ const handleMainMessage = (event: MessageEvent): void => {
       }
       libraryEntries = libraryEntries.filter((entry) => entry.docId !== msg.docId);
       libraryDrift.delete(msg.docId);
+      libraryComponentGaps.delete(msg.docId);
       libraryBaseline.delete(msg.docId);
       libraryExtractorVersion.delete(msg.docId);
       libraryLiveProjection.delete(msg.docId);
