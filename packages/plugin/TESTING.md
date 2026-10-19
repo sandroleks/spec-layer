@@ -638,6 +638,33 @@ record.
     changes** on its row. Each change has its own line ("preferred
     content", "limits", "default content"), and the badge and the list
     agree.
+29. **Needs writing.** In a file with a component whose description is empty,
+    a component with a slot property without a description, a doc whose
+    When to use section is still a placeholder, and a Foundation doc over a
+    collection with undescribed variables: open Library and confirm the
+    **Needs writing** filter counts each row once, each row's summary line
+    counts descriptions and sections correctly, and a row with nothing open
+    shows no line.
+30. Expand a component row. Type a description and **Save**. Confirm the
+    toast, that Figma's description field shows the text, that the row
+    re-checks and reads **Update available**, and that Edit > Undo removes
+    it. Save a slot description and confirm it in the property's settings.
+31. On the Foundation row, save a variable description and a style
+    description. Confirm each in the Variables panel and the style's
+    settings, and that the row reads **Update available**.
+32. **Draft all with AI** on a component row and on a Foundation row with
+    more than 60 open fields. Confirm the allowance ring moves by the number
+    of batches, every field gets a draft tagged AI or a note names how many
+    did not, editing a draft removes the tag, and Save writes the draft.
+    Close and reopen the plugin and confirm unsaved drafts are gone.
+33. Exhaust the free allowance and press **Draft all with AI**. Confirm the
+    no-uses-left note and that the fields stay editable.
+34. Edit a doc's generated text by hand. Confirm its Writing group says the
+    sections are as of the last update. Run **Update this doc** and confirm
+    the note goes away and the section list is current.
+35. **Open in doc** on a section line focuses that section's placeholder.
+36. A doc built before this version shows no section lines until it is
+    updated; its description fields still list.
 
 Row 28 was added on 2026-10-11 for Figma slots and has not been run.
 

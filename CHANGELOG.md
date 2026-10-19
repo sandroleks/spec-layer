@@ -22,6 +22,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   proxy allowlists it byte for byte under the same quota and rate limits.
   Nothing sends it until the plugin change that uses it ships, and that
   change waits for this proxy to be in production.
+- **Needs writing, in the Library.** A fourth filter lists, per doc, what a
+  person still has to write: an empty component or slot description, a doc
+  section still showing its placeholder, and for a Foundation doc each
+  variable or style in its scope with no description. Each description gap
+  is a one-line field; **Save** writes it into Figma's own field, so Dev
+  Mode, Figma's agent and the next extraction all see it, and the doc then
+  shows Update available. A section gap opens the placeholder on the canvas.
+  **Draft all with AI** fills a row's open fields as drafts to review, one
+  generation per 60 fields; a draft saved unedited is recorded as AI text
+  until someone edits it, the caution Annotate in Dev Mode already uses.
+  Component gaps are read in the same pass as the drift check; section gaps
+  come from the doc link, which now records which sections were drawn as
+  placeholders at the last build, so a doc built before this version lists
+  none until it is updated. Nothing written or recorded here enters a hash
+  or an artifact. Needs the descriptions prose contract in production on
+  the proxy.
 
 ## [7.0.0] - 2026-10-14
 
