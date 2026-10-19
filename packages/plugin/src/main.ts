@@ -29,7 +29,10 @@ import {
   serializeBaseline, baselineFor,
   type DocLinkData, type FoundationDocLink, type DocRegistry, type DocBaseline,
 } from './docLink';
-import { readCanvasProse, mergeProse, collectGeneratedText, type ProseNodeLike } from './canvasProse';
+import { readCanvasProse, mergeProse, collectGeneratedText, PLACEHOLDER_TAG_KEY, type ProseNodeLike } from './canvasProse';
+import { componentWritingGaps } from './writingGaps';
+import { writeDescriptions, type DescriptionHost } from './descriptionWriter';
+import { ALL_SECTIONS } from './ui/docModel';
 import { repaintPills } from './pillNode';
 import { pageOf, resolveRegistrySections } from './registryNodes';
 import { scanLibrary, libraryReply, type LibraryScan } from './libraryScan';
@@ -1353,6 +1356,38 @@ const handleUiMessage = async (raw: unknown): Promise<void> => {
       break;
     }
 
+    case 'writeDescriptions': {
+      const host: DescriptionHost = {
+        variable: (id) => figma.variables.getVariableByIdAsync(id),
+        style: (id) => figma.getStyleByIdAsync(id),
+        component: async (id) => {
+          const node = await figma.getNodeByIdAsync(id);
+          return node && (node.type === 'COMPONENT' || node.type === 'COMPONENT_SET') ? (node as ComponentNode | ComponentSetNode) : null;
+        },
+      };
+      const outcome = await writeDescriptions(host, msg.items);
+      figma.ui.postMessage({ type: 'descriptionsWritten', docId: msg.docId, ...outcome } as MainToUi);
+      break;
+    }
+
+    case 'focusDocSection': {
+      try {
+        const doc = await figma.getNodeByIdAsync(msg.docId);
+        if (!doc || doc.type !== 'SECTION') { figma.notify('That doc is no longer in this file.'); break; }
+        const heading = ALL_SECTIONS.find((s) => s.id === msg.sectionId)?.label ?? '';
+        // docFrame names a section's frame by its heading; inside it, the
+        // placeholder's tag frame is stamped. Fall back to the frame itself.
+        const frame = heading ? (doc as SectionNode).findOne((n) => n.type === 'FRAME' && n.name === heading) : null;
+        const tag = frame ? (frame as FrameNode).findOne((n) => n.getPluginData(PLACEHOLDER_TAG_KEY) !== '') : null;
+        const node = (tag ?? frame ?? doc) as SceneNode;
+        const page = pageOf(node);
+        if (page && page.id !== figma.currentPage.id) await figma.setCurrentPageAsync(page);
+        figma.currentPage.selection = [node];
+        figma.viewport.scrollAndZoomIntoView([node]);
+      } catch { figma.notify('Couldn’t open that section.'); }
+      break;
+    }
+
     case 'detachDoc': {
       try {
         const node = await figma.getNodeByIdAsync(msg.docId);
@@ -1423,6 +1458,18 @@ const handleUiMessage = async (raw: unknown): Promise<void> => {
         figma.ui.postMessage({
           type: 'driftSource', docId: msg.docId, passId: msg.passId, node, fileKey, fileName: figma.root.name,
         } as MainToUi);
+        // The raw field, not the serialized node: Annotate's text counts as filled.
+        try {
+          const raw = src as unknown as { id: string; name: string; description: string; componentPropertyDefinitions?: Record<string, { type: string; description?: string | null }> };
+          let definitions: typeof raw.componentPropertyDefinitions;
+          try { definitions = raw.componentPropertyDefinitions; } catch { definitions = undefined; }
+          figma.ui.postMessage({
+            type: 'writingGaps', docId: msg.docId, passId: msg.passId,
+            gaps: componentWritingGaps({ id: raw.id, name: raw.name, description: raw.description ?? '', ...(definitions ? { componentPropertyDefinitions: definitions } : {}) }),
+          } as MainToUi);
+        } catch (err) {
+          console.error('[Spec Layer] writing gaps read threw for', msg.docId, err);
+        }
       } catch (err) {
         console.error(
           '[Spec Layer] drift check threw for', msg.docId, msg.sourceNodeId, err,
