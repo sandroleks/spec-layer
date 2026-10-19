@@ -201,6 +201,62 @@ describe('Library writing replies', () => {
     expect(notes.some((n) => n.startsWith('No draft came back'))).toBe(false);
   });
 
+  it('a Foundation save reads the Foundation and the list once and leaves settled component rows alone', async () => {
+    const foundation: LibraryEntry = {
+      docId: 'doc-f', kind: 'foundation', label: 'Type', componentName: '', pageName: 'Foundations',
+      sourceLabel: 'Text styles', generatedAt: Date.now() - 60_000, sourceNodeId: '',
+      sourceExists: true, selfEdited: false, storedContentHash: 'f-hash', currentContentHash: 'f-hash',
+      extractorVersion: EXTRACTOR_VERSION, foundationScope: { target: 'textStyles' },
+    };
+    const entries = [componentEntry('doc-1'), foundation];
+    await import('../src/ui/ui-vnext');
+    click('[data-view="library"]');
+    dispatch({ type: 'library', entries });
+    const passId = lastOutgoing('requestDrift')['passId'] as string;
+    dispatch({
+      type: 'foundation',
+      dump: {
+        fileKey: 'f', collections: [], externals: [], extractedAt: '2026-10-19T00:00:00.000Z', effectStyles: [],
+        textStyles: [{
+          id: 'S:1', name: 'Body/Medium', description: '', fontFamily: 'Inter', fontStyle: 'Regular', fontSize: 16,
+          lineHeight: { unit: 'AUTO' }, letterSpacing: { unit: 'PERCENT', value: 0 }, paragraphSpacing: 0,
+          paragraphIndent: 0, textCase: 'ORIGINAL', textDecoration: 'NONE', boundVariables: {},
+        }],
+      },
+    });
+    dispatch({ type: 'driftSource', docId: 'doc-1', passId, node: serializedButton(), fileKey: 'f' });
+    dispatch({ type: 'writingGaps', docId: 'doc-1', passId, gaps: [gap] });
+    const status = (docId: string) => document
+      .querySelector(`.sl-library-row[data-doc-id="${docId}"] [data-library-status]`)?.getAttribute('data-library-status');
+    const settled = status('doc-1');
+    expect(settled).not.toBe('pending');
+    expect(document.querySelector('.sl-library-row[data-doc-id="doc-f"] .sl-library-writing-summary')?.textContent)
+      .toBe('1 description to write');
+
+    const count = (t: string) => outgoing.filter((m) => m.type === t).length;
+    const before = { foundation: count('requestFoundation'), library: count('requestLibrary'), drift: count('requestDrift') };
+    dispatch({ type: 'descriptionsWritten', docId: 'doc-f', written: ['style:S:1'], failed: [] });
+    expect(count('requestFoundation')).toBe(before.foundation + 1);
+    expect(count('requestLibrary')).toBe(before.library + 1);
+
+    // The rescan lands: the component row keeps its check and its gaps.
+    dispatch({ type: 'library', entries });
+    expect(count('requestDrift')).toBe(before.drift);
+    expect(status('doc-1')).toBe(settled);
+    expect(document.querySelector('.sl-library-row[data-doc-id="doc-1"] .sl-library-writing-summary')?.textContent)
+      .toBe('1 description to write');
+  });
+
+  it('a save that wrote nothing reads nothing again', async () => {
+    await openLibrary();
+    const count = (t: string) => outgoing.filter((m) => m.type === t).length;
+    const before = { foundation: count('requestFoundation'), library: count('requestLibrary'), drift: count('requestDrift') };
+    dispatch({ type: 'descriptionsWritten', docId: 'doc-1', written: [], failed: [{ key: 'component:10:20', message: 'That component is no longer in this file.' }] });
+    expect(count('requestFoundation')).toBe(before.foundation);
+    expect(count('requestLibrary')).toBe(before.library);
+    expect(count('requestDrift')).toBe(before.drift);
+  });
+
   it('keeps the gaps of a check in flight across a resume', async () => {
     const passId = await openLibrary();
     click('[data-view="component"]');

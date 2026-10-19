@@ -673,6 +673,11 @@ record.
 38. Build a doc whose Pointer and touch, Semantics and focus, and Content
     sections are placeholders. Its Needs writing row lists each of the three
     by its heading, and **Open in doc** on each focuses that placeholder.
+39. With several component docs checked, save a description on the
+    Foundation row. The Foundation row reads **Update available**; every
+    component row keeps its badge and its Needs writing line, no new check
+    count starts, and the line under the filters keeps the earlier check's
+    time.
 
 Row 28 was added on 2026-10-11 for Figma slots and has not been run. Rows 29
 onward were added on 2026-10-19 for Needs writing and have not been run

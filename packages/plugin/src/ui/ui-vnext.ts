@@ -1075,6 +1075,8 @@ function checkLibrary(): void {
 
 function startLibraryDriftChecks(carry: LibraryCarry | null): void {
   libraryCarriedCheckedAt = carry?.checkedAt ?? null;
+  // A carried row is not checked again, so the gaps its check read still hold.
+  const carriedGaps = new Map([...libraryComponentGaps].filter(([docId]) => carry?.checks.has(docId)));
   libraryDrift.clear();
   libraryComponentGaps.clear();
   libraryBaseline.clear();
@@ -1096,6 +1098,8 @@ function startLibraryDriftChecks(carry: LibraryCarry | null): void {
     if (carried) {
       libraryDrift.set(entry.docId, carried.status);
       if (carried.projection) libraryLiveProjection.set(entry.docId, carried.projection);
+      const gaps = carriedGaps.get(entry.docId);
+      if (gaps) libraryComponentGaps.set(entry.docId, gaps);
       continue;
     }
     libraryDrift.set(entry.docId, 'pending');
@@ -3211,11 +3215,21 @@ const handleMainMessage = (event: MessageEvent): void => {
       for (const key of msg.written) libraryDrafts.delete(key);
       nativeNotify(writtenToast(msg.written.length, msg.failed), msg.failed.length > 0 ? { error: true } : {});
       const entry = libraryEntry(msg.docId);
-      if (entry?.kind === 'foundation') {
+      if (msg.written.length === 0) {
+        // Nothing moved, so nothing to read again.
+      } else if (entry?.kind === 'foundation') {
         foundationRequested = false;
         send({ type: 'requestFoundation' });
+        // A Foundation write moves no component source, so the rescan keeps
+        // every settled component check and its gaps; see libraryCarry.
+        pendingLibraryCarry = libraryCarry({
+          drift: libraryDrift,
+          projections: libraryLiveProjection,
+          checkedAt: libraryCheckedAt,
+          rebuilt: [],
+        });
         send({ type: 'requestLibrary' });
-      } else if (msg.written.length > 0) {
+      } else {
         recheckLibraryRow(msg.docId);
       }
       if (view === 'library') paint();

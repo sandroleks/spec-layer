@@ -29,7 +29,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   variable or style in its scope with no description. Each description gap
   is a one-line field; **Save** writes it into Figma's own field, so Dev
   Mode, Figma's agent and the next extraction all see it, and the doc then
-  shows Update available. A section gap opens the placeholder on the canvas.
+  shows Update available. A Foundation save reads the Foundation and the
+  list again but keeps every component row's settled check. A section gap opens the placeholder on the canvas.
   **Draft all with AI** fills a row's open fields as drafts to review, one
   generation per 60 fields. A batch that fails, for example when the free
   allowance runs out partway through a row, stops the run, keeps the drafts
