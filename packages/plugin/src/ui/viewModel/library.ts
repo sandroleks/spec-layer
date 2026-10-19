@@ -8,6 +8,7 @@ import { writeKey } from '../../descriptionWriter';
 import { foundationWritingGaps, gapSummary, sectionWritingGaps, type WritingGap } from '../../writingGaps';
 import type { FoundationIconKind } from '../../foundationIcon';
 import type { DocSourceIntent, LibraryEntry } from '../../messages';
+import { WRITING_UNKNOWN_OLDER, WRITING_UNKNOWN_RUNNING, WRITING_UNKNOWN_UNREAD } from '../writingCopy';
 
 /** Resolved apart from enumeration. `unavailable` means the check failed, never `inSync`. */
 export type LibraryDriftState =
@@ -118,6 +119,11 @@ export interface LibraryModel {
   /** Registry order, before the filter. */
   allRows: LibraryRowModel[];
   rows: LibraryRowModel[];
+  /** Every row's writing state is known, so an empty Needs writing list may
+   *  say there is nothing to write. */
+  writingKnown: boolean;
+  /** What is not known yet, in display order; empty when `writingKnown`. */
+  writingUnknownReasons: string[];
 }
 
 export interface BuildLibraryModelOptions {
@@ -132,6 +138,8 @@ export interface BuildLibraryModelOptions {
   componentGaps?: ReadonlyMap<string, readonly WritingGap[]>;
   /** The UI's current Foundation spec; null or absent lists no Foundation gaps. */
   foundation?: FoundationSpec | null;
+  /** The Foundation dump has been asked for and has not arrived. */
+  foundationLoading?: boolean;
   drafts?: ReadonlyMap<string, LibraryDraft>;
   drafting?: ReadonlySet<string>;
 }
@@ -313,6 +321,44 @@ export function buildLibraryRow(
   };
 }
 
+/**
+ * Whether an empty Needs writing list is a fact, and if not, why. A component
+ * row is known once its source check settled and main's gaps reply landed, and
+ * its link records the sections drawn as placeholders; a Foundation row once
+ * the Foundation dump is loaded. A row whose source is gone has no field left
+ * to read, so only its link counts.
+ */
+export function libraryWritingUnknownReasons(
+  entries: readonly LibraryEntry[],
+  options: BuildLibraryModelOptions = {},
+): string[] {
+  let running = false;
+  let older = false;
+  let unread = false;
+  const drift = options.drift ?? new Map<string, LibraryDriftState>();
+  for (const entry of entries) {
+    if (entry.kind === 'foundation') {
+      if (!options.foundation) {
+        if (options.foundationLoading) running = true;
+        else unread = true;
+      }
+      continue;
+    }
+    if (entry.unwrittenSections === undefined) older = true;
+    if (!entry.sourceExists) continue;
+    const state = libraryDriftForEntry(entry, drift);
+    if (state === 'pending') running = true;
+    else if (state === 'unavailable' || state === 'staleVersion') unread = true;
+    // Settled, but main's gaps read never landed (it threw, or is still on its way).
+    else if (!options.componentGaps?.has(entry.docId)) unread = true;
+  }
+  return [
+    ...(running ? [WRITING_UNKNOWN_RUNNING] : []),
+    ...(older ? [WRITING_UNKNOWN_OLDER] : []),
+    ...(unread ? [WRITING_UNKNOWN_UNREAD] : []),
+  ];
+}
+
 export function buildLibraryModel(
   entries: readonly LibraryEntry[],
   options: BuildLibraryModelOptions = {},
@@ -338,7 +384,8 @@ export function buildLibraryModel(
     return `${row.label}\n${row.sourceLabel}`.toLocaleLowerCase().includes(query);
   });
 
-  return { filter, counts, allRows, rows };
+  const writingUnknownReasons = libraryWritingUnknownReasons(entries, options);
+  return { filter, counts, allRows, rows, writingKnown: writingUnknownReasons.length === 0, writingUnknownReasons };
 }
 
 /**

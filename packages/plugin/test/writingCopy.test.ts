@@ -35,4 +35,11 @@ describe('writing copy', () => {
     expect(copy.WRITING_DRAFTS_NOTE).toBe('Drafts are kept until you close the plugin.');
     expect(copy.WRITING_EMPTY).toBe('Nothing to write. Every description and section is filled.');
   });
+
+  it('names what an incomplete Needs writing list does not know yet', () => {
+    expect(copy.WRITING_FILTER_EMPTY).toBe('Nothing to write in any doc.');
+    expect(copy.WRITING_UNKNOWN_RUNNING).toBe('Checks are still running.');
+    expect(copy.WRITING_UNKNOWN_OLDER).toBe('Docs built before this version list their sections after an Update.');
+    expect(copy.WRITING_UNKNOWN_UNREAD).toBe('Some docs could not be read.');
+  });
 });

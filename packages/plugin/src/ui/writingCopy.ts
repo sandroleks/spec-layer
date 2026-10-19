@@ -17,6 +17,10 @@ export const WRITING_STALE = 'Sections as of the last update. Check again after 
 export const WRITING_DRAFTS_NOTE = 'Drafts are kept until you close the plugin.';
 export const WRITING_EMPTY = 'Nothing to write. Every description and section is filled.';
 export const WRITING_FILTER_EMPTY = 'Nothing to write in any doc.';
+/** Under "None found in what could be read", one line per thing not yet known. */
+export const WRITING_UNKNOWN_RUNNING = 'Checks are still running.';
+export const WRITING_UNKNOWN_OLDER = 'Docs built before this version list their sections after an Update.';
+export const WRITING_UNKNOWN_UNREAD = 'Some docs could not be read.';
 
 const plural = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`;
 

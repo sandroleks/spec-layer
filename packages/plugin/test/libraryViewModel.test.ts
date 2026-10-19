@@ -687,3 +687,55 @@ describe('writing', () => {
     expect(isLibraryFilter('writing')).toBe(true);
   });
 });
+
+describe('writingKnown', () => {
+  const settled = (docId: string) => entry({ docId, unwrittenSections: [] });
+  const spec = { fileKey: 'f', collections: [], textStyles: [], effectStyles: [], extractedAt: '' } as never;
+  const known = (entries: LibraryEntry[], options: Parameters<typeof buildLibraryModel>[1]) => {
+    const model = buildLibraryModel(entries, options);
+    return { known: model.writingKnown, reasons: model.writingUnknownReasons };
+  };
+  const foundationRow = () => entry({ docId: 'f', kind: 'foundation', sourceNodeId: '', foundationScope: { target: 'textStyles' } });
+
+  it('is known when every component row settled with its gaps and the Foundation spec is loaded', () => {
+    expect(known([settled('a'), foundationRow()], {
+      drift: new Map([['a', 'inSync']]), componentGaps: new Map([['a', []]]), foundation: spec,
+    })).toEqual({ known: true, reasons: [] });
+  });
+
+  it('says checks are running while a row is pending or the Foundation dump is on its way', () => {
+    expect(known([settled('a')], { drift: new Map([['a', 'pending']]) }))
+      .toEqual({ known: false, reasons: ['Checks are still running.'] });
+    expect(known([foundationRow()], { foundationLoading: true }))
+      .toEqual({ known: false, reasons: ['Checks are still running.'] });
+  });
+
+  it('names a link that predates the section list', () => {
+    expect(known([entry({ docId: 'a' })], { drift: new Map([['a', 'inSync']]), componentGaps: new Map([['a', []]]) }))
+      .toEqual({ known: false, reasons: ['Docs built before this version list their sections after an Update.'] });
+  });
+
+  it('names a failed check, a rebuild, a missing gaps reply and an unloaded Foundation as not read', () => {
+    const unread = { known: false, reasons: ['Some docs could not be read.'] };
+    expect(known([settled('a')], { drift: new Map([['a', 'unavailable']]) })).toEqual(unread);
+    expect(known([settled('a')], { drift: new Map([['a', 'staleVersion']]) })).toEqual(unread);
+    expect(known([settled('a')], { drift: new Map([['a', 'drifted']]) })).toEqual(unread);
+    expect(known([foundationRow()], {})).toEqual(unread);
+  });
+
+  it('lists every reason once, in order', () => {
+    const entries = [entry({ docId: 'a' }), settled('b'), settled('c')];
+    expect(known(entries, {
+      drift: new Map<string, LibraryDriftState>([['a', 'inSync'], ['b', 'pending'], ['c', 'unavailable']]),
+      componentGaps: new Map([['a', []]]),
+    }).reasons).toEqual([
+      'Checks are still running.',
+      'Docs built before this version list their sections after an Update.',
+      'Some docs could not be read.',
+    ]);
+  });
+
+  it('reads only the link of a row whose source is gone', () => {
+    expect(known([entry({ docId: 'a', sourceExists: false, unwrittenSections: [] })], {})).toEqual({ known: true, reasons: [] });
+  });
+});

@@ -609,6 +609,28 @@ describe('library screen presentation', () => {
     expect(noneInSync).toContain('<p>Docs appear here when they match their source.</p>');
   });
 
+  it('says there is nothing to write only when every row is known', () => {
+    const rows = [row('buttonPrimary', 'inSync')];
+    const counts = { all: 1, updates: 0, inSync: 1, writing: 0 };
+    const known = libraryScrollMarkup(model({
+      allRows: rows, rows: [], filter: 'writing', counts, writingKnown: true, writingUnknownReasons: [],
+    }));
+    expect(known).toContain('<strong>Nothing to write in any doc.</strong>');
+    expect(known).not.toContain('None found in what could be read');
+
+    const unknown = libraryScrollMarkup(model({
+      allRows: rows, rows: [], filter: 'writing', counts, writingKnown: false,
+      writingUnknownReasons: ['Checks are still running.', 'Some docs could not be read.'],
+    }));
+    expect(unknown).toContain('<strong>None found in what could be read</strong>');
+    expect(unknown).toContain('<p>Checks are still running.</p><p>Some docs could not be read.</p>');
+    expect(unknown).not.toContain('Nothing to write');
+
+    // No decision from the view model claims nothing.
+    const absent = libraryScrollMarkup(model({ allRows: rows, rows: [], filter: 'writing', counts }));
+    expect(absent).not.toContain('Nothing to write');
+  });
+
   it('claims "Up to date" only when every check landed and no source is missing', () => {
     const inSync = [row('buttonPrimary', 'inSync')];
     const one = { all: 1, updates: 0, inSync: 1, writing: 0 };

@@ -52,9 +52,13 @@ export interface LibraryRowPresentation
 }
 
 export interface LibraryScreenPresentation
-  extends Omit<LibraryModel, 'allRows' | 'rows'> {
+  extends Omit<LibraryModel, 'allRows' | 'rows' | 'writingKnown' | 'writingUnknownReasons'> {
   allRows: readonly LibraryRowPresentation[];
   rows: readonly LibraryRowPresentation[];
+  /** From the view model. Absent claims nothing: the writing filter's empty
+   *  state then never says there is nothing to write. */
+  writingKnown?: boolean;
+  writingUnknownReasons?: readonly string[];
   menuDocId: string | null;
   loading?: boolean;
   refreshing?: boolean;
@@ -560,7 +564,12 @@ function incompleteEmptyMarkup(): string {
  * `incomplete`: a failed re-read or partial scan means the filter's empty subset
  * is not a complete count, so "None found" is all either filter can claim.
  */
-function emptyMarkup(filter: LibraryFilter, hasRows: boolean, incomplete: boolean): string {
+function emptyMarkup(
+  filter: LibraryFilter,
+  hasRows: boolean,
+  incomplete: boolean,
+  writing: { known: boolean; reasons: readonly string[] } = { known: false, reasons: [] },
+): string {
   if (!hasRows) {
     // Two starts, the same two views the rail opens. Nothing here creates.
     return (
@@ -594,6 +603,15 @@ function emptyMarkup(filter: LibraryFilter, hasRows: boolean, incomplete: boolea
     );
   }
   if (filter === 'writing') {
+    // Nothing to write is a completeness claim: only when every row is known.
+    if (!writing.known) {
+      return (
+        '<div class="sl-empty-state" data-writing-unknown><strong>None found in what could be read</strong>' +
+        writing.reasons.map((reason) => `<p>${esc(reason)}</p>`).join('') +
+        '<button class="sl-button" data-tone="secondary" type="button" ' +
+        'data-library-filter="all">View all docs</button></div>'
+      );
+    }
     return (
       `<div class="sl-empty-state"><strong>${WRITING_FILTER_EMPTY}</strong>` +
       '<button class="sl-button" data-tone="secondary" type="button" ' +
@@ -729,6 +747,7 @@ export function libraryScrollMarkup(model: LibraryScreenPresentation): string {
             model.filter,
             model.allRows.length > 0,
             Boolean(model.error) || Boolean(model.readIncomplete),
+            { known: model.writingKnown === true, reasons: model.writingUnknownReasons ?? [] },
           );
 
   const rebuilds = model.loading

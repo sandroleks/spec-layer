@@ -39,7 +39,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   Component gaps are read in the same pass as the drift check; section gaps
   come from the doc link, which now records which sections were drawn as
   placeholders at the last build, so a doc built before this version lists
-  none until it is updated. Nothing written or recorded here enters a hash
+  none until it is updated. An empty Needs writing list says there is
+  nothing to write only once every row has been read; until then it names
+  what is still unknown. Nothing written or recorded here enters a hash
   or an artifact. Needs the descriptions prose contract in production on
   the proxy.
 

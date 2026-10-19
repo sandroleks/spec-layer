@@ -1014,6 +1014,7 @@ function currentLibraryModel() {
     changes: libraryChanges,
     componentGaps: libraryComponentGaps,
     foundation: currentFoundationSpec(),
+    foundationLoading: foundationRequested && !currentFoundationSpec(),
     drafts: libraryDrafts,
     drafting: libraryDrafting,
   });
