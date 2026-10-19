@@ -450,3 +450,75 @@ describe('draftProse proxy mode', () => {
     expect((err as ProseProxyError).reason).toBe('unreachable');
   });
 });
+
+// --- Descriptions for blank fields -------------------------------------------
+
+import {
+  descriptionCacheKey, descriptionProseRequest, draftDescriptions, DESCRIPTION_CHUNK,
+  DESCRIPTION_SYSTEM_PROMPT, DESCRIPTION_MAX_TOKENS, type DescriptionBrief,
+} from '../src';
+
+const item = (key: string): DescriptionBrief => ({ key, kind: 'variable', name: `color/${key}`, type: 'COLOR', values: ['Light = #FFF'] });
+
+interface DescriptionBody {
+  cacheKey: string;
+  request: { messages: Array<{ content: string }> };
+}
+
+describe('descriptions contract', () => {
+  function fakeFetcher(answer: (body: DescriptionBody) => unknown): typeof fetch {
+    return (async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(init.body as string) as DescriptionBody;
+      return { ok: true, status: 200, headers: { get: () => null }, json: async () => answer(body) };
+    }) as unknown as typeof fetch;
+  }
+  const proxyOpts = () => ({ url: 'https://proxy.test', figmaUserId: 'u1' });
+
+  it('keys on the rendered prompt and the tier', () => {
+    const a = descriptionCacheKey({ items: [item('a')] }, 'free');
+    expect(a).toMatch(/^prose:v1:descriptions:free:[0-9a-f]+$/);
+    expect(descriptionCacheKey({ items: [item('a')] }, 'pro')).not.toBe(a);
+    expect(descriptionCacheKey({ items: [item('b')] }, 'free')).not.toBe(a);
+  });
+
+  it('builds the request the proxy allows: no model, the fixed system and limit, one user message', () => {
+    const { request } = descriptionProseRequest({ items: [item('a')] }, 'free');
+    expect(request).toEqual({
+      max_tokens: DESCRIPTION_MAX_TOKENS,
+      system: DESCRIPTION_SYSTEM_PROMPT,
+      messages: [{ role: 'user', content: expect.stringMatching(/^Items to describe:\n/) }],
+    });
+    expect('model' in request).toBe(false);
+  });
+
+  it('sends one request per chunk and merges the answers', async () => {
+    const items = Array.from({ length: DESCRIPTION_CHUNK + 1 }, (_, i) => item(`k${i}`));
+    const calls: string[] = [];
+    const fetcher = fakeFetcher((body) => {
+      calls.push(body.cacheKey);
+      const keys = /key: (\S+)/g;
+      const answer: Record<string, string> = {};
+      for (const m of body.request.messages[0]!.content.matchAll(keys)) answer[m[1]!] = `About ${m[1]}.`;
+      return { content: [{ type: 'text', text: JSON.stringify(answer) }] };
+    });
+    const out = await draftDescriptions({ items }, { apiKey: null, fetcher, cacheStore: memStore(), proxy: proxyOpts() });
+    expect(calls).toHaveLength(2);
+    expect(Object.keys(out)).toHaveLength(DESCRIPTION_CHUNK + 1);
+    expect(out.k0).toBe('About k0.');
+  });
+
+  it('replays a cached chunk without a request', async () => {
+    const store = memStore();
+    const { cacheKey } = descriptionProseRequest({ items: [item('a')] }, 'free');
+    await store.set(cacheKey, '{"a": "Cached."}');
+    const fetcher = fakeFetcher(() => { throw new Error('must not be called'); });
+    const out = await draftDescriptions({ items: [item('a')] }, { apiKey: null, fetcher, cacheStore: store, proxy: proxyOpts() });
+    expect(out).toEqual({ a: 'Cached.' });
+  });
+
+  it('returns nothing with no proxy and no key, and for no items', async () => {
+    const fetcher = fakeFetcher(() => { throw new Error('must not be called'); });
+    expect(await draftDescriptions({ items: [item('a')] }, { apiKey: null, fetcher, cacheStore: memStore() })).toEqual({});
+    expect(await draftDescriptions({ items: [] }, { apiKey: null, fetcher, cacheStore: memStore(), proxy: proxyOpts() })).toEqual({});
+  });
+});
