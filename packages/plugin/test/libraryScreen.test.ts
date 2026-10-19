@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { FoundationSelection, FoundationSpec } from '@spec-layer/extractor';
 import { foundationScrollMarkup } from '../src/ui/screens/foundations';
 import { ICON_PATHS } from '../src/ui/shell/icons';
+import { WRITING_FILTER_LABEL, WRITING_FOOT, WRITING_STALE, WRITING_FIELD_HINT } from '../src/ui/writingCopy';
 import {
   libraryFooterMarkup,
   libraryHeaderMarkup,
@@ -1182,5 +1183,52 @@ describe('library error and incomplete banner layout', () => {
       const block = css.includes(selector) ? css.slice(css.indexOf(selector)) : '';
       expect(block.slice(0, block.indexOf('}'))).toContain(rebuildMargin);
     }
+  });
+});
+
+describe('writing', () => {
+  const gaps = [
+    { key: 'variable:V1', gap: { kind: 'variable' as const, id: 'V1', name: 'color/surface', facts: ['Light = #FFF'] }, draft: null },
+    { key: 'section:doc-1:whenToUse', gap: { kind: 'section' as const, id: 'doc-1', sectionId: 'whenToUse' as const, name: 'When to use' }, draft: null },
+  ];
+
+  it('draws the fourth filter with its count', () => {
+    const markup = libraryScrollMarkup(model({ counts: { all: 1, updates: 0, inSync: 1, writing: 1 } }));
+    expect(markup).toContain('data-library-filter="writing"');
+    expect(markup).toContain(WRITING_FILTER_LABEL);
+  });
+
+  it('shows the summary line under a row with gaps and nothing under one without', () => {
+    expect(libraryRowMarkup(row('doc-1', 'inSync', { writingSummary: '1 description to write' }), null, false)).toContain('sl-library-writing-summary');
+    expect(libraryRowMarkup(row('doc-1', 'inSync'), null, false)).not.toContain('sl-library-writing-summary');
+  });
+
+  it('draws a field for a description gap and an open button for a section gap, when expanded', () => {
+    const markup = libraryRowMarkup(row('doc-1', 'inSync', { expanded: true, writingSummary: '1 description and 1 section to write', writingItems: gaps }), null, false);
+    expect(markup).toContain('data-writing-key="variable:V1"');
+    expect(markup).toContain(`placeholder="${WRITING_FIELD_HINT}"`);
+    expect(markup).toContain('Light = #FFF');
+    expect(markup).toContain('data-writing-open="whenToUse"');
+    expect(markup).toContain('data-writing-draft-all');
+    expect(markup).toContain(WRITING_FOOT);
+  });
+
+  it('never draws the Changes block for an in-sync row expanded only for writing', () => {
+    const markup = libraryRowMarkup(row('doc-1', 'inSync', { expanded: true, changeState: 'pending', writingSummary: 'x', writingItems: gaps }), null, false);
+    expect(markup).not.toContain('<h2>Changes</h2>');
+    expect(markup).toContain('Show details for doc-1');
+  });
+
+  it('shows a draft in the field with the AI tag, and the stale note on an edited row', () => {
+    const drafted = [{ ...gaps[0], draft: { text: 'Page background.', origin: 'ai' as const } }];
+    const markup = libraryRowMarkup(row('doc-1', 'edited', { expanded: true, writingSummary: 'x', writingItems: drafted, writingStale: true }), null, false);
+    expect(markup).toContain('value="Page background."');
+    expect(markup).toContain('sl-writing-ai-tag');
+    expect(markup).toContain(WRITING_STALE);
+  });
+
+  it('disables the draft button while drafting or busy', () => {
+    const markup = libraryRowMarkup(row('doc-1', 'inSync', { expanded: true, writingSummary: 'x', writingItems: gaps, drafting: true }), null, false);
+    expect(markup).toMatch(/data-writing-draft-all[^>]*disabled/);
   });
 });

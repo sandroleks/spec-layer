@@ -12,7 +12,24 @@ import type {
   LibraryModel,
   LibraryRowModel,
   LibraryRowStatus,
+  LibraryWritingItem,
 } from '../viewModel/library';
+import {
+  WRITING_AI_TAG,
+  WRITING_CLEAR,
+  WRITING_DRAFT_ALL,
+  WRITING_DRAFTING,
+  WRITING_EMPTY,
+  WRITING_FIELD_HINT,
+  WRITING_FILTER_EMPTY,
+  WRITING_FILTER_LABEL,
+  WRITING_FOOT,
+  WRITING_HEADING,
+  WRITING_OPEN,
+  WRITING_SAVE,
+  WRITING_STALE,
+  sectionGapLine,
+} from '../writingCopy';
 import { loadingRowsMarkup, progressMarkup, type ProgressPresentation } from './progress';
 import { esc } from '../escape';
 
@@ -173,14 +190,65 @@ function changeContentMarkup(row: LibraryRowPresentation): string {
   }
 }
 
-function changeDetailsMarkup(row: LibraryRowPresentation): string {
+function writingItemMarkup(item: LibraryWritingItem, docId: string, busy: boolean): string {
+  const g = item.gap;
+  if (g.kind === 'section') {
+    return (
+      '<li class="sl-writing-item is-section">' +
+      `<span class="sl-writing-name">${esc(sectionGapLine(g.name))}</span>` +
+      `<button class="sl-button" data-tone="quiet" type="button" data-writing-open="${esc(g.sectionId ?? '')}" ` +
+      `data-doc-id="${esc(docId)}"${busy ? ' disabled' : ''}>${WRITING_OPEN}</button>` +
+      '</li>'
+    );
+  }
+  const draft = item.draft;
+  const facts = g.facts?.length ? `<span class="sl-writing-facts">${esc(g.facts.join(' · '))}</span>` : '';
+  const tag = draft?.origin === 'ai' ? `<span class="sl-writing-ai-tag">${WRITING_AI_TAG}</span>` : '';
+  return (
+    `<li class="sl-writing-item" data-writing-item="${esc(item.key)}">` +
+    `<span class="sl-writing-name">${esc(g.name)}${tag}</span>${facts}` +
+    '<span class="sl-input-wrap sl-writing-input">' +
+    `<input class="sl-writing-field" type="text" data-writing-key="${esc(item.key)}" data-doc-id="${esc(docId)}" ` +
+    `placeholder="${esc(WRITING_FIELD_HINT)}" value="${esc(draft?.text ?? '')}" aria-label="${esc(g.name)}"${busy ? ' disabled' : ''}>` +
+    '</span>' +
+    '<span class="sl-writing-actions">' +
+    `<button class="sl-button" data-tone="secondary" type="button" data-writing-save="${esc(item.key)}" data-doc-id="${esc(docId)}"${busy ? ' disabled' : ''}>${WRITING_SAVE}</button>` +
+    (draft ? `<button class="sl-button" data-tone="quiet" type="button" data-writing-clear="${esc(item.key)}" data-doc-id="${esc(docId)}"${busy ? ' disabled' : ''}>${WRITING_CLEAR}</button>` : '') +
+    '</span></li>'
+  );
+}
+
+function writingGroupMarkup(row: LibraryRowPresentation, busy: boolean): string {
+  if (row.writingItems.length === 0) {
+    return `<section class="sl-library-writing" data-writing-doc="${esc(row.docId)}"><h2>${WRITING_HEADING}</h2><p class="sl-writing-empty">${WRITING_EMPTY}</p></section>`;
+  }
+  const canDraft = row.writingItems.some((i) => i.gap.kind !== 'section');
+  const disabled = busy || row.drafting;
+  return (
+    `<section class="sl-library-writing" data-writing-doc="${esc(row.docId)}">` +
+    `<div class="sl-writing-head"><h2>${WRITING_HEADING}</h2>` +
+    (canDraft
+      ? `<button class="sl-button" data-tone="secondary" type="button" data-writing-draft-all data-doc-id="${esc(row.docId)}"${disabled ? ' disabled' : ''}>${row.drafting ? WRITING_DRAFTING : WRITING_DRAFT_ALL}</button>`
+      : '') +
+    '</div>' +
+    (row.writingStale ? `<p class="sl-writing-note">${WRITING_STALE}</p>` : '') +
+    `<ul class="sl-writing-list">${row.writingItems.map((item) => writingItemMarkup(item, row.docId, busy)).join('')}</ul>` +
+    `<p class="sl-writing-foot">${WRITING_FOOT}</p>` +
+    '</section>'
+  );
+}
+
+function changeDetailsMarkup(row: LibraryRowPresentation, busy: boolean): string {
+  // A row expanded only for writing carries a 'pending' change state from the
+  // model, so the Changes block is drawn for an update row alone.
+  const changes = isUpdate(row)
+    ? `<h2>Changes</h2><div class="sl-library-change-list">${changeContentMarkup(row)}</div>`
+    : '';
+  const writing = row.writingItems.length > 0 ? writingGroupMarkup(row, busy) : '';
   return (
     `<div id="sl-library-details-${esc(row.docId)}" class="sl-library-details"` +
     `${row.expanded ? '' : ' hidden'}>` +
-    '<div class="sl-library-details-inner">' +
-    '<h2>Changes</h2>' +
-    `<div class="sl-library-change-list">${changeContentMarkup(row)}</div>` +
-    '</div></div>'
+    `<div class="sl-library-details-inner">${changes}${writing}</div></div>`
   );
 }
 
@@ -210,10 +278,11 @@ interface MenuItem {
 
 function menuGroups(row: LibraryRowPresentation): MenuItem[][] {
   const maintenance: MenuItem[] = [];
-  if (isUpdate(row)) {
+  if (isUpdate(row) || row.writingItems.length > 0) {
+    const noun = isUpdate(row) ? 'changes' : 'details';
     maintenance.push({
       action: 'review',
-      label: row.expanded ? 'Hide changes' : 'Show changes',
+      label: row.expanded ? `Hide ${noun}` : `Show ${noun}`,
       glyph: 'adjustments',
     });
   }
@@ -339,13 +408,14 @@ export function libraryRowMarkup(
   revealed = false,
 ): string {
   const update = isUpdate(row);
-  const expanded = update && row.expanded;
-  const status = update
+  const expandable = update || row.writingItems.length > 0;
+  const expanded = expandable && row.expanded;
+  const status = expandable
     ? (
       '<button class="sl-library-update-disclosure" type="button" ' +
       `data-library-disclosure="${esc(row.docId)}" aria-expanded="${expanded}" ` +
       `aria-controls="sl-library-details-${esc(row.docId)}" ` +
-      `aria-label="Update available. Show changes for ${esc(row.label)}">` +
+      `aria-label="${update ? 'Update available. Show changes for' : 'Show details for'} ${esc(row.label)}">` +
       `${statusMarkup(row.status)}` +
       `<span class="sl-library-chevron${expanded ? ' is-expanded' : ''}">${icon('chevronDown', 14)}</span>` +
       '</button>'
@@ -380,7 +450,8 @@ export function libraryRowMarkup(
     `<time>${esc(row.ageLabel)}</time>` +
     menuMarkup(row, menuDocId === row.docId, busy) +
     '</div>' +
-    (update ? changeDetailsMarkup({ ...row, expanded }) : '') +
+    (row.writingSummary ? `<p class="sl-library-writing-summary">${esc(row.writingSummary)}</p>` : '') +
+    (expandable ? changeDetailsMarkup({ ...row, expanded }, busy) : '') +
     '</article>'
   );
 }
@@ -502,6 +573,13 @@ function emptyMarkup(filter: LibraryFilter, hasRows: boolean, incomplete: boolea
       'data-library-filter="all">View all docs</button></div>'
     );
   }
+  if (filter === 'writing') {
+    return (
+      `<div class="sl-empty-state"><strong>${WRITING_FILTER_EMPTY}</strong>` +
+      '<button class="sl-button" data-tone="secondary" type="button" ' +
+      'data-library-filter="all">View all docs</button></div>'
+    );
+  }
   return (
     '<div class="sl-empty-state"><strong>No docs in sync</strong>' +
     '<p>Docs appear here when they match their source.</p>' +
@@ -522,6 +600,7 @@ const LIBRARY_FILTERS: ReadonlyArray<{ id: LibraryFilter; label: string }> = [
   { id: 'all', label: 'All' },
   { id: 'updates', label: 'Updates' },
   { id: 'sync', label: 'In sync' },
+  { id: 'writing', label: WRITING_FILTER_LABEL },
 ];
 
 function libraryFilterCount(model: LibraryScreenPresentation, id: LibraryFilter): number {
