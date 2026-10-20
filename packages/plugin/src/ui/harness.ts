@@ -489,11 +489,14 @@ const LIBRARY_ENTRIES: LibraryEntry[] = LIBRARY_NAMES.map((name, index) => ({
     }
     : {}),
   // The shape main sends: sections drawn as placeholders, and the ticked ones.
-  ...(WRITING_FIXTURE && index < 2
-    ? {
-      unwrittenSections: ['whenToUse', 'dosDonts'] as SectionId[],
-      sections: ['definition', 'whenToUse', 'dosDonts', 'anatomy'] as SectionId[],
-    }
+  ...(WRITING_FIXTURE && !name.startsWith('Foundations')
+    ? index < 2
+      ? {
+        unwrittenSections: ['whenToUse', 'dosDonts'] as SectionId[],
+        sections: ['definition', 'whenToUse', 'dosDonts', 'anatomy'] as SectionId[],
+      }
+      // Read and nothing unwritten: a known state, as a rebuilt doc reports.
+      : { unwrittenSections: [] as SectionId[] }
     : {}),
 }));
 
@@ -502,10 +505,15 @@ const LIBRARY_ENTRIES: LibraryEntry[] = LIBRARY_NAMES.map((name, index) => ({
  *  holds from the `foundation` reply, with one variable left without a
  *  description. */
 const WRITING_COMPONENT_GAPS = new Map<string, WritingGap[]>(WRITING_FIXTURE
-  ? [[LIBRARY_ENTRIES[0].docId, [
-    { kind: 'component', id: '10:20', name: 'Button' },
-    { kind: 'slot', id: '10:20', propertyName: 'Content#1:2', name: 'Button / Content' },
-  ]]]
+  ? LIBRARY_ENTRIES.filter((entry) => entry.kind === 'component').map((entry, index) => [
+    entry.docId,
+    index === 0
+      ? [
+        { kind: 'component', id: '10:20', name: 'Button' },
+        { kind: 'slot', id: '10:20', propertyName: 'Content#1:2', name: 'Button / Content' },
+      ]
+      : [],
+  ])
   : []);
 const WRITING_FOUNDATION: FoundationSpec | null = WRITING_FIXTURE
   ? ({
