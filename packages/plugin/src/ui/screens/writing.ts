@@ -29,17 +29,22 @@ export interface WritingScreenPresentation extends WritingModel, CheckLinePresen
   loading?: boolean;
   /** A refresh, pass, update or annotate run is out: Refresh is disabled; fields stay usable. */
   busy?: boolean;
-  // Draft all, Save and Clear are disabled while a write or draft for that
-  // group is out; per group via `drafting`.
+  /**
+   * An Update, Copy or Annotate run is out, not a plain source check: Save,
+   * Clear draft, Draft all and Open in doc are disabled; fields stay typeable.
+   */
+  locked?: boolean;
+  // Draft all, Save and Clear are also disabled while a draft for that group
+  // is out; per group via `drafting`.
 }
 
-function taskBodyMarkup(t: WritingTask, docId: string, drafting: boolean): string {
+function taskBodyMarkup(t: WritingTask, docId: string, disabled: boolean): string {
   const g = t.gap;
-  const off = drafting ? ' disabled' : '';
+  const off = disabled ? ' disabled' : '';
   if (g.kind === 'section') {
     return (
       '<div class="sl-writing-task-body">' +
-      `<button class="sl-button" data-tone="secondary" type="button" data-writing-open="${esc(g.sectionId ?? '')}" data-doc-id="${esc(docId)}">${WRITING_OPEN}</button>` +
+      `<button class="sl-button" data-tone="secondary" type="button" data-writing-open="${esc(g.sectionId ?? '')}" data-doc-id="${esc(docId)}"${off}>${WRITING_OPEN}</button>` +
       '</div>'
     );
   }
@@ -57,7 +62,7 @@ function taskBodyMarkup(t: WritingTask, docId: string, drafting: boolean): strin
   );
 }
 
-function taskMarkup(t: WritingTask, docId: string, drafting: boolean): string {
+function taskMarkup(t: WritingTask, docId: string, disabled: boolean): string {
   const tag = t.draft?.origin === 'ai' ? `<span class="sl-writing-ai-tag">${WRITING_AI_TAG}</span>` : '';
   const caption = t.caption ? `<span class="sl-writing-caption">${esc(t.caption)}</span>` : '';
   const head = t.done
@@ -71,20 +76,21 @@ function taskMarkup(t: WritingTask, docId: string, drafting: boolean): string {
     );
   return (
     `<li class="sl-writing-task${t.done ? ' is-done' : ''}${t.expanded ? ' is-expanded' : ''}" data-writing-task="${esc(t.key)}">` +
-    head + (t.expanded ? taskBodyMarkup(t, docId, drafting) : '') +
+    head + (t.expanded ? taskBodyMarkup(t, docId, disabled) : '') +
     '</li>'
   );
 }
 
-export function writingGroupMarkup(group: WritingGroup): string {
+export function writingGroupMarkup(group: WritingGroup, locked = false): string {
+  const disabled = group.drafting || locked;
   const draft = group.canDraft
-    ? `<button class="sl-button" data-tone="secondary" data-size="small" type="button" data-writing-draft-all data-doc-id="${esc(group.docId)}"${group.drafting ? ' disabled' : ''}>${group.drafting ? WRITING_DRAFTING : WRITING_DRAFT_ALL}</button>`
+    ? `<button class="sl-button" data-tone="secondary" data-size="small" type="button" data-writing-draft-all data-doc-id="${esc(group.docId)}"${disabled ? ' disabled' : ''}>${group.drafting ? WRITING_DRAFTING : WRITING_DRAFT_ALL}</button>`
     : '';
   return (
     `<section class="sl-writing-group" data-writing-group="${esc(group.docId)}">` +
     `<div class="sl-writing-group-head"><h2>${esc(group.label)}</h2><span class="sl-writing-count">${esc(group.countLabel)}</span>${draft}</div>` +
     (group.stale ? `<p class="sl-writing-note">${WRITING_STALE}</p>` : '') +
-    `<ul class="sl-writing-tasks">${group.tasks.map((t) => taskMarkup(t, group.docId, group.drafting)).join('')}</ul>` +
+    `<ul class="sl-writing-tasks">${group.tasks.map((t) => taskMarkup(t, group.docId, disabled)).join('')}</ul>` +
     (group.tasks.some((t) => t.expanded && t.gap.kind !== 'section') ? `<p class="sl-writing-foot">${WRITING_FOOT}</p>` : '') +
     '</section>'
   );
@@ -109,9 +115,9 @@ export function writingScrollMarkup(model: WritingScreenPresentation): string {
   const body = model.loading
     ? loadingRowsMarkup(4)
     : model.groups.length
-      ? model.groups.map(writingGroupMarkup).join('')
+      ? model.groups.map((group) => writingGroupMarkup(group, model.locked === true)).join('')
       : emptyMarkup(model);
-  return `${libraryCheckLineMarkup(model)}<div class="sl-writing-list">${body}</div>`;
+  return `${libraryCheckLineMarkup(model)}<div class="sl-writing-list" data-locked="${model.locked === true}">${body}</div>`;
 }
 
 export function writingFooterMarkup(model: WritingScreenPresentation): string {
@@ -138,11 +144,14 @@ export function renderWritingScreen(refs: ShellRefs, model: WritingScreenPresent
  * One doc's reply landed: redraw its group in place, keeping focus and the
  * caret in a field, then the check line and Refresh. A doc with nothing to
  * write has no group, so only those two move. False when the set of groups
- * changed, the list is empty (its empty state may change), or the list is
- * not on screen, so the caller paints fully.
+ * changed, the list is empty (its empty state may change), a run's lock
+ * moved (every group's buttons change), or the list is not on screen, so the
+ * caller paints fully.
  */
 export function patchWritingGroup(refs: ShellRefs, model: WritingScreenPresentation, docId: string): boolean {
   if (!refs.screen.classList.contains('sl-writing-screen') || model.loading || model.groups.length === 0) return false;
+  const list = refs.scroll.querySelector<HTMLElement>('.sl-writing-list');
+  if (!list || list.dataset.locked !== String(model.locked === true)) return false;
   const drawn = [...refs.scroll.querySelectorAll<HTMLElement>('[data-writing-group]')].map((el) => el.dataset.writingGroup);
   const wanted = model.groups.map((g) => g.docId);
   if (drawn.length !== wanted.length || drawn.some((id, i) => id !== wanted[i])) return false;
@@ -153,7 +162,7 @@ export function patchWritingGroup(refs: ShellRefs, model: WritingScreenPresentat
     const active = document.activeElement;
     const key = active instanceof HTMLInputElement && element.contains(active) ? active.dataset.writingKey : undefined;
     const caret = active instanceof HTMLInputElement ? ([active.selectionStart, active.selectionEnd] as const) : null;
-    element.outerHTML = writingGroupMarkup(group);
+    element.outerHTML = writingGroupMarkup(group, model.locked === true);
     if (key) {
       // Within this group: another doc may list the same field.
       const next = refs.scroll.querySelector<HTMLInputElement>(

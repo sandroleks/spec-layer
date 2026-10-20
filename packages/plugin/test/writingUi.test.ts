@@ -81,6 +81,39 @@ const slot = { kind: 'slot', id: '10:20', propertyName: 'Icon#1:2', name: 'Butto
 const GAP_KEY = 'component:10:20';
 const SLOT_KEY = 'slot:10:20:Icon#1:2';
 
+/** A text styles Foundation doc. */
+function foundationEntry(docId = 'doc-f'): LibraryEntry {
+  return {
+    docId, kind: 'foundation', label: 'Type', componentName: '', pageName: 'Foundations',
+    sourceLabel: 'Text styles', generatedAt: Date.now() - 60_000, sourceNodeId: '',
+    sourceExists: true, selfEdited: false, storedContentHash: 'f-hash', currentContentHash: 'f-hash',
+    extractorVersion: EXTRACTOR_VERSION, foundationScope: { target: 'textStyles' },
+  };
+}
+
+/** A Foundation dump with one text style, described or not. */
+function styleDump(description: string): Record<string, unknown> {
+  return {
+    fileKey: 'f', collections: [], externals: [], extractedAt: '2026-10-19T00:00:00.000Z', effectStyles: [],
+    textStyles: [{
+      id: 'S:1', name: 'Body/Medium', description, fontFamily: 'Inter', fontStyle: 'Regular', fontSize: 16,
+      lineHeight: { unit: 'AUTO' }, letterSpacing: { unit: 'PERCENT', value: 0 }, paragraphSpacing: 0,
+      paragraphIndent: 0, textCase: 'ORIGINAL', textDecoration: 'NONE', boundVariables: {},
+    }],
+  };
+}
+const STYLE_KEY = 'style:S:1';
+
+/** Copy for AI on a component row, as the Library row menu sends it. */
+function startCopy(docId: string): void {
+  const button = document.createElement('button');
+  button.dataset.libraryAction = 'copy';
+  button.dataset.docId = docId;
+  document.body.append(button);
+  button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  button.remove();
+}
+
 const taskKeys = (docId = 'doc-1'): string[] => [...document.querySelectorAll<HTMLElement>(`[data-writing-group="${docId}"] .sl-writing-task`)]
   .map((el) => el.dataset.writingTask ?? '');
 const doneKeys = (docId = 'doc-1'): string[] => [...document.querySelectorAll<HTMLElement>(`[data-writing-group="${docId}"] .sl-writing-task.is-done`)]
@@ -398,6 +431,43 @@ describe('Writing view', () => {
     // The Foundation reads again with the description filled: its task is done.
     dispatch({ type: 'foundation', dump: dump('Body copy.') });
     expect(doneKeys('doc-f')).toEqual(['style:S:1']);
+  });
+
+  it('holds the writes while a Copy run is out, and a Foundation save landing then reads only the Foundation', async () => {
+    const passId = await openWriting([componentEntry('doc-1'), foundationEntry()]);
+    dispatch({ type: 'foundation', dump: styleDump('') });
+    settle(passId, [gap]);
+    click(`[data-writing-group="doc-1"] [data-writing-toggle="${GAP_KEY}"]`);
+    type(`[data-writing-key="${GAP_KEY}"]`, 'Starts an action.');
+    startCopy('doc-1');
+    expect(count('requestDocProse')).toBe(1);
+    const field = document.querySelector<HTMLInputElement>(`[data-writing-key="${GAP_KEY}"]`);
+    expect(field?.disabled).toBe(false);
+    expect(field?.value).toBe('Starts an action.');
+    expect(document.querySelector<HTMLButtonElement>(`[data-writing-save="${GAP_KEY}"]`)?.disabled).toBe(true);
+    expect(document.querySelector<HTMLButtonElement>(`[data-writing-clear="${GAP_KEY}"]`)?.disabled).toBe(true);
+    click(`[data-writing-save="${GAP_KEY}"]`);
+    expect(count('writeDescriptions')).toBe(0);
+
+    // A Foundation save sent before the run began lands in the middle of it.
+    const before = { foundation: count('requestFoundation'), library: count('requestLibrary') };
+    dispatch({ type: 'descriptionsWritten', docId: 'doc-f', written: [STYLE_KEY], failed: [] });
+    expect(count('requestFoundation')).toBe(before.foundation + 1);
+    expect(count('requestLibrary')).toBe(before.library);
+  });
+
+  it('a Foundation save landing during a refresh reads only the Foundation and leaves the refresh its own carry', async () => {
+    const passId = await openWriting([componentEntry('doc-1'), foundationEntry()]);
+    dispatch({ type: 'foundation', dump: styleDump('') });
+    settle(passId, [gap]);
+    click('[data-library-refresh]');
+    const before = { foundation: count('requestFoundation'), library: count('requestLibrary'), drift: count('requestDrift') };
+    dispatch({ type: 'descriptionsWritten', docId: 'doc-f', written: [STYLE_KEY], failed: [] });
+    expect(count('requestFoundation')).toBe(before.foundation + 1);
+    expect(count('requestLibrary')).toBe(before.library);
+    // The refresh's reply carries nothing, so the component doc is checked again.
+    dispatch({ type: 'library', entries: [componentEntry('doc-1'), foundationEntry()] });
+    expect(count('requestDrift')).toBe(before.drift + 1);
   });
 
   it('a save that wrote nothing reads nothing again', async () => {

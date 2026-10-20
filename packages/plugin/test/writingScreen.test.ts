@@ -54,6 +54,21 @@ describe('writing screen', () => {
     expect(writingScrollMarkup(model({ groups: [], loading: true }))).toContain('sl-loading-rows');
   });
 
+  it('disables Save, Clear draft, Draft all and Open in doc while a run holds the lock, and leaves the field typeable', () => {
+    const field = task({ expanded: true, draft: { text: 'Starts an action.', origin: 'person' } });
+    const section = task({ key: 'section:doc-1:whenToUse', gap: { kind: 'section', id: 'doc-1', sectionId: 'whenToUse', name: 'When to use' }, title: 'When to use', expanded: true });
+    const locked = writingScrollMarkup(model({ locked: true, groups: [group({ tasks: [field, section] })] }));
+    expect(locked).toMatch(/data-writing-save="component:10:20"[^>]*disabled/);
+    expect(locked).toMatch(/data-writing-clear="component:10:20"[^>]*disabled/);
+    expect(locked).toMatch(/data-writing-draft-all[^>]*disabled/);
+    expect(locked).toMatch(/data-writing-open="whenToUse"[^>]*disabled/);
+    expect(locked).not.toMatch(/<input[^>]*disabled/);
+    expect(locked).toContain('data-locked="true"');
+    const open = writingScrollMarkup(model({ groups: [group({ tasks: [field, section] })] }));
+    expect(open).not.toMatch(/disabled/);
+    expect(open).toContain('data-locked="false"');
+  });
+
   it('disables Draft all while drafting and the footer Refresh while busy', () => {
     expect(writingScrollMarkup(model({ groups: [group({ drafting: true })] }))).toMatch(/data-writing-draft-all[^>]*disabled/);
     expect(writingFooterMarkup(model({ busy: true }))).toMatch(/data-library-refresh[^>]*disabled/);

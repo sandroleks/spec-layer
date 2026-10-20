@@ -735,8 +735,18 @@ function writingPresentation(): WritingScreenPresentation {
     loading: libraryListLoading(),
     // Only Refresh waits on these; every field stays usable.
     busy: libraryRefreshing || libraryProbeInFlight || libraryOperation !== null,
+    locked: writingLocked(),
     ...libraryCheckLine(pendingChecks),
   };
+}
+
+/**
+ * An Update, Copy or Annotate run is out: a write would race it (a save moves
+ * the source an Annotate run reads, and its re-read can land mid-run), so
+ * Save, Clear draft, Draft all and Open in doc wait. A plain source check does not lock.
+ */
+function writingLocked(): boolean {
+  return libraryOperation !== null || annotateBusy;
 }
 
 /**
@@ -2254,25 +2264,27 @@ document.addEventListener('click', (event) => {
     paintAndFocus(`[data-writing-group="${cssString(docId)}"] [data-writing-toggle="${cssString(key)}"]`);
     return;
   }
+  // Beside the disabled attribute on each: a run's lock holds these back.
   const writingOpen = target.closest<HTMLButtonElement>('[data-writing-open]');
   if (writingOpen?.dataset.writingOpen && writingOpen.dataset.docId) {
-    send({ type: 'focusDocSection', docId: writingOpen.dataset.docId, sectionId: writingOpen.dataset.writingOpen as SectionId });
+    if (!writingLocked()) send({ type: 'focusDocSection', docId: writingOpen.dataset.docId, sectionId: writingOpen.dataset.writingOpen as SectionId });
     return;
   }
   const writingSave = target.closest<HTMLButtonElement>('[data-writing-save]');
   if (writingSave?.dataset.writingSave && writingSave.dataset.docId) {
-    saveWritingItem(writingSave.dataset.docId, writingSave.dataset.writingSave);
+    if (!writingLocked()) saveWritingItem(writingSave.dataset.docId, writingSave.dataset.writingSave);
     return;
   }
   const writingClear = target.closest<HTMLButtonElement>('[data-writing-clear]');
   if (writingClear?.dataset.writingClear) {
+    if (writingLocked()) return;
     libraryDrafts.delete(writingClear.dataset.writingClear);
     paint();
     return;
   }
   const writingDraftAll = target.closest<HTMLButtonElement>('[data-writing-draft-all]');
   if (writingDraftAll?.dataset.docId) {
-    void draftAllForRow(writingDraftAll.dataset.docId);
+    if (!writingLocked()) void draftAllForRow(writingDraftAll.dataset.docId);
     return;
   }
 
@@ -3320,15 +3332,21 @@ const handleMainMessage = (event: MessageEvent): void => {
       } else if (entry?.kind === 'foundation') {
         foundationRequested = false;
         send({ type: 'requestFoundation' });
-        // A Foundation write moves no component source, so the rescan keeps
-        // every settled component check and its gaps; see libraryCarry.
-        pendingLibraryCarry = libraryCarry({
-          drift: libraryDrift,
-          projections: libraryLiveProjection,
-          checkedAt: libraryCheckedAt,
-          rebuilt: [],
-        });
-        send({ type: 'requestLibrary' });
+        // The list is read again only when nothing else owns it: mid-run the
+        // reply would clear the drift maps a queued update started from, and a
+        // refresh already out (a run's own end-of-run one included) re-reads it
+        // with its own carry.
+        if (libraryOperation === null && !libraryRefreshing) {
+          // A Foundation write moves no component source, so the rescan keeps
+          // every settled component check and its gaps; see libraryCarry.
+          pendingLibraryCarry = libraryCarry({
+            drift: libraryDrift,
+            projections: libraryLiveProjection,
+            checkedAt: libraryCheckedAt,
+            rebuilt: [],
+          });
+          send({ type: 'requestLibrary' });
+        }
       } else {
         recheckLibraryRow(msg.docId);
       }
