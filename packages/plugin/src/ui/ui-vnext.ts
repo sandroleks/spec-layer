@@ -56,7 +56,7 @@ import { COMPONENT_FORMATS, isComponentFormat, type ComponentFormat } from '../c
 import { computeMenuPlacement } from './fontPicker';
 import { filterFamilies } from '../fonts';
 import { renderLicenseScreen } from './screens/license';
-import { patchWritingGroup, renderWritingScreen, type WritingScreenPresentation } from './screens/writing';
+import { patchWritingGroup, patchWritingTask, renderWritingScreen, type WritingScreenPresentation } from './screens/writing';
 import { cssString, patchLibraryCheckLine, patchLibraryDrift, renderLibraryScreen, revealLibraryRow, type CheckLinePresentation, type LibraryScreenPresentation } from './screens/library';
 import { patchInitialVersion, renderPublishScreen } from './screens/publish';
 import { renderHistoryScreen } from './screens/history';
@@ -2684,7 +2684,10 @@ document.addEventListener('input', (event) => {
     const text = input.value;
     if (text.trim() === '') libraryDrafts.delete(input.dataset.writingKey);
     else libraryDrafts.set(input.dataset.writingKey, { text, origin: 'person' });
-    return; // no paint: the field already shows the text; the AI tag goes on the next paint
+    // No paint: the field already shows the text. Its task's AI tag and Clear
+    // draft move in place, so the caret and any IME composition survive.
+    if (view === 'writing') patchWritingTask(refs, writingPresentation(), input.dataset.writingKey);
+    return;
   }
   if (input.matches('[data-global-search-input]')) {
     searchQuery = input.value;

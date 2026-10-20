@@ -324,13 +324,50 @@ describe('Writing view', () => {
     expect(lastOutgoing('focusDocSection')).toEqual({ type: 'focusDocSection', docId: 'doc-1', sectionId: 'whenToUse' });
     click(`[data-writing-toggle="${GAP_KEY}"]`);
     type(`[data-writing-key="${GAP_KEY}"]`, 'Starts an action.');
-    // The Clear button comes with the next paint after typing.
-    click(`[data-writing-toggle="${GAP_KEY}"]`);
-    click(`[data-writing-toggle="${GAP_KEY}"]`);
     click(`[data-writing-clear="${GAP_KEY}"]`);
     expect(document.querySelector<HTMLInputElement>(`[data-writing-key="${GAP_KEY}"]`)?.value).toBe('');
     click(`[data-writing-save="${GAP_KEY}"]`);
     expect(count('writeDescriptions')).toBe(0);
+  });
+
+  it('typing drops the AI tag and brings Clear draft in place, without redrawing the field', async () => {
+    vi.mocked(generateDescriptions).mockResolvedValue({ drafts: { [GAP_KEY]: 'From the model.' } });
+    const passId = await openWriting();
+    settle(passId, [gap]);
+    click(`[data-writing-toggle="${GAP_KEY}"]`);
+    const field = document.querySelector<HTMLInputElement>(`[data-writing-key="${GAP_KEY}"]`);
+    expect(document.querySelector(`[data-writing-clear="${GAP_KEY}"]`)).toBeNull();
+    type(`[data-writing-key="${GAP_KEY}"]`, 'Mine');
+    expect(document.querySelector(`[data-writing-key="${GAP_KEY}"]`)).toBe(field);
+    expect(document.querySelector(`[data-writing-clear="${GAP_KEY}"]`)).not.toBeNull();
+    type(`[data-writing-key="${GAP_KEY}"]`, '');
+    expect(document.querySelector(`[data-writing-clear="${GAP_KEY}"]`)).toBeNull();
+
+    click('[data-writing-draft-all]');
+    await new Promise((r) => setTimeout(r, 0));
+    expect(document.querySelector(`[data-writing-task="${GAP_KEY}"] .sl-writing-ai-tag`)).not.toBeNull();
+    const drafted = document.querySelector<HTMLInputElement>(`[data-writing-key="${GAP_KEY}"]`);
+    type(`[data-writing-key="${GAP_KEY}"]`, 'From the model, edited.');
+    expect(document.querySelector(`[data-writing-key="${GAP_KEY}"]`)).toBe(drafted);
+    expect(document.querySelector(`[data-writing-task="${GAP_KEY}"] .sl-writing-ai-tag`)).toBeNull();
+    expect(document.querySelector(`[data-writing-clear="${GAP_KEY}"]`)).not.toBeNull();
+  });
+
+  it('a full paint keeps the focused field and its caret', async () => {
+    const passId = await openWriting();
+    settle(passId, [gap]);
+    click(`[data-writing-toggle="${GAP_KEY}"]`);
+    type(`[data-writing-key="${GAP_KEY}"]`, 'Starts an action.');
+    const field = document.querySelector<HTMLInputElement>(`[data-writing-key="${GAP_KEY}"]`);
+    field?.focus();
+    field?.setSelectionRange(3, 7);
+    // A probe's reply repaints the whole Writing screen.
+    dispatch({ type: 'libraryUnchanged' });
+    const next = document.querySelector<HTMLInputElement>(`[data-writing-key="${GAP_KEY}"]`);
+    expect(next).not.toBe(field);
+    expect(document.activeElement).toBe(next);
+    expect([next?.selectionStart, next?.selectionEnd]).toEqual([3, 7]);
+    expect(next?.value).toBe('Starts an action.');
   });
 
   it('Draft all makes one call for the group\'s open fields without drafts', async () => {

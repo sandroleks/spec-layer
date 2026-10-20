@@ -50,29 +50,39 @@ function taskBodyMarkup(t: WritingTask, docId: string, disabled: boolean): strin
       '</div>'
     );
   }
-  const draft = t.draft;
   return (
     '<div class="sl-writing-task-body">' +
     '<span class="sl-input-wrap sl-writing-input">' +
     `<input class="sl-writing-field" type="text" data-writing-key="${esc(t.key)}" data-doc-id="${esc(docId)}" ` +
-    `placeholder="${esc(WRITING_FIELD_HINT)}" value="${esc(draft?.text ?? '')}" aria-label="${esc(t.title)}">` +
+    `placeholder="${esc(WRITING_FIELD_HINT)}" value="${esc(t.draft?.text ?? '')}" aria-label="${esc(t.title)}">` +
     '</span>' +
-    '<span class="sl-writing-actions">' +
-    `<button class="sl-button" data-tone="secondary" type="button" data-writing-save="${esc(t.key)}" data-doc-id="${esc(docId)}"${off}>${WRITING_SAVE}</button>` +
-    (draft ? `<button class="sl-button" data-tone="quiet" type="button" data-writing-clear="${esc(t.key)}" data-doc-id="${esc(docId)}"${off}>${WRITING_CLEAR}</button>` : '') +
-    '</span></div>'
+    `<span class="sl-writing-actions">${taskActionsMarkup(t, docId, disabled)}</span></div>`
   );
 }
 
+/** Save, and Clear draft once a draft exists. Patched in place as the field is typed in. */
+function taskActionsMarkup(t: WritingTask, docId: string, disabled: boolean): string {
+  const off = disabled ? ' disabled' : '';
+  return (
+    `<button class="sl-button" data-tone="secondary" type="button" data-writing-save="${esc(t.key)}" data-doc-id="${esc(docId)}"${off}>${WRITING_SAVE}</button>` +
+    (t.draft ? `<button class="sl-button" data-tone="quiet" type="button" data-writing-clear="${esc(t.key)}" data-doc-id="${esc(docId)}"${off}>${WRITING_CLEAR}</button>` : '')
+  );
+}
+
+/** The title, tagged AI while the draft is the model's. Patched in place as the field is typed in. */
+function taskTitleMarkup(t: WritingTask): string {
+  const tag = !t.done && t.draft?.origin === 'ai' ? `<span class="sl-writing-ai-tag">${WRITING_AI_TAG}</span>` : '';
+  return `${esc(t.title)}${tag}`;
+}
+
 function taskMarkup(t: WritingTask, docId: string, disabled: boolean): string {
-  const tag = t.draft?.origin === 'ai' ? `<span class="sl-writing-ai-tag">${WRITING_AI_TAG}</span>` : '';
   const caption = t.caption ? `<span class="sl-writing-caption">${esc(t.caption)}</span>` : '';
   const head = t.done
-    ? `<div class="sl-writing-task-head"><span class="sl-writing-dot" aria-hidden="true">${icon('fileCheck', 14)}</span><span class="sl-writing-title">${esc(t.title)}</span>${caption}</div>`
+    ? `<div class="sl-writing-task-head"><span class="sl-writing-dot" aria-hidden="true">${icon('fileCheck', 14)}</span><span class="sl-writing-title">${taskTitleMarkup(t)}</span>${caption}</div>`
     : (
       `<button class="sl-writing-task-head" type="button" data-writing-toggle="${esc(t.key)}" data-doc-id="${esc(docId)}" aria-expanded="${t.expanded}">` +
       '<span class="sl-writing-dot" aria-hidden="true"></span>' +
-      `<span class="sl-writing-title">${esc(t.title)}${tag}</span>${caption}` +
+      `<span class="sl-writing-title">${taskTitleMarkup(t)}</span>${caption}` +
       `<span class="sl-writing-chevron${t.expanded ? ' is-expanded' : ''}">${icon('chevronDown', 14)}</span>` +
       '</button>'
     );
@@ -135,8 +145,32 @@ export function writingFooterMarkup(model: WritingScreenPresentation): string {
   );
 }
 
+/** The focused writing field and its selection, to put back after a redraw. */
+interface FieldFocus { docId: string; key: string; start: number | null; end: number | null }
+
+function focusedField(within: Element): FieldFocus | null {
+  const active = document.activeElement;
+  if (!(active instanceof HTMLInputElement) || !within.contains(active)) return null;
+  const { writingKey: key, docId } = active.dataset;
+  return key && docId ? { docId, key, start: active.selectionStart, end: active.selectionEnd } : null;
+}
+
+/** Focus the same field again, within its own group (another doc may list the same field), and its selection. */
+function restoreField(refs: ShellRefs, focus: FieldFocus | null): void {
+  if (!focus) return;
+  const next = refs.scroll.querySelector<HTMLInputElement>(
+    `[data-writing-group="${cssString(focus.docId)}"] [data-writing-key="${cssString(focus.key)}"]`,
+  );
+  if (!next) return;
+  next.focus({ preventScroll: true });
+  if (focus.start !== null && focus.end !== null) next.setSelectionRange(focus.start, focus.end);
+}
+
+/** A full paint; a field being typed in keeps its focus and caret. */
 export function renderWritingScreen(refs: ShellRefs, model: WritingScreenPresentation): void {
-  const scrollTop = refs.screen.classList.contains('sl-writing-screen') ? refs.scroll.scrollTop : 0;
+  const onScreen = refs.screen.classList.contains('sl-writing-screen');
+  const scrollTop = onScreen ? refs.scroll.scrollTop : 0;
+  const focus = onScreen ? focusedField(refs.scroll) : null;
   refs.screen.className = 'sl-screen sl-writing-screen';
   refs.pageHeader.innerHTML = writingHeaderMarkup();
   refs.pageHeader.hidden = false;
@@ -144,6 +178,28 @@ export function renderWritingScreen(refs: ShellRefs, model: WritingScreenPresent
   refs.scroll.scrollTop = scrollTop;
   refs.footer.innerHTML = writingFooterMarkup(model);
   refs.footer.hidden = false;
+  restoreField(refs, focus);
+}
+
+/**
+ * A field was typed in: redraw the title and the actions of each drawn task
+ * filed under that key, leaving the field alone. A draft becoming the
+ * person's drops the AI tag; a draft appearing brings Clear draft.
+ */
+export function patchWritingTask(refs: ShellRefs, model: WritingScreenPresentation, key: string): void {
+  if (!refs.screen.classList.contains('sl-writing-screen')) return;
+  for (const group of model.groups) {
+    const t = group.tasks.find((candidate) => candidate.key === key);
+    if (!t) continue;
+    const item = refs.scroll.querySelector<HTMLElement>(
+      `[data-writing-group="${cssString(group.docId)}"] [data-writing-task="${cssString(key)}"]`,
+    );
+    if (!item) continue;
+    const title = item.querySelector('.sl-writing-title');
+    if (title) title.innerHTML = taskTitleMarkup(t);
+    const actions = item.querySelector('.sl-writing-actions');
+    if (actions) actions.innerHTML = taskActionsMarkup(t, group.docId, group.drafting || model.locked === true);
+  }
 }
 
 /**
@@ -165,18 +221,9 @@ export function patchWritingGroup(refs: ShellRefs, model: WritingScreenPresentat
   if (group) {
     const element = refs.scroll.querySelector<HTMLElement>(`[data-writing-group="${cssString(docId)}"]`);
     if (!element) return false;
-    const active = document.activeElement;
-    const key = active instanceof HTMLInputElement && element.contains(active) ? active.dataset.writingKey : undefined;
-    const caret = active instanceof HTMLInputElement ? ([active.selectionStart, active.selectionEnd] as const) : null;
+    const focus = focusedField(element);
     element.outerHTML = writingGroupMarkup(group, model.locked === true);
-    if (key) {
-      // Within this group: another doc may list the same field.
-      const next = refs.scroll.querySelector<HTMLInputElement>(
-        `[data-writing-group="${cssString(docId)}"] [data-writing-key="${cssString(key)}"]`,
-      );
-      next?.focus({ preventScroll: true });
-      if (next && caret && caret[0] !== null && caret[1] !== null) next.setSelectionRange(caret[0], caret[1]);
-    }
+    restoreField(refs, focus);
   }
   const line = refs.scroll.querySelector('[data-library-check-line]');
   if (line) line.outerHTML = libraryCheckLineMarkup(model);
