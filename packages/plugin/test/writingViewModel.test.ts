@@ -69,6 +69,11 @@ describe('buildWritingModel', () => {
     const model = buildWritingModel([entry()], { drift: new Map([['doc-1', 'inSync']]), componentGaps: new Map([['doc-1', []]]) });
     expect(model.groups).toEqual([]);
     expect(model.known).toBe(true);
+    expect(model.noDocs).toBe(false);
+  });
+
+  it('tells a file with no docs from one with nothing to write', () => {
+    expect(buildWritingModel([], {})).toEqual({ groups: [], known: true, unknownReasons: [], noDocs: true });
   });
 
   it('is unknown while a check runs, for an older link, and for an unread doc', () => {

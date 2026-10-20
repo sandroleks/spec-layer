@@ -56,6 +56,8 @@ export interface WritingModel {
   groups: WritingGroup[];
   known: boolean;
   unknownReasons: string[];
+  /** The file has no docs at all, which is not the same as nothing to write. */
+  noDocs: boolean;
 }
 
 /** The key a draft or a write is filed under. A section has no field to write. */
@@ -206,7 +208,7 @@ export function buildWritingModel(entries: readonly LibraryEntry[], options: Bui
     });
   }
   const unknownReasons = writingUnknownReasons(entries, options);
-  return { groups, known: unknownReasons.length === 0, unknownReasons };
+  return { groups, known: unknownReasons.length === 0, unknownReasons, noDocs: entries.length === 0 };
 }
 
 /** Every open task, by docTaskKey, with its doc. */

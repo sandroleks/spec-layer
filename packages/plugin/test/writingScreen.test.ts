@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { writingScrollMarkup, writingFooterMarkup, type WritingScreenPresentation } from '../src/ui/screens/writing';
-import { WRITING_EMPTY, WRITING_UNKNOWN_RUNNING, WRITING_FIELD_HINT, WRITING_FOOT } from '../src/ui/writingCopy';
+import {
+  WRITING_EMPTY, WRITING_FIELD_HINT, WRITING_FOOT, WRITING_NO_DOCS, WRITING_UNKNOWN_HEADING, WRITING_UNKNOWN_RUNNING,
+} from '../src/ui/writingCopy';
 import type { WritingGroup, WritingTask } from '../src/ui/viewModel/writing';
 
 const task = (over: Partial<WritingTask>): WritingTask => ({
@@ -12,7 +14,7 @@ const group = (over: Partial<WritingGroup> = {}): WritingGroup => ({
   countLabel: '0 of 1 done', drafting: false, stale: false, canDraft: true, ...over,
 });
 const model = (over: Partial<WritingScreenPresentation> = {}): WritingScreenPresentation => ({
-  groups: [group()], known: true, unknownReasons: [], ...over,
+  groups: [group()], known: true, unknownReasons: [], noDocs: false, ...over,
 });
 
 describe('writing screen', () => {
@@ -45,9 +47,21 @@ describe('writing screen', () => {
   it('claims nothing to write only when known', () => {
     expect(writingScrollMarkup(model({ groups: [] }))).toContain(WRITING_EMPTY);
     const unknown = writingScrollMarkup(model({ groups: [], known: false, unknownReasons: [WRITING_UNKNOWN_RUNNING] }));
-    expect(unknown).toContain('None found in what could be read');
+    expect(unknown).toContain(WRITING_UNKNOWN_HEADING);
     expect(unknown).toContain(WRITING_UNKNOWN_RUNNING);
     expect(unknown).not.toContain(WRITING_EMPTY);
+  });
+
+  it('says a file with no docs has none, with the two starts the Library offers', () => {
+    const html = writingScrollMarkup(model({ groups: [], noDocs: true }));
+    expect(html).toContain(WRITING_NO_DOCS);
+    expect(html).toContain('data-empty-nav="component"');
+    expect(html).toContain('data-empty-nav="foundations"');
+    expect(html).not.toContain(WRITING_EMPTY);
+    // A read that failed or stopped early claims no empty file either.
+    const unknown = writingScrollMarkup(model({ groups: [], noDocs: true, known: false, unknownReasons: [WRITING_UNKNOWN_RUNNING] }));
+    expect(unknown).toContain(WRITING_UNKNOWN_HEADING);
+    expect(unknown).not.toContain(WRITING_NO_DOCS);
   });
 
   it('shows loading rows before the first scan', () => {

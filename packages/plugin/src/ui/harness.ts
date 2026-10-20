@@ -546,7 +546,7 @@ if (view === 'writing') {
   // One closed task that is no longer an open gap, so a done row shows.
   const overviewGap = { kind: 'section' as const, id: 'doc-1', sectionId: 'definition' as SectionId, name: 'Overview' };
   const done = new Map<string, TaskRef>([[docTaskKey('doc-1', writingTaskKey(overviewGap)), { gap: overviewGap, docId: 'doc-1' }]]);
-  const none = { groups: [] };
+  const none = { groups: [], noDocs: false };
   if (stateName === 'loading') {
     renderWritingScreen(refs, { ...none, known: true, unknownReasons: [], loading: true });
   } else if (stateName === 'unknown') {

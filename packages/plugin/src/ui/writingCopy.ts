@@ -16,7 +16,11 @@ export const WRITING_FOOT = 'Saving writes into Figma. The doc then shows Update
 export const WRITING_STALE = 'Sections as of the last update. Check again after Update.';
 export const WRITING_DRAFTS_NOTE = 'Drafts are kept until you close the plugin.';
 export const WRITING_EMPTY = 'Nothing to write. Every description and section is filled.';
-/** Under "None found in what could be read", one line per thing not yet known. */
+/** A file with no docs: nothing is filled because nothing is there yet. */
+export const WRITING_NO_DOCS = 'No docs yet. Create a component or Foundation doc first.';
+/** An empty list that is not a fact. The Library's filters say it too. */
+export const WRITING_UNKNOWN_HEADING = 'None found in what could be read';
+/** Under WRITING_UNKNOWN_HEADING, one line per thing not yet known. */
 export const WRITING_UNKNOWN_RUNNING = 'Checks are still running.';
 export const WRITING_UNKNOWN_OLDER = 'Docs built before this version list their sections after an Update.';
 export const WRITING_UNKNOWN_UNREAD = 'Some docs could not be read.';

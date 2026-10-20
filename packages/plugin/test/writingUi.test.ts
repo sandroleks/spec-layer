@@ -167,7 +167,12 @@ describe('Writing view', () => {
     click('[data-library-refresh]');
     dispatch({ type: 'library', entries: [] });
     expect(document.querySelector('[data-writing-unknown]')).toBeNull();
-    expect(document.querySelector('.sl-writing-list')?.textContent).toContain('Nothing to write');
+    // A file with no docs is not a file with everything written.
+    expect(document.querySelector('[data-writing-no-docs]')?.textContent).toContain('No docs yet. Create a component or Foundation doc first.');
+    expect(document.querySelector('.sl-writing-list')?.textContent).not.toContain('Nothing to write');
+    click('[data-empty-nav="foundations"]');
+    expect(document.querySelector('.sl-writing-screen')).toBeNull();
+    expect(count('requestFoundation')).toBeGreaterThan(0);
   });
 
   it('adds a doc\'s tasks from the current pass and drops a stale one', async () => {

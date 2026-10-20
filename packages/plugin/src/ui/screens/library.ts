@@ -15,6 +15,7 @@ import type {
 } from '../viewModel/library';
 import { loadingRowsMarkup, progressMarkup, type ProgressPresentation } from './progress';
 import { esc } from '../escape';
+import { WRITING_UNKNOWN_HEADING } from '../writingCopy';
 
 export type { LibraryFilter } from '../viewModel/library';
 
@@ -466,6 +467,21 @@ function incompleteEmptyMarkup(): string {
 }
 
 /**
+ * A file with no docs: two starts, the same two views the rail opens. Nothing
+ * here creates. Shared with the Writing screen's empty file.
+ */
+export function emptyNavActionsMarkup(): string {
+  return (
+    '<div class="sl-empty-actions">' +
+    '<button class="sl-button" data-tone="secondary" type="button" data-empty-nav="component">' +
+    `${icon('puzzle', 15)}<span>Document a component</span></button>` +
+    '<button class="sl-button" data-tone="quiet" type="button" data-empty-nav="foundations">' +
+    `${icon('layoutGrid', 15)}<span>Document foundations</span></button>` +
+    '</div>'
+  );
+}
+
+/**
  * `incomplete`: a failed re-read or partial scan means the filter's empty subset
  * is not a complete count, so "None found" is all either filter can claim.
  */
@@ -475,24 +491,18 @@ function emptyMarkup(
   incomplete: boolean,
 ): string {
   if (!hasRows) {
-    // Two starts, the same two views the rail opens. Nothing here creates.
     return (
       '<div class="sl-empty-state sl-empty-illustrated">' +
       EMPTY_ILLUSTRATION +
       '<strong>No docs yet</strong>' +
       '<p>Docs you create in this file appear here, so you can see when their source changes and update them.</p>' +
-      '<div class="sl-empty-actions">' +
-      '<button class="sl-button" data-tone="secondary" type="button" data-empty-nav="component">' +
-      `${icon('puzzle', 15)}<span>Document a component</span></button>` +
-      '<button class="sl-button" data-tone="quiet" type="button" data-empty-nav="foundations">' +
-      `${icon('layoutGrid', 15)}<span>Document foundations</span></button>` +
-      '</div>' +
+      emptyNavActionsMarkup() +
       '</div>'
     );
   }
   if (incomplete) {
     return (
-      '<div class="sl-empty-state"><strong>None found in what could be read</strong>' +
+      `<div class="sl-empty-state"><strong>${WRITING_UNKNOWN_HEADING}</strong>` +
       '<p>The list above may still be missing docs, so this could change once a read finishes clean.</p>' +
       '<button class="sl-button" data-tone="secondary" type="button" ' +
       'data-library-filter="all">View all docs</button></div>'

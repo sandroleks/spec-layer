@@ -42,6 +42,11 @@ describe('writing copy', () => {
     expect(copy.WRITING_EMPTY).toBe('Nothing to write. Every description and section is filled.');
   });
 
+  it('tells an empty file from an empty list', () => {
+    expect(copy.WRITING_NO_DOCS).toBe('No docs yet. Create a component or Foundation doc first.');
+    expect(copy.WRITING_UNKNOWN_HEADING).toBe('None found in what could be read');
+  });
+
   it('names what an incomplete Writing list does not know yet', () => {
     expect(copy.WRITING_UNKNOWN_RUNNING).toBe('Checks are still running.');
     expect(copy.WRITING_UNKNOWN_OLDER).toBe('Docs built before this version list their sections after an Update.');

@@ -7,7 +7,7 @@ import { icon } from '../shell/icons';
 import type { ShellRefs } from '../shell/shell';
 import { esc } from '../escape';
 import { loadingRowsMarkup } from './progress';
-import { cssString, libraryCheckLineMarkup, type CheckLinePresentation } from './library';
+import { cssString, emptyNavActionsMarkup, libraryCheckLineMarkup, type CheckLinePresentation } from './library';
 import type { WritingGroup, WritingModel, WritingTask } from '../viewModel/writing';
 import {
   WRITING_AI_TAG,
@@ -18,11 +18,13 @@ import {
   WRITING_FIELD_HINT,
   WRITING_FOOT,
   WRITING_HEADING,
+  WRITING_NO_DOCS,
   WRITING_OPEN,
   WRITING_REFRESH,
   WRITING_REFRESHING,
   WRITING_SAVE,
   WRITING_STALE,
+  WRITING_UNKNOWN_HEADING,
 } from '../writingCopy';
 
 export interface WritingScreenPresentation extends WritingModel, CheckLinePresentation {
@@ -100,9 +102,13 @@ function emptyMarkup(model: WritingScreenPresentation): string {
   // Nothing to write is a completeness claim: only when every doc is known.
   if (!model.known) {
     return (
-      '<div class="sl-empty-state" data-writing-unknown><strong>None found in what could be read</strong>' +
+      `<div class="sl-empty-state" data-writing-unknown><strong>${WRITING_UNKNOWN_HEADING}</strong>` +
       model.unknownReasons.map((r) => `<p>${esc(r)}</p>`).join('') + '</div>'
     );
+  }
+  // A read that found no docs: nothing is filled because nothing is there.
+  if (model.noDocs) {
+    return `<div class="sl-empty-state" data-writing-no-docs><strong>${WRITING_NO_DOCS}</strong>${emptyNavActionsMarkup()}</div>`;
   }
   return `<div class="sl-empty-state"><strong>${WRITING_EMPTY}</strong></div>`;
 }
