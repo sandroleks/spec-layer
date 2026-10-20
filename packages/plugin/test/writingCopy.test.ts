@@ -28,6 +28,7 @@ describe('writing copy', () => {
 
   it('keeps the fixed strings as the spec states them', () => {
     expect(copy.WRITING_FILTER_LABEL).toBe('Needs writing');
+    expect(copy.WRITING_RAIL_LABEL).toBe('Writing');
     expect(copy.WRITING_FIELD_HINT).toBe('What it is and when to use it');
     expect(copy.WRITING_DRAFT_ALL).toBe('Draft all with AI');
     expect(copy.WRITING_FOOT).toBe('Saving writes into Figma. The doc then shows Update available. You can undo this right after.');

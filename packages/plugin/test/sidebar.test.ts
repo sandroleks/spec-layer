@@ -13,7 +13,7 @@ describe('railBlocks', () => {
     const blocks = railBlocks(navigation);
     expect(blocks.map((b) => b.group)).toEqual(['create', 'library', 'settings']);
     expect(blocks[0].items.map((i) => i.id)).toEqual(['component', 'foundations']);
-    expect(blocks[1].items.map((i) => i.id)).toEqual(['library']);
+    expect(blocks[1].items.map((i) => i.id)).toEqual(['library', 'writing']);
     expect(blocks[2].items.map((i) => i.id)).toEqual(['settings', 'license']);
   });
 
@@ -25,6 +25,14 @@ describe('railBlocks', () => {
   it('returns nothing for an empty list', () => {
     expect(railBlocks([])).toEqual([]);
   });
+});
+
+it('places Writing in the Library group, after Library, with its own glyph', () => {
+  const ids = navigation.map((item) => item.id);
+  expect(ids.indexOf('writing')).toBe(ids.indexOf('library') + 1);
+  expect(navigation.find((item) => item.id === 'writing')?.group).toBe('library');
+  expect(railIcon('writing')).toBe('pencil');
+  expect(sidebarMarkup('writing')).toContain('data-view="writing" aria-current="page"');
 });
 
 describe('railIcon', () => {

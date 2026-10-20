@@ -56,6 +56,7 @@ import { COMPONENT_FORMATS, isComponentFormat, type ComponentFormat } from '../c
 import { computeMenuPlacement } from './fontPicker';
 import { filterFamilies } from '../fonts';
 import { renderLicenseScreen } from './screens/license';
+import { renderWritingScreen } from './screens/writing';
 import { patchLibraryCheckLine, patchLibraryDrift, renderLibraryScreen, revealLibraryRow, type LibraryScreenPresentation } from './screens/library';
 import { patchInitialVersion, renderPublishScreen } from './screens/publish';
 import { renderHistoryScreen } from './screens/history';
@@ -591,6 +592,9 @@ function paintScreen(): void {
         renderLibraryScreen(refs, libraryPresentation());
       }
       return;
+    case 'writing':
+      renderWritingScreen(refs, { loading: !libraryRequested });
+      return;
     case 'license': {
       const quota = state.quota;
       const limit = quota?.limit ?? 0;
@@ -657,6 +661,10 @@ function libraryPresentation(): LibraryScreenPresentation {
 
 /** Repaint after a source check lands; list only, so Publish and History keep focus. */
 function paintLibraryDrift(): void {
+  if (view === 'writing') {
+    paint();
+    return;
+  }
   if (view !== 'library' || libraryPane !== 'list') return;
   if (!patchLibraryDrift(refs, libraryPresentation())) paint();
 }
@@ -708,11 +716,11 @@ function navigateToView(
   // Never while a Library operation runs: the reply clears the drift maps a
   // queued update started from (and the row a Copy reads). A build's lock is no
   // reason to skip it, or a first visit stays on the loading skeleton.
-  if (view === 'library' && options.refreshLibrary !== false && libraryOperation === null) checkLibrary();
+  if ((view === 'library' || view === 'writing') && options.refreshLibrary !== false && libraryOperation === null) checkLibrary();
   // An arrival that sends no probe must still resume a paused pass, or its rows
   // stay "Checking…" with nothing in flight. Only on arrival: a new pass id
   // while already here would throw away main's resolver memo mid-pass.
-  else if (arrived && view === 'library' && !driftQueue.done()) {
+  else if (arrived && (view === 'library' || view === 'writing') && !driftQueue.done()) {
     driftQueue.resume(newPassId());
     pumpDriftQueue();
   }
@@ -1049,7 +1057,7 @@ function refreshLibrary(carry: LibraryCarry | null = null): void {
   libraryLiveProjection.clear();
   libraryChanges.clear();
   driftQueue.clear();
-  if (view === 'library') paint();
+  if (view === 'library' || view === 'writing') paint();
   send({ type: 'requestLibrary' });
 }
 
@@ -1120,7 +1128,7 @@ function startLibraryDriftChecks(carry: LibraryCarry | null): void {
  * sending while another view is up is the pause; the queue resumes on return.
  */
 function pumpDriftQueue(): void {
-  if (view !== 'library') return;
+  if (view !== 'library' && view !== 'writing') return;
   const check = driftQueue.next();
   if (check === null) return;
   const entry = libraryEntries.find((candidate) => candidate.docId === check.docId);
@@ -3179,7 +3187,7 @@ const handleMainMessage = (event: MessageEvent): void => {
       if (msg.entries.some((entry) => entry.kind === 'foundation')) {
         prefetchFoundationsForCopy();
       }
-      if (view === 'library') paint();
+      if (view === 'library' || view === 'writing') paint();
       if (searchOpen) renderGlobalSearch();
       return;
 
@@ -3215,7 +3223,7 @@ const handleMainMessage = (event: MessageEvent): void => {
       } else {
         recheckLibraryRow(msg.docId);
       }
-      if (view === 'library') paint();
+      if (view === 'library' || view === 'writing') paint();
       return;
     }
 
@@ -3300,7 +3308,7 @@ const handleMainMessage = (event: MessageEvent): void => {
       libraryBaseline.clear();
       libraryChanges.clear();
       syncLibraryBadge();
-      if (view === 'library') paint();
+      if (view === 'library' || view === 'writing') paint();
       if (searchOpen) renderGlobalSearch();
       return;
 

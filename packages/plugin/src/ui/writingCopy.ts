@@ -5,6 +5,7 @@
 
 export const WRITING_FILTER_LABEL = 'Needs writing';
 export const WRITING_HEADING = 'Writing';
+export const WRITING_RAIL_LABEL = 'Writing';
 export const WRITING_FIELD_HINT = 'What it is and when to use it';
 export const WRITING_DRAFT_ALL = 'Draft all with AI';
 export const WRITING_DRAFTING = 'Drafting…';
