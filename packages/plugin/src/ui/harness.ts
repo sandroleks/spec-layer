@@ -7,6 +7,7 @@
  *   ui-harness.html?view=library&pane=publish&publish=published&format=md
  *   ui-harness.html?view=library&pane=history&history=ready
  *   ui-harness.html?view=settings&tab=export&format=md
+ *   ui-harness.html?view=writing&state=unknown
  *
  * It feeds the shapes the real UI receives and must never gain behavior of its
  * own: anything it can do that the plugin cannot is a lie about what we verify.
@@ -55,12 +56,17 @@ import { type ThemeMode } from './theme';
 import { NO_FACTS, type ComponentFacts } from './viewModel/componentFacts';
 import {
   buildLibraryModel,
-  writingItemKey,
   type LibraryChangeResult,
-  type LibraryDraft,
   type LibraryDriftState,
   type LibraryFilter,
 } from './viewModel/library';
+import { renderWritingScreen } from './screens/writing';
+import { buildWritingModel, writingTaskKey, type TaskRef, type WritingDraft } from './viewModel/writing';
+import {
+  WRITING_UNKNOWN_OLDER,
+  WRITING_UNKNOWN_RUNNING,
+  WRITING_UNKNOWN_UNREAD,
+} from './writingCopy';
 import { setRailBadge } from './shell/sidebar';
 import {
   buildSearchModel,
@@ -88,7 +94,7 @@ const ALLOWANCES: Record<string, AllowanceState> = {
   unknown: { kind: 'unknown', message: 'Couldn’t check your plan' },
 };
 
-const VIEWS: PluginView[] = ['component', 'foundations', 'library', 'settings', 'license'];
+const VIEWS: PluginView[] = ['component', 'foundations', 'library', 'writing', 'settings', 'license'];
 
 function param(name: string, fallback: string): string {
   return new URLSearchParams(window.location.search).get(name) ?? fallback;
@@ -447,7 +453,7 @@ const LIBRARY_NAMES = [
   'Foundations · Typography',
 ];
 const LIBRARY_NOW = Date.UTC(2026, 6, 29, 12);
-const WRITING_FIXTURE = view === 'library' && param('writing', '0') === '1';
+const WRITING_FIXTURE = view === 'writing';
 const LIBRARY_ENTRIES: LibraryEntry[] = LIBRARY_NAMES.map((name, index) => ({
   docId: `doc-${index + 1}`,
   kind: name.startsWith('Foundations') ? 'foundation' : 'component',
@@ -491,7 +497,7 @@ const LIBRARY_ENTRIES: LibraryEntry[] = LIBRARY_NAMES.map((name, index) => ({
     : {}),
 }));
 
-/** `?writing=1`: the Needs writing group. The gaps are the reply main sends
+/** `?view=writing`: the Writing screen. The gaps are the reply main sends
  *  for the first row (`writingGaps`), and the Foundation spec is the one the UI
  *  holds from the `foundation` reply, with one variable left without a
  *  description. */
@@ -520,12 +526,42 @@ const WRITING_FOUNDATION: FoundationSpec | null = WRITING_FIXTURE
   } as unknown as FoundationSpec)
   : null;
 /** One AI draft on the slot, so the AI tag shows. */
-const WRITING_DRAFTS = new Map<string, LibraryDraft>(WRITING_FIXTURE
+const WRITING_DRAFTS = new Map<string, WritingDraft>(WRITING_FIXTURE
   ? [[
-    writingItemKey({ kind: 'slot', id: '10:20', propertyName: 'Content#1:2', name: 'Button / Content' }),
+    writingTaskKey({ kind: 'slot', id: '10:20', propertyName: 'Content#1:2', name: 'Button / Content' }),
     { text: 'Holds the label and an optional leading icon.', origin: 'ai' },
   ]]
   : []);
+
+if (view === 'writing') {
+  const stateName = param('state', 'ready');
+  const slotGap = { kind: 'slot' as const, id: '10:20', propertyName: 'Content#1:2', name: 'Button / Content' };
+  // One closed task, so a done row shows: the slot, closed in doc-1.
+  const done = new Map<string, TaskRef>([[writingTaskKey(slotGap), { gap: slotGap, docId: 'doc-1' }]]);
+  const none = { groups: [], openCount: 0, doneCount: 0 };
+  if (stateName === 'loading') {
+    renderWritingScreen(refs, { ...none, known: true, unknownReasons: [], loading: true });
+  } else if (stateName === 'unknown') {
+    renderWritingScreen(refs, {
+      ...none,
+      known: false,
+      unknownReasons: [WRITING_UNKNOWN_RUNNING, WRITING_UNKNOWN_OLDER, WRITING_UNKNOWN_UNREAD],
+      loading: false,
+    });
+  } else if (stateName === 'empty') {
+    renderWritingScreen(refs, { ...none, known: true, unknownReasons: [], loading: false });
+  } else {
+    const model = buildWritingModel(LIBRARY_ENTRIES, {
+      drift: new Map<string, LibraryDriftState>(LIBRARY_ENTRIES.map((entry) => [entry.docId, 'inSync'])),
+      componentGaps: WRITING_COMPONENT_GAPS,
+      foundation: WRITING_FOUNDATION,
+      drafts: WRITING_DRAFTS,
+      done,
+      expandedKey: writingTaskKey({ kind: 'component', id: '10:20', name: 'Button' }),
+    });
+    renderWritingScreen(refs, { ...model, loading: false });
+  }
+}
 
 /** Set by the Library fixture so the palette can hand off to a row; null on
  *  every other screen, as in the plugin. */
@@ -739,9 +775,6 @@ if (view === 'library') {
       filter: libraryFilter,
       expandedDocId,
       now: LIBRARY_NOW,
-      componentGaps: WRITING_COMPONENT_GAPS,
-      foundation: WRITING_FOUNDATION,
-      drafts: WRITING_DRAFTS,
     });
     // Boolean, not a count.
     setRailBadge(refs.sidebar, 'library', model.counts.updates > 0);
