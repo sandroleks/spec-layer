@@ -470,6 +470,24 @@ describe('Writing view', () => {
     expect(count('requestDrift')).toBe(before.drift + 1);
   });
 
+  it('Refresh reads the Foundation again and claims nothing until it lands', async () => {
+    await import('../src/ui/ui-vnext');
+    click('[data-view="writing"]');
+    dispatch({ type: 'library', entries: [foundationEntry()] });
+    dispatch({ type: 'foundation', dump: styleDump('Body copy.') });
+    expect(document.querySelector('.sl-writing-list')?.textContent).toContain('Nothing to write');
+    const before = count('requestFoundation');
+    click('[data-library-refresh]');
+    expect(count('requestFoundation')).toBe(before + 1);
+    dispatch({ type: 'library', entries: [foundationEntry()] });
+    // The description was cleared in Figma; until the read lands, nothing is claimed.
+    expect(document.querySelector('[data-writing-unknown]')?.textContent).toContain('Checks are still running.');
+    expect(document.querySelector('.sl-writing-list')?.textContent).not.toContain('Nothing to write');
+    dispatch({ type: 'foundation', dump: styleDump('') });
+    expect(document.querySelector('[data-writing-unknown]')).toBeNull();
+    expect(taskKeys('doc-f')).toEqual([STYLE_KEY]);
+  });
+
   it('a save that wrote nothing reads nothing again', async () => {
     await openWriting();
     const before = { foundation: count('requestFoundation'), library: count('requestLibrary'), drift: count('requestDrift') };

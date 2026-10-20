@@ -706,7 +706,8 @@ function writingOptions(): BuildWritingModelOptions {
     drift: libraryDrift,
     componentGaps: libraryComponentGaps,
     foundation: currentFoundationSpec(),
-    foundationLoading: foundationRequested && !currentFoundationSpec(),
+    // A refresh reads it again: the spec in hand is no longer current.
+    foundationLoading: foundationRequested && (!currentFoundationSpec() || foundationRefreshing),
     drafts: libraryDrafts,
     drafting: libraryDrafting,
     done: writingDone,
@@ -2074,7 +2075,12 @@ document.addEventListener('click', (event) => {
 
   if (target.closest('[data-library-refresh]')) {
     // Beside the disabled attribute: a probe's reply may start a pass itself.
-    if (!operation.active && !libraryProbeInFlight) refreshLibrary();
+    if (!operation.active && !libraryProbeInFlight) {
+      // Writing lists Foundation tasks from the spec, which is otherwise read
+      // once per session; a description cleared in Figma comes back only on a read.
+      if (view === 'writing' && libraryEntries.some((entry) => entry.kind === 'foundation')) refreshFoundations();
+      refreshLibrary();
+    }
     return;
   }
 

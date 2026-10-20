@@ -98,9 +98,10 @@ interface DocReadState {
 /** One doc's writing state: what is still unknown about it, and what is known now. */
 function docReadState(entry: LibraryEntry, options: BuildWritingModelOptions): DocReadState {
   if (entry.kind === 'foundation') {
-    if (options.foundation) return { running: false, older: false, unread: false, fieldsKnown: true, sectionsKnown: true };
+    // A spec read again is not current until its reply lands, even with the last one still in hand.
     const loading = !!options.foundationLoading;
-    return { running: loading, older: false, unread: !loading, fieldsKnown: false, sectionsKnown: false };
+    const loaded = !!options.foundation && !loading;
+    return { running: loading, older: false, unread: !options.foundation && !loading, fieldsKnown: loaded, sectionsKnown: loaded };
   }
   let running = false;
   let unread = false;

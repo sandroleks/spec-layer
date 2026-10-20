@@ -246,6 +246,8 @@ describe('writingTaskKnown', () => {
     expect(writingTaskKnown([f], {})(style)).toBe(false);
     expect(writingTaskKnown([f], { foundationLoading: true })(style)).toBe(false);
     expect(writingTaskKnown([f], { foundation: spec })(style)).toBe(true);
+    // Read again: the spec in hand is no longer current.
+    expect(writingTaskKnown([f], { foundation: spec, foundationLoading: true })(style)).toBe(false);
   });
   it('knows nothing of a doc that is gone', () => {
     expect(writingTaskKnown([], ok)(field)).toBe(false);
@@ -278,6 +280,9 @@ describe('writing known state', () => {
     expect(known([settled('a')], { drift: new Map([['a', 'pending']]) }))
       .toEqual({ known: false, reasons: ['Checks are still running.'] });
     expect(known([foundationRow()], { foundationLoading: true }))
+      .toEqual({ known: false, reasons: ['Checks are still running.'] });
+    // A refresh of a spec already in hand is still running until it lands.
+    expect(known([foundationRow()], { foundation: spec, foundationLoading: true }))
       .toEqual({ known: false, reasons: ['Checks are still running.'] });
   });
 
