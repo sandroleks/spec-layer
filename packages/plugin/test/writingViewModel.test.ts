@@ -62,8 +62,6 @@ describe('buildWritingModel', () => {
     expect(g.tasks.map((t) => [t.title, t.done])).toEqual([['Slot: Content', false], ['When to use', false], ['Description', true]]);
     expect(g.countLabel).toBe('1 of 3 done');
     expect(g.canDraft).toBe(true);
-    expect(model.openCount).toBe(2);
-    expect(model.doneCount).toBe(1);
   });
 
   it('lists no group for a doc with nothing open and nothing done', () => {
@@ -112,7 +110,6 @@ describe('done tasks', () => {
     const model = buildWritingModel([foundation('a', 'textStyles'), foundation('b', 'effectStyles')], { foundation: spec, done });
     expect(model.groups.map((g) => g.docId)).toEqual(['a']);
     expect(model.groups[0].countLabel).toBe('1 of 1 done');
-    expect(model.doneCount).toBe(1);
   });
 
   it('carries no draft and never expands', () => {

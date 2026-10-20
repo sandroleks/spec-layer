@@ -32,10 +32,6 @@ describe('writing copy', () => {
     expect(copy.draftFailedNote(1)).toBe('No draft came back for 1 field. The field is still yours to fill.');
   });
 
-  it('names an unwritten section plainly', () => {
-    expect(copy.sectionGapLine('When to use')).toBe('When to use, not written');
-  });
-
   it('keeps the fixed strings as the spec states them', () => {
     expect(copy.WRITING_RAIL_LABEL).toBe('Writing');
     expect(copy.WRITING_FIELD_HINT).toBe('What it is and when to use it');

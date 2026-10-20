@@ -536,12 +536,6 @@ function libraryFilterCount(model: LibraryScreenPresentation, id: LibraryFilter)
   }
 }
 
-/**
- * The check line under the filters: a running check's progress, else when the
- * rows were last checked, else nothing. Always drawn at a fixed height
- * (patterns.css) with the filter group, so a check's start and end move no row.
- * The one place the rule lives, shared by the full paint and patchLibraryCheckLine.
- */
 /** The three fields the check line reads, so the Writing screen can draw it too. */
 export interface CheckLinePresentation {
   refreshing?: boolean;
@@ -549,6 +543,12 @@ export interface CheckLinePresentation {
   checkedLabel?: string | null;
 }
 
+/**
+ * The check line under the filters: a running check's progress, else when the
+ * rows were last checked, else nothing. Always drawn at a fixed height
+ * (patterns.css) with the filter group, so a check's start and end move no row.
+ * The one place the rule lives, shared by the full paint and patchLibraryCheckLine.
+ */
 /** `live` is true for a check running now, false for the stamp of one past. */
 type CheckLineState =
   | { mode: 'progress'; label: string; current: number; total: number }
@@ -872,15 +872,11 @@ export function patchLibraryDrift(refs: ShellRefs, model: LibraryScreenPresentat
     if (status === row.status && !openMenuBusyMoved) continue;
     const active = document.activeElement;
     const focused = active && article.contains(active) ? rowControlSelector(active) : null;
-    const caret = focused && active instanceof HTMLInputElement ? [active.selectionStart, active.selectionEnd] as const : null;
     article.outerHTML = libraryRowMarkup(row, model.menuDocId, busy, row.docId === model.revealedDocId);
     redrewAny = true;
     if (focused) {
-      const next = list.querySelector<HTMLElement>(`.sl-library-row[data-doc-id="${cssString(row.docId)}"] ${focused}`);
-      next?.focus({ preventScroll: true });
-      if (caret && caret[0] !== null && next instanceof HTMLInputElement && document.activeElement === next) {
-        next.setSelectionRange(caret[0], caret[1] ?? caret[0]);
-      }
+      list.querySelector<HTMLElement>(`.sl-library-row[data-doc-id="${cssString(row.docId)}"] ${focused}`)
+        ?.focus({ preventScroll: true });
     }
   }
   list.dataset.busy = String(busy);

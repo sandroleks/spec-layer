@@ -6,10 +6,7 @@ import {
   WRITING_CAPTION_EFFECT, WRITING_CAPTION_TYPOGRAPHY, WRITING_TASK_DESCRIPTION, WRITING_TASK_SLOT,
   WRITING_UNKNOWN_OLDER, WRITING_UNKNOWN_RUNNING, WRITING_UNKNOWN_UNREAD, writingCount,
 } from '../writingCopy';
-import {
-  libraryDriftForEntry, resolveLibraryRowStatus,
-  type LibraryDriftState, type LibraryRowStatus,
-} from './library';
+import { libraryDriftForEntry, type LibraryDriftState } from './library';
 
 export interface WritingDraft { text: string; origin: 'person' | 'ai' }
 
@@ -44,13 +41,8 @@ export interface WritingTask {
 export interface WritingGroup {
   docId: string;
   label: string;
-  kind: LibraryEntry['kind'];
-  status: LibraryRowStatus;
   /** Open first in gap order, then done in completion order. */
   tasks: WritingTask[];
-  openCount: number;
-  doneCount: number;
-  totalCount: number;
   countLabel: string;
   drafting: boolean;
   stale: boolean;
@@ -62,8 +54,6 @@ export interface WritingModel {
   groups: WritingGroup[];
   known: boolean;
   unknownReasons: string[];
-  openCount: number;
-  doneCount: number;
 }
 
 /** The key a draft or a write is filed under. A section has no field to write. */
@@ -163,22 +153,15 @@ function task(gap: WritingGap, done: boolean, options: BuildWritingModelOptions)
 
 export function buildWritingModel(entries: readonly LibraryEntry[], options: BuildWritingModelOptions = {}): WritingModel {
   const groups: WritingGroup[] = [];
-  let openCount = 0;
-  let doneCount = 0;
   for (const entry of entries) {
     const open = rowWritingGaps(entry, options);
     const openKeys = new Set(open.map(writingTaskKey));
     const done = [...(options.done ?? [])].filter(([key, ref]) => !openKeys.has(key) && ref.docId === entry.docId);
     if (open.length === 0 && done.length === 0) continue;
     const tasks = [...open.map((gap) => task(gap, false, options)), ...done.map(([, ref]) => task(ref.gap, true, options))];
-    const drift = libraryDriftForEntry(entry, options.drift ?? new Map());
-    openCount += open.length;
-    doneCount += done.length;
     groups.push({
-      docId: entry.docId, label: entry.label, kind: entry.kind,
-      status: resolveLibraryRowStatus(entry, drift),
+      docId: entry.docId, label: entry.label,
       tasks,
-      openCount: open.length, doneCount: done.length, totalCount: tasks.length,
       countLabel: writingCount(done.length, tasks.length),
       drafting: options.drafting?.has(entry.docId) ?? false,
       stale: entry.selfEdited && open.some((g) => g.kind === 'section'),
@@ -186,7 +169,7 @@ export function buildWritingModel(entries: readonly LibraryEntry[], options: Bui
     });
   }
   const unknownReasons = writingUnknownReasons(entries, options);
-  return { groups, known: unknownReasons.length === 0, unknownReasons, openCount, doneCount };
+  return { groups, known: unknownReasons.length === 0, unknownReasons };
 }
 
 export function openTasks(model: WritingModel): Map<string, TaskRef> {

@@ -8,11 +8,11 @@ const task = (over: Partial<WritingTask>): WritingTask => ({
   draft: null, done: false, expanded: false, ...over,
 });
 const group = (over: Partial<WritingGroup> = {}): WritingGroup => ({
-  docId: 'doc-1', label: 'Button', kind: 'component', status: 'inSync', tasks: [task({})],
-  openCount: 1, doneCount: 0, totalCount: 1, countLabel: '0 of 1 done', drafting: false, stale: false, canDraft: true, ...over,
+  docId: 'doc-1', label: 'Button', tasks: [task({})],
+  countLabel: '0 of 1 done', drafting: false, stale: false, canDraft: true, ...over,
 });
 const model = (over: Partial<WritingScreenPresentation> = {}): WritingScreenPresentation => ({
-  groups: [group()], known: true, unknownReasons: [], openCount: 1, doneCount: 0, ...over,
+  groups: [group()], known: true, unknownReasons: [], ...over,
 });
 
 describe('writing screen', () => {

@@ -37,10 +37,6 @@ export function draftFailedNote(items: number): string {
   return `No draft came back for ${plural(items, 'field', 'fields')}. The ${items === 1 ? 'field is' : 'fields are'} still yours to fill.`;
 }
 
-export function sectionGapLine(heading: string): string {
-  return `${heading}, not written`;
-}
-
 export const WRITING_TASK_DESCRIPTION = 'Description';
 export const WRITING_TASK_SLOT = (property: string): string => `Slot: ${property}`;
 export const WRITING_CAPTION_TYPOGRAPHY = 'Typography';
