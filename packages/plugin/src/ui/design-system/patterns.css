@@ -1294,13 +1294,13 @@
 .sl-writing-count { margin-right: auto; font-size: var(--sl-font-size-caption); color: var(--sl-color-text-muted); }
 .sl-writing-tasks { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sl-space-4); }
 .sl-writing-task { border: 1px solid var(--sl-color-border); border-radius: var(--sl-radius-sm); }
-.sl-writing-task-head { display: flex; align-items: center; gap: var(--sl-space-6); width: 100%; padding: var(--sl-space-6) var(--sl-space-8); background: none; border: 0; color: inherit; text-align: left; font: inherit; cursor: pointer; }
+.sl-writing-task-head { display: grid; grid-template-columns: auto 1fr auto; align-items: center; column-gap: var(--sl-space-6); row-gap: var(--sl-space-2); width: 100%; padding: var(--sl-space-6) var(--sl-space-8); background: none; border: 0; color: inherit; text-align: left; font: inherit; cursor: pointer; }
 .sl-writing-task.is-done .sl-writing-task-head { cursor: default; color: var(--sl-color-text-muted); }
 .sl-writing-dot { width: 14px; height: 14px; border-radius: 50%; border: 1.5px solid var(--sl-color-text-muted); display: inline-flex; align-items: center; justify-content: center; flex: none; }
 .sl-writing-task.is-done .sl-writing-dot { border-color: transparent; color: var(--sl-color-success); }
 .sl-writing-title { display: inline-flex; align-items: center; gap: var(--sl-space-4); font-weight: var(--sl-font-weight-semibold); }
-.sl-writing-caption { margin-left: auto; font-size: var(--sl-font-size-caption); color: var(--sl-color-text-muted); text-align: right; }
-.sl-writing-chevron { flex: none; transition: transform 120ms; }
+.sl-writing-caption { grid-column: 2; grid-row: 2; font-size: var(--sl-font-size-caption); color: var(--sl-color-text-muted); }
+.sl-writing-chevron { grid-column: 3; grid-row: 1; flex: none; transition: transform 120ms; }
 .sl-writing-chevron.is-expanded { transform: rotate(180deg); }
 .sl-writing-task-body { display: grid; gap: var(--sl-space-6); padding: 0 var(--sl-space-8) var(--sl-space-8); }
 

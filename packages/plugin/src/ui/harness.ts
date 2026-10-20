@@ -535,9 +535,9 @@ const WRITING_DRAFTS = new Map<string, WritingDraft>(WRITING_FIXTURE
 
 if (view === 'writing') {
   const stateName = param('state', 'ready');
-  const slotGap = { kind: 'slot' as const, id: '10:20', propertyName: 'Content#1:2', name: 'Button / Content' };
-  // One closed task, so a done row shows: the slot, closed in doc-1.
-  const done = new Map<string, TaskRef>([[writingTaskKey(slotGap), { gap: slotGap, docId: 'doc-1' }]]);
+  // One closed task that is no longer an open gap, so a done row shows.
+  const overviewGap = { kind: 'section' as const, id: 'doc-1', sectionId: 'definition' as SectionId, name: 'Overview' };
+  const done = new Map<string, TaskRef>([[writingTaskKey(overviewGap), { gap: overviewGap, docId: 'doc-1' }]]);
   const none = { groups: [], openCount: 0, doneCount: 0 };
   if (stateName === 'loading') {
     renderWritingScreen(refs, { ...none, known: true, unknownReasons: [], loading: true });
