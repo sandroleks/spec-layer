@@ -646,9 +646,10 @@ not covered yet.
 
 1. **The rail entry and the first scan.** With the plugin freshly opened in a
    file with component docs, confirm **Writing** has its own entry in the
-   rail. Open it before the first scan has finished and confirm it says it
-   is still reading your docs rather than showing an empty list, then shows
-   the groups when the scan ends. Open Library and confirm it has no
+   rail. Open it before the first scan has finished and confirm it shows
+   loading rows under the line "Finding docs in this file" rather than an
+   empty list, then shows the groups when the scan ends. Open Library and
+   confirm it has no
    Needs writing filter and no writing line on its rows.
 2. **Groups and counts.** In a file with a component whose description is
    empty, a component with a slot property without a description, a doc
@@ -701,10 +702,15 @@ not covered yet.
     earlier version. Confirm it lists no section tasks until it is updated,
     while its description tasks still list.
 13. **Empty states.** In a file where every doc has been read and nothing is
-    open, confirm Writing says there is nothing to write. In a file where
-    some docs could not be read, or the first scan has not finished,
-    confirm it does not say nothing to write: it says none were found in
-    what could be read and names the reasons.
+    open, confirm Writing says "Nothing to write. Every description and
+    section is filled." In a file where some docs could not be read, or the
+    first scan has not finished, confirm it does not say that: it says
+    "None found in what could be read" and names each reason, from "Checks
+    are still running.", "Docs built before this version list their
+    sections after an Update." and "Some docs could not be read." In a file
+    with no docs, confirm it says "No docs yet. Create a component or
+    Foundation doc first." with **Document a component** and **Document
+    foundations**.
 14. **Foundation save keeps the component rows.** With several component docs
     checked, save a description on the Foundation group. The Foundation doc
     reads **Update available**; every component doc keeps its badge and its

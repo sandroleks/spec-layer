@@ -15,7 +15,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   version moves, and diagnostics sit outside `semanticContentHash`, so no
   artifact identity moves. The artifact bytes change for such a file, which
   `EXTRACTOR_VERSION` `'4'` already covers.
-- **A descriptions prompt, for the plugin's Needs writing list.** The
+- **A descriptions prompt, for the plugin's Writing screen.** The
   extractor builds a third `/v1/prose` contract that drafts one sentence for
   a blank variable, style, component or slot description from the facts it
   is given and nothing else, in batches of up to 60 per generation, and the
@@ -36,7 +36,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   canvas. A task is done only when the source no longer has the gap: the
   row gets a check and sinks below the open tasks, and a pass that finds
   the gap again brings it back. A Foundation save reads the Foundation and
-  the list again but keeps every component row's settled check.
+  the list again but keeps every component row's settled check. **Refresh**
+  reads the Foundation again too. While an Update, Copy for AI or Annotate
+  run is out, **Save**, **Clear draft**, **Draft all with AI** and **Open in
+  doc** wait; the fields stay typeable.
   **Draft all with AI** on a group fills its open fields as drafts to
   review, one generation per 60 fields, and each draft is marked as AI
   written until you edit it. Each field's brief carries only facts the
@@ -51,9 +54,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   mark yet. Component gaps are read in the same pass as the drift check;
   section gaps come from the doc link, which now records which sections
   were drawn as placeholders at the last build, so a doc built before this
-  version lists none until it is updated. The screen says there is Nothing
-  to write only once every doc's state is known; until then it says None
-  found in what could be read and gives the reasons. Nothing written or
+  version lists none until it is updated. The screen says "Nothing to
+  write" only once every doc's state is known; until then it says "None
+  found in what could be read" and gives the reasons. A file with no docs
+  says "No docs yet" and offers the Library's two starts. Nothing written or
   recorded here enters a hash or an artifact. Needs the descriptions prose
   contract in production on the proxy.
 
