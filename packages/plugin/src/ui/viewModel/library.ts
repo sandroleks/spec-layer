@@ -2,13 +2,9 @@ import {
   componentChangeGroups, foundationChangeGroups,
   type ChangeGroup, type FoundationUnitContent, type SpecHashProjection,
 } from '@spec-layer/extractor';
-import type { FoundationSpec } from '@spec-layer/extractor';
 import { resolveStatus, type DocBaseline } from '../../docLink';
-import { writeKey } from '../../descriptionWriter';
-import { foundationWritingGaps, gapSummary, sectionWritingGaps, type WritingGap } from '../../writingGaps';
 import type { FoundationIconKind } from '../../foundationIcon';
 import type { DocSourceIntent, LibraryEntry } from '../../messages';
-import { WRITING_UNKNOWN_OLDER, WRITING_UNKNOWN_RUNNING, WRITING_UNKNOWN_UNREAD } from '../writingCopy';
 
 /** Resolved apart from enumeration. `unavailable` means the check failed, never `inSync`. */
 export type LibraryDriftState =
@@ -27,24 +23,10 @@ export type LibraryRowStatus =
   | 'orphaned'
   | 'unavailable';
 
-export type LibraryFilter = 'all' | 'updates' | 'sync' | 'writing';
+export type LibraryFilter = 'all' | 'updates' | 'sync';
 
 export function isLibraryFilter(value: string): value is LibraryFilter {
-  return value === 'all' || value === 'updates' || value === 'sync' || value === 'writing';
-}
-
-export interface LibraryDraft { text: string; origin: 'person' | 'ai' }
-
-export interface LibraryWritingItem {
-  key: string;
-  gap: WritingGap;
-  draft: LibraryDraft | null;
-}
-
-/** The key a draft or a write is filed under. A section has no field to write. */
-export function writingItemKey(gap: WritingGap): string {
-  if (gap.kind === 'section') return `section:${gap.id}:${gap.sectionId ?? ''}`;
-  return writeKey({ kind: gap.kind, id: gap.id, ...(gap.propertyName ? { propertyName: gap.propertyName } : {}) });
+  return value === 'all' || value === 'updates' || value === 'sync';
 }
 
 /**
@@ -98,19 +80,12 @@ export interface LibraryRowModel {
   changeGroups: ChangeGroup[] | null;
   /** Set only in the `unavailable` state. */
   changeUnavailableReason: LibraryChangeUnavailableReason | null;
-  /** "3 descriptions and 1 section to write"; '' when none or unknown. */
-  writingSummary: string;
-  writingItems: LibraryWritingItem[];
-  /** Edited by hand, so section gaps are as of the last Update. */
-  writingStale: boolean;
-  drafting: boolean;
 }
 
 export interface LibraryCounts {
   all: number;
   updates: number;
   inSync: number;
-  writing: number;
 }
 
 export interface LibraryModel {
@@ -119,11 +94,6 @@ export interface LibraryModel {
   /** Registry order, before the filter. */
   allRows: LibraryRowModel[];
   rows: LibraryRowModel[];
-  /** Every row's writing state is known, so an empty Needs writing list may
-   *  say there is nothing to write. */
-  writingKnown: boolean;
-  /** What is not known yet, in display order; empty when `writingKnown`. */
-  writingUnknownReasons: string[];
 }
 
 export interface BuildLibraryModelOptions {
@@ -134,26 +104,6 @@ export interface BuildLibraryModelOptions {
   now?: number;
   /** This refresh pass's results; an expanded row missing here reads `pending`. */
   changes?: ReadonlyMap<string, LibraryChangeResult>;
-  /** Component gaps from main's `writingGaps` replies, by doc id. A doc missing here has none known. */
-  componentGaps?: ReadonlyMap<string, readonly WritingGap[]>;
-  /** The UI's current Foundation spec; null or absent lists no Foundation gaps. */
-  foundation?: FoundationSpec | null;
-  /** The Foundation dump has been asked for and has not arrived. */
-  foundationLoading?: boolean;
-  drafts?: ReadonlyMap<string, LibraryDraft>;
-  drafting?: ReadonlySet<string>;
-}
-
-/** A row's open gaps: main's component gaps plus the link's section gaps, or
- *  the Foundation gaps within the row's scope. Never a guess: no reply, no gaps. */
-export function rowWritingGaps(entry: LibraryEntry, options: BuildLibraryModelOptions): WritingGap[] {
-  if (entry.kind === 'foundation') {
-    return options.foundation ? foundationWritingGaps(options.foundation, entry.foundationScope) : [];
-  }
-  return [
-    ...(options.componentGaps?.get(entry.docId) ?? []),
-    ...sectionWritingGaps(entry.docId, entry.unwrittenSections, entry.sections ?? []),
-  ];
 }
 
 /** An invalid timestamp reads 'Unknown', never recent; a future one "just now" (clock skew). */
@@ -270,9 +220,7 @@ export function buildLibraryRow(
   const componentSourceAvailable = entry.kind === 'component'
     && entry.sourceExists
     && entry.sourceNodeId.length > 0;
-  const gaps = rowWritingGaps(entry, options);
-  const expanded = options.expandedDocId === entry.docId
-    && (status === 'updateAvailable' || gaps.length > 0);
+  const expanded = options.expandedDocId === entry.docId && status === 'updateAvailable';
   const change: LibraryChangeResult | null = expanded
     ? options.changes?.get(entry.docId) ?? { state: 'pending' }
     : null;
@@ -311,52 +259,7 @@ export function buildLibraryRow(
     changeState: change ? change.state : 'idle',
     changeGroups: change?.state === 'ready' ? change.groups : null,
     changeUnavailableReason: change?.state === 'unavailable' ? change.reason : null,
-    writingSummary: gapSummary(gaps),
-    writingItems: gaps.map((gap) => {
-      const key = writingItemKey(gap);
-      return { key, gap, draft: options.drafts?.get(key) ?? null };
-    }),
-    writingStale: entry.selfEdited && gaps.some((g) => g.kind === 'section'),
-    drafting: options.drafting?.has(entry.docId) ?? false,
   };
-}
-
-/**
- * Whether an empty Needs writing list is a fact, and if not, why. A component
- * row is known once its source check settled and main's gaps reply landed, and
- * its link records the sections drawn as placeholders; a Foundation row once
- * the Foundation dump is loaded. A row whose source is gone has no field left
- * to read, so only its link counts.
- */
-export function libraryWritingUnknownReasons(
-  entries: readonly LibraryEntry[],
-  options: BuildLibraryModelOptions = {},
-): string[] {
-  let running = false;
-  let older = false;
-  let unread = false;
-  const drift = options.drift ?? new Map<string, LibraryDriftState>();
-  for (const entry of entries) {
-    if (entry.kind === 'foundation') {
-      if (!options.foundation) {
-        if (options.foundationLoading) running = true;
-        else unread = true;
-      }
-      continue;
-    }
-    if (entry.unwrittenSections === undefined) older = true;
-    if (!entry.sourceExists) continue;
-    const state = libraryDriftForEntry(entry, drift);
-    if (state === 'pending') running = true;
-    else if (state === 'unavailable' || state === 'staleVersion') unread = true;
-    // Settled, but main's gaps read never landed (it threw, or is still on its way).
-    else if (!options.componentGaps?.has(entry.docId)) unread = true;
-  }
-  return [
-    ...(running ? [WRITING_UNKNOWN_RUNNING] : []),
-    ...(older ? [WRITING_UNKNOWN_OLDER] : []),
-    ...(unread ? [WRITING_UNKNOWN_UNREAD] : []),
-  ];
 }
 
 export function buildLibraryModel(
@@ -372,20 +275,17 @@ export function buildLibraryModel(
     all: allRows.length,
     updates: allRows.filter(needsAction).length,
     inSync: allRows.filter((row) => row.status === 'inSync').length,
-    writing: allRows.filter((row) => row.writingItems.length > 0).length,
   };
 
   const query = options.query?.trim().toLocaleLowerCase() ?? '';
   const rows = allRows.filter((row) => {
     if (filter === 'updates' && !needsAction(row)) return false;
     if (filter === 'sync' && row.status !== 'inSync') return false;
-    if (filter === 'writing' && row.writingItems.length === 0) return false;
     if (!query) return true;
     return `${row.label}\n${row.sourceLabel}`.toLocaleLowerCase().includes(query);
   });
 
-  const writingUnknownReasons = libraryWritingUnknownReasons(entries, options);
-  return { filter, counts, allRows, rows, writingKnown: writingUnknownReasons.length === 0, writingUnknownReasons };
+  return { filter, counts, allRows, rows };
 }
 
 /**

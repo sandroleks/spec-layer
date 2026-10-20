@@ -42,10 +42,6 @@ function row(
     changeGroups: null,
     changeState: 'idle',
     changeUnavailableReason: null,
-    writingSummary: '',
-    writingItems: [],
-    writingStale: false,
-    drafting: false,
     ...overrides,
   };
 }
@@ -85,7 +81,6 @@ function model(
       all: allRows.length,
       updates: allRows.filter((item) => item.status === 'updateAvailable').length,
       inSync: allRows.filter((item) => item.status === 'inSync').length,
-      writing: 0,
     },
     menuDocId: null,
     ...overrides,
@@ -205,7 +200,7 @@ describe('library screen presentation', () => {
         row('pending', 'pending'),
         row('unavailable', 'unavailable'),
       ],
-      counts: { all: 2, updates: 0, inSync: 0, writing: 0 },
+      counts: { all: 2, updates: 0, inSync: 0 },
     }));
     expect(markup).toContain('Checking…');
     expect(markup).toContain('Couldn’t check');
@@ -367,7 +362,7 @@ describe('library screen presentation', () => {
           changeGroups: [{ label: '<States>', items: [{ text: 'A & B' }] }],
         }),
       ],
-      counts: { all: 1, updates: 1, inSync: 0, writing: 0 },
+      counts: { all: 1, updates: 1, inSync: 0 },
     }));
     expect(markup).toContain('&lt;Button &quot;Primary&quot;&gt;');
     expect(markup).toContain('&lt;States&gt;');
@@ -434,7 +429,7 @@ describe('library screen presentation', () => {
     const markup = libraryScrollMarkup(model({
       allRows: [copyRow],
       rows: [copyRow],
-      counts: { all: 1, updates: 0, inSync: 1, writing: 0 },
+      counts: { all: 1, updates: 0, inSync: 1 },
       menuDocId: 'buttonCopy',
     }));
     expect(markup).toContain('data-library-action="copy"');
@@ -444,19 +439,19 @@ describe('library screen presentation', () => {
   it('offers Annotate in Dev Mode on a row that allows it', () => {
     const syncRow = row('buttonSync', 'inSync', { canAnnotate: true });
     const markup = libraryScrollMarkup(model({
-      allRows: [syncRow], rows: [syncRow], counts: { all: 1, updates: 0, inSync: 1, writing: 0 }, menuDocId: 'buttonSync',
+      allRows: [syncRow], rows: [syncRow], counts: { all: 1, updates: 0, inSync: 1 }, menuDocId: 'buttonSync',
     }));
     expect(markup).toContain('data-library-action="annotate"');
     expect(markup).toContain('Annotate in Dev Mode');
     const without = libraryScrollMarkup(model({
-      allRows: [row('b', 'inSync')], rows: [row('b', 'inSync')], counts: { all: 1, updates: 0, inSync: 1, writing: 0 }, menuDocId: 'b',
+      allRows: [row('b', 'inSync')], rows: [row('b', 'inSync')], counts: { all: 1, updates: 0, inSync: 1 }, menuDocId: 'b',
     }));
     expect(without).not.toContain('data-library-action="annotate"');
   });
 
   it('disables Annotate in Dev Mode and the Library actions while a run annotates', () => {
     const syncRow = row('buttonSync', 'inSync', { canAnnotate: true, canUpdate: true });
-    const base = { allRows: [syncRow], rows: [syncRow], counts: { all: 1, updates: 0, inSync: 1, writing: 0 }, menuDocId: 'buttonSync' };
+    const base = { allRows: [syncRow], rows: [syncRow], counts: { all: 1, updates: 0, inSync: 1 }, menuDocId: 'buttonSync' };
     expect(libraryScrollMarkup(model(base))).not.toContain('data-library-action="annotate" data-doc-id="buttonSync" disabled');
     const annotating = model({ ...base, annotating: true });
     expect(libraryScrollMarkup(annotating)).toContain('data-library-action="annotate" data-doc-id="buttonSync" disabled');
@@ -475,7 +470,7 @@ describe('library screen presentation', () => {
     const markup = libraryScrollMarkup(model({
       allRows: [foundationRow],
       rows: [foundationRow],
-      counts: { all: 1, updates: 0, inSync: 1, writing: 0 },
+      counts: { all: 1, updates: 0, inSync: 1 },
       menuDocId: 'foundSemantic',
     }));
     expect(markup).toContain('data-library-action="copy"');
@@ -495,7 +490,7 @@ describe('library screen presentation', () => {
     const markup = libraryScrollMarkup(model({
       allRows: [orphanedRow],
       rows: [orphanedRow],
-      counts: { all: 1, updates: 0, inSync: 0, writing: 0 },
+      counts: { all: 1, updates: 0, inSync: 0 },
       menuDocId: 'buttonMissing',
     }));
     expect(markup).not.toContain('data-library-action="copy"');
@@ -522,7 +517,7 @@ describe('library screen presentation', () => {
     const current = libraryFooterMarkup(model({
       allRows: [row('buttonPrimary', 'inSync')],
       rows: [row('buttonPrimary', 'inSync')],
-      counts: { all: 1, updates: 0, inSync: 1, writing: 0 },
+      counts: { all: 1, updates: 0, inSync: 1 },
     }));
     expect(current).toContain('Up to date');
     expect(current).toContain('data-library-update-all disabled');
@@ -561,23 +556,23 @@ describe('library screen presentation', () => {
     expect(libraryScrollMarkup(model({
       allRows: [],
       rows: [],
-      counts: { all: 0, updates: 0, inSync: 0, writing: 0 },
+      counts: { all: 0, updates: 0, inSync: 0 },
     }))).toContain('No docs yet');
     expect(libraryScrollMarkup(model({
       allRows: [row('buttonPrimary', 'inSync')],
       rows: [],
       filter: 'updates',
-      counts: { all: 1, updates: 0, inSync: 1, writing: 0 },
+      counts: { all: 1, updates: 0, inSync: 1 },
     }))).toContain('No updates waiting');
     expect(libraryScrollMarkup(model({
       allRows: [],
       rows: [],
-      counts: { all: 0, updates: 0, inSync: 0, writing: 0 },
+      counts: { all: 0, updates: 0, inSync: 0 },
     }))).toContain('<p>Docs you create in this file appear here, so you can see when their source changes and update them.</p>');
     const noDocs = libraryScrollMarkup(model({
       allRows: [],
       rows: [],
-      counts: { all: 0, updates: 0, inSync: 0, writing: 0 },
+      counts: { all: 0, updates: 0, inSync: 0 },
     }));
     // Three zero counts sort nothing; the two starts replace them.
     expect(noDocs).not.toContain('sl-library-filters');
@@ -586,7 +581,7 @@ describe('library screen presentation', () => {
     const noDocsFooter = libraryFooterMarkup(model({
       allRows: [],
       rows: [],
-      counts: { all: 0, updates: 0, inSync: 0, writing: 0 },
+      counts: { all: 0, updates: 0, inSync: 0 },
     }));
     // "Up to date" would claim a check that never ran. Publish still ships
     // the file's foundations, so it stays.
@@ -597,13 +592,13 @@ describe('library screen presentation', () => {
       allRows: [row('buttonPrimary', 'inSync')],
       rows: [],
       filter: 'updates',
-      counts: { all: 1, updates: 0, inSync: 1, writing: 0 },
+      counts: { all: 1, updates: 0, inSync: 1 },
     }))).toContain('<p>Docs appear here when their source changes or they need a rebuild.</p>');
     const noneInSync = libraryScrollMarkup(model({
       allRows: [row('buttonText', 'updateAvailable')],
       rows: [],
       filter: 'sync',
-      counts: { all: 1, updates: 1, inSync: 0, writing: 0 },
+      counts: { all: 1, updates: 1, inSync: 0 },
     }));
     expect(noneInSync).toContain('<strong>No docs in sync</strong>');
     expect(noneInSync).toContain('<p>Docs appear here when they match their source.</p>');
@@ -611,7 +606,7 @@ describe('library screen presentation', () => {
 
   it('says there is nothing to write only when every row is known', () => {
     const rows = [row('buttonPrimary', 'inSync')];
-    const counts = { all: 1, updates: 0, inSync: 1, writing: 0 };
+    const counts = { all: 1, updates: 0, inSync: 1 };
     const known = libraryScrollMarkup(model({
       allRows: rows, rows: [], filter: 'writing', counts, writingKnown: true, writingUnknownReasons: [],
     }));
@@ -633,7 +628,7 @@ describe('library screen presentation', () => {
 
   it('claims "Up to date" only when every check landed and no source is missing', () => {
     const inSync = [row('buttonPrimary', 'inSync')];
-    const one = { all: 1, updates: 0, inSync: 1, writing: 0 };
+    const one = { all: 1, updates: 0, inSync: 1 };
     expect(libraryFooterMarkup(model({ allRows: inSync, rows: inSync, counts: one })))
       .toContain('Up to date');
 
@@ -642,7 +637,7 @@ describe('library screen presentation', () => {
     expect(checking).not.toContain('Up to date');
 
     const withOrphan = [row('buttonPrimary', 'inSync'), row('buttonMissing', 'orphaned', { canOpenSource: false, canUpdate: false })];
-    const missing = libraryFooterMarkup(model({ allRows: withOrphan, rows: withOrphan, counts: { all: 2, updates: 0, inSync: 1, writing: 0 } }));
+    const missing = libraryFooterMarkup(model({ allRows: withOrphan, rows: withOrphan, counts: { all: 2, updates: 0, inSync: 1 } }));
     expect(missing).toContain('Nothing to update');
     expect(missing).not.toContain('Up to date');
     expect(missing).toContain('data-library-update-all disabled');
@@ -686,7 +681,7 @@ describe('component vs foundation row differentiation', () => {
     const markup = libraryScrollMarkup(model({
       allRows: [row('buttonPrimary', 'inSync'), foundationRow],
       rows: [row('buttonPrimary', 'inSync'), foundationRow],
-      counts: { all: 2, updates: 0, inSync: 2, writing: 0 },
+      counts: { all: 2, updates: 0, inSync: 2 },
     }));
     // Two distinct icon glyphs render — the point of the test is that they
     // differ, not which SVG paths represent them.
@@ -733,7 +728,7 @@ describe('component vs foundation row differentiation', () => {
     const libraryIcons = [...libraryScrollMarkup(model({
       allRows: rows,
       rows,
-      counts: { all: 2, updates: 0, inSync: 2, writing: 0 },
+      counts: { all: 2, updates: 0, inSync: 2 },
     })).matchAll(/<span class="sl-library-source-icon">(.*?)<\/span>/gs)]
       .map((m) => m[1]);
 
@@ -749,7 +744,7 @@ describe('component vs foundation row differentiation', () => {
     const markup = libraryScrollMarkup(model({
       allRows: [foundationRow],
       rows: [foundationRow],
-      counts: { all: 1, updates: 0, inSync: 1, writing: 0 },
+      counts: { all: 1, updates: 0, inSync: 1 },
     }));
     expect(markup).toContain('<strong>Foundation · colors</strong>');
     expect(markup).not.toContain('<strong>Foundations · Foundation · colors</strong>');
@@ -770,7 +765,7 @@ describe('component vs foundation row differentiation', () => {
     const markup = libraryScrollMarkup(model({
       allRows: [row('buttonText', 'inSync')],
       rows: [row('buttonText', 'inSync')],
-      counts: { all: 1, updates: 0, inSync: 1, writing: 0 },
+      counts: { all: 1, updates: 0, inSync: 1 },
     }));
     const identity = /<span class="sl-library-identity">(.*?)<\/span>/s.exec(markup)?.[1];
     expect(identity).toBe('<strong>buttonText</strong>');
@@ -1033,7 +1028,7 @@ describe('library footer publish action', () => {
 describe('library read failure', () => {
   it('says the read failed instead of claiming there are no docs', () => {
     const markup = libraryScrollMarkup(model({
-      allRows: [], rows: [], counts: { all: 0, updates: 0, inSync: 0, writing: 0 },
+      allRows: [], rows: [], counts: { all: 0, updates: 0, inSync: 0 },
       error: 'Could not read the registry.',
     }));
     expect(markup).toContain('Couldn’t read the docs in this file');
@@ -1061,7 +1056,7 @@ describe('library read failure', () => {
 
   it('escapes the message', () => {
     const markup = libraryScrollMarkup(model({
-      allRows: [], rows: [], counts: { all: 0, updates: 0, inSync: 0, writing: 0 },
+      allRows: [], rows: [], counts: { all: 0, updates: 0, inSync: 0 },
       error: '<img src=x onerror=alert(1)>',
     }));
     expect(markup).not.toContain('<img');
@@ -1083,7 +1078,7 @@ describe('library read failure', () => {
     const withoutUpdates = libraryFooterMarkup(model({
       allRows: noUpdatesRows,
       rows: noUpdatesRows,
-      counts: { all: 1, updates: 0, inSync: 1, writing: 0 },
+      counts: { all: 1, updates: 0, inSync: 1 },
       error: 'Could not read the registry.',
     }));
     expect(withoutUpdates).toContain('data-library-update-all disabled');
@@ -1106,7 +1101,7 @@ describe('library read incomplete', () => {
       readIncomplete: true,
       allRows: [row('buttonPrimary', 'inSync')],
       rows: [row('buttonPrimary', 'inSync')],
-      counts: { all: 1, updates: 0, inSync: 1, writing: 0 },
+      counts: { all: 1, updates: 0, inSync: 1 },
     }));
     expect(footer).not.toContain('Up to date');
     expect(footer).toContain('data-library-update-all disabled');
@@ -1120,7 +1115,7 @@ describe('library read incomplete', () => {
 
   it('says the scan stopped before finding any docs, not that there are none, with nothing read yet', () => {
     const markup = libraryScrollMarkup(model({
-      allRows: [], rows: [], counts: { all: 0, updates: 0, inSync: 0, writing: 0 },
+      allRows: [], rows: [], counts: { all: 0, updates: 0, inSync: 0 },
       readIncomplete: true,
     }));
     expect(markup).toContain('The scan stopped before it found any docs');
@@ -1133,7 +1128,7 @@ describe('library read incomplete', () => {
     // A read that both failed and never found a row: the explicit failure
     // is the more specific, more actionable thing to say.
     const markup = libraryScrollMarkup(model({
-      allRows: [], rows: [], counts: { all: 0, updates: 0, inSync: 0, writing: 0 },
+      allRows: [], rows: [], counts: { all: 0, updates: 0, inSync: 0 },
       error: 'Could not read the registry.',
       readIncomplete: true,
     }));
@@ -1146,7 +1141,7 @@ describe('library read incomplete', () => {
     const filteredSyncWithError = libraryScrollMarkup(model({
       allRows: updateRows,
       filter: 'sync',
-      counts: { all: 1, updates: 1, inSync: 0, writing: 0 },
+      counts: { all: 1, updates: 1, inSync: 0 },
       error: 'Could not read the registry.',
     }));
     expect(filteredSyncWithError).not.toContain('No docs in sync');
@@ -1156,7 +1151,7 @@ describe('library read incomplete', () => {
     const filteredUpdatesWithIncomplete = libraryScrollMarkup(model({
       allRows: syncRows,
       filter: 'updates',
-      counts: { all: 1, updates: 0, inSync: 1, writing: 0 },
+      counts: { all: 1, updates: 0, inSync: 1 },
       readIncomplete: true,
     }));
     expect(filteredUpdatesWithIncomplete).not.toContain('No updates waiting');
@@ -1166,7 +1161,7 @@ describe('library read incomplete', () => {
     const filteredSyncClean = libraryScrollMarkup(model({
       allRows: updateRows,
       filter: 'sync',
-      counts: { all: 1, updates: 1, inSync: 0, writing: 0 },
+      counts: { all: 1, updates: 1, inSync: 0 },
     }));
     expect(filteredSyncClean).toContain('No docs in sync');
   });
@@ -1215,7 +1210,7 @@ describe('writing', () => {
   ];
 
   it('draws the fourth filter with its count', () => {
-    const markup = libraryScrollMarkup(model({ counts: { all: 1, updates: 0, inSync: 1, writing: 1 } }));
+    const markup = libraryScrollMarkup(model({ counts: { all: 1, updates: 0, inSync: 1 } }));
     expect(markup).toContain('data-library-filter="writing"');
     expect(markup).toContain(WRITING_FILTER_LABEL);
   });

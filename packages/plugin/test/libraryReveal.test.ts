@@ -43,10 +43,6 @@ function row(
     changeGroups: null,
     changeState: 'idle',
     changeUnavailableReason: null,
-    writingSummary: '',
-    writingItems: [],
-    writingStale: false,
-    drafting: false,
     ...overrides,
   };
 }
@@ -67,7 +63,7 @@ function mount(revealedDocId: string | null): ShellRefs {
     allRows: ROWS,
     rows: ROWS,
     filter: 'all',
-    counts: { all: ROWS.length, updates: 0, inSync: 1, writing: 0 },
+    counts: { all: ROWS.length, updates: 0, inSync: 1 },
     menuDocId: null,
     revealedDocId,
   };

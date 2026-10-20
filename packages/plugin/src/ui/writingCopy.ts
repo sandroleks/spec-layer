@@ -42,3 +42,13 @@ export function draftFailedNote(items: number): string {
 export function sectionGapLine(heading: string): string {
   return `${heading}, not written`;
 }
+
+export const WRITING_TASK_DESCRIPTION = 'Description';
+export const WRITING_TASK_SLOT = (property: string): string => `Slot: ${property}`;
+export const WRITING_CAPTION_TYPOGRAPHY = 'Typography';
+export const WRITING_CAPTION_EFFECT = 'Effect';
+export const WRITING_REFRESH = 'Refresh';
+export const WRITING_REFRESHING = 'Refreshing…';
+export function writingCount(done: number, total: number): string {
+  return `${done} of ${total} done`;
+}

@@ -20,7 +20,6 @@ function row(docId: string, status: LibraryRowPresentation['status']): LibraryRo
     status, expanded: false, canOpenFrame: true, canOpenSource: true,
     canUpdate: status === 'updateAvailable', canDetach: true, canRemove: true, canCopy: false, canAnnotate: false,
     changeGroups: null, changeState: 'idle', changeUnavailableReason: null,
-    writingSummary: '', writingItems: [], writingStale: false, drafting: false,
   };
 }
 
@@ -32,7 +31,6 @@ function model(rows: LibraryRowPresentation[], overrides: Partial<LibraryScreenP
       all: rows.length,
       updates: rows.filter((r) => r.status === 'updateAvailable' || r.status === 'rebuildNeeded').length,
       inSync: rows.filter((r) => r.status === 'inSync').length,
-      writing: 0,
     },
     menuDocId: null, refreshing: pending, ...overrides,
   };

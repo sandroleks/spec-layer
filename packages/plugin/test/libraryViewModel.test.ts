@@ -1,8 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { LibraryEntry } from '../src/messages';
-import type { WritingGap } from '../src/writingGaps';
 import {
-  rowWritingGaps,
   buildLibraryModel,
   buildLibraryRow,
   formatLibraryAge,
@@ -358,7 +356,7 @@ describe('buildLibraryModel filters and counts', () => {
 
   it('counts only proven source updates and proven in-sync rows', () => {
     const model = buildLibraryModel(entries, { drift, now: NOW });
-    expect(model.counts).toEqual({ all: 6, updates: 2, inSync: 1, writing: 0 });
+    expect(model.counts).toEqual({ all: 6, updates: 2, inSync: 1 });
     expect(model.rows).toHaveLength(6);
   });
 
@@ -376,7 +374,7 @@ describe('buildLibraryModel filters and counts', () => {
     // "Updates": a user relying on the filter to find rows that need action
     // must not miss the ones that need a rebuild rather than a hash-based update.
     expect(updates.rows.map((row) => row.docId).sort()).toEqual(['stale', 'update']);
-    expect(updates.counts).toEqual({ all: 6, updates: 2, inSync: 1, writing: 0 });
+    expect(updates.counts).toEqual({ all: 6, updates: 2, inSync: 1 });
 
     const sync = buildLibraryModel(entries, {
       drift, filter: 'sync', now: NOW,
@@ -638,104 +636,5 @@ describe('isLibraryFilter', () => {
     expect(isLibraryFilter('updates')).toBe(true);
     expect(isLibraryFilter('sync')).toBe(true);
     expect(isLibraryFilter('drifted')).toBe(false);
-  });
-});
-
-const gap = (over: Partial<WritingGap>): WritingGap => ({ kind: 'variable', id: 'V1', name: 'color/x', ...over });
-
-describe('writing', () => {
-  it('merges component gaps from main with section gaps from the link', () => {
-    const e = entry({ unwrittenSections: ['whenToUse'], sections: ['definition', 'whenToUse'] });
-    const gaps = rowWritingGaps(e, { componentGaps: new Map([[e.docId, [gap({ kind: 'component', id: '10:20', name: 'Button' })]]]) });
-    expect(gaps.map((g) => g.kind)).toEqual(['component', 'section']);
-  });
-
-  it('reads Foundation gaps from the spec within the row scope', () => {
-    const e = entry({ kind: 'foundation', sourceNodeId: '', foundationScope: { target: 'textStyles' } });
-    const spec = { fileKey: 'f', collections: [], textStyles: [{ id: 'S1', name: 'Body', group: 'Body', description: '' }], effectStyles: [], extractedAt: '' } as never;
-    expect(rowWritingGaps(e, { foundation: spec }).map((g) => g.id)).toEqual(['S1']);
-    expect(rowWritingGaps(e, { foundation: null })).toEqual([]);
-  });
-
-  it('counts and filters rows that need writing', () => {
-    const a = entry({ docId: 'a' });
-    const b = entry({ docId: 'b', unwrittenSections: ['definition'], sections: ['definition'] });
-    const model = buildLibraryModel([a, b], { filter: 'writing', componentGaps: new Map([['a', []]]) });
-    expect(model.counts.writing).toBe(1);
-    expect(model.rows.map((r) => r.docId)).toEqual(['b']);
-    expect(model.rows[0]!.writingSummary).toBe('1 section to write');
-    expect(model.rows[0]!.writingItems[0]!.key).toBe('section:b:definition');
-  });
-
-  it('attaches drafts by item key and the drafting flag by doc', () => {
-    const a = entry({ docId: 'a' });
-    const model = buildLibraryModel([a], {
-      componentGaps: new Map([['a', [gap({ kind: 'component', id: '10:20', name: 'Button' })]]]),
-      drafts: new Map([['component:10:20', { text: 'Starts an action.', origin: 'ai' as const }]]),
-      drafting: new Set(['a']),
-    });
-    expect(model.rows[0]!.writingItems[0]!.draft).toEqual({ text: 'Starts an action.', origin: 'ai' });
-    expect(model.rows[0]!.drafting).toBe(true);
-  });
-
-  it('marks section gaps stale on an edited row', () => {
-    const e = entry({ selfEdited: true, unwrittenSections: ['definition'], sections: ['definition'] });
-    expect(buildLibraryModel([e], {}).rows[0]!.writingStale).toBe(true);
-  });
-
-  it('accepts the new filter id', () => {
-    expect(isLibraryFilter('writing')).toBe(true);
-  });
-});
-
-describe('writingKnown', () => {
-  const settled = (docId: string) => entry({ docId, unwrittenSections: [] });
-  const spec = { fileKey: 'f', collections: [], textStyles: [], effectStyles: [], extractedAt: '' } as never;
-  const known = (entries: LibraryEntry[], options: Parameters<typeof buildLibraryModel>[1]) => {
-    const model = buildLibraryModel(entries, options);
-    return { known: model.writingKnown, reasons: model.writingUnknownReasons };
-  };
-  const foundationRow = () => entry({ docId: 'f', kind: 'foundation', sourceNodeId: '', foundationScope: { target: 'textStyles' } });
-
-  it('is known when every component row settled with its gaps and the Foundation spec is loaded', () => {
-    expect(known([settled('a'), foundationRow()], {
-      drift: new Map([['a', 'inSync']]), componentGaps: new Map([['a', []]]), foundation: spec,
-    })).toEqual({ known: true, reasons: [] });
-  });
-
-  it('says checks are running while a row is pending or the Foundation dump is on its way', () => {
-    expect(known([settled('a')], { drift: new Map([['a', 'pending']]) }))
-      .toEqual({ known: false, reasons: ['Checks are still running.'] });
-    expect(known([foundationRow()], { foundationLoading: true }))
-      .toEqual({ known: false, reasons: ['Checks are still running.'] });
-  });
-
-  it('names a link that predates the section list', () => {
-    expect(known([entry({ docId: 'a' })], { drift: new Map([['a', 'inSync']]), componentGaps: new Map([['a', []]]) }))
-      .toEqual({ known: false, reasons: ['Docs built before this version list their sections after an Update.'] });
-  });
-
-  it('names a failed check, a rebuild, a missing gaps reply and an unloaded Foundation as not read', () => {
-    const unread = { known: false, reasons: ['Some docs could not be read.'] };
-    expect(known([settled('a')], { drift: new Map([['a', 'unavailable']]) })).toEqual(unread);
-    expect(known([settled('a')], { drift: new Map([['a', 'staleVersion']]) })).toEqual(unread);
-    expect(known([settled('a')], { drift: new Map([['a', 'drifted']]) })).toEqual(unread);
-    expect(known([foundationRow()], {})).toEqual(unread);
-  });
-
-  it('lists every reason once, in order', () => {
-    const entries = [entry({ docId: 'a' }), settled('b'), settled('c')];
-    expect(known(entries, {
-      drift: new Map<string, LibraryDriftState>([['a', 'inSync'], ['b', 'pending'], ['c', 'unavailable']]),
-      componentGaps: new Map([['a', []]]),
-    }).reasons).toEqual([
-      'Checks are still running.',
-      'Docs built before this version list their sections after an Update.',
-      'Some docs could not be read.',
-    ]);
-  });
-
-  it('reads only the link of a row whose source is gone', () => {
-    expect(known([entry({ docId: 'a', sourceExists: false, unwrittenSections: [] })], {})).toEqual({ known: true, reasons: [] });
   });
 });

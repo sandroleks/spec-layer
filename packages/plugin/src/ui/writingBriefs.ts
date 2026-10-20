@@ -8,7 +8,7 @@ import type {
   DescriptionBrief, FoundationMode, FoundationScope, FoundationSpec, FoundationVariable, SpecHashProjection,
 } from '@spec-layer/extractor';
 import { valueLabel, type WritingGap } from '../writingGaps';
-import { writingItemKey } from './viewModel/library';
+import { writingTaskKey } from './viewModel/writing';
 
 export interface BriefContext {
   /** The UI's current Foundation spec, or null before it loads. */
@@ -91,7 +91,7 @@ function preferredComponents(gap: WritingGap, projection: SpecHashProjection | u
 }
 
 export function briefFor(gap: WritingGap, context: BriefContext = {}): DescriptionBrief {
-  const key = writingItemKey(gap);
+  const key = writingTaskKey(gap);
   switch (gap.kind) {
     case 'variable': return variableBrief(key, gap, context);
     case 'style': return styleBrief(key, gap, context);

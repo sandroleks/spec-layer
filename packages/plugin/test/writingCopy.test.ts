@@ -7,6 +7,16 @@ describe('writing copy', () => {
       if (typeof value === 'string') expect(value, name).not.toMatch(/[—–]/);
     }
     expect(copy.writtenToast(2, [{ message: 'That variable is no longer in this file.' }])).not.toMatch(/[—–]/);
+    expect(copy.WRITING_TASK_SLOT('Content')).not.toMatch(/[—–]/);
+    expect(copy.writingCount(2, 5)).not.toMatch(/[—–]/);
+  });
+
+  it('words the task titles and the count', () => {
+    expect(copy.WRITING_TASK_DESCRIPTION).toBe('Description');
+    expect(copy.WRITING_TASK_SLOT('Content')).toBe('Slot: Content');
+    expect(copy.WRITING_CAPTION_TYPOGRAPHY).toBe('Typography');
+    expect(copy.WRITING_CAPTION_EFFECT).toBe('Effect');
+    expect(copy.writingCount(2, 5)).toBe('2 of 5 done');
   });
 
   it('reports what was written and names what was not', () => {
