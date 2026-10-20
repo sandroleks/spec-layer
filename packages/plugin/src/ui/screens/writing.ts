@@ -155,7 +155,10 @@ export function patchWritingGroup(refs: ShellRefs, model: WritingScreenPresentat
     const caret = active instanceof HTMLInputElement ? ([active.selectionStart, active.selectionEnd] as const) : null;
     element.outerHTML = writingGroupMarkup(group);
     if (key) {
-      const next = refs.scroll.querySelector<HTMLInputElement>(`[data-writing-key="${cssString(key)}"]`);
+      // Within this group: another doc may list the same field.
+      const next = refs.scroll.querySelector<HTMLInputElement>(
+        `[data-writing-group="${cssString(docId)}"] [data-writing-key="${cssString(key)}"]`,
+      );
       next?.focus({ preventScroll: true });
       if (next && caret && caret[0] !== null && caret[1] !== null) next.setSelectionRange(caret[0], caret[1]);
     }

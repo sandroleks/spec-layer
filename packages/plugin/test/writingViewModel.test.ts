@@ -5,7 +5,8 @@ import type { WritingGap } from '../src/writingGaps';
 import { writeKey } from '../src/descriptionWriter';
 import { writingCount } from '../src/ui/writingCopy';
 import {
-  buildWritingModel, closedTasks, knownDocIds, openTasks, type TaskRef, taskTitle, taskCaption, writingTaskKey,
+  buildWritingModel, closedTasks, docTaskKey, openTasks, type TaskRef, taskTitle, taskCaption, writingTaskKey,
+  writingTaskKnown,
 } from '../src/ui/viewModel/writing';
 
 const NOW = Date.UTC(2026, 9, 20, 12);
@@ -50,7 +51,7 @@ describe('writingTaskKey and writingCount', () => {
 describe('buildWritingModel', () => {
   it('groups open tasks per doc with a count, open first then done', () => {
     const e = entry({ unwrittenSections: ['whenToUse'] });
-    const done = new Map<string, TaskRef>([['component:10:20', { gap: gap({}), docId: 'doc-1' }]]);
+    const done = new Map<string, TaskRef>([[docTaskKey('doc-1', 'component:10:20'), { gap: gap({}), docId: 'doc-1' }]]);
     const model = buildWritingModel([e], {
       drift: new Map([['doc-1', 'inSync']]),
       componentGaps: new Map([['doc-1', [gap({ kind: 'slot', propertyName: 'Content#1:2', name: 'Button / Content' })]]]),
@@ -83,7 +84,7 @@ describe('buildWritingModel', () => {
       drift: new Map([['doc-1', 'inSync']]),
       componentGaps: new Map([['doc-1', [gap({})]]]),
       drafts: new Map([['component:10:20', { text: 'Starts an action.', origin: 'ai' as const }]]),
-      expandedKey: 'component:10:20',
+      expandedKey: docTaskKey('doc-1', 'component:10:20'),
     });
     const task = model.groups[0].tasks[0];
     expect(task.expanded).toBe(true);
@@ -106,7 +107,7 @@ describe('done tasks', () => {
   const spec = { fileKey: 'f', collections: [], textStyles: [], effectStyles: [], extractedAt: '' } as never;
 
   it('lists a done variable under its own doc only, not under another Foundation doc', () => {
-    const done = new Map<string, TaskRef>([['variable:V1', { gap: gap({ kind: 'variable', id: 'V1', name: 'color/surface' }), docId: 'a' }]]);
+    const done = new Map<string, TaskRef>([[docTaskKey('a', 'variable:V1'), { gap: gap({ kind: 'variable', id: 'V1', name: 'color/surface' }), docId: 'a' }]]);
     const model = buildWritingModel([foundation('a', 'textStyles'), foundation('b', 'effectStyles')], { foundation: spec, done });
     expect(model.groups.map((g) => g.docId)).toEqual(['a']);
     expect(model.groups[0].countLabel).toBe('1 of 1 done');
@@ -116,9 +117,9 @@ describe('done tasks', () => {
     const g = gap({});
     const model = buildWritingModel([entry()], {
       drift: new Map([['doc-1', 'inSync']]), componentGaps: new Map([['doc-1', []]]),
-      done: new Map([['component:10:20', { gap: g, docId: 'doc-1' }]]),
+      done: new Map([[docTaskKey('doc-1', 'component:10:20'), { gap: g, docId: 'doc-1' }]]),
       drafts: new Map([['component:10:20', { text: 'x', origin: 'person' as const }]]),
-      expandedKey: 'component:10:20',
+      expandedKey: docTaskKey('doc-1', 'component:10:20'),
     });
     const t = model.groups[0].tasks[0];
     expect(t.done).toBe(true);
@@ -129,51 +130,132 @@ describe('done tasks', () => {
 
 describe('closedTasks and openTasks', () => {
   const ref = (id: string, docId: string): TaskRef => ({ gap: gap({ id }), docId });
-  it('reports keys that were open and are gone while their doc is known', () => {
+  const docs = (...ids: string[]) => (r: TaskRef): boolean => ids.includes(r.docId);
+  it('reports keys that were open and are gone while their state is known', () => {
     const before = new Map([['a', ref('a', 'doc-1')], ['b', ref('b', 'doc-1')]]);
     const after = new Map([['b', ref('b', 'doc-1')]]);
-    expect([...closedTasks(before, after, new Set(['doc-1'])).keys()]).toEqual(['a']);
+    expect([...closedTasks(before, after, docs('doc-1')).keys()]).toEqual(['a']);
   });
-  it('ignores a key whose doc is not known now', () => {
+  it('ignores a key whose state is not known now', () => {
     const before = new Map([['a', ref('a', 'doc-1')], ['s', ref('s', 'doc-2')]]);
-    expect(closedTasks(before, new Map(), new Set()).size).toBe(0);
-    expect([...closedTasks(before, new Map(), new Set(['doc-2'])).keys()]).toEqual(['s']);
+    expect(closedTasks(before, new Map(), docs()).size).toBe(0);
+    expect([...closedTasks(before, new Map(), docs('doc-2')).keys()]).toEqual(['s']);
   });
   it('does not report a section key whose doc was removed', () => {
     const before = new Map([['section:gone:definition', ref('gone', 'gone')]]);
-    expect(closedTasks(before, new Map(), new Set(['doc-1'])).size).toBe(0);
+    expect(closedTasks(before, new Map(), writingTaskKnown([entry()], {})).size).toBe(0);
   });
-  it('openTasks keys every open task with its doc', () => {
+  it('openTasks keys every open task by doc and key', () => {
     const model = buildWritingModel([entry()], { drift: new Map([['doc-1', 'inSync']]), componentGaps: new Map([['doc-1', [gap({})]]]) });
     const open = openTasks(model);
-    expect([...open.keys()]).toEqual(['component:10:20']);
-    expect(open.get('component:10:20')?.docId).toBe('doc-1');
+    expect([...open.keys()]).toEqual([docTaskKey('doc-1', 'component:10:20')]);
+    expect(open.get(docTaskKey('doc-1', 'component:10:20'))?.docId).toBe('doc-1');
+  });
+  it('never builds a key with a NUL', () => {
+    expect(docTaskKey('doc-1', 'component:10:20')).not.toContain('\u0000');
   });
 });
 
-describe('knownDocIds', () => {
+describe('two docs listing one gap', () => {
+  // A text styles doc and a group doc over the same styles list the same style.
+  const spec = {
+    fileKey: 'f', extractedAt: '', collections: [], effectStyles: [],
+    textStyles: [{ id: 'S1', name: 'Body/Medium', group: 'Body', description: '' }],
+  } as never;
+  const doc = (docId: string, group?: string): LibraryEntry => entry({
+    docId, kind: 'foundation', label: docId, sourceNodeId: '', currentContentHash: 'h',
+    foundationScope: { target: 'textStyles', ...(group ? { group } : {}) } as never,
+  });
+  const entries = [doc('whole'), doc('body', 'Body')];
+  const key = 'style:S1';
+
+  it('lists it under both docs', () => {
+    const model = buildWritingModel(entries, { foundation: spec });
+    expect(model.groups.map((g) => [g.docId, g.tasks.map((t) => t.key)])).toEqual([['whole', [key]], ['body', [key]]]);
+    expect([...openTasks(model).keys()]).toEqual([docTaskKey('whole', key), docTaskKey('body', key)]);
+  });
+
+  it('closing it under one doc leaves it open under the other', () => {
+    // Two component docs for one component: one re-checked and no longer lists
+    // the description, the other's check is still out.
+    const twin = (docId: string) => entry({ docId, label: docId });
+    const shared = gap({});
+    const sharedKey = writingTaskKey(shared);
+    const twins = [twin('one'), twin('two')];
+    const before = openTasks(buildWritingModel(twins, {
+      drift: new Map([['one', 'inSync'], ['two', 'inSync']]),
+      componentGaps: new Map([['one', [shared]], ['two', [shared]]]),
+    }));
+    const options = {
+      drift: new Map<string, LibraryDriftState>([['one', 'inSync'], ['two', 'pending']]),
+      componentGaps: new Map([['one', []]]),
+    };
+    const closed = closedTasks(before, openTasks(buildWritingModel(twins, options)), writingTaskKnown(twins, options));
+    expect([...closed.keys()]).toEqual([docTaskKey('one', sharedKey)]);
+    // The second doc's check lands and still lists it: done under one, open under the other.
+    const settled = buildWritingModel(twins, {
+      drift: new Map([['one', 'inSync'], ['two', 'inSync']]),
+      componentGaps: new Map([['one', []], ['two', [shared]]]),
+      done: closed,
+    });
+    expect(settled.groups.map((g) => [g.docId, g.tasks.map((t) => t.done), g.countLabel])).toEqual([
+      ['one', [true], '1 of 1 done'],
+      ['two', [false], '0 of 1 done'],
+    ]);
+  });
+
+  it('expands it under one doc only', () => {
+    const model = buildWritingModel(entries, { foundation: spec, expandedKey: docTaskKey('body', key) });
+    expect(model.groups.map((g) => [g.docId, g.tasks[0]?.expanded])).toEqual([['whole', false], ['body', true]]);
+  });
+});
+
+describe('writingTaskKnown', () => {
   const spec = { fileKey: 'f', collections: [], textStyles: [], effectStyles: [], extractedAt: '' } as never;
   const ok = { drift: new Map<string, LibraryDriftState>([['a', 'inSync']]), componentGaps: new Map([['a', []]]) };
   const a = (over: EntryOver = {}) => entry({ docId: 'a', ...over });
-  it('counts a settled component doc with its gaps reply and section list', () => {
-    expect([...knownDocIds([a()], ok)]).toEqual(['a']);
-    expect(knownDocIds([a()], { ...ok, drift: new Map([['a', 'drifted']]) }).has('a')).toBe(true);
+  const field: TaskRef = { gap: gap({}), docId: 'a' };
+  const section: TaskRef = { gap: gap({ kind: 'section', id: 'a', sectionId: 'whenToUse', name: 'When to use' }), docId: 'a' };
+  it('knows a settled component doc with its gaps reply and section list', () => {
+    expect(writingTaskKnown([a()], ok)(field)).toBe(true);
+    expect(writingTaskKnown([a()], ok)(section)).toBe(true);
+    expect(writingTaskKnown([a()], { ...ok, drift: new Map([['a', 'drifted']]) })(field)).toBe(true);
   });
-  it('leaves out a pending, unavailable or rebuild-needed check', () => {
+  it('does not know a field under a pending, unavailable or rebuild-needed check', () => {
     for (const state of ['pending', 'unavailable', 'staleVersion'] as const) {
-      expect(knownDocIds([a()], { ...ok, drift: new Map([['a', state]]) }).size).toBe(0);
+      expect(writingTaskKnown([a()], { ...ok, drift: new Map([['a', state]]) })(field)).toBe(false);
     }
   });
-  it('leaves out a doc with no gaps entry, no section list, or no source', () => {
-    expect(knownDocIds([a()], { drift: ok.drift }).size).toBe(0);
-    expect(knownDocIds([a({ unwrittenSections: undefined })], ok).size).toBe(0);
-    expect(knownDocIds([a({ sourceExists: false })], ok).size).toBe(0);
+  it('does not know a field with no gaps entry or no source', () => {
+    expect(writingTaskKnown([a()], { drift: ok.drift })(field)).toBe(false);
+    expect(writingTaskKnown([a({ sourceExists: false })], ok)(field)).toBe(false);
   });
-  it('counts a Foundation doc only once the spec is set', () => {
+  it('knows a field of a doc built before the section list, but not its sections', () => {
+    const older = writingTaskKnown([a({ unwrittenSections: undefined })], ok);
+    expect(older(field)).toBe(true);
+    expect(older(section)).toBe(false);
+  });
+  it('knows sections from the link alone, while the field check runs', () => {
+    const running = writingTaskKnown([a()], { drift: new Map([['a', 'pending']]) });
+    expect(running(section)).toBe(true);
+    expect(running(field)).toBe(false);
+  });
+  it('knows a Foundation task only once the spec is set', () => {
     const f = entry({ docId: 'f', kind: 'foundation', sourceNodeId: '', foundationScope: { target: 'textStyles' } });
-    expect(knownDocIds([f], {}).size).toBe(0);
-    expect(knownDocIds([f], { foundationLoading: true }).size).toBe(0);
-    expect(knownDocIds([f], { foundation: spec }).has('f')).toBe(true);
+    const style: TaskRef = { gap: gap({ kind: 'style', id: 'S1', name: 'Body' }), docId: 'f' };
+    expect(writingTaskKnown([f], {})(style)).toBe(false);
+    expect(writingTaskKnown([f], { foundationLoading: true })(style)).toBe(false);
+    expect(writingTaskKnown([f], { foundation: spec })(style)).toBe(true);
+  });
+  it('knows nothing of a doc that is gone', () => {
+    expect(writingTaskKnown([], ok)(field)).toBe(false);
+  });
+  it('closes a saved description of an older doc once its re-check no longer lists it', () => {
+    const older = a({ unwrittenSections: undefined });
+    const before = openTasks(buildWritingModel([older], { ...ok, componentGaps: new Map([['a', [gap({})]]]) }));
+    const after = buildWritingModel([older], ok);
+    const closed = closedTasks(before, openTasks(after), writingTaskKnown([older], ok));
+    expect([...closed.keys()]).toEqual([docTaskKey('a', 'component:10:20')]);
   });
 });
 

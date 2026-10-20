@@ -61,7 +61,7 @@ import {
   type LibraryFilter,
 } from './viewModel/library';
 import { renderWritingScreen } from './screens/writing';
-import { buildWritingModel, writingTaskKey, type TaskRef, type WritingDraft } from './viewModel/writing';
+import { buildWritingModel, docTaskKey, writingTaskKey, type TaskRef, type WritingDraft } from './viewModel/writing';
 import {
   WRITING_UNKNOWN_OLDER,
   WRITING_UNKNOWN_RUNNING,
@@ -545,7 +545,7 @@ if (view === 'writing') {
   const stateName = param('state', 'ready');
   // One closed task that is no longer an open gap, so a done row shows.
   const overviewGap = { kind: 'section' as const, id: 'doc-1', sectionId: 'definition' as SectionId, name: 'Overview' };
-  const done = new Map<string, TaskRef>([[writingTaskKey(overviewGap), { gap: overviewGap, docId: 'doc-1' }]]);
+  const done = new Map<string, TaskRef>([[docTaskKey('doc-1', writingTaskKey(overviewGap)), { gap: overviewGap, docId: 'doc-1' }]]);
   const none = { groups: [] };
   if (stateName === 'loading') {
     renderWritingScreen(refs, { ...none, known: true, unknownReasons: [], loading: true });
@@ -565,7 +565,7 @@ if (view === 'writing') {
       foundation: WRITING_FOUNDATION,
       drafts: WRITING_DRAFTS,
       done,
-      expandedKey: writingTaskKey({ kind: 'component', id: '10:20', name: 'Button' }),
+      expandedKey: docTaskKey('doc-1', writingTaskKey({ kind: 'component', id: '10:20', name: 'Button' })),
     });
     renderWritingScreen(refs, { ...model, loading: false });
   }

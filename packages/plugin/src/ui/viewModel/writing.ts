@@ -19,12 +19,14 @@ export interface BuildWritingModelOptions {
   componentGaps?: ReadonlyMap<string, readonly WritingGap[]>;
   /** The UI's current Foundation spec; null or absent lists no Foundation gaps. */
   foundation?: FoundationSpec | null;
-  /** The Foundation dump has been asked for and has not arrived. */
+  /** The Foundation dump has been asked for and has not arrived, so the spec is not current. */
   foundationLoading?: boolean;
+  /** By task key: one field's draft serves every doc that lists it. */
   drafts?: ReadonlyMap<string, WritingDraft>;
   drafting?: ReadonlySet<string>;
-  /** Task key -> the gap as it was when it closed and the doc it closed in, in completion order. */
+  /** docTaskKey -> the gap as it was when it closed and the doc it closed in, in completion order. */
   done?: ReadonlyMap<string, TaskRef>;
+  /** The docTaskKey of the one expanded task. */
   expandedKey?: string | null;
 }
 
@@ -62,6 +64,15 @@ export function writingTaskKey(gap: WritingGap): string {
   return writeKey({ kind: gap.kind, id: gap.id, ...(gap.propertyName ? { propertyName: gap.propertyName } : {}) });
 }
 
+/**
+ * A task as one doc lists it. Two docs can list the same gap (a collection doc
+ * and a group doc over it, two docs for one component), and each closes and
+ * expands on its own. A newline never occurs in a doc id, so the pair is unique.
+ */
+export function docTaskKey(docId: string, key: string): string {
+  return `${docId}\n${key}`;
+}
+
 /** A row's open gaps: main's component gaps plus the link's section gaps, or
  *  the Foundation gaps within the row's scope. Never a guess: no reply, no gaps. */
 export function rowWritingGaps(entry: LibraryEntry, options: BuildWritingModelOptions): WritingGap[] {
@@ -74,13 +85,22 @@ export function rowWritingGaps(entry: LibraryEntry, options: BuildWritingModelOp
   ];
 }
 
-interface DocReadState { running: boolean; older: boolean; unread: boolean; known: boolean }
+interface DocReadState {
+  running: boolean;
+  older: boolean;
+  unread: boolean;
+  /** Its description, slot, variable and style gaps are read and current. */
+  fieldsKnown: boolean;
+  /** Its link records which sections are still placeholders. */
+  sectionsKnown: boolean;
+}
 
-/** One doc's writing state: what is still unknown about it, and whether it is known now. */
+/** One doc's writing state: what is still unknown about it, and what is known now. */
 function docReadState(entry: LibraryEntry, options: BuildWritingModelOptions): DocReadState {
   if (entry.kind === 'foundation') {
-    if (options.foundation) return { running: false, older: false, unread: false, known: true };
-    return { running: !!options.foundationLoading, older: false, unread: !options.foundationLoading, known: false };
+    if (options.foundation) return { running: false, older: false, unread: false, fieldsKnown: true, sectionsKnown: true };
+    const loading = !!options.foundationLoading;
+    return { running: loading, older: false, unread: !loading, fieldsKnown: false, sectionsKnown: false };
   }
   let running = false;
   let unread = false;
@@ -92,7 +112,7 @@ function docReadState(entry: LibraryEntry, options: BuildWritingModelOptions): D
     // Settled, but main's gaps read never landed (it threw, or is still on its way).
     else if (!options.componentGaps?.has(entry.docId)) unread = true;
   }
-  return { running, older, unread, known: entry.sourceExists && !running && !older && !unread };
+  return { running, older, unread, fieldsKnown: entry.sourceExists && !running && !unread, sectionsKnown: !older };
 }
 
 /**
@@ -122,9 +142,22 @@ export function writingUnknownReasons(
   ];
 }
 
-/** The docs whose writing state is known right now. A task is only closed in one of these. */
-export function knownDocIds(entries: readonly LibraryEntry[], options: BuildWritingModelOptions = {}): Set<string> {
-  return new Set(entries.filter((entry) => docReadState(entry, options).known).map((entry) => entry.docId));
+/**
+ * Whether a task's state is known right now, so its absence means it closed.
+ * Decided per gap kind: a field task is known once its doc's check settled and
+ * the gaps reply landed (a Foundation's once the spec is loaded), a section
+ * task once the link records its sections. A doc built before the section list
+ * still closes its description when the re-check no longer lists it.
+ */
+export function writingTaskKnown(
+  entries: readonly LibraryEntry[], options: BuildWritingModelOptions = {},
+): (ref: TaskRef) => boolean {
+  const states = new Map(entries.map((entry) => [entry.docId, docReadState(entry, options)] as const));
+  return (ref) => {
+    const state = states.get(ref.docId);
+    if (!state) return false;
+    return ref.gap.kind === 'section' ? state.sectionsKnown : state.fieldsKnown;
+  };
 }
 
 export function taskTitle(gap: WritingGap): string {
@@ -141,13 +174,13 @@ export function taskCaption(gap: WritingGap): string | null {
   return null;
 }
 
-function task(gap: WritingGap, done: boolean, options: BuildWritingModelOptions): WritingTask {
+function task(gap: WritingGap, docId: string, done: boolean, options: BuildWritingModelOptions): WritingTask {
   const key = writingTaskKey(gap);
   return {
     key, gap, title: taskTitle(gap), caption: taskCaption(gap),
     draft: done ? null : options.drafts?.get(key) ?? null,
     done,
-    expanded: !done && options.expandedKey === key,
+    expanded: !done && options.expandedKey === docTaskKey(docId, key),
   };
 }
 
@@ -155,10 +188,13 @@ export function buildWritingModel(entries: readonly LibraryEntry[], options: Bui
   const groups: WritingGroup[] = [];
   for (const entry of entries) {
     const open = rowWritingGaps(entry, options);
-    const openKeys = new Set(open.map(writingTaskKey));
-    const done = [...(options.done ?? [])].filter(([key, ref]) => !openKeys.has(key) && ref.docId === entry.docId);
+    const openKeys = new Set(open.map((gap) => docTaskKey(entry.docId, writingTaskKey(gap))));
+    const done = [...(options.done ?? [])].filter(([key, ref]) => ref.docId === entry.docId && !openKeys.has(key));
     if (open.length === 0 && done.length === 0) continue;
-    const tasks = [...open.map((gap) => task(gap, false, options)), ...done.map(([, ref]) => task(ref.gap, true, options))];
+    const tasks = [
+      ...open.map((gap) => task(gap, entry.docId, false, options)),
+      ...done.map(([, ref]) => task(ref.gap, entry.docId, true, options)),
+    ];
     groups.push({
       docId: entry.docId, label: entry.label,
       tasks,
@@ -172,20 +208,23 @@ export function buildWritingModel(entries: readonly LibraryEntry[], options: Bui
   return { groups, known: unknownReasons.length === 0, unknownReasons };
 }
 
+/** Every open task, by docTaskKey, with its doc. */
 export function openTasks(model: WritingModel): Map<string, TaskRef> {
   const out = new Map<string, TaskRef>();
-  for (const group of model.groups) for (const t of group.tasks) if (!t.done) out.set(t.key, { gap: t.gap, docId: group.docId });
+  for (const group of model.groups) {
+    for (const t of group.tasks) if (!t.done) out.set(docTaskKey(group.docId, t.key), { gap: t.gap, docId: group.docId });
+  }
   return out;
 }
 
-/** Keys open in `previous` and absent from `current` whose doc is in `known` now: they closed.
- *  A doc whose state is not known now (checking, unread, removed) closes nothing. */
+/** Tasks open in `previous` and absent from `current` whose state is known now: they closed.
+ *  A task whose state is not known now (checking, unread, removed) closes nothing. */
 export function closedTasks(
-  previous: ReadonlyMap<string, TaskRef>, current: ReadonlyMap<string, TaskRef>, known: ReadonlySet<string>,
+  previous: ReadonlyMap<string, TaskRef>, current: ReadonlyMap<string, TaskRef>, isKnown: (ref: TaskRef) => boolean,
 ): Map<string, TaskRef> {
   const out = new Map<string, TaskRef>();
   for (const [key, ref] of previous) {
-    if (!current.has(key) && known.has(ref.docId)) out.set(key, ref);
+    if (!current.has(key) && isKnown(ref)) out.set(key, ref);
   }
   return out;
 }

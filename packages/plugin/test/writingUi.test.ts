@@ -205,6 +205,44 @@ describe('Writing view', () => {
     expect(document.querySelector(`[data-writing-key="${GAP_KEY}"]`)).toBeNull();
   });
 
+  it('closes a saved description of a doc built before the section list', async () => {
+    // A 7.0.0 link records no section list.
+    const { unwrittenSections: _omitted, ...older } = componentEntry('doc-1');
+    const passId = await openWriting([older]);
+    settle(passId, [gap]);
+    click(`[data-writing-toggle="${GAP_KEY}"]`);
+    type(`[data-writing-key="${GAP_KEY}"]`, 'Starts an action.');
+    click(`[data-writing-save="${GAP_KEY}"]`);
+    dispatch({ type: 'descriptionsWritten', docId: 'doc-1', written: [GAP_KEY], failed: [] });
+    settle(lastOutgoing('requestDrift')['passId'] as string, []);
+    expect(taskKeys()).toEqual([GAP_KEY]);
+    expect(doneKeys()).toEqual([GAP_KEY]);
+    expect(groupCount()).toBe('1 of 1 done');
+  });
+
+  it('keeps a gap two docs share apart: expanding and closing it under one leaves the other', async () => {
+    const passId = await openWriting([componentEntry('doc-1'), componentEntry('doc-2', { label: 'Button copy' })]);
+    settle(passId, [gap], 'doc-1');
+    settle(passId, [gap], 'doc-2');
+    expect(taskKeys('doc-1')).toEqual([GAP_KEY]);
+    expect(taskKeys('doc-2')).toEqual([GAP_KEY]);
+    click(`[data-writing-group="doc-1"] [data-writing-toggle="${GAP_KEY}"]`);
+    expect(document.querySelector(`[data-writing-group="doc-1"] [data-writing-key="${GAP_KEY}"]`)).not.toBeNull();
+    expect(document.querySelector(`[data-writing-group="doc-2"] [data-writing-key="${GAP_KEY}"]`)).toBeNull();
+    type(`[data-writing-group="doc-1"] [data-writing-key="${GAP_KEY}"]`, 'Starts an action.');
+    click(`[data-writing-group="doc-1"] [data-writing-save="${GAP_KEY}"]`);
+    expect(lastOutgoing('writeDescriptions')['docId']).toBe('doc-1');
+    dispatch({ type: 'descriptionsWritten', docId: 'doc-1', written: [GAP_KEY], failed: [] });
+    const next = lastOutgoing('requestDrift');
+    expect(next['docId']).toBe('doc-1');
+    settle(next['passId'] as string, [], 'doc-1');
+    expect(doneKeys('doc-1')).toEqual([GAP_KEY]);
+    expect(groupCount('doc-1')).toBe('1 of 1 done');
+    expect(doneKeys('doc-2')).toEqual([]);
+    expect(taskKeys('doc-2')).toEqual([GAP_KEY]);
+    expect(groupCount('doc-2')).toBe('0 of 1 done');
+  });
+
   it('brings a done task back as open when a later pass lists it again', async () => {
     const passId = await openWriting();
     settle(passId, [gap, slot]);

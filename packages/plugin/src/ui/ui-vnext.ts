@@ -89,8 +89,9 @@ import {
 import {
   buildWritingModel,
   closedTasks,
-  knownDocIds,
+  docTaskKey,
   openTasks,
+  writingTaskKnown,
   type BuildWritingModelOptions,
   type TaskRef,
   type WritingDraft,
@@ -293,11 +294,11 @@ const libraryDrafts = new Map<string, WritingDraft>();
 /** Doc ids with a Draft all call out. */
 const libraryDrafting = new Set<string>();
 let draftsNoteShown = false;
-/** The one Writing task whose field shows, or null. */
+/** The docTaskKey of the one Writing task whose field shows, or null. */
 let writingExpandedKey: string | null = null;
-/** Tasks that closed this session: key -> the gap and the doc it sat under. Completion order. */
+/** Tasks that closed this session: docTaskKey -> the gap and the doc it sat under. Completion order. */
 const writingDone = new Map<string, TaskRef>();
-/** Every open task after the last model build, with its doc, to tell a closed task from one that was never listed. */
+/** Every open task after the last model build, by docTaskKey, to tell a closed task from one that was never listed. */
 let writingOpenBefore = new Map<string, TaskRef>();
 const libraryBaseline = new Map<string, string>();
 /** The current drift pass; see libraryPass.ts. */
@@ -740,21 +741,21 @@ function writingPresentation(): WritingScreenPresentation {
 
 /**
  * After any reply that can change the open set: a task that was open and is
- * gone, while its doc's state is known right now, closed; a task back in the
- * open set is open again. A doc whose state is unknown (check pending or
- * failed, gaps reply missing, Foundation reloading) changes nothing, so a
- * cleared map never reads as a finished list.
+ * gone, while its state is known right now, closed; a task back in the open
+ * set is open again. A task whose state is unknown (check pending or failed,
+ * gaps reply missing, Foundation reloading, sections not recorded) changes
+ * nothing, so a cleared map never reads as a finished list.
  */
 function syncWritingDone(): void {
   const model = currentWritingModel();
   const open = openTasks(model);
-  const known = knownDocIds(libraryEntries, writingOptions());
+  const known = writingTaskKnown(libraryEntries, writingOptions());
   for (const [key, ref] of closedTasks(writingOpenBefore, open, known)) writingDone.set(key, ref);
   for (const key of open.keys()) writingDone.delete(key);
   const alive = new Set(libraryEntries.map((e) => e.docId));
   for (const [key, ref] of writingDone) if (!alive.has(ref.docId)) writingDone.delete(key);
-  // Only docs whose state is known move the snapshot; an unknown doc keeps its last open set.
-  for (const [key, ref] of writingOpenBefore) if (!known.has(ref.docId) && alive.has(ref.docId)) open.set(key, ref);
+  // Only known tasks move the snapshot; an unknown one stays as it was last listed.
+  for (const [key, ref] of writingOpenBefore) if (!known(ref) && alive.has(ref.docId)) open.set(key, ref);
   writingOpenBefore = open;
   if (writingExpandedKey !== null && !open.has(writingExpandedKey)) writingExpandedKey = null;
 }
@@ -1294,6 +1295,9 @@ function recheckLibraryRow(docId: string): void {
   const entry = libraryEntry(docId);
   if (!entry || entry.kind !== 'component' || !entry.sourceExists) return;
   libraryDrift.set(docId, 'pending');
+  // The old gaps are what the write changed; until this check's `writingGaps`
+  // lands the doc reads unknown, between `driftSource` and that reply too.
+  libraryComponentGaps.delete(docId);
   // The old diff was resolved against the projection this check replaces.
   libraryChanges.delete(docId);
   // One row's check must not stamp the whole library as freshly checked.
@@ -2243,10 +2247,11 @@ document.addEventListener('click', (event) => {
   }
 
   const writingToggle = target.closest<HTMLButtonElement>('[data-writing-toggle]');
-  if (writingToggle?.dataset.writingToggle) {
-    const key = writingToggle.dataset.writingToggle;
-    writingExpandedKey = writingExpandedKey === key ? null : key;
-    paintAndFocus(`[data-writing-toggle="${cssString(key)}"]`);
+  if (writingToggle?.dataset.writingToggle && writingToggle.dataset.docId) {
+    const { writingToggle: key, docId } = writingToggle.dataset;
+    const task = docTaskKey(docId, key);
+    writingExpandedKey = writingExpandedKey === task ? null : task;
+    paintAndFocus(`[data-writing-group="${cssString(docId)}"] [data-writing-toggle="${cssString(key)}"]`);
     return;
   }
   const writingOpen = target.closest<HTMLButtonElement>('[data-writing-open]');
