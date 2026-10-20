@@ -638,50 +638,81 @@ record.
     changes** on its row. Each change has its own line ("preferred
     content", "limits", "default content"), and the badge and the list
     agree.
-29. **Needs writing.** In a file with a component whose description is empty,
-    a component with a slot property without a description, a doc whose
-    When to use section is still a placeholder, and a Foundation doc over a
-    collection with undescribed variables: open Library and confirm the
-    **Needs writing** filter counts each row once, each row's summary line
-    counts descriptions and sections correctly, and a row with nothing open
-    shows no line.
-30. Expand a component row. Type a description and **Save**. Confirm the
-    toast, that Figma's description field shows the text, that the row
-    re-checks and reads **Update available**, and that Edit > Undo removes
-    it. Save a slot description and confirm it in the property's settings.
-31. On the Foundation row, save a variable description and a style
-    description. Confirm each in the Variables panel and the style's
-    settings, and that the row reads **Update available**.
-32. **Draft all with AI** on a component row and on a Foundation row with
-    more than 60 open fields. Confirm the allowance ring moves by the number
-    of batches, every field gets a draft tagged AI or a note names how many
-    did not, editing a draft removes the tag, and Save writes the draft.
-    Close and reopen the plugin and confirm unsaved drafts are gone.
-33. Exhaust the free allowance and press **Draft all with AI**. Confirm the
-    no-uses-left note and that the fields stay editable.
-34. Edit a doc's generated text by hand. Confirm its Writing group says the
-    sections are as of the last update. Run **Update this doc** and confirm
-    the note goes away and the section list is current.
-35. **Open in doc** on a section line focuses that section's placeholder.
-36. A doc built before this version shows no section lines until it is
-    updated; its description fields still list.
-37. On the free plan with fewer uses left than a Foundation row has batches
-    of 60 open fields, press **Draft all with AI**. Confirm the fields from
-    the batches that ran get drafts, the no-uses-left note names the
-    allowance, and no note claims those drafts did not come back. Press it
-    again: the drafts already shown stay and the allowance does not move.
-38. Build a doc whose Pointer and touch, Semantics and focus, and Content
-    sections are placeholders. Its Needs writing row lists each of the three
-    by its heading, and **Open in doc** on each focuses that placeholder.
-39. With several component docs checked, save a description on the
-    Foundation row. The Foundation row reads **Update available**; every
-    component row keeps its badge and its Needs writing line, no new check
-    count starts, and the line under the filters keeps the earlier check's
-    time.
 
-Row 28 was added on 2026-10-11 for Figma slots and has not been run. Rows 29
-onward were added on 2026-10-19 for Needs writing and have not been run
-either, so none of them is covered yet.
+Row 28 was added on 2026-10-11 for Figma slots and has not been run, so it is
+not covered yet.
+
+## Writing
+
+1. **The rail entry and the first scan.** With the plugin freshly opened in a
+   file with component docs, confirm **Writing** has its own entry in the
+   rail. Open it before the first scan has finished and confirm it says it
+   is still reading your docs rather than showing an empty list, then shows
+   the groups when the scan ends. Open Library and confirm it has no
+   Needs writing filter and no writing line on its rows.
+2. **Groups and counts.** In a file with a component whose description is
+   empty, a component with a slot property without a description, a doc
+   whose When to use section is still a placeholder, and a Foundation doc
+   over a collection with undescribed variables, confirm each doc has its
+   own group with "N of M done", that the counts match the open and done
+   tasks listed under it, and that a doc with nothing open is not listed.
+3. **Expand, Save, the field in Figma, Update available, undo.** Expand a
+   Description task on a component group. Only one task is open at a time.
+   Type a description and press **Save**. Confirm the toast, that Figma's
+   description field shows the text, that the doc reads **Update
+   available** in Library after the re-check, and that Edit > Undo removes
+   the text. Confirm **Clear draft** empties the field without writing.
+4. **A slot task.** Expand a task for a slot property, type a description
+   and **Save**. Confirm the text in the property's settings in Figma.
+5. **A variable and a style on a Foundation group.** On the Foundation
+   group, save a variable description and a style description. Confirm each
+   in the Variables panel and the style's settings, and that the Foundation
+   doc reads **Update available** in Library.
+6. **Done sinks and the count moves.** Save a description and wait for the
+   re-check. Confirm the task shows a check, drops below the open tasks in
+   its group, and the group's "N of M done" moves by one. A task is done
+   only once the source no longer has the gap, not when you press **Save**.
+7. **A pass that finds the gap again.** Save a description, wait for the
+   task to read done, then clear the description in Figma by hand and run
+   **Refresh library**. Confirm the task leaves the done list, returns to
+   the open tasks, and the count moves back.
+8. **Draft all with AI on a group.** On a component group and on a
+   Foundation group with more than 60 open fields, press **Draft all with
+   AI**. Confirm the allowance ring moves by the number of batches of 60,
+   every field gets a draft tagged AI or a note names how many did not,
+   editing a draft removes the tag, and **Save** writes the draft. Close and
+   reopen the plugin and confirm unsaved drafts are gone.
+9. **The free allowance runs out mid-group.** On the free plan with fewer
+   uses left than a Foundation group has batches of 60 open fields, press
+   **Draft all with AI**. Confirm the fields from the batches that ran get
+   drafts, the no-uses-left note names the allowance, and no note claims
+   those drafts did not come back. Press it again: the drafts already shown
+   stay and the allowance does not move. With no uses left at all, confirm
+   the no-uses-left note shows and the fields stay editable.
+10. **Open in doc.** On a section task, press **Open in doc** and confirm the
+    canvas focuses that section's placeholder. Build a doc whose Pointer and
+    touch, Semantics and focus, and Content sections are placeholders and
+    confirm its group lists each of the three by its heading, and **Open in
+    doc** on each focuses that placeholder.
+11. **The edited-doc note.** Edit a doc's generated text by hand. Confirm its
+    group says the sections are as of the last update. Run **Update this
+    doc** and confirm the note goes away and the section list is current.
+12. **A doc built before this version.** Open Writing with a doc built by an
+    earlier version. Confirm it lists no section tasks until it is updated,
+    while its description tasks still list.
+13. **Empty states.** In a file where every doc has been read and nothing is
+    open, confirm Writing says there is nothing to write. In a file where
+    some docs could not be read, or the first scan has not finished,
+    confirm it does not say nothing to write: it says none were found in
+    what could be read and names the reasons.
+14. **Foundation save keeps the component rows.** With several component docs
+    checked, save a description on the Foundation group. The Foundation doc
+    reads **Update available**; every component doc keeps its badge and its
+    groups, no new check count starts, and the line under the filters in
+    Library keeps the earlier check's time.
+
+Rows 1 to 14 were added on 2026-10-19 and rewritten on 2026-10-20 for the
+Writing screen and have not been run, so none of them is covered yet.
 
 ## AI-writing allowance (free plan)
 

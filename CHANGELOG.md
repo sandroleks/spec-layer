@@ -22,33 +22,40 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   proxy allowlists it byte for byte under the same quota and rate limits.
   Nothing sends it until the plugin change that uses it ships, and that
   change waits for this proxy to be in production.
-- **Needs writing, in the Library.** A fourth filter lists, per doc, what a
-  person still has to write: an empty component or slot description, a doc
-  section still showing its placeholder (any of the seven the plugin draws
-  one for, from Overview to Content), and for a Foundation doc each
-  variable or style in its scope with no description. Each description gap
-  is a one-line field; **Save** writes it into Figma's own field, so Dev
-  Mode, Figma's agent and the next extraction all see it, and the doc then
-  shows Update available. A Foundation save reads the Foundation and the
-  list again but keeps every component row's settled check. A section gap opens the placeholder on the canvas.
-  **Draft all with AI** fills a row's open fields as drafts to review, one
-  generation per 60 fields. Each field's brief carries only facts the plugin
-  already holds: a variable's values in the doc's modes and the token every
-  mode aliases, a text style's font or an effect style's layer count, and a
-  component's or slot's properties, variant count and preferred components
-  from its last source check. A batch that fails, for example when the free
-  allowance runs out partway through a row, stops the run, keeps the drafts
-  the batches before it produced, and says why; a retry asks only for the
-  fields still open. A draft saved unedited has the hash of its text
-  recorded in the entry's plugin data; nothing reads that mark yet.
-  Component gaps are read in the same pass as the drift check; section gaps
-  come from the doc link, which now records which sections were drawn as
-  placeholders at the last build, so a doc built before this version lists
-  none until it is updated. An empty Needs writing list says there is
-  nothing to write only once every row has been read; until then it names
-  what is still unknown. Nothing written or recorded here enters a hash
-  or an artifact. Needs the descriptions prose contract in production on
-  the proxy.
+- **Writing, a task list per doc.** A Writing entry in the rail opens a
+  screen with one group per doc and an "N of M done" count on each. A group
+  lists what a person still has to write as task rows: an empty component
+  or slot description, a doc section still showing its placeholder (any of
+  the seven the plugin draws one for, from Overview to Content), and for a
+  Foundation doc each variable or style in its scope with no description. A
+  doc with nothing open is not listed. A task row expands, one at a time:
+  a description gap is a field with **Save** and **Clear draft**, and
+  **Save** writes it into Figma's own field, so Dev Mode, Figma's agent and
+  the next extraction all see it, and the doc then shows Update available.
+  A section gap has **Open in doc**, which opens the placeholder on the
+  canvas. A task is done only when the source no longer has the gap: the
+  row gets a check and sinks below the open tasks, and a pass that finds
+  the gap again brings it back. A Foundation save reads the Foundation and
+  the list again but keeps every component row's settled check.
+  **Draft all with AI** on a group fills its open fields as drafts to
+  review, one generation per 60 fields, and each draft is marked as AI
+  written until you edit it. Each field's brief carries only facts the
+  plugin already holds: a variable's values in the doc's modes and the
+  token every mode aliases, a text style's font or an effect style's layer
+  count, and a component's or slot's properties, variant count and
+  preferred components from its last source check. A batch that fails, for
+  example when the free allowance runs out partway through a group, stops
+  the run, keeps the drafts the batches before it produced, and says why; a
+  retry asks only for the fields still open. A draft saved unedited has the
+  hash of its text recorded in the entry's plugin data; nothing reads that
+  mark yet. Component gaps are read in the same pass as the drift check;
+  section gaps come from the doc link, which now records which sections
+  were drawn as placeholders at the last build, so a doc built before this
+  version lists none until it is updated. The screen says there is Nothing
+  to write only once every doc's state is known; until then it says None
+  found in what could be read and gives the reasons. Nothing written or
+  recorded here enters a hash or an artifact. Needs the descriptions prose
+  contract in production on the proxy.
 
 ## [7.0.0] - 2026-10-14
 
