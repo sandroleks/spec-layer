@@ -114,15 +114,3 @@ export function foundationWritingGaps(spec: FoundationSpec, scope: FoundationSco
     .filter((s) => typeof s.id === 'string' && (scope.group === undefined || s.group === scope.group) && blank(s.description))
     .map((s) => ({ kind: 'style' as const, id: s.id as string, name: s.name, facts: [family] }));
 }
-
-const plural = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`;
-
-/** "3 descriptions and 1 section to write"; '' when nothing is open. */
-export function gapSummary(gaps: readonly WritingGap[]): string {
-  const sections = gaps.filter((g) => g.kind === 'section').length;
-  const descriptions = gaps.length - sections;
-  const parts: string[] = [];
-  if (descriptions) parts.push(plural(descriptions, 'description', 'descriptions'));
-  if (sections) parts.push(plural(sections, 'section', 'sections'));
-  return parts.length ? `${parts.join(' and ')} to write` : '';
-}

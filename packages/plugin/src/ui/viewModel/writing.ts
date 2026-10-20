@@ -13,6 +13,9 @@ import {
 
 export interface WritingDraft { text: string; origin: 'person' | 'ai' }
 
+/** A task and the doc it belongs to. */
+export interface TaskRef { gap: WritingGap; docId: string }
+
 export interface BuildWritingModelOptions {
   drift?: ReadonlyMap<string, LibraryDriftState>;
   /** Component gaps from main's `writingGaps` replies, by doc id. A doc missing here has none known. */
@@ -23,8 +26,8 @@ export interface BuildWritingModelOptions {
   foundationLoading?: boolean;
   drafts?: ReadonlyMap<string, WritingDraft>;
   drafting?: ReadonlySet<string>;
-  /** Task key -> the gap as it was when it closed, in completion order. */
-  done?: ReadonlyMap<string, WritingGap>;
+  /** Task key -> the gap as it was when it closed and the doc it closed in, in completion order. */
+  done?: ReadonlyMap<string, TaskRef>;
   expandedKey?: string | null;
 }
 
@@ -81,6 +84,27 @@ export function rowWritingGaps(entry: LibraryEntry, options: BuildWritingModelOp
   ];
 }
 
+interface DocReadState { running: boolean; older: boolean; unread: boolean; known: boolean }
+
+/** One doc's writing state: what is still unknown about it, and whether it is known now. */
+function docReadState(entry: LibraryEntry, options: BuildWritingModelOptions): DocReadState {
+  if (entry.kind === 'foundation') {
+    if (options.foundation) return { running: false, older: false, unread: false, known: true };
+    return { running: !!options.foundationLoading, older: false, unread: !options.foundationLoading, known: false };
+  }
+  let running = false;
+  let unread = false;
+  const older = entry.unwrittenSections === undefined;
+  if (entry.sourceExists) {
+    const state = libraryDriftForEntry(entry, options.drift ?? new Map<string, LibraryDriftState>());
+    if (state === 'pending') running = true;
+    else if (state === 'unavailable' || state === 'staleVersion') unread = true;
+    // Settled, but main's gaps read never landed (it threw, or is still on its way).
+    else if (!options.componentGaps?.has(entry.docId)) unread = true;
+  }
+  return { running, older, unread, known: entry.sourceExists && !running && !older && !unread };
+}
+
 /**
  * Whether an empty Writing list is a fact, and if not, why. A component
  * row is known once its source check settled and main's gaps reply landed, and
@@ -95,28 +119,22 @@ export function writingUnknownReasons(
   let running = false;
   let older = false;
   let unread = false;
-  const drift = options.drift ?? new Map<string, LibraryDriftState>();
   for (const entry of entries) {
-    if (entry.kind === 'foundation') {
-      if (!options.foundation) {
-        if (options.foundationLoading) running = true;
-        else unread = true;
-      }
-      continue;
-    }
-    if (entry.unwrittenSections === undefined) older = true;
-    if (!entry.sourceExists) continue;
-    const state = libraryDriftForEntry(entry, drift);
-    if (state === 'pending') running = true;
-    else if (state === 'unavailable' || state === 'staleVersion') unread = true;
-    // Settled, but main's gaps read never landed (it threw, or is still on its way).
-    else if (!options.componentGaps?.has(entry.docId)) unread = true;
+    const state = docReadState(entry, options);
+    running ||= state.running;
+    older ||= state.older;
+    unread ||= state.unread;
   }
   return [
     ...(running ? [WRITING_UNKNOWN_RUNNING] : []),
     ...(older ? [WRITING_UNKNOWN_OLDER] : []),
     ...(unread ? [WRITING_UNKNOWN_UNREAD] : []),
   ];
+}
+
+/** The docs whose writing state is known right now. A task is only closed in one of these. */
+export function knownDocIds(entries: readonly LibraryEntry[], options: BuildWritingModelOptions = {}): Set<string> {
+  return new Set(entries.filter((entry) => docReadState(entry, options).known).map((entry) => entry.docId));
 }
 
 export function taskTitle(gap: WritingGap): string {
@@ -143,15 +161,6 @@ function task(gap: WritingGap, done: boolean, options: BuildWritingModelOptions)
   };
 }
 
-/** A gap belongs to the doc whose source it names: a section gap carries the
- *  doc id itself; a component or slot gap carries the source node id; a
- *  variable or style gap is matched through the Foundation row it was listed under. */
-function gapDocId(gap: WritingGap, entry: LibraryEntry): string {
-  if (gap.kind === 'section') return gap.id;
-  if (gap.kind === 'component' || gap.kind === 'slot') return entry.sourceNodeId === gap.id ? entry.docId : '';
-  return entry.kind === 'foundation' ? entry.docId : '';
-}
-
 export function buildWritingModel(entries: readonly LibraryEntry[], options: BuildWritingModelOptions = {}): WritingModel {
   const groups: WritingGroup[] = [];
   let openCount = 0;
@@ -159,9 +168,9 @@ export function buildWritingModel(entries: readonly LibraryEntry[], options: Bui
   for (const entry of entries) {
     const open = rowWritingGaps(entry, options);
     const openKeys = new Set(open.map(writingTaskKey));
-    const done = [...(options.done ?? [])].filter(([key, gap]) => !openKeys.has(key) && gapDocId(gap, entry) === entry.docId);
+    const done = [...(options.done ?? [])].filter(([key, ref]) => !openKeys.has(key) && ref.docId === entry.docId);
     if (open.length === 0 && done.length === 0) continue;
-    const tasks = [...open.map((gap) => task(gap, false, options)), ...done.map(([, gap]) => task(gap, true, options))];
+    const tasks = [...open.map((gap) => task(gap, false, options)), ...done.map(([, ref]) => task(ref.gap, true, options))];
     const drift = libraryDriftForEntry(entry, options.drift ?? new Map());
     openCount += open.length;
     doneCount += done.length;
@@ -180,21 +189,20 @@ export function buildWritingModel(entries: readonly LibraryEntry[], options: Bui
   return { groups, known: unknownReasons.length === 0, unknownReasons, openCount, doneCount };
 }
 
-export function openTasks(model: WritingModel): Map<string, WritingGap> {
-  const out = new Map<string, WritingGap>();
-  for (const group of model.groups) for (const t of group.tasks) if (!t.done) out.set(t.key, t.gap);
+export function openTasks(model: WritingModel): Map<string, TaskRef> {
+  const out = new Map<string, TaskRef>();
+  for (const group of model.groups) for (const t of group.tasks) if (!t.done) out.set(t.key, { gap: t.gap, docId: group.docId });
   return out;
 }
 
-/** Keys open in `previous` and absent from `current` whose doc is still in `alive`: they closed. */
+/** Keys open in `previous` and absent from `current` whose doc is in `known` now: they closed.
+ *  A doc whose state is not known now (checking, unread, removed) closes nothing. */
 export function closedTasks(
-  previous: ReadonlyMap<string, WritingGap>, current: ReadonlyMap<string, WritingGap>, alive: ReadonlySet<string>,
-): Map<string, WritingGap> {
-  const out = new Map<string, WritingGap>();
-  for (const [key, gap] of previous) {
-    if (current.has(key)) continue;
-    const docId = key.startsWith('section:') ? key.split(':')[1] : null;
-    if (docId !== null ? alive.has(docId) : alive.size > 0) out.set(key, gap);
+  previous: ReadonlyMap<string, TaskRef>, current: ReadonlyMap<string, TaskRef>, known: ReadonlySet<string>,
+): Map<string, TaskRef> {
+  const out = new Map<string, TaskRef>();
+  for (const [key, ref] of previous) {
+    if (!current.has(key) && known.has(ref.docId)) out.set(key, ref);
   }
   return out;
 }

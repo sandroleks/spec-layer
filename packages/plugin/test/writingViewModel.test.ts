@@ -5,7 +5,7 @@ import type { WritingGap } from '../src/writingGaps';
 import { writeKey } from '../src/descriptionWriter';
 import { writingCount } from '../src/ui/writingCopy';
 import {
-  buildWritingModel, closedTasks, openTasks, taskTitle, taskCaption, writingTaskKey,
+  buildWritingModel, closedTasks, knownDocIds, openTasks, type TaskRef, taskTitle, taskCaption, writingTaskKey,
 } from '../src/ui/viewModel/writing';
 
 const NOW = Date.UTC(2026, 9, 20, 12);
@@ -46,7 +46,7 @@ describe('writingTaskKey and writingCount', () => {
 describe('buildWritingModel', () => {
   it('groups open tasks per doc with a count, open first then done', () => {
     const e = entry({ unwrittenSections: ['whenToUse'] });
-    const done = new Map<string, WritingGap>([['component:10:20', gap({})]]);
+    const done = new Map<string, TaskRef>([['component:10:20', { gap: gap({}), docId: 'doc-1' }]]);
     const model = buildWritingModel([e], {
       drift: new Map([['doc-1', 'inSync']]),
       componentGaps: new Map([['doc-1', [gap({ kind: 'slot', propertyName: 'Content#1:2', name: 'Button / Content' })]]]),
@@ -96,16 +96,83 @@ describe('buildWritingModel', () => {
   });
 });
 
-describe('closedTasks and openTasks', () => {
-  it('reports keys that were open and are gone while the doc still exists', () => {
-    const before = new Map([['a', gap({ id: 'a' })], ['b', gap({ id: 'b' })]]);
-    const after = new Map([['b', gap({ id: 'b' })]]);
-    expect([...closedTasks(before, after, new Set(['doc-1'])).keys()]).toEqual(['a']);
-    expect(closedTasks(before, after, new Set()).size).toBe(0);
+describe('done tasks', () => {
+  const foundation = (docId: string, target: string, group?: string): LibraryEntry => entry({
+    docId, kind: 'foundation', label: docId, sourceNodeId: '', currentContentHash: 'h',
+    foundationScope: { target, ...(group ? { group } : {}) } as never,
   });
-  it('openTasks keys every open task', () => {
+  const spec = { fileKey: 'f', collections: [], textStyles: [], effectStyles: [], extractedAt: '' } as never;
+
+  it('lists a done variable under its own doc only, not under another Foundation doc', () => {
+    const done = new Map<string, TaskRef>([['variable:V1', { gap: gap({ kind: 'variable', id: 'V1', name: 'color/surface' }), docId: 'a' }]]);
+    const model = buildWritingModel([foundation('a', 'textStyles'), foundation('b', 'effectStyles')], { foundation: spec, done });
+    expect(model.groups.map((g) => g.docId)).toEqual(['a']);
+    expect(model.groups[0].countLabel).toBe('1 of 1 done');
+    expect(model.doneCount).toBe(1);
+  });
+
+  it('carries no draft and never expands', () => {
+    const g = gap({});
+    const model = buildWritingModel([entry()], {
+      drift: new Map([['doc-1', 'inSync']]), componentGaps: new Map([['doc-1', []]]),
+      done: new Map([['component:10:20', { gap: g, docId: 'doc-1' }]]),
+      drafts: new Map([['component:10:20', { text: 'x', origin: 'person' as const }]]),
+      expandedKey: 'component:10:20',
+    });
+    const t = model.groups[0].tasks[0];
+    expect(t.done).toBe(true);
+    expect(t.draft).toBeNull();
+    expect(t.expanded).toBe(false);
+  });
+});
+
+describe('closedTasks and openTasks', () => {
+  const ref = (id: string, docId: string): TaskRef => ({ gap: gap({ id }), docId });
+  it('reports keys that were open and are gone while their doc is known', () => {
+    const before = new Map([['a', ref('a', 'doc-1')], ['b', ref('b', 'doc-1')]]);
+    const after = new Map([['b', ref('b', 'doc-1')]]);
+    expect([...closedTasks(before, after, new Set(['doc-1'])).keys()]).toEqual(['a']);
+  });
+  it('ignores a key whose doc is not known now', () => {
+    const before = new Map([['a', ref('a', 'doc-1')], ['s', ref('s', 'doc-2')]]);
+    expect(closedTasks(before, new Map(), new Set()).size).toBe(0);
+    expect([...closedTasks(before, new Map(), new Set(['doc-2'])).keys()]).toEqual(['s']);
+  });
+  it('does not report a section key whose doc was removed', () => {
+    const before = new Map([['section:gone:definition', ref('gone', 'gone')]]);
+    expect(closedTasks(before, new Map(), new Set(['doc-1'])).size).toBe(0);
+  });
+  it('openTasks keys every open task with its doc', () => {
     const model = buildWritingModel([entry()], { drift: new Map([['doc-1', 'inSync']]), componentGaps: new Map([['doc-1', [gap({})]]]) });
-    expect([...openTasks(model).keys()]).toEqual(['component:10:20']);
+    const open = openTasks(model);
+    expect([...open.keys()]).toEqual(['component:10:20']);
+    expect(open.get('component:10:20')?.docId).toBe('doc-1');
+  });
+});
+
+describe('knownDocIds', () => {
+  const spec = { fileKey: 'f', collections: [], textStyles: [], effectStyles: [], extractedAt: '' } as never;
+  const ok = { drift: new Map<string, LibraryDriftState>([['a', 'inSync']]), componentGaps: new Map([['a', []]]) };
+  const a = (over: Partial<LibraryEntry> = {}) => entry({ docId: 'a', ...over });
+  it('counts a settled component doc with its gaps reply and section list', () => {
+    expect([...knownDocIds([a()], ok)]).toEqual(['a']);
+    expect(knownDocIds([a()], { ...ok, drift: new Map([['a', 'drifted']]) }).has('a')).toBe(true);
+  });
+  it('leaves out a pending, unavailable or rebuild-needed check', () => {
+    for (const state of ['pending', 'unavailable', 'staleVersion'] as const) {
+      expect(knownDocIds([a()], { ...ok, drift: new Map([['a', state]]) }).size).toBe(0);
+    }
+  });
+  it('leaves out a doc with no gaps entry, no section list, or no source', () => {
+    expect(knownDocIds([a()], { drift: ok.drift }).size).toBe(0);
+    expect(knownDocIds([a({ unwrittenSections: undefined })], ok).size).toBe(0);
+    expect(knownDocIds([a({ sourceExists: false })], ok).size).toBe(0);
+  });
+  it('counts a Foundation doc only once the spec is set', () => {
+    const f = entry({ docId: 'f', kind: 'foundation', sourceNodeId: '', foundationScope: { target: 'textStyles' } });
+    expect(knownDocIds([f], {}).size).toBe(0);
+    expect(knownDocIds([f], { foundationLoading: true }).size).toBe(0);
+    expect(knownDocIds([f], { foundation: spec }).has('f')).toBe(true);
   });
 });
 

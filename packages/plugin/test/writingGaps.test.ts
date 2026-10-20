@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { FoundationSpec } from '@spec-layer/extractor';
 import {
-  componentWritingGaps, sectionWritingGaps, foundationWritingGaps, valueLabel, gapSummary, WRITING_SECTIONS,
+  componentWritingGaps, sectionWritingGaps, foundationWritingGaps, valueLabel, WRITING_SECTIONS,
 } from '../src/writingGaps';
 import { ALL_SECTIONS } from '../src/ui/docModel';
 import { placeholderShapeFor } from '../src/ui/placeholders';
@@ -105,11 +105,3 @@ describe('valueLabel', () => {
   });
 });
 
-describe('gapSummary', () => {
-  it('counts descriptions and sections in words', () => {
-    expect(gapSummary([{ kind: 'variable', id: 'a', name: 'a' }, { kind: 'slot', id: 'b', name: 'b' }, { kind: 'section', id: 'c', name: 'c' }])).toBe('2 descriptions and 1 section to write');
-    expect(gapSummary([{ kind: 'component', id: 'a', name: 'a' }])).toBe('1 description to write');
-    expect(gapSummary([{ kind: 'section', id: 'a', name: 'a' }, { kind: 'section', id: 'b', name: 'b' }])).toBe('2 sections to write');
-    expect(gapSummary([])).toBe('');
-  });
-});
