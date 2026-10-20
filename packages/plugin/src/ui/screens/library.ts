@@ -12,24 +12,7 @@ import type {
   LibraryModel,
   LibraryRowModel,
   LibraryRowStatus,
-  LibraryWritingItem,
 } from '../viewModel/library';
-import {
-  WRITING_AI_TAG,
-  WRITING_CLEAR,
-  WRITING_DRAFT_ALL,
-  WRITING_DRAFTING,
-  WRITING_EMPTY,
-  WRITING_FIELD_HINT,
-  WRITING_FILTER_EMPTY,
-  WRITING_FILTER_LABEL,
-  WRITING_FOOT,
-  WRITING_HEADING,
-  WRITING_OPEN,
-  WRITING_SAVE,
-  WRITING_STALE,
-  sectionGapLine,
-} from '../writingCopy';
 import { loadingRowsMarkup, progressMarkup, type ProgressPresentation } from './progress';
 import { esc } from '../escape';
 
@@ -52,13 +35,9 @@ export interface LibraryRowPresentation
 }
 
 export interface LibraryScreenPresentation
-  extends Omit<LibraryModel, 'allRows' | 'rows' | 'writingKnown' | 'writingUnknownReasons'> {
+  extends Omit<LibraryModel, 'allRows' | 'rows'> {
   allRows: readonly LibraryRowPresentation[];
   rows: readonly LibraryRowPresentation[];
-  /** From the view model. Absent claims nothing: the writing filter's empty
-   *  state then never says there is nothing to write. */
-  writingKnown?: boolean;
-  writingUnknownReasons?: readonly string[];
   menuDocId: string | null;
   loading?: boolean;
   refreshing?: boolean;
@@ -194,86 +173,14 @@ function changeContentMarkup(row: LibraryRowPresentation): string {
   }
 }
 
-/**
- * What the Writing parts of a row draw from, for patchLibraryDrift to compare:
- * the summary line, the drafting flag, and for a row with items the busy flag
- * and whether its details are open. An open row also draws each item, so its
- * keys and each draft's text and origin are part of it; a collapsed row draws
- * only the summary.
- */
-function writingSignature(row: LibraryRowPresentation, busy: boolean): string {
-  const withItems = row.writingItems.length > 0;
-  const open = withItems && row.expanded;
-  const parts = [
-    row.writingSummary,
-    row.drafting ? 'drafting' : '',
-    withItems ? (busy ? 'busy' : '') : '',
-    open ? 'open' : '',
-    open ? JSON.stringify(row.writingItems.map((item) => [item.key, item.draft?.text ?? null, item.draft?.origin ?? null])) : '',
-  ];
-  // Empty for a row with nothing to write, so its markup stays unchanged.
-  return parts.every((part) => part === '') ? '' : parts.join('|');
-}
-
-function writingItemMarkup(item: LibraryWritingItem, docId: string, busy: boolean): string {
-  const g = item.gap;
-  if (g.kind === 'section') {
-    return (
-      '<li class="sl-writing-item is-section">' +
-      `<span class="sl-writing-name">${esc(sectionGapLine(g.name))}</span>` +
-      `<button class="sl-button" data-tone="quiet" type="button" data-writing-open="${esc(g.sectionId ?? '')}" ` +
-      `data-doc-id="${esc(docId)}"${busy ? ' disabled' : ''}>${WRITING_OPEN}</button>` +
-      '</li>'
-    );
-  }
-  const draft = item.draft;
-  const facts = g.facts?.length ? `<span class="sl-writing-facts">${esc(g.facts.join(' · '))}</span>` : '';
-  const tag = draft?.origin === 'ai' ? `<span class="sl-writing-ai-tag">${WRITING_AI_TAG}</span>` : '';
-  return (
-    `<li class="sl-writing-item" data-writing-item="${esc(item.key)}">` +
-    `<span class="sl-writing-name">${esc(g.name)}${tag}</span>${facts}` +
-    '<span class="sl-input-wrap sl-writing-input">' +
-    `<input class="sl-writing-field" type="text" data-writing-key="${esc(item.key)}" data-doc-id="${esc(docId)}" ` +
-    `placeholder="${esc(WRITING_FIELD_HINT)}" value="${esc(draft?.text ?? '')}" aria-label="${esc(g.name)}"${busy ? ' disabled' : ''}>` +
-    '</span>' +
-    '<span class="sl-writing-actions">' +
-    `<button class="sl-button" data-tone="secondary" type="button" data-writing-save="${esc(item.key)}" data-doc-id="${esc(docId)}"${busy ? ' disabled' : ''}>${WRITING_SAVE}</button>` +
-    (draft ? `<button class="sl-button" data-tone="quiet" type="button" data-writing-clear="${esc(item.key)}" data-doc-id="${esc(docId)}"${busy ? ' disabled' : ''}>${WRITING_CLEAR}</button>` : '') +
-    '</span></li>'
-  );
-}
-
-function writingGroupMarkup(row: LibraryRowPresentation, busy: boolean): string {
-  if (row.writingItems.length === 0) {
-    return `<section class="sl-library-writing" data-writing-doc="${esc(row.docId)}"><h2>${WRITING_HEADING}</h2><p class="sl-writing-empty">${WRITING_EMPTY}</p></section>`;
-  }
-  const canDraft = row.writingItems.some((i) => i.gap.kind !== 'section');
-  const disabled = busy || row.drafting;
-  return (
-    `<section class="sl-library-writing" data-writing-doc="${esc(row.docId)}">` +
-    `<div class="sl-writing-head"><h2>${WRITING_HEADING}</h2>` +
-    (canDraft
-      ? `<button class="sl-button" data-tone="secondary" type="button" data-writing-draft-all data-doc-id="${esc(row.docId)}"${disabled ? ' disabled' : ''}>${row.drafting ? WRITING_DRAFTING : WRITING_DRAFT_ALL}</button>`
-      : '') +
-    '</div>' +
-    (row.writingStale ? `<p class="sl-writing-note">${WRITING_STALE}</p>` : '') +
-    `<ul class="sl-writing-list">${row.writingItems.map((item) => writingItemMarkup(item, row.docId, busy)).join('')}</ul>` +
-    `<p class="sl-writing-foot">${WRITING_FOOT}</p>` +
-    '</section>'
-  );
-}
-
-function changeDetailsMarkup(row: LibraryRowPresentation, busy: boolean): string {
-  // A row expanded only for writing carries a 'pending' change state from the
-  // model, so the Changes block is drawn for an update row alone.
+function changeDetailsMarkup(row: LibraryRowPresentation): string {
   const changes = isUpdate(row)
     ? `<h2>Changes</h2><div class="sl-library-change-list">${changeContentMarkup(row)}</div>`
     : '';
-  const writing = row.writingItems.length > 0 ? writingGroupMarkup(row, busy) : '';
   return (
     `<div id="sl-library-details-${esc(row.docId)}" class="sl-library-details"` +
     `${row.expanded ? '' : ' hidden'}>` +
-    `<div class="sl-library-details-inner">${changes}${writing}</div></div>`
+    `<div class="sl-library-details-inner">${changes}</div></div>`
   );
 }
 
@@ -303,11 +210,10 @@ interface MenuItem {
 
 function menuGroups(row: LibraryRowPresentation): MenuItem[][] {
   const maintenance: MenuItem[] = [];
-  if (isUpdate(row) || row.writingItems.length > 0) {
-    const noun = isUpdate(row) ? 'changes' : 'details';
+  if (isUpdate(row)) {
     maintenance.push({
       action: 'review',
-      label: row.expanded ? `Hide ${noun}` : `Show ${noun}`,
+      label: row.expanded ? 'Hide changes' : 'Show changes',
       glyph: 'adjustments',
     });
   }
@@ -433,14 +339,13 @@ export function libraryRowMarkup(
   revealed = false,
 ): string {
   const update = isUpdate(row);
-  const expandable = update || row.writingItems.length > 0;
-  const expanded = expandable && row.expanded;
-  const status = expandable
+  const expanded = update && row.expanded;
+  const status = update
     ? (
       '<button class="sl-library-update-disclosure" type="button" ' +
       `data-library-disclosure="${esc(row.docId)}" aria-expanded="${expanded}" ` +
       `aria-controls="sl-library-details-${esc(row.docId)}" ` +
-      `aria-label="${update ? 'Update available. Show changes for' : 'Show details for'} ${esc(row.label)}">` +
+      `aria-label="Update available. Show changes for ${esc(row.label)}">` +
       `${statusMarkup(row.status)}` +
       `<span class="sl-library-chevron${expanded ? ' is-expanded' : ''}">${icon('chevronDown', 14)}</span>` +
       '</button>'
@@ -465,21 +370,17 @@ export function libraryRowMarkup(
       '</span></div>'
     );
 
-  const sig = writingSignature({ ...row, expanded }, busy);
-  const sigAttr = sig ? ` data-writing-sig="${esc(sig)}"` : '';
-
   return (
     '<article class="sl-library-row' +
     `${expanded ? ' is-expanded' : ''}${revealed ? ' is-revealed' : ''}" ` +
-    `data-doc-id="${esc(row.docId)}" data-expanded="${expanded}"${sigAttr}>` +
+    `data-doc-id="${esc(row.docId)}" data-expanded="${expanded}">` +
     '<div class="sl-library-summary">' +
     jump +
     status +
     `<time>${esc(row.ageLabel)}</time>` +
     menuMarkup(row, menuDocId === row.docId, busy) +
     '</div>' +
-    (row.writingSummary ? `<p class="sl-library-writing-summary">${esc(row.writingSummary)}</p>` : '') +
-    (expandable ? changeDetailsMarkup({ ...row, expanded }, busy) : '') +
+    (update ? changeDetailsMarkup({ ...row, expanded }) : '') +
     '</article>'
   );
 }
@@ -572,7 +473,6 @@ function emptyMarkup(
   filter: LibraryFilter,
   hasRows: boolean,
   incomplete: boolean,
-  writing: { known: boolean; reasons: readonly string[] } = { known: false, reasons: [] },
 ): string {
   if (!hasRows) {
     // Two starts, the same two views the rail opens. Nothing here creates.
@@ -606,22 +506,6 @@ function emptyMarkup(
       'data-library-filter="all">View all docs</button></div>'
     );
   }
-  if (filter === 'writing') {
-    // Nothing to write is a completeness claim: only when every row is known.
-    if (!writing.known) {
-      return (
-        '<div class="sl-empty-state" data-writing-unknown><strong>None found in what could be read</strong>' +
-        writing.reasons.map((reason) => `<p>${esc(reason)}</p>`).join('') +
-        '<button class="sl-button" data-tone="secondary" type="button" ' +
-        'data-library-filter="all">View all docs</button></div>'
-      );
-    }
-    return (
-      `<div class="sl-empty-state"><strong>${WRITING_FILTER_EMPTY}</strong>` +
-      '<button class="sl-button" data-tone="secondary" type="button" ' +
-      'data-library-filter="all">View all docs</button></div>'
-    );
-  }
   return (
     '<div class="sl-empty-state"><strong>No docs in sync</strong>' +
     '<p>Docs appear here when they match their source.</p>' +
@@ -642,7 +526,6 @@ const LIBRARY_FILTERS: ReadonlyArray<{ id: LibraryFilter; label: string }> = [
   { id: 'all', label: 'All' },
   { id: 'updates', label: 'Updates' },
   { id: 'sync', label: 'In sync' },
-  { id: 'writing', label: WRITING_FILTER_LABEL },
 ];
 
 function libraryFilterCount(model: LibraryScreenPresentation, id: LibraryFilter): number {
@@ -650,7 +533,6 @@ function libraryFilterCount(model: LibraryScreenPresentation, id: LibraryFilter)
     case 'updates': return model.counts.updates;
     case 'sync': return model.counts.inSync;
     case 'all': return model.counts.all;
-    case 'writing': return model.counts.writing;
   }
 }
 
@@ -660,13 +542,20 @@ function libraryFilterCount(model: LibraryScreenPresentation, id: LibraryFilter)
  * (patterns.css) with the filter group, so a check's start and end move no row.
  * The one place the rule lives, shared by the full paint and patchLibraryCheckLine.
  */
+/** The three fields the check line reads, so the Writing screen can draw it too. */
+export interface CheckLinePresentation {
+  refreshing?: boolean;
+  checkProgress?: ProgressPresentation | null;
+  checkedLabel?: string | null;
+}
+
 /** `live` is true for a check running now, false for the stamp of one past. */
 type CheckLineState =
   | { mode: 'progress'; label: string; current: number; total: number }
   | { mode: 'text'; label: string; live: boolean }
   | { mode: 'empty' };
 
-function checkLineState(model: LibraryScreenPresentation): CheckLineState {
+export function checkLineState(model: CheckLinePresentation): CheckLineState {
   const progress = model.checkProgress;
   if (progress) {
     const { label, current, total } = progress;
@@ -700,7 +589,7 @@ function checkLineLive(state: CheckLineState): 'polite' | 'off' {
   return state.mode === 'progress' || (state.mode === 'text' && state.live) ? 'polite' : 'off';
 }
 
-function libraryCheckLineMarkup(model: LibraryScreenPresentation): string {
+export function libraryCheckLineMarkup(model: CheckLinePresentation): string {
   const state = checkLineState(model);
   return (
     `<div class="sl-library-check-line" data-library-check-line data-mode="${state.mode}" ` +
@@ -751,7 +640,6 @@ export function libraryScrollMarkup(model: LibraryScreenPresentation): string {
             model.filter,
             model.allRows.length > 0,
             Boolean(model.error) || Boolean(model.readIncomplete),
-            { known: model.writingKnown === true, reasons: model.writingUnknownReasons ?? [] },
           );
 
   const rebuilds = model.loading
@@ -897,7 +785,7 @@ export function revealScrollTop(metrics: RevealMetrics): number {
 }
 
 /** A docId inside a double-quoted attribute selector. */
-function cssString(value: string): string {
+export function cssString(value: string): string {
   return value.replace(/["\\]/g, '\\$&');
 }
 
@@ -935,11 +823,6 @@ function rowControlSelector(element: Element): string | null {
   if (element.matches('[data-library-action]')) {
     const action = (element as HTMLElement).dataset.libraryAction;
     return action ? `[data-library-action="${cssString(action)}"]` : null;
-  }
-  // A writing field someone is typing in: its redrawn copy holds the same draft.
-  if (element.matches('[data-writing-key]')) {
-    const key = (element as HTMLElement).dataset.writingKey;
-    return key ? `[data-writing-key="${cssString(key)}"]` : null;
   }
   return null;
 }
@@ -986,8 +869,7 @@ export function patchLibraryDrift(refs: ShellRefs, model: LibraryScreenPresentat
     const article = drawn.get(row.docId)!;
     const status = article.querySelector('[data-library-status]')?.getAttribute('data-library-status');
     const openMenuBusyMoved = busyChanged && model.menuDocId === row.docId;
-    const writingMoved = (article.dataset.writingSig ?? '') !== writingSignature(row, busy);
-    if (status === row.status && !openMenuBusyMoved && !writingMoved) continue;
+    if (status === row.status && !openMenuBusyMoved) continue;
     const active = document.activeElement;
     const focused = active && article.contains(active) ? rowControlSelector(active) : null;
     const caret = focused && active instanceof HTMLInputElement ? [active.selectionStart, active.selectionEnd] as const : null;

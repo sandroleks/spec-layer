@@ -1285,64 +1285,24 @@
   line-height: var(--sl-line-height-reading);
 }
 
-/* The Writing group: a row's own summary line, then the fields inside its
-   details. Sizes and colours follow the change list above. */
-.sl-library-writing-summary {
-  margin: 0;
-  padding: 0 var(--sl-space-14) var(--sl-space-6);
-  color: var(--sl-color-text-muted);
-  font-size: var(--sl-font-size-caption);
-}
-
-.sl-library-writing {
-  display: grid;
-  gap: var(--sl-space-8);
-  padding-top: var(--sl-space-8);
-}
-
-.sl-library-writing h2 {
-  margin: 0;
-  font-size: var(--sl-font-size-support);
-  font-weight: var(--sl-font-weight-semibold);
-}
-
-.sl-writing-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--sl-space-4);
-}
-
-.sl-writing-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: var(--sl-space-10);
-}
-
-.sl-writing-item {
-  display: grid;
-  gap: var(--sl-space-4);
-}
-
-.sl-writing-item.is-section {
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-}
-
-.sl-writing-name {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--sl-space-4);
-  font-size: var(--sl-font-size-support);
-  font-weight: var(--sl-font-weight-semibold);
-}
-
-.sl-writing-facts {
-  color: var(--sl-color-text-muted);
-  font-size: var(--sl-font-size-caption);
-}
+/* The Writing screen: one group per doc, each task a collapsible row. Sizes
+   and colours follow the Library rows and change list above. */
+.sl-writing-screen .sl-writing-list { display: grid; gap: var(--sl-space-10); padding: var(--sl-space-8) var(--sl-space-14); }
+.sl-writing-group { display: grid; gap: var(--sl-space-6); }
+.sl-writing-group-head { display: flex; align-items: center; gap: var(--sl-space-6); }
+.sl-writing-group-head h2 { margin: 0; font-size: var(--sl-font-size-support); font-weight: var(--sl-font-weight-semibold); }
+.sl-writing-count { margin-right: auto; font-size: var(--sl-font-size-caption); color: var(--sl-color-text-muted); }
+.sl-writing-tasks { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sl-space-4); }
+.sl-writing-task { border: 1px solid var(--sl-color-border); border-radius: var(--sl-radius-sm); }
+.sl-writing-task-head { display: flex; align-items: center; gap: var(--sl-space-6); width: 100%; padding: var(--sl-space-6) var(--sl-space-8); background: none; border: 0; color: inherit; text-align: left; font: inherit; cursor: pointer; }
+.sl-writing-task.is-done .sl-writing-task-head { cursor: default; color: var(--sl-color-text-muted); }
+.sl-writing-dot { width: 14px; height: 14px; border-radius: 50%; border: 1.5px solid var(--sl-color-text-muted); display: inline-flex; align-items: center; justify-content: center; flex: none; }
+.sl-writing-task.is-done .sl-writing-dot { border-color: transparent; color: var(--sl-color-success); }
+.sl-writing-title { display: inline-flex; align-items: center; gap: var(--sl-space-4); font-weight: var(--sl-font-weight-semibold); }
+.sl-writing-caption { margin-left: auto; font-size: var(--sl-font-size-caption); color: var(--sl-color-text-muted); text-align: right; }
+.sl-writing-chevron { flex: none; transition: transform 120ms; }
+.sl-writing-chevron.is-expanded { transform: rotate(180deg); }
+.sl-writing-task-body { display: grid; gap: var(--sl-space-6); padding: 0 var(--sl-space-8) var(--sl-space-8); }
 
 .sl-writing-ai-tag {
   padding: 0 var(--sl-space-4);
@@ -1359,8 +1319,7 @@
 }
 
 .sl-writing-note,
-.sl-writing-foot,
-.sl-writing-empty {
+.sl-writing-foot {
   margin: 0;
   color: var(--sl-color-text-muted);
   font-size: var(--sl-font-size-caption);
