@@ -136,27 +136,38 @@ export function renderWritingScreen(refs: ShellRefs, model: WritingScreenPresent
 
 /**
  * One doc's reply landed: redraw its group in place, keeping focus and the
- * caret in a field, and the check line. False when the set of groups changed
- * or the list is not on screen, so the caller paints fully.
+ * caret in a field, then the check line and Refresh. A doc with nothing to
+ * write has no group, so only those two move. False when the set of groups
+ * changed, the list is empty (its empty state may change), or the list is
+ * not on screen, so the caller paints fully.
  */
 export function patchWritingGroup(refs: ShellRefs, model: WritingScreenPresentation, docId: string): boolean {
-  if (!refs.screen.classList.contains('sl-writing-screen') || model.loading) return false;
+  if (!refs.screen.classList.contains('sl-writing-screen') || model.loading || model.groups.length === 0) return false;
   const drawn = [...refs.scroll.querySelectorAll<HTMLElement>('[data-writing-group]')].map((el) => el.dataset.writingGroup);
   const wanted = model.groups.map((g) => g.docId);
   if (drawn.length !== wanted.length || drawn.some((id, i) => id !== wanted[i])) return false;
   const group = model.groups.find((g) => g.docId === docId);
-  const element = refs.scroll.querySelector<HTMLElement>(`[data-writing-group="${cssString(docId)}"]`);
-  if (!group || !element) return false;
-  const active = document.activeElement;
-  const key = active instanceof HTMLInputElement && element.contains(active) ? active.dataset.writingKey : undefined;
-  const caret = active instanceof HTMLInputElement ? ([active.selectionStart, active.selectionEnd] as const) : null;
-  element.outerHTML = writingGroupMarkup(group);
-  if (key) {
-    const next = refs.scroll.querySelector<HTMLInputElement>(`[data-writing-key="${cssString(key)}"]`);
-    next?.focus({ preventScroll: true });
-    if (next && caret && caret[0] !== null && caret[1] !== null) next.setSelectionRange(caret[0], caret[1]);
+  if (group) {
+    const element = refs.scroll.querySelector<HTMLElement>(`[data-writing-group="${cssString(docId)}"]`);
+    if (!element) return false;
+    const active = document.activeElement;
+    const key = active instanceof HTMLInputElement && element.contains(active) ? active.dataset.writingKey : undefined;
+    const caret = active instanceof HTMLInputElement ? ([active.selectionStart, active.selectionEnd] as const) : null;
+    element.outerHTML = writingGroupMarkup(group);
+    if (key) {
+      const next = refs.scroll.querySelector<HTMLInputElement>(`[data-writing-key="${cssString(key)}"]`);
+      next?.focus({ preventScroll: true });
+      if (next && caret && caret[0] !== null && caret[1] !== null) next.setSelectionRange(caret[0], caret[1]);
+    }
   }
   const line = refs.scroll.querySelector('[data-library-check-line]');
   if (line) line.outerHTML = libraryCheckLineMarkup(model);
+  // Set in place, not redrawn, so a focused Refresh keeps its focus.
+  const refresh = refs.footer.querySelector<HTMLButtonElement>('[data-library-refresh]');
+  if (refresh) {
+    refresh.disabled = model.busy === true;
+    const label = refresh.querySelector('span');
+    if (label) label.textContent = model.refreshing ? WRITING_REFRESHING : WRITING_REFRESH;
+  }
   return true;
 }

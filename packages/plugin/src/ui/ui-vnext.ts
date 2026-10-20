@@ -56,8 +56,8 @@ import { COMPONENT_FORMATS, isComponentFormat, type ComponentFormat } from '../c
 import { computeMenuPlacement } from './fontPicker';
 import { filterFamilies } from '../fonts';
 import { renderLicenseScreen } from './screens/license';
-import { renderWritingScreen } from './screens/writing';
-import { patchLibraryCheckLine, patchLibraryDrift, renderLibraryScreen, revealLibraryRow, type LibraryScreenPresentation } from './screens/library';
+import { patchWritingGroup, renderWritingScreen, type WritingScreenPresentation } from './screens/writing';
+import { cssString, patchLibraryCheckLine, patchLibraryDrift, renderLibraryScreen, revealLibraryRow, type CheckLinePresentation, type LibraryScreenPresentation } from './screens/library';
 import { patchInitialVersion, renderPublishScreen } from './screens/publish';
 import { renderHistoryScreen } from './screens/history';
 import { globalSearchMarkup, patchGlobalSearch, setSearchActive } from './screens/search';
@@ -75,8 +75,6 @@ import {
 } from './viewModel/componentScreen';
 import {
   buildLibraryModel,
-  type LibraryDraft,
-  type LibraryWritingItem,
   formatLibraryCheckedAt,
   initialLibraryDrift,
   libraryCheckedLabelChangesIn,
@@ -88,6 +86,17 @@ import {
   type LibraryDriftState,
   type LibraryFilter,
 } from './viewModel/library';
+import {
+  buildWritingModel,
+  closedTasks,
+  knownDocIds,
+  openTasks,
+  type BuildWritingModelOptions,
+  type TaskRef,
+  type WritingDraft,
+  type WritingModel,
+  type WritingTask,
+} from './viewModel/writing';
 import {
   buildSearchModel,
   nextSearchIndex,
@@ -142,7 +151,7 @@ import {
   type BuildPresenter,
 } from './actions';
 import { generateDescriptions, generateGroupDescriptions, resolveComponentImage } from './ai';
-import { WRITING_DRAFTS_NOTE, draftFailedNote, writtenToast } from './writingCopy';
+import { WRITING_DRAFTS_NOTE, WRITING_UNKNOWN_UNREAD, draftFailedNote, writtenToast } from './writingCopy';
 import { briefFor } from './writingBriefs';
 import type { WritingGap } from '../writingGaps';
 import {
@@ -280,10 +289,16 @@ const libraryDrift = new Map<string, LibraryDriftState>();
 /** Component docs' blank descriptions and sections, from the current drift pass. */
 const libraryComponentGaps = new Map<string, WritingGap[]>();
 /** Typed or AI-drafted text, by writing key; kept until a write clears it. */
-const libraryDrafts = new Map<string, LibraryDraft>();
+const libraryDrafts = new Map<string, WritingDraft>();
 /** Doc ids with a Draft all call out. */
 const libraryDrafting = new Set<string>();
 let draftsNoteShown = false;
+/** The one Writing task whose field shows, or null. */
+let writingExpandedKey: string | null = null;
+/** Tasks that closed this session: key -> the gap and the doc it sat under. Completion order. */
+const writingDone = new Map<string, TaskRef>();
+/** Every open task after the last model build, with its doc, to tell a closed task from one that was never listed. */
+let writingOpenBefore = new Map<string, TaskRef>();
 const libraryBaseline = new Map<string, string>();
 /** The current drift pass; see libraryPass.ts. */
 const driftQueue = new DriftQueue();
@@ -593,7 +608,7 @@ function paintScreen(): void {
       }
       return;
     case 'writing':
-      renderWritingScreen(refs, { loading: !libraryRequested });
+      renderWritingScreen(refs, writingPresentation());
       return;
     case 'license': {
       const quota = state.quota;
@@ -615,15 +630,39 @@ function paintScreen(): void {
   }
 }
 
+/** No list to show yet: the first read, or a refresh, is out and no doc is known. */
+function libraryListLoading(): boolean {
+  return (!libraryRequested || libraryRefreshing) && libraryEntries.length === 0;
+}
+
+/**
+ * The source check line the Library and Writing share: a running check's
+ * progress, else the stamp of the last one. `pendingChecks` is whether any
+ * row still reads pending.
+ */
+function libraryCheckLine(pendingChecks: boolean): CheckLinePresentation {
+  const checkTotal = [...libraryDrift.values()].length;
+  const checkDone = [...libraryDrift.values()]
+    .filter((status) => status !== 'pending').length;
+  const checkProgress = libraryRefreshing || pendingChecks
+    ? {
+        label: libraryEntries.length === 0 ? 'Finding docs in this file' : 'Checking for source changes',
+        ...(checkTotal > 0 ? { current: checkDone, total: checkTotal } : {}),
+      }
+    : null;
+  return {
+    refreshing: libraryRefreshing || pendingChecks,
+    checkedLabel: formatLibraryCheckedAt(libraryCheckedAt),
+    checkProgress,
+  };
+}
+
 /** The Library list's presentation, shared by the full paint and the per-row patch. */
 function libraryPresentation(): LibraryScreenPresentation {
   const model = currentLibraryModel();
   const update = libraryOperation?.kind === 'update' ? libraryOperation : null;
   const pendingChecks = model.allRows.some((row) => row.status === 'pending');
   const failedChecks = model.allRows.some((row) => row.status === 'unavailable');
-  const checkTotal = [...libraryDrift.values()].length;
-  const checkDone = [...libraryDrift.values()]
-    .filter((status) => status !== 'pending').length;
   // An Update run's progress floats above its footer buttons; a source check's
   // goes in the check line under the filters, so its start and end move no row.
   const progress = update
@@ -634,24 +673,16 @@ function libraryPresentation(): LibraryScreenPresentation {
         total: update.total,
       }
     : null;
-  const checkProgress = libraryRefreshing || pendingChecks
-    ? {
-        label: libraryEntries.length === 0 ? 'Finding docs in this file' : 'Checking for source changes',
-        ...(checkTotal > 0 ? { current: checkDone, total: checkTotal } : {}),
-      }
-    : null;
   return {
     ...model,
     menuDocId: libraryMenuDocId,
     revealedDocId: libraryRevealDocId,
     error: libraryError,
     readIncomplete: libraryReadIncomplete,
-    loading: (!libraryRequested || libraryRefreshing) && libraryEntries.length === 0,
-    refreshing: libraryRefreshing || pendingChecks,
+    loading: libraryListLoading(),
     probing: libraryProbeInFlight,
     checksIncomplete: failedChecks,
-    checkedLabel: formatLibraryCheckedAt(libraryCheckedAt),
-    checkProgress,
+    ...libraryCheckLine(pendingChecks),
     updatingAll: Boolean(update?.batch),
     updatingDocId: update?.currentDocId ?? null,
     annotating: annotateBusy,
@@ -661,12 +692,77 @@ function libraryPresentation(): LibraryScreenPresentation {
 
 /** Repaint after a source check lands; list only, so Publish and History keep focus. */
 function paintLibraryDrift(): void {
-  if (view === 'writing') {
-    paint();
-    return;
-  }
   if (view !== 'library' || libraryPane !== 'list') return;
   if (!patchLibraryDrift(refs, libraryPresentation())) paint();
+}
+
+// ---------------------------------------------------------------------------
+// Writing
+// ---------------------------------------------------------------------------
+
+function writingOptions(): BuildWritingModelOptions {
+  return {
+    drift: libraryDrift,
+    componentGaps: libraryComponentGaps,
+    foundation: currentFoundationSpec(),
+    foundationLoading: foundationRequested && !currentFoundationSpec(),
+    drafts: libraryDrafts,
+    drafting: libraryDrafting,
+    done: writingDone,
+    expandedKey: writingExpandedKey,
+  };
+}
+
+function currentWritingModel(): WritingModel {
+  return buildWritingModel(libraryEntries, writingOptions());
+}
+
+function writingPresentation(): WritingScreenPresentation {
+  const model = currentWritingModel();
+  // The Library reads this off its rows; Writing lists only docs with tasks, so read the checks.
+  const pendingChecks = [...libraryDrift.values()].some((status) => status === 'pending');
+  // A failed or partial read may have missed docs, so an empty list is no fact.
+  const unknownReasons = (libraryError !== null || libraryReadIncomplete) && !model.unknownReasons.includes(WRITING_UNKNOWN_UNREAD)
+    ? [...model.unknownReasons, WRITING_UNKNOWN_UNREAD]
+    : model.unknownReasons;
+  return {
+    ...model,
+    known: unknownReasons.length === 0,
+    unknownReasons,
+    // As the Library: no list until the first read lands, so an empty file is
+    // never claimed before main has answered.
+    loading: libraryListLoading(),
+    // Only Refresh waits on these; every field stays usable.
+    busy: libraryRefreshing || libraryProbeInFlight || libraryOperation !== null,
+    ...libraryCheckLine(pendingChecks),
+  };
+}
+
+/**
+ * After any reply that can change the open set: a task that was open and is
+ * gone, while its doc's state is known right now, closed; a task back in the
+ * open set is open again. A doc whose state is unknown (check pending or
+ * failed, gaps reply missing, Foundation reloading) changes nothing, so a
+ * cleared map never reads as a finished list.
+ */
+function syncWritingDone(): void {
+  const model = currentWritingModel();
+  const open = openTasks(model);
+  const known = knownDocIds(libraryEntries, writingOptions());
+  for (const [key, ref] of closedTasks(writingOpenBefore, open, known)) writingDone.set(key, ref);
+  for (const key of open.keys()) writingDone.delete(key);
+  const alive = new Set(libraryEntries.map((e) => e.docId));
+  for (const [key, ref] of writingDone) if (!alive.has(ref.docId)) writingDone.delete(key);
+  // Only docs whose state is known move the snapshot; an unknown doc keeps its last open set.
+  for (const [key, ref] of writingOpenBefore) if (!known.has(ref.docId) && alive.has(ref.docId)) open.set(key, ref);
+  writingOpenBefore = open;
+  if (writingExpandedKey !== null && !open.has(writingExpandedKey)) writingExpandedKey = null;
+}
+
+/** Repaint Writing after a reply: one doc's group in place when it can, else the whole screen. */
+function paintWriting(docId?: string): void {
+  if (view !== 'writing') return;
+  if (docId === undefined || !patchWritingGroup(refs, writingPresentation(), docId)) paint();
 }
 
 /** Re-say "Checked 4 min ago" in place; the rows and the footer are left alone. */
@@ -1020,11 +1116,6 @@ function currentLibraryModel() {
     filter: libraryFilter,
     expandedDocId: libraryExpandedDocId,
     changes: libraryChanges,
-    componentGaps: libraryComponentGaps,
-    foundation: currentFoundationSpec(),
-    foundationLoading: foundationRequested && !currentFoundationSpec(),
-    drafts: libraryDrafts,
-    drafting: libraryDrafting,
   });
 }
 
@@ -1216,14 +1307,14 @@ function recheckLibraryRow(docId: string): void {
   pumpDriftQueue();
 }
 
-function writingItem(docId: string, key: string): LibraryWritingItem | undefined {
-  return currentLibraryModel().allRows.find((r) => r.docId === docId)?.writingItems.find((i) => i.key === key);
+function writingTask(docId: string, key: string): WritingTask | undefined {
+  return currentWritingModel().groups.find((g) => g.docId === docId)?.tasks.find((t) => t.key === key);
 }
 
 function saveWritingItem(docId: string, key: string): void {
-  const item = writingItem(docId, key);
+  const item = writingTask(docId, key);
   const draft = libraryDrafts.get(key);
-  if (!item || !draft || draft.text.trim() === '') return;
+  if (!item || item.done || !draft || draft.text.trim() === '') return;
   const g = item.gap;
   if (g.kind === 'section') return;
   send({
@@ -1233,18 +1324,18 @@ function saveWritingItem(docId: string, key: string): void {
 }
 
 async function draftAllForRow(docId: string): Promise<void> {
-  const row = currentLibraryModel().allRows.find((r) => r.docId === docId);
-  if (!row || libraryDrafting.has(docId)) return;
+  const group = currentWritingModel().groups.find((g) => g.docId === docId);
+  if (!group || libraryDrafting.has(docId)) return;
   const entry = libraryEntry(docId);
   const context = {
     foundation: currentFoundationSpec(),
     scope: entry?.foundationScope,
     projection: libraryLiveProjection.get(docId),
   };
-  const items = row.writingItems.filter((i) => i.gap.kind !== 'section' && !i.draft).map((i) => briefFor(i.gap, context));
+  const items = group.tasks.filter((t) => !t.done && t.gap.kind !== 'section' && !t.draft).map((t) => briefFor(t.gap, context));
   if (items.length === 0) return;
   libraryDrafting.add(docId);
-  paint();
+  paintWriting(docId);
   try {
     const { drafts, error } = await generateDescriptions(
       { items },
@@ -1266,7 +1357,7 @@ async function draftAllForRow(docId: string): Promise<void> {
     nativeNotify(aiFailureNote(state, error, 'component'), { error: true });
   } finally {
     libraryDrafting.delete(docId);
-    paint();
+    paintWriting(docId);
   }
 }
 
@@ -1370,6 +1461,7 @@ function finishLibraryOperation(error = '', canceled = false): void {
   libraryOperation = null;
   completeOperation();
   if (view === 'library') paint();
+  paintWriting();
   // The rescan keeps what this run did not change; see libraryCarry.
   refreshLibrary(libraryCarry({
     drift: libraryDrift,
@@ -2150,6 +2242,13 @@ document.addEventListener('click', (event) => {
     return;
   }
 
+  const writingToggle = target.closest<HTMLButtonElement>('[data-writing-toggle]');
+  if (writingToggle?.dataset.writingToggle) {
+    const key = writingToggle.dataset.writingToggle;
+    writingExpandedKey = writingExpandedKey === key ? null : key;
+    paintAndFocus(`[data-writing-toggle="${cssString(key)}"]`);
+    return;
+  }
   const writingOpen = target.closest<HTMLButtonElement>('[data-writing-open]');
   if (writingOpen?.dataset.writingOpen && writingOpen.dataset.docId) {
     send({ type: 'focusDocSection', docId: writingOpen.dataset.docId, sectionId: writingOpen.dataset.writingOpen as SectionId });
@@ -3085,6 +3184,8 @@ const handleMainMessage = (event: MessageEvent): void => {
       onFoundationMessage(msg.dump, msg.groupDescriptions);
       foundationScreen = { kind: 'ready' };
       foundationRefreshing = false;
+      // A Foundation read is what closes a Foundation task. The full paint covers Writing.
+      syncWritingDone();
       paint();
       return;
 
@@ -3187,7 +3288,9 @@ const handleMainMessage = (event: MessageEvent): void => {
       if (msg.entries.some((entry) => entry.kind === 'foundation')) {
         prefetchFoundationsForCopy();
       }
-      if (view === 'library' || view === 'writing') paint();
+      syncWritingDone();
+      if (view === 'library') paint();
+      paintWriting();
       if (searchOpen) renderGlobalSearch();
       return;
 
@@ -3196,9 +3299,10 @@ const handleMainMessage = (event: MessageEvent): void => {
       // one only has to belong to the current pass.
       if (driftQueue.id() !== msg.passId && !driftQueue.settledUnder(msg.docId, msg.passId)) return;
       libraryComponentGaps.set(msg.docId, msg.gaps);
+      syncWritingDone();
       // Patched in place like the drift reply it rides with: a pass of N docs
       // must not cost N full paints.
-      paintLibraryDrift();
+      paintWriting(msg.docId);
       return;
     }
 
@@ -3223,7 +3327,11 @@ const handleMainMessage = (event: MessageEvent): void => {
       } else {
         recheckLibraryRow(msg.docId);
       }
-      if (view === 'library' || view === 'writing') paint();
+      // A write closes nothing by itself: the task stays open until the
+      // re-check (or the Foundation read) no longer lists it.
+      syncWritingDone();
+      if (view === 'library') paint();
+      paintWriting(msg.docId);
       return;
     }
 
@@ -3236,7 +3344,9 @@ const handleMainMessage = (event: MessageEvent): void => {
         pumpDriftQueue();
       }
       // The probe held Update, Update all and Refresh disabled; give them back.
+      syncWritingDone();
       paintLibraryDrift();
+      paintWriting();
       return;
 
     case 'driftSource': {
@@ -3278,7 +3388,9 @@ const handleMainMessage = (event: MessageEvent): void => {
         send({ type: 'requestDocBaseline', docId: msg.docId });
       }
       syncLibraryBadge();
+      syncWritingDone();
       paintLibraryDrift();
+      paintWriting(msg.docId);
       return;
     }
 
@@ -3288,7 +3400,9 @@ const handleMainMessage = (event: MessageEvent): void => {
       libraryDrift.set(msg.docId, 'unavailable');
       libraryRefreshing = [...libraryDrift.values()].some((value) => value === 'pending');
       syncLibraryBadge();
+      syncWritingDone();
       paintLibraryDrift();
+      paintWriting(msg.docId);
       return;
 
     case 'libraryError':
@@ -3353,6 +3467,7 @@ const handleMainMessage = (event: MessageEvent): void => {
           libraryOperation = null;
           completeOperation();
           if (view === 'library') paint();
+          paintWriting();
         });
         return;
       }
@@ -3450,8 +3565,11 @@ const handleMainMessage = (event: MessageEvent): void => {
       if (libraryExpandedDocId === msg.docId) libraryExpandedDocId = null;
       if (libraryRevealDocId === msg.docId) libraryRevealDocId = null;
       if (libraryMenuDocId === msg.docId) libraryMenuDocId = null;
+      // Drops the doc's done tasks and its open snapshot with it.
+      syncWritingDone();
       syncLibraryBadge();
       if (view === 'library') paint();
+      paintWriting();
       if (searchOpen) renderGlobalSearch();
       invalidatePublishAfterChange();
       return;

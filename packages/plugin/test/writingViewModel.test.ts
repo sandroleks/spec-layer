@@ -9,12 +9,16 @@ import {
 } from '../src/ui/viewModel/writing';
 
 const NOW = Date.UTC(2026, 9, 20, 12);
-function entry(over: Partial<LibraryEntry> = {}): LibraryEntry {
-  return {
+/** An override may set a field to undefined to leave it out, as an older link does. */
+type EntryOver = { [K in keyof LibraryEntry]?: LibraryEntry[K] | undefined };
+function entry(over: EntryOver = {}): LibraryEntry {
+  const out: Record<string, unknown> = {
     docId: 'doc-1', kind: 'component', label: 'Button', componentName: 'Button', pageName: 'Components',
     sourceLabel: 'Components', generatedAt: NOW, sourceNodeId: '10:20', sourceExists: true, selfEdited: false,
     storedContentHash: 'h', unwrittenSections: [], sections: ['definition', 'whenToUse'], ...over,
   };
+  for (const key of Object.keys(out)) if (out[key] === undefined) delete out[key];
+  return out as unknown as LibraryEntry;
 }
 const gap = (over: Partial<WritingGap>): WritingGap => ({ kind: 'component', id: '10:20', name: 'Button', ...over });
 
@@ -153,7 +157,7 @@ describe('closedTasks and openTasks', () => {
 describe('knownDocIds', () => {
   const spec = { fileKey: 'f', collections: [], textStyles: [], effectStyles: [], extractedAt: '' } as never;
   const ok = { drift: new Map<string, LibraryDriftState>([['a', 'inSync']]), componentGaps: new Map([['a', []]]) };
-  const a = (over: Partial<LibraryEntry> = {}) => entry({ docId: 'a', ...over });
+  const a = (over: EntryOver = {}) => entry({ docId: 'a', ...over });
   it('counts a settled component doc with its gaps reply and section list', () => {
     expect([...knownDocIds([a()], ok)]).toEqual(['a']);
     expect(knownDocIds([a()], { ...ok, drift: new Map([['a', 'drifted']]) }).has('a')).toBe(true);

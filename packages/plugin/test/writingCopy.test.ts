@@ -37,7 +37,6 @@ describe('writing copy', () => {
   });
 
   it('keeps the fixed strings as the spec states them', () => {
-    expect(copy.WRITING_FILTER_LABEL).toBe('Needs writing');
     expect(copy.WRITING_RAIL_LABEL).toBe('Writing');
     expect(copy.WRITING_FIELD_HINT).toBe('What it is and when to use it');
     expect(copy.WRITING_DRAFT_ALL).toBe('Draft all with AI');
@@ -47,8 +46,7 @@ describe('writing copy', () => {
     expect(copy.WRITING_EMPTY).toBe('Nothing to write. Every description and section is filled.');
   });
 
-  it('names what an incomplete Needs writing list does not know yet', () => {
-    expect(copy.WRITING_FILTER_EMPTY).toBe('Nothing to write in any doc.');
+  it('names what an incomplete Writing list does not know yet', () => {
     expect(copy.WRITING_UNKNOWN_RUNNING).toBe('Checks are still running.');
     expect(copy.WRITING_UNKNOWN_OLDER).toBe('Docs built before this version list their sections after an Update.');
     expect(copy.WRITING_UNKNOWN_UNREAD).toBe('Some docs could not be read.');

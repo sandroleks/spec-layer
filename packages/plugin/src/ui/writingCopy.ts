@@ -3,7 +3,6 @@
  * Sentence case, second person, no em or en dashes.
  */
 
-export const WRITING_FILTER_LABEL = 'Needs writing';
 export const WRITING_HEADING = 'Writing';
 export const WRITING_RAIL_LABEL = 'Writing';
 export const WRITING_FIELD_HINT = 'What it is and when to use it';
@@ -17,7 +16,6 @@ export const WRITING_FOOT = 'Saving writes into Figma. The doc then shows Update
 export const WRITING_STALE = 'Sections as of the last update. Check again after Update.';
 export const WRITING_DRAFTS_NOTE = 'Drafts are kept until you close the plugin.';
 export const WRITING_EMPTY = 'Nothing to write. Every description and section is filled.';
-export const WRITING_FILTER_EMPTY = 'Nothing to write in any doc.';
 /** Under "None found in what could be read", one line per thing not yet known. */
 export const WRITING_UNKNOWN_RUNNING = 'Checks are still running.';
 export const WRITING_UNKNOWN_OLDER = 'Docs built before this version list their sections after an Update.';
