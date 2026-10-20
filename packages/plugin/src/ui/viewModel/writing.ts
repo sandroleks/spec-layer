@@ -17,6 +17,12 @@ export interface BuildWritingModelOptions {
   drift?: ReadonlyMap<string, LibraryDriftState>;
   /** Component gaps from main's `writingGaps` replies, by doc id. A doc missing here has none known. */
   componentGaps?: ReadonlyMap<string, readonly WritingGap[]>;
+  /**
+   * Docs whose source was written and whose fresh `writingGaps` reply has not
+   * landed. Their old gaps stay listed (the write is not yet confirmed), but
+   * nothing about their fields is known, so no task of theirs closes.
+   */
+  gapsPending?: ReadonlySet<string>;
   /** The UI's current Foundation spec; null or absent lists no Foundation gaps. */
   foundation?: FoundationSpec | null;
   /** The Foundation dump has been asked for and has not arrived, so the spec is not current. */
@@ -110,7 +116,7 @@ function docReadState(entry: LibraryEntry, options: BuildWritingModelOptions): D
   const older = entry.unwrittenSections === undefined;
   if (entry.sourceExists) {
     const state = libraryDriftForEntry(entry, options.drift ?? new Map<string, LibraryDriftState>());
-    if (state === 'pending') running = true;
+    if (state === 'pending' || options.gapsPending?.has(entry.docId)) running = true;
     else if (state === 'unavailable' || state === 'staleVersion') unread = true;
     // Settled, but main's gaps read never landed (it threw, or is still on its way).
     else if (!options.componentGaps?.has(entry.docId)) unread = true;

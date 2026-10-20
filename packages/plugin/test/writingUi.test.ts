@@ -243,6 +243,33 @@ describe('Writing view', () => {
     expect(document.querySelector(`[data-writing-key="${GAP_KEY}"]`)).toBeNull();
   });
 
+  it('keeps a saved task in its group, focus included, until the gaps reply, then shows it done', async () => {
+    const passId = await openWriting();
+    settle(passId, [gap, slot]);
+    click(`[data-writing-toggle="${GAP_KEY}"]`);
+    type(`[data-writing-key="${GAP_KEY}"]`, 'Starts an action.');
+    document.querySelector<HTMLElement>(`[data-writing-save="${GAP_KEY}"]`)?.focus();
+    click(`[data-writing-save="${GAP_KEY}"]`);
+    dispatch({ type: 'descriptionsWritten', docId: 'doc-1', written: [GAP_KEY], failed: [] });
+    const group = (): Element | null => document.querySelector('[data-writing-group="doc-1"]');
+    expect(taskKeys()).toEqual([GAP_KEY, SLOT_KEY]);
+    expect(group()?.contains(document.activeElement)).toBe(true);
+    expect(document.activeElement).not.toBe(document.body);
+
+    const next = lastOutgoing('requestDrift')['passId'] as string;
+    dispatch({ type: 'driftSource', docId: 'doc-1', passId: next, node: serializedButton(), fileKey: 'f' });
+    // The check settled but its gaps have not landed: the task is still there, and not closed.
+    expect(taskKeys()).toEqual([GAP_KEY, SLOT_KEY]);
+    expect(doneKeys()).toEqual([]);
+    expect(group()?.contains(document.activeElement)).toBe(true);
+
+    dispatch({ type: 'writingGaps', docId: 'doc-1', passId: next, gaps: [slot] });
+    expect(taskKeys()).toEqual([SLOT_KEY, GAP_KEY]);
+    expect(doneKeys()).toEqual([GAP_KEY]);
+    expect(group()?.contains(document.activeElement)).toBe(true);
+    expect(document.activeElement).not.toBe(document.body);
+  });
+
   it('closes a saved description of a doc built before the section list', async () => {
     // A 7.0.0 link records no section list.
     const { unwrittenSections: _omitted, ...older } = componentEntry('doc-1');
@@ -351,6 +378,18 @@ describe('Writing view', () => {
     expect(document.querySelector(`[data-writing-key="${GAP_KEY}"]`)).toBe(drafted);
     expect(document.querySelector(`[data-writing-task="${GAP_KEY}"] .sl-writing-ai-tag`)).toBeNull();
     expect(document.querySelector(`[data-writing-clear="${GAP_KEY}"]`)).not.toBeNull();
+  });
+
+  it('typing in a field adds and removes the group\'s Draft all as drafts fill the open fields', async () => {
+    const passId = await openWriting();
+    settle(passId, [gap]);
+    const draftAll = (): HTMLButtonElement | null => document.querySelector('[data-writing-group="doc-1"] [data-writing-draft-all]');
+    expect(draftAll()).not.toBeNull();
+    click(`[data-writing-toggle="${GAP_KEY}"]`);
+    type(`[data-writing-key="${GAP_KEY}"]`, 'Mine');
+    expect(draftAll()).toBeNull();
+    type(`[data-writing-key="${GAP_KEY}"]`, '');
+    expect(draftAll()).not.toBeNull();
   });
 
   it('a full paint keeps the focused field and its caret', async () => {
@@ -510,6 +549,43 @@ describe('Writing view', () => {
     // The refresh's reply carries nothing, so the component doc is checked again.
     dispatch({ type: 'library', entries: [componentEntry('doc-1'), foundationEntry()] });
     expect(count('requestDrift')).toBe(before.drift + 1);
+  });
+
+  it('a Foundation save during a pass reads the Foundation at once and the list once the pass settles', async () => {
+    const entries = [componentEntry('doc-1'), foundationEntry()];
+    const passId = await openWriting(entries);
+    // The Foundation is described, so it lists nothing: only its read can still be unknown.
+    dispatch({ type: 'foundation', dump: styleDump('Body copy.') });
+    const before = { foundation: count('requestFoundation'), library: count('requestLibrary') };
+    // doc-1's check is still out: a pass is running over a list that has landed.
+    dispatch({ type: 'descriptionsWritten', docId: 'doc-f', written: [STYLE_KEY], failed: [] });
+    expect(count('requestFoundation')).toBe(before.foundation + 1);
+    expect(count('requestLibrary')).toBe(before.library);
+
+    settle(passId, []);
+    expect(count('requestLibrary')).toBe(before.library + 1);
+    // The list comes back with the Foundation's new hash; the settled component doc keeps its check.
+    const drifts = count('requestDrift');
+    dispatch({ type: 'library', entries: [componentEntry('doc-1'), { ...foundationEntry(), currentContentHash: 'f-new' }] });
+    expect(count('requestDrift')).toBe(drifts);
+    // The Foundation read is still out, so nothing is claimed from the old spec.
+    expect(document.querySelector('[data-writing-unknown]')).not.toBeNull();
+    expect(document.querySelector('.sl-writing-list')?.textContent).not.toContain('Nothing to write');
+    dispatch({ type: 'foundation', dump: styleDump('Body copy.') });
+    expect(document.querySelector('[data-writing-unknown]')).toBeNull();
+
+    click('[data-view="library"]');
+    expect(document.querySelector('.sl-library-row[data-doc-id="doc-f"] [data-library-status]')?.getAttribute('data-library-status'))
+      .toBe('updateAvailable');
+  });
+
+  it('a Foundation save with no pass out and no run reads the list at once', async () => {
+    const passId = await openWriting([componentEntry('doc-1'), foundationEntry()]);
+    dispatch({ type: 'foundation', dump: styleDump('') });
+    settle(passId, []);
+    const before = count('requestLibrary');
+    dispatch({ type: 'descriptionsWritten', docId: 'doc-f', written: [STYLE_KEY], failed: [] });
+    expect(count('requestLibrary')).toBe(before + 1);
   });
 
   it('Refresh reads the Foundation again and claims nothing until it lands', async () => {

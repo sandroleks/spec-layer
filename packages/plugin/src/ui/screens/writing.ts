@@ -93,11 +93,13 @@ function taskMarkup(t: WritingTask, docId: string, disabled: boolean): string {
   );
 }
 
+function draftAllMarkup(group: WritingGroup, disabled: boolean): string {
+  return `<button class="sl-button" data-tone="secondary" data-size="small" type="button" data-writing-draft-all data-doc-id="${esc(group.docId)}"${disabled ? ' disabled' : ''}>${group.drafting ? WRITING_DRAFTING : WRITING_DRAFT_ALL}</button>`;
+}
+
 export function writingGroupMarkup(group: WritingGroup, locked = false): string {
   const disabled = group.drafting || locked;
-  const draft = group.canDraft
-    ? `<button class="sl-button" data-tone="secondary" data-size="small" type="button" data-writing-draft-all data-doc-id="${esc(group.docId)}"${disabled ? ' disabled' : ''}>${group.drafting ? WRITING_DRAFTING : WRITING_DRAFT_ALL}</button>`
-    : '';
+  const draft = group.canDraft ? draftAllMarkup(group, disabled) : '';
   return (
     `<section class="sl-writing-group" data-writing-group="${esc(group.docId)}">` +
     `<div class="sl-writing-group-head"><h2>${esc(group.label)}</h2><span class="sl-writing-count">${esc(group.countLabel)}</span>${draft}</div>` +
@@ -166,6 +168,40 @@ function restoreField(refs: ShellRefs, focus: FieldFocus | null): void {
   if (focus.start !== null && focus.end !== null) next.setSelectionRange(focus.start, focus.end);
 }
 
+/** The focused button inside a group, by the task it acts on, to put back after the group is redrawn. */
+function focusedControl(group: Element): { selector: string; key: string | null } | null {
+  const active = document.activeElement;
+  if (!(active instanceof HTMLButtonElement) || !group.contains(active)) return null;
+  const { writingSave, writingClear, writingToggle, writingDraftAll } = active.dataset;
+  const key = writingSave ?? writingClear ?? writingToggle ?? null;
+  if (writingSave !== undefined) return { selector: 'data-writing-save', key };
+  if (writingClear !== undefined) return { selector: 'data-writing-clear', key };
+  if (writingToggle !== undefined) return { selector: 'data-writing-toggle', key };
+  return writingDraftAll !== undefined ? { selector: 'data-writing-draft-all', key: null } : null;
+}
+
+/**
+ * Focus the same button in the redrawn group; when it is gone (a saved task
+ * collapsed, or closed), that task's row, else the group's first row, else the
+ * group itself, so keyboard focus never falls to the page.
+ */
+function restoreControl(group: HTMLElement, focus: { selector: string; key: string | null } | null): void {
+  if (!focus) return;
+  const within = (selector: string): HTMLButtonElement | null => group.querySelector<HTMLButtonElement>(selector);
+  const same = focus.key === null ? `[${focus.selector}]` : `[${focus.selector}="${cssString(focus.key)}"]`;
+  const next = [
+    within(same),
+    focus.key === null ? null : within(`[data-writing-toggle="${cssString(focus.key)}"]`),
+    within('[data-writing-toggle]'),
+  ].find((el) => el !== null && !el.disabled);
+  if (next) {
+    next.focus({ preventScroll: true });
+    return;
+  }
+  group.tabIndex = -1;
+  group.focus({ preventScroll: true });
+}
+
 /** A full paint; a field being typed in keeps its focus and caret. */
 export function renderWritingScreen(refs: ShellRefs, model: WritingScreenPresentation): void {
   const onScreen = refs.screen.classList.contains('sl-writing-screen');
@@ -199,6 +235,21 @@ export function patchWritingTask(refs: ShellRefs, model: WritingScreenPresentati
     if (title) title.innerHTML = taskTitleMarkup(t);
     const actions = item.querySelector('.sl-writing-actions');
     if (actions) actions.innerHTML = taskActionsMarkup(t, group.docId, group.drafting || model.locked === true);
+    // Draft all lists open fields without a draft, so typing can add or remove it.
+    const groupEl = item.closest<HTMLElement>('[data-writing-group]');
+    const head = groupEl?.querySelector<HTMLElement>('.sl-writing-group-head');
+    const draftAll = head?.querySelector<HTMLButtonElement>('[data-writing-draft-all]') ?? null;
+    if (head && group.canDraft !== (draftAll !== null)) {
+      const focused = draftAll !== null && document.activeElement === draftAll;
+      draftAll?.remove();
+      if (group.canDraft) {
+        const holder = document.createElement('div');
+        holder.innerHTML = draftAllMarkup(group, group.drafting || model.locked === true);
+        const button = holder.firstElementChild;
+        if (button) head.append(button);
+      }
+      if (focused && groupEl) restoreControl(groupEl, { selector: 'data-writing-draft-all', key: null });
+    } else if (draftAll) draftAll.disabled = group.drafting || model.locked === true;
   }
 }
 
@@ -222,8 +273,11 @@ export function patchWritingGroup(refs: ShellRefs, model: WritingScreenPresentat
     const element = refs.scroll.querySelector<HTMLElement>(`[data-writing-group="${cssString(docId)}"]`);
     if (!element) return false;
     const focus = focusedField(element);
+    const control = focusedControl(element);
     element.outerHTML = writingGroupMarkup(group, model.locked === true);
     restoreField(refs, focus);
+    const redrawn = refs.scroll.querySelector<HTMLElement>(`[data-writing-group="${cssString(docId)}"]`);
+    if (redrawn) restoreControl(redrawn, control);
   }
   const line = refs.scroll.querySelector('[data-library-check-line]');
   if (line) line.outerHTML = libraryCheckLineMarkup(model);

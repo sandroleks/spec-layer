@@ -289,6 +289,10 @@ const currentHasDoc = (): boolean => {
 const libraryDrift = new Map<string, LibraryDriftState>();
 /** Component docs' blank descriptions and sections, from the current drift pass. */
 const libraryComponentGaps = new Map<string, WritingGap[]>();
+/** Docs written to whose fresh `writingGaps` reply is still out; their old gaps stay listed but nothing about them is known. */
+const libraryGapsPending = new Set<string>();
+/** A Foundation save landed while a pass ran: the list is read again when the pass settles. */
+let foundationRereadPending = false;
 /** Typed or AI-drafted text, by writing key; kept until a write clears it. */
 const libraryDrafts = new Map<string, WritingDraft>();
 /** Doc ids with a Draft all call out. */
@@ -705,6 +709,7 @@ function writingOptions(): BuildWritingModelOptions {
   return {
     drift: libraryDrift,
     componentGaps: libraryComponentGaps,
+    gapsPending: libraryGapsPending,
     foundation: currentFoundationSpec(),
     // A refresh reads it again: the spec in hand is no longer current.
     foundationLoading: foundationRequested && (!currentFoundationSpec() || foundationRefreshing),
@@ -1190,6 +1195,8 @@ function startLibraryDriftChecks(carry: LibraryCarry | null): void {
   const carriedGaps = new Map([...libraryComponentGaps].filter(([docId]) => carry?.checks.has(docId)));
   libraryDrift.clear();
   libraryComponentGaps.clear();
+  // A new pass reads every gap again, or carries the settled ones.
+  libraryGapsPending.clear();
   libraryBaseline.clear();
   libraryExtractorVersion.clear();
   libraryLiveProjection.clear();
@@ -1306,9 +1313,10 @@ function recheckLibraryRow(docId: string): void {
   const entry = libraryEntry(docId);
   if (!entry || entry.kind !== 'component' || !entry.sourceExists) return;
   libraryDrift.set(docId, 'pending');
-  // The old gaps are what the write changed; until this check's `writingGaps`
-  // lands the doc reads unknown, between `driftSource` and that reply too.
-  libraryComponentGaps.delete(docId);
+  // The old gaps are what the write changed, but they stay listed so the saved
+  // task does not leave its group; the marker keeps the doc unknown, so nothing
+  // closes until this check's `writingGaps` lands, between `driftSource` and that reply too.
+  libraryGapsPending.add(docId);
   // The old diff was resolved against the projection this check replaces.
   libraryChanges.delete(docId);
   // One row's check must not stamp the whole library as freshly checked.
@@ -1320,6 +1328,32 @@ function recheckLibraryRow(docId: string): void {
   driftQueue.start(newPassId(), pending);
   libraryRefreshing = true;
   pumpDriftQueue();
+}
+
+/**
+ * Read the list again without checking settled component docs again: a
+ * Foundation write moves no component source, so the rescan keeps every
+ * settled check and its gaps; see libraryCarry.
+ */
+function rereadLibraryKeepingChecks(): void {
+  pendingLibraryCarry = libraryCarry({
+    drift: libraryDrift,
+    projections: libraryLiveProjection,
+    checkedAt: libraryCheckedAt,
+    rebuilt: [],
+  });
+  send({ type: 'requestLibrary' });
+}
+
+/**
+ * A pass just ended its last check. A Foundation save that landed during it
+ * left the Foundation row's hash on the spec the pass started from, so the
+ * list is read now, unless a run owns it (its own end-of-run read covers it).
+ */
+function settleFoundationReread(): void {
+  if (!foundationRereadPending || libraryRefreshing) return;
+  foundationRereadPending = false;
+  if (libraryOperation === null) rereadLibraryKeepingChecks();
 }
 
 function writingTask(docId: string, key: string): WritingTask | undefined {
@@ -3308,6 +3342,8 @@ const handleMainMessage = (event: MessageEvent): void => {
       // With no component docs there is no pass to wait for; this reply is the check.
       if (driftQueue.done()) stampLibraryChecked();
       libraryRefreshing = [...libraryDrift.values()].some((value) => value === 'pending');
+      // This reply is itself a fresh read, so a Foundation save before it is covered.
+      foundationRereadPending = false;
       syncLibraryBadge();
       // Fired from the reply, not navigateToView: only a file with a foundation
       // doc needs the dump, and the prefetch's guard keeps it once per session.
@@ -3325,6 +3361,7 @@ const handleMainMessage = (event: MessageEvent): void => {
       // one only has to belong to the current pass.
       if (driftQueue.id() !== msg.passId && !driftQueue.settledUnder(msg.docId, msg.passId)) return;
       libraryComponentGaps.set(msg.docId, msg.gaps);
+      libraryGapsPending.delete(msg.docId);
       syncWritingDone();
       // Patched in place like the drift reply it rides with: a pass of N docs
       // must not cost N full paints.
@@ -3334,27 +3371,27 @@ const handleMainMessage = (event: MessageEvent): void => {
 
     case 'descriptionsWritten': {
       for (const key of msg.written) libraryDrafts.delete(key);
+      // A saved task folds up: its field is empty now, and it stays listed until the re-check.
+      if (writingExpandedKey !== null && msg.written.some((key) => docTaskKey(msg.docId, key) === writingExpandedKey)) {
+        writingExpandedKey = null;
+      }
       nativeNotify(writtenToast(msg.written.length, msg.failed), msg.failed.length > 0 ? { error: true } : {});
       const entry = libraryEntry(msg.docId);
       if (msg.written.length === 0) {
         // Nothing moved, so nothing to read again.
       } else if (entry?.kind === 'foundation') {
-        foundationRequested = false;
+        // Read again, and not current until its reply lands.
+        foundationRequested = true;
+        foundationRefreshing = true;
         send({ type: 'requestFoundation' });
         // The list is read again only when nothing else owns it: mid-run the
         // reply would clear the drift maps a queued update started from, and a
-        // refresh already out (a run's own end-of-run one included) re-reads it
-        // with its own carry.
-        if (libraryOperation === null && !libraryRefreshing) {
-          // A Foundation write moves no component source, so the rescan keeps
-          // every settled component check and its gaps; see libraryCarry.
-          pendingLibraryCarry = libraryCarry({
-            drift: libraryDrift,
-            projections: libraryLiveProjection,
-            checkedAt: libraryCheckedAt,
-            rebuilt: [],
-          });
-          send({ type: 'requestLibrary' });
+        // run's own end-of-run read covers the row. A pass out is not a run: a
+        // list read now would drop its checks, so it waits for the pass to
+        // settle, or the row keeps its old hash and reads In sync meanwhile.
+        if (libraryOperation === null) {
+          if (libraryRefreshing) foundationRereadPending = true;
+          else rereadLibraryKeepingChecks();
         }
       } else {
         recheckLibraryRow(msg.docId);
@@ -3408,7 +3445,11 @@ const handleMainMessage = (event: MessageEvent): void => {
           libraryDrift.set(msg.docId, 'unavailable');
         }
       }
+      const settledState = libraryDrift.get(msg.docId);
+      // No gaps reply is awaited from a check that read nothing usable.
+      if (settledState === 'unavailable' || settledState === 'staleVersion') libraryGapsPending.delete(msg.docId);
       libraryRefreshing = [...libraryDrift.values()].some((value) => value === 'pending');
+      settleFoundationReread();
       // A re-check dropped the open row's change list; ask for it again, or the
       // row reads pending for good.
       if (
@@ -3430,7 +3471,9 @@ const handleMainMessage = (event: MessageEvent): void => {
       if (!settleDriftCheck(msg.docId, msg.passId)) return;
       if (!libraryBaseline.has(msg.docId)) return;
       libraryDrift.set(msg.docId, 'unavailable');
+      libraryGapsPending.delete(msg.docId);
       libraryRefreshing = [...libraryDrift.values()].some((value) => value === 'pending');
+      settleFoundationReread();
       syncLibraryBadge();
       syncWritingDone();
       paintLibraryDrift();
@@ -3442,6 +3485,8 @@ const handleMainMessage = (event: MessageEvent): void => {
       // rather than keeping an unconfirmed badge, and Refresh comes back.
       libraryRequested = true;
       libraryRefreshing = false;
+      foundationRereadPending = false;
+      libraryGapsPending.clear();
       // So a paused pass has nothing to resume.
       driftQueue.clear();
       pendingLibraryCarry = null;
@@ -3590,6 +3635,7 @@ const handleMainMessage = (event: MessageEvent): void => {
       libraryEntries = libraryEntries.filter((entry) => entry.docId !== msg.docId);
       libraryDrift.delete(msg.docId);
       libraryComponentGaps.delete(msg.docId);
+      libraryGapsPending.delete(msg.docId);
       libraryBaseline.delete(msg.docId);
       libraryExtractorVersion.delete(msg.docId);
       libraryLiveProjection.delete(msg.docId);
