@@ -22,3 +22,17 @@ Pair action fills with `on-action`, destructive fills with `on-danger`, and sele
 Plugin spacing, control density, and type sizes are not website reading-size defaults. Keep website body text comfortable while sharing families, weights, shape roles, colors, and language. Do not apply this palette to customer-generated documentation: those themes remain independent.
 
 Use the existing symbol in a static, monochrome treatment. Keep Manrope for brand/display expression and Inter/system for working controls. The full usage specification and the implementation status live in the private repository.
+
+## Logo files
+
+`assets/logo/` holds the final variant matrix files. Every file is plain paths and shapes, with no font dependency.
+
+| File | Use |
+|---|---|
+| `spec-layer-lockup-{black,white}.svg` | Symbol and wordmark, the default wherever there is room |
+| `spec-layer-symbol-{black,white}.svg` | Symbol alone, 20 px and up |
+| `spec-layer-wordmark-{black,white}.svg` | Wordmark alone, where the symbol already appears nearby |
+| `spec-layer-favicon.svg` | Browser tab and 16 px slots; black, white under `prefers-color-scheme: dark` |
+| `spec-layer-app-icon.svg` | 512 px square tile, white symbol on black |
+
+The symbol sits on a 48 unit grid: 20 unit cells, an 8 unit gap, and 3.5 unit inside strokes, so outlined and filled shapes share outer bounds and the outlines match the wordmark's stem weight. The favicon is its own 16 px drawing (7 px cells, 2 px gap, 1.5 px strokes), not a scaled symbol. In the lockup the symbol is 1.4 times the wordmark's cap height, centered on it, with one cell of space before the wordmark. Use black or white only, and keep clear space of at least one cell around every file.
