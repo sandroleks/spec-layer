@@ -71,7 +71,7 @@ describe('to do explainer', () => {
 describe('to do rows', () => {
   it('draws every field open, under its path, with swatches and mode values', () => {
     const html = writingScrollMarkup(model({ groups: [group({ fields: [{ heading: 'color/surface', tasks: [variable()] }] })] }));
-    expect(html).toContain('<h3 class="sl-writing-subhead">color/surface</h3>');
+    expect(html).toContain('<h3 class="sl-writing-subhead" title="color/surface">color/surface</h3>');
     expect(html).toContain('<span class="sl-writing-title">light</span>');
     expect(html).toContain('Light colors/blue/25 · Dark colors/blue/900');
     expect(html).toContain('background-color: #F2F9FF"');
@@ -130,6 +130,7 @@ describe('to do doc blocks', () => {
     const html = writingScrollMarkup(model({ freeTier: true, groups: [group({ draftable: 61, countLabel: '12 of 79 written' })] }));
     expect(html).toContain('12 of 79 written');
     expect(html).not.toContain('sl-writing-progress');
+    expect(html).toContain('<h2 title="Button">Button</h2>');
     expect(html).toMatch(/data-writing-draft-all[^>]*title="Drafts 61 empty fields\. Takes 2 free AI writing uses\."[^>]*>[\s\S]*Draft with AI/);
     expect(writingScrollMarkup(model({ groups: [group({ draftable: 3 })] }))).toContain('Takes 1 AI writing use.');
     expect(writingScrollMarkup(model({ groups: [group({ draftable: 0 })] }))).not.toContain('data-writing-draft-all');

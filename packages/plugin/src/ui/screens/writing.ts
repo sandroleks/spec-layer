@@ -175,7 +175,7 @@ export function writingGroupMarkup(group: WritingGroup, model: WritingScreenPres
   const disabled = group.drafting || model.locked === true;
   const runs = group.fields.map((run) =>
     '<div class="sl-writing-run">' +
-    (run.heading ? `<h3 class="sl-writing-subhead">${esc(run.heading)}</h3>` : '') +
+    (run.heading ? `<h3 class="sl-writing-subhead" title="${esc(run.heading)}">${esc(run.heading)}</h3>` : '') +
     `<ul class="sl-writing-tasks">${run.tasks.map((t) => fieldRowMarkup(t, group.docId, disabled)).join('')}</ul>` +
     '</div>').join('');
   const canvas = group.sections.length === 0 ? '' : (
@@ -189,7 +189,8 @@ export function writingGroupMarkup(group: WritingGroup, model: WritingScreenPres
     `<section class="sl-writing-group" data-writing-group="${esc(group.docId)}">` +
     '<header class="sl-writing-group-head">' +
     '<div class="sl-writing-group-main">' +
-    `<h2>${esc(group.label)}</h2>` +
+    // The full name on hover: a long one is cut with an ellipsis rather than widening the screen.
+    `<h2 title="${esc(group.label)}">${esc(group.label)}</h2>` +
     `<span class="sl-writing-count">${esc(group.countLabel)}</span>` +
     '</div>' +
     `<div class="sl-writing-draft" data-writing-draft-slot>${draftMarkup(group, model)}</div>` +
