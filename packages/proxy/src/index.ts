@@ -1,5 +1,5 @@
 import { DurableObject } from 'cloudflare:workers';
-import { route, requestLog, type HandlerDeps, type QuotaClient } from './handlers';
+import { route, requestLog, type RouteDeps, type QuotaClient } from './handlers';
 import type { LibraryStore } from './license';
 import { QUOTA_PROFILES, quotaObjectName, type CommitOptions, type QuotaProfile, type QuotaSnapshot, type ReleaseOptions, type ReserveOptions, type ReserveResult, type Tier } from './quota';
 import { QuotaStore } from './quotaStore';
@@ -73,7 +73,7 @@ const worker = {
     const log = requestLog(req, (line) => console.log(line));
     const limiterDown = (binding: string) => (err: unknown) =>
       log('rate_limiter_error', { binding, message: err instanceof Error ? err.message : String(err) });
-    const deps: HandlerDeps = {
+    const deps: RouteDeps = {
       salt: env.FIGMA_ID_SALT,
       anthropicKey: env.ANTHROPIC_API_KEY,
       fetcher: fetch.bind(globalThis),
@@ -86,6 +86,9 @@ const worker = {
       requestLimiter: new LayeredLimiter(requestLimiter, env.REQUEST_RATE_LIMITER, limiterDown('REQUEST_RATE_LIMITER')),
       // Shares licenseCache's namespace; splitting it is a one-line change.
       libraryStore: kvLibraryStore(env.LICENSE_CACHE),
+      // One data point per request (metrics.ts); a failed write is logged
+      // there and never reaches the answer.
+      metrics: { write: (point) => env.METRICS.writeDataPoint(point) },
     };
     return route(req, deps);
   },

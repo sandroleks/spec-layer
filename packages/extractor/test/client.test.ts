@@ -322,6 +322,24 @@ describe('draftProse proxy mode', () => {
     });
   });
 
+  it('stamps the plugin build as X-Plugin-Version when given, and sends no header when unknown', async () => {
+    const stamped = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) => new Response(PROSE_OK, { status: 200 }));
+    const first = memStore();
+    await draftProse(spec, {
+      apiKey: null, fetcher: stamped as unknown as typeof fetch, cacheStore: { get: first.get, set: first.set },
+      proxy: { url: 'https://proxy.test', figmaUserId: 'u1', pluginVersion: '7.0.0' },
+    });
+    expect(((stamped.mock.calls[0][1] as RequestInit).headers as Record<string, string>)['X-Plugin-Version']).toBe('7.0.0');
+
+    const bare = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) => new Response(PROSE_OK, { status: 200 }));
+    const second = memStore();
+    await draftProse(spec, {
+      apiKey: null, fetcher: bare as unknown as typeof fetch, cacheStore: { get: second.get, set: second.set },
+      proxy: { url: 'https://proxy.test', figmaUserId: 'u1', pluginVersion: null },
+    });
+    expect('X-Plugin-Version' in ((bare.mock.calls[0][1] as RequestInit).headers as Record<string, string>)).toBe(false);
+  });
+
   it('throws a typed error on 402 quota_exhausted with resetsAt', async () => {
     const fetcher = vi.fn(async () => new Response(
       JSON.stringify({ error: 'quota_exhausted', resetsAt: '2026-08-01T00:00:00.000Z' }), { status: 402 },

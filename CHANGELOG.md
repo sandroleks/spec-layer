@@ -82,8 +82,26 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   a hash or an artifact. Needs the descriptions prose contract in
   production on the proxy.
 
+- **Usage metrics on the proxy.** Every request to `api.spec-layer.com`
+  now writes one data point to Workers Analytics Engine: the route, the
+  outcome, the tier, the client build, the status, the duration, byte and
+  item counts, and the same hashed identity the log lines already carry.
+  Never a prompt, prose, bundle, name, description, key or Figma user id,
+  and a failed write is logged and never changes an answer. The columns,
+  the three-month retention and the queries that answer "which builds are
+  still on the wire" and "how many callers a month" are in
+  `packages/proxy/README.md` under "Usage metrics". Production and staging
+  write to separate datasets.
+
 ### Changed
 
+- **The plugin names its build on every request to Spec Layer.** An
+  `X-Plugin-Version` header carries the stamped version on AI writing,
+  quota, license, publish, pull-key rotation and version history requests,
+  and the extractor's prose client takes it as `proxy.pluginVersion`. An
+  unstamped build (a test, the harness) sends nothing. The manifest's
+  network reasoning says so. The proxy allows the header through CORS, so
+  it deploys before any plugin build that sends it.
 - **Markdown is the plugin's default component format.** Copy for AI, the
   snapshot download and the developer setup command now write Markdown
   unless Settings, Export is set to YAML. Only a plugin that never stored a

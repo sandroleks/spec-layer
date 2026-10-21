@@ -3,7 +3,7 @@ import type {
   DescriptionDraftInput, DescriptionDraftResult, IntermediateSpec, ProseValidation, ProseV2Key, ProxyQuota, GroupDraftInput, GroupDraft,
 } from '@spec-layer/extractor';
 import { send } from './actions';
-import { PROXY_URL, type ProxyAuth } from './proxy';
+import { PROXY_URL, pluginVersion, type ProxyAuth } from './proxy';
 
 // One in-flight image request, resolved by ui-vnext.ts on 'componentImage'.
 // settle() clears the timer, so a stale timeout never null-resolves a newer one.
@@ -44,7 +44,10 @@ export async function generateProse(
     apiKey: null,
     fetcher: window.fetch.bind(window),
     cacheStore,
-    proxy: { url: PROXY_URL, licenseKey: auth.licenseKey, licenseInstanceId: auth.licenseInstanceId, figmaUserId: auth.figmaUserId, onQuota },
+    proxy: {
+      url: PROXY_URL, licenseKey: auth.licenseKey, licenseInstanceId: auth.licenseInstanceId, figmaUserId: auth.figmaUserId,
+      onQuota, pluginVersion: pluginVersion(),
+    },
     imageBase64: img?.base64 ?? null,
     imageMediaType: img?.mediaType,
     requested,
@@ -68,6 +71,7 @@ export async function generateGroupDescriptions(
       licenseInstanceId: auth.licenseInstanceId,
       figmaUserId: auth.figmaUserId,
       onQuota,
+      pluginVersion: pluginVersion(),
     },
   });
 }
@@ -84,6 +88,9 @@ export async function generateDescriptions(
     apiKey: null,
     fetcher: window.fetch.bind(window),
     cacheStore,
-    proxy: { url: PROXY_URL, licenseKey: auth.licenseKey, licenseInstanceId: auth.licenseInstanceId, figmaUserId: auth.figmaUserId, onQuota },
+    proxy: {
+      url: PROXY_URL, licenseKey: auth.licenseKey, licenseInstanceId: auth.licenseInstanceId, figmaUserId: auth.figmaUserId,
+      onQuota, pluginVersion: pluginVersion(),
+    },
   });
 }

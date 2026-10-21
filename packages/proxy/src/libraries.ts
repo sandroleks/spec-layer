@@ -128,6 +128,7 @@ async function resolveCaller(req: Request, deps: HandlerDeps): Promise<Caller | 
   const figmaId = proofs.figmaHash ? `free:${proofs.figmaHash}` : null;
   if (figmaId) owners.push(figmaId);
   const tierIdentity = tier === 'pro' ? (licenseId as string) : (figmaId ?? (licenseId as string));
+  deps.record({ identity: tierIdentity, tier });
   return { tier, tierIdentity, owners, licenseReason, figmaIdentity: figmaId };
 }
 
@@ -275,6 +276,7 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
   }
   if (read.kind === 'unreadable') return json(400, { error: 'invalid body' });
   const bodyBytes = read.bytes.byteLength;
+  deps.record({ bytes: bodyBytes });
   let body: { libraryId?: unknown; bundle?: unknown; dryRun?: unknown; bump?: unknown; note?: unknown; initialVersion?: unknown };
   try { body = JSON.parse(new TextDecoder().decode(read.bytes)) as typeof body; } catch { return json(400, { error: 'invalid json' }); }
 
@@ -306,6 +308,7 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
     return json(400, { error: 'invalid bundle' });
   }
   const bundle = body.bundle as Record<string, unknown>;
+  deps.record({ count: parsed.components.length });
   // Stored as the client sent it, so the pulled bytes are the published bytes.
   const stored = JSON.stringify(bundle);
   const fileName = typeof bundle.fileName === 'string' ? truncateUtf16(bundle.fileName, MAX_FILE_NAME_LENGTH) : null;
@@ -327,6 +330,7 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
     if (typeof body.libraryId !== 'string' || !LIBRARY_ID_RE.test(body.libraryId)) {
       return json(400, { error: 'invalid libraryId' });
     }
+    deps.record({ subject: body.libraryId });
     const owned = await ownedMeta(store, body.libraryId, caller.owners, pullKeyOf(req));
     if (owned instanceof Response) return owned;
     libraryId = body.libraryId;
@@ -363,7 +367,9 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
   }
 
   if (body.dryRun === true) {
+    deps.record({ kind: 'dry_run' });
     if (unchanged) {
+      deps.record({ detail: 'unchanged' });
       return json(200, {
         currentVersion: storedVersion, unchanged: true, minimumBump: null, proposedVersion: null,
         counts: { major: 0, minor: 0, patch: 0 }, changes: [], changesTruncated: false,
@@ -372,10 +378,13 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
     if (storedVersion === null && body.initialVersion !== undefined && body.initialVersion !== null && !isSemver(body.initialVersion)) {
       return json(400, { error: 'invalid_initial_version' });
     }
-    return json(200, { unchanged: false, ...proposalFor(storedVersion, diff, body.initialVersion) });
+    const proposal = proposalFor(storedVersion, diff, body.initialVersion);
+    deps.record({ detail: String(proposal.minimumBump ?? '') });
+    return json(200, { unchanged: false, ...proposal });
   }
 
   if (unchanged && libraryId && meta) {
+    deps.record({ kind: 'unchanged' });
     return respond(200, { libraryId, publishedAt: meta.publishedAt, unchanged: true, version: storedVersion },
       storedVersion ? { 'X-Library-Version': storedVersion } : {});
   }
@@ -415,6 +424,7 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
   switch (reserved.kind) {
     case 'cached': {
       const prior = JSON.parse(reserved.body) as { libraryId: string; publishedAt: string; version?: string };
+      deps.record({ kind: 'replayed' });
       return respond(200, { ...prior, unchanged: true }, prior.version ? { 'X-Library-Version': prior.version } : {});
     }
     case 'pending':
@@ -459,6 +469,7 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
         head: headWritten,
       });
       deps.log('library_publish', { libraryId, size: bodyBytes, version: record.version, bump: record.bump });
+      deps.record({ kind: 'updated', detail: record.bump });
       return json(200, {
         libraryId, publishedAt, version: record.version, bump: record.bump, minimumBump: record.minimumBump,
       }, { ...quotaHeaders(snap), 'X-Library-Version': record.version });
@@ -487,6 +498,7 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
       create: true, head: headWritten,
     });
     deps.log('library_publish', { libraryId: id, size: bodyBytes, created: true, version: record.version });
+    deps.record({ kind: 'created', detail: record.bump, subject: id });
     return json(201, {
       libraryId: id, pullKey, publishedAt, version: record.version, bump: record.bump, minimumBump: record.minimumBump,
     }, { ...quotaHeaders(snap), 'X-Library-Version': record.version });
@@ -503,6 +515,7 @@ export async function handlePublish(req: Request, deps: HandlerDeps): Promise<Re
 export async function handleRotate(req: Request, deps: HandlerDeps, libraryId: string): Promise<Response> {
   const ip = req.headers.get('CF-Connecting-IP') ?? 'unknown';
   if (!(await deps.licenseLimiter.allow(`librot:${ip}`, deps.now()))) return json(429, { error: 'rate_limited' });
+  deps.record({ subject: libraryId });
   const caller = await resolveCaller(req, deps);
   if (caller instanceof Response) return caller;
   const meta = await ownedMeta(deps.libraryStore, libraryId, caller.owners, pullKeyOf(req));
@@ -559,6 +572,7 @@ export async function handleVersions(req: Request, deps: HandlerDeps, libraryId:
 async function versionsAnswer(req: Request, deps: HandlerDeps, libraryId: string): Promise<Response> {
   const ip = req.headers.get('CF-Connecting-IP') ?? 'unknown';
   if (!(await deps.requestLimiter.allow(`libpull:${ip}`, deps.now()))) return json(429, { error: 'rate_limited' });
+  deps.record({ subject: libraryId });
   const meta = await pullAuthorized(req, deps, libraryId);
   if (meta instanceof Response) return meta;
   const raw = (await deps.libraryStore.get(versionsKey(libraryId))) ?? JSON.stringify({ v: 1, records: [] });
@@ -576,6 +590,7 @@ export async function handlePull(req: Request, deps: HandlerDeps, libraryId: str
 async function pullAnswer(req: Request, deps: HandlerDeps, libraryId: string): Promise<Response> {
   const ip = req.headers.get('CF-Connecting-IP') ?? 'unknown';
   if (!(await deps.requestLimiter.allow(`libpull:${ip}`, deps.now()))) return json(429, { error: 'rate_limited' });
+  deps.record({ subject: libraryId });
   const meta = await pullAuthorized(req, deps, libraryId);
   if (meta instanceof Response) return meta;
   const etag = `"${meta.bundleHash}"`;
@@ -590,5 +605,6 @@ async function pullAnswer(req: Request, deps: HandlerDeps, libraryId: string): P
   }
   const bundle = await deps.libraryStore.getStream(bundleKey(libraryId));
   if (bundle === null) return json(404, { error: 'not_found' });
+  deps.record({ bytes: meta.size });
   return new Response(bundle, { status: 200, headers });
 }

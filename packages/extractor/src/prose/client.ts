@@ -34,6 +34,13 @@ export const PROSE_PROMPT_VERSION = 'v9';
 export type ProseTier = 'pro' | 'free';
 
 /**
+ * The header the plugin stamps on every proxy request with its build version,
+ * so the proxy's usage metrics can tell which builds are in use. The plugin
+ * sends it and the proxy reads and allows it, so the name is defined once.
+ */
+export const PLUGIN_VERSION_HEADER = 'X-Plugin-Version';
+
+/**
  * Hashes the rendered prompt, so the key moves on EXACTLY what the model sees.
  * The proxy meters generations per unknown key, so any hashed field that does
  * not reach the prompt is a billed regeneration of identical prose.
@@ -149,6 +156,8 @@ export interface DraftOptions {
     licenseInstanceId?: string | null;
     figmaUserId?: string | null;
     onQuota?: ((q: ProxyQuota) => void) | undefined;
+    /** The plugin build, sent as `PLUGIN_VERSION_HEADER`; nothing is sent when unknown. */
+    pluginVersion?: string | null | undefined;
   };
 }
 
@@ -172,9 +181,12 @@ async function postCompletion(
     const auth: Record<string, string> = bearer
       ? { Authorization: `Bearer ${bearer}` }
       : { 'X-Figma-User': opts.proxy.figmaUserId ?? '' };
+    const build: Record<string, string> = opts.proxy.pluginVersion
+      ? { [PLUGIN_VERSION_HEADER]: opts.proxy.pluginVersion }
+      : {};
     res = await opts.fetcher(`${opts.proxy.url}/v1/prose`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', ...auth },
+      headers: { 'content-type': 'application/json', ...auth, ...build },
       body: JSON.stringify({ cacheKey, request: requestBody }),
     });
     if (!res.ok) {

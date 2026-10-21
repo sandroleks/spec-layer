@@ -30,7 +30,7 @@ the proxy, the CLI, the shared brand package, and the site at
 ```text
 packages/plugin/       Figma serializer, canvas renderers, iframe UI (vanilla DOM)
 packages/extractor/    pure extraction, v5 context export, YAML, hashes, prompts
-packages/proxy/        Cloudflare Worker: Anthropic credential, quotas, licensing
+packages/proxy/        Cloudflare Worker: Anthropic credential, quotas, licensing, usage metrics
 packages/cli/          spec-layer CLI: setup, init, pull, status, list, show, tools, skill; delivery plus pure platform projections, no extraction
 packages/brand/        @spec-layer/brand: shared tokens, identity assets, contrast gate
 ```
@@ -194,6 +194,15 @@ full voice guide is in the private repository.
 private Figma URLs, no proprietary component exports, no credentials. A real
 design-system artifact needs explicit approval covering ids, names,
 descriptions, and diagnostics before it can be committed.
+
+**Usage metrics carry no content.** The proxy writes one data point per
+request to Analytics Engine (`packages/proxy/src/metrics.ts`): route,
+outcome, tier, client build, status, duration, byte and item counts, and the
+hashed identity the log lines already carry. Never a prompt, prose, bundle,
+name, description, key or Figma user id, never anything that changes an
+answer, and never a column reinterpreted: a changed meaning is a new dataset
+name. The plugin only ever adds `X-Plugin-Version` to requests it already
+makes; it sends no events of its own.
 
 ## Where things stand (2026-10-14)
 

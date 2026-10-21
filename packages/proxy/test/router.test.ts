@@ -35,7 +35,12 @@ const baseDeps = () => ({
   licenseLimiter: new SlidingWindowLimiter(20, 60_000),
   requestLimiter: new SlidingWindowLimiter(60, 60_000),
   libraryStore: new MemKV(),
+  metrics: { write: vi.fn() },
 });
+
+/** The `n`th data point the route wrote. */
+const point = (d: ReturnType<typeof baseDeps>, n = 0) =>
+  (d.metrics.write as ReturnType<typeof vi.fn>).mock.calls[n][0] as { indexes: string[]; blobs: string[]; doubles: number[] };
 
 describe('route', () => {
   it('GET /v1/quota returns the snapshot for a free identity', async () => {
@@ -369,6 +374,8 @@ describe('CORS', () => {
     expect(res.headers.get('Access-Control-Allow-Origin')).toBe('*');
     expect(res.headers.get('Access-Control-Allow-Headers')).toContain('X-Figma-User');
     expect(res.headers.get('Access-Control-Allow-Headers')).toContain('Authorization');
+    // The plugin stamps its build on every request; without this the browser refuses to send it.
+    expect(res.headers.get('Access-Control-Allow-Headers')).toContain('X-Plugin-Version');
   });
 
   it('adds CORS + exposed quota headers to normal responses', async () => {
@@ -395,5 +402,46 @@ describe('CORS', () => {
   it('exposes X-Library-Version through CORS', async () => {
     const res = await route(new Request('https://p.test/v1/prose', { method: 'OPTIONS' }), baseDeps());
     expect(res.headers.get('Access-Control-Expose-Headers')).toContain('X-Library-Version');
+  });
+});
+
+describe('usage metrics', () => {
+  it('writes one point per request, the preflight and the 404 included', async () => {
+    const d = baseDeps();
+    await route(new Request('https://p.test/v1/prose', { method: 'OPTIONS' }), d);
+    await route(new Request('https://p.test/nope'), d);
+    await route(new Request('https://p.test/v1/quota', { headers: { 'X-Figma-User': 'u1' } }), d);
+    expect(d.metrics.write).toHaveBeenCalledTimes(3);
+    expect(point(d, 0).blobs.slice(0, 2)).toEqual(['preflight', 'ok']);
+    expect(point(d, 0).doubles[0]).toBe(204);
+    expect(point(d, 1).blobs.slice(0, 2)).toEqual(['unmatched', 'not_found']);
+    expect(point(d, 1).indexes).toEqual([]);
+    expect(point(d, 2).blobs.slice(0, 3)).toEqual(['quota', 'ok', 'free']);
+    expect(point(d, 2).indexes).toEqual([`free:${hashFigmaId('u1', 'salt')}`]);
+    expect(point(d, 2).doubles[0]).toBe(200);
+  });
+
+  it('names the client from the plugin header', async () => {
+    const d = baseDeps();
+    await route(new Request('https://p.test/v1/quota', { headers: { 'X-Figma-User': 'u1', 'X-Plugin-Version': '7.0.0' } }), d);
+    expect(point(d).blobs[3]).toBe('plugin/7.0.0');
+  });
+
+  it('records the 500 of an uncaught throw as internal', async () => {
+    const d = baseDeps();
+    d.quotaFor = () => { throw new Error('boom'); };
+    const res = await route(new Request('https://p.test/v1/quota', { headers: { 'X-Figma-User': 'u1' } }), d);
+    expect(res.status).toBe(500);
+    expect(point(d).blobs.slice(0, 2)).toEqual(['quota', 'internal']);
+    expect(point(d).doubles[0]).toBe(500);
+  });
+
+  it('answers the request unchanged when the sink throws, and logs it', async () => {
+    const d = baseDeps();
+    d.metrics.write = vi.fn(() => { throw new Error('dataset gone'); });
+    const res = await route(new Request('https://p.test/v1/quota', { headers: { 'X-Figma-User': 'u1' } }), d);
+    expect(res.status).toBe(200);
+    expect((await res.json() as { tier: string }).tier).toBe('free');
+    expect(d.log).toHaveBeenCalledWith('metrics_write_failed', { message: 'dataset gone' });
   });
 });

@@ -28,6 +28,10 @@ describe('wrangler.toml', () => {
     expect(toml).toMatch(block('env\\.staging\\.', 'LICENSE_RATE_LIMITER', '2002', 20));
   });
 
+  it('binds the usage metrics dataset under the name that carries its layout version', () => {
+    expect(toml).toMatch(/^\[\[analytics_engine_datasets\]\]\nbinding = "METRICS"\ndataset = "spec_layer_requests_v1"$/m);
+  });
+
   describe('[env.staging]', () => {
     const staging = toml.slice(toml.indexOf('\n[env.staging]\n'));
 
@@ -48,6 +52,11 @@ describe('wrangler.toml', () => {
 
     it('keeps observability on with every invocation sampled', () => {
       expect(staging).toMatch(/^\[env\.staging\.observability\]\nenabled = true\nhead_sampling_rate = 1$/m);
+    });
+
+    it('writes usage metrics to its own dataset, never production\'s', () => {
+      expect(staging).toMatch(/^\[\[env\.staging\.analytics_engine_datasets\]\]\nbinding = "METRICS"\ndataset = "spec_layer_requests_v1_staging"$/m);
+      expect(staging).not.toMatch(/dataset = "spec_layer_requests_v1"$/m);
     });
   });
 });
