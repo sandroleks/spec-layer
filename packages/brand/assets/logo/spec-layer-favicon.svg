@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" role="img" aria-label="Spec Layer">
+  <title>Spec Layer</title>
+  <style>.m{fill:#000000}.o{fill:none;stroke:#000000}@media (prefers-color-scheme:dark){.m{fill:#FFFFFF}.o{stroke:#FFFFFF}}</style>
+  <rect class="m" width="7" height="7"/>
+  <circle class="o" cx="12.5" cy="3.5" r="2.75" stroke-width="1.5"/>
+  <rect class="o" x="0.75" y="9.75" width="5.5" height="5.5" stroke-width="1.5"/>
+  <circle class="m" cx="12.5" cy="12.5" r="3.5"/>
+</svg>
