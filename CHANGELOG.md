@@ -78,6 +78,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   a hash or an artifact. Needs the descriptions prose contract in
   production on the proxy.
 
+### Changed
+
+- **Markdown is the plugin's default component format.** Copy for AI, the
+  snapshot download and the developer setup command now write Markdown
+  unless Settings, Export is set to YAML. Only a plugin that never stored a
+  format changes; a stored YAML choice is kept. The CLI's own default stays
+  YAML, so every existing repository pulls what it always did, and the setup
+  command spells out `--component-format md`.
+- **Model prose in the Markdown page carries no marker line.** The italic
+  "Written by AI from the extracted facts, not read from Figma." line under
+  each generated prose section is gone from Copy for AI and from pulled
+  Markdown: it cost an agent tokens and told it nothing. A section a person
+  wrote on the canvas still reads "Written on the Figma canvas, not generated
+  by AI.", so authored prose stays distinguishable. The YAML is unchanged.
+  Pulled Markdown loses the line with the next CLI release.
+
 ## [7.0.0] - 2026-10-14
 
 Plugin 7.0.0 is a major release because every existing document asks to

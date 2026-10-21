@@ -308,8 +308,8 @@ describe('loader phases', () => {
 describe('setComponentFormat', () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  it('starts on YAML', () => {
-    expect(createState().componentFormat).toBe('yaml');
+  it('starts on Markdown', () => {
+    expect(createState().componentFormat).toBe('md');
   });
 
   it('holds the choice and asks the main thread to store it', () => {

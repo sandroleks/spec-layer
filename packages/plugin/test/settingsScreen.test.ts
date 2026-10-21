@@ -456,18 +456,18 @@ describe('export tab', () => {
     expect(SETTINGS_TABS.map((tab) => tab.label)).toEqual(['Frames', 'Export', 'About']);
   });
 
-  it('offers YAML and Markdown as a radio group named by its heading, YAML checked by default', () => {
+  it('offers YAML and Markdown as a radio group named by its heading, Markdown checked by default', () => {
     const markup = settingsScrollMarkup(state);
     expect(markup).toContain('<h2 id="sl-component-format-heading">Component format</h2>');
     expect(markup).toContain('role="radiogroup" aria-labelledby="sl-component-format-heading"');
-    expect(markup).toContain('data-component-format="yaml" aria-checked="true" tabindex="0">YAML</button>');
-    expect(markup).toContain('data-component-format="md" aria-checked="false" tabindex="-1">Markdown</button>');
+    expect(markup).toContain('data-component-format="yaml" aria-checked="false" tabindex="-1">YAML</button>');
+    expect(markup).toContain('data-component-format="md" aria-checked="true" tabindex="0">Markdown</button>');
   });
 
-  it('checks Markdown when that is the stored choice', () => {
-    const markup = settingsScrollMarkup({ ...state, componentFormat: 'md' });
-    expect(markup).toContain('data-component-format="md" aria-checked="true" tabindex="0"');
-    expect(markup).toContain('data-component-format="yaml" aria-checked="false" tabindex="-1"');
+  it('checks YAML when that is the stored choice', () => {
+    const markup = settingsScrollMarkup({ ...state, componentFormat: 'yaml' });
+    expect(markup).toContain('data-component-format="yaml" aria-checked="true" tabindex="0"');
+    expect(markup).toContain('data-component-format="md" aria-checked="false" tabindex="-1"');
   });
 
   it('says what the choice changes, and that Foundations do not change', () => {

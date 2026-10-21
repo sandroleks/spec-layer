@@ -817,7 +817,7 @@ if (view === 'library') {
       return;
     }
     if (libraryPane === 'publish') {
-      renderPublishScreen(refs, publishFixture, publishAllowanceFixture, storedComponentFormat(param('format', 'yaml')));
+      renderPublishScreen(refs, publishFixture, publishAllowanceFixture, storedComponentFormat(param('format', 'md')));
       return;
     }
     const shownDrift = pendingDocs.size === 0
@@ -1017,7 +1017,7 @@ if (view === 'settings') {
     // `?version=` with no value shows the unstamped branch.
     pluginVersion: param('version', '5.0.0') || null,
     tab: isSettingsTab(tabParam) ? tabParam : 'frames',
-    componentFormat: storedComponentFormat(param('format', 'yaml')),
+    componentFormat: storedComponentFormat(param('format', 'md')),
   };
   let customDraft: BrandTheme = { ...THEME_PRESETS[0].theme };
   const renderSettingsFixture = () => renderSettingsScreen(refs, settingsState);

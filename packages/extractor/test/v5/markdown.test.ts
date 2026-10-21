@@ -763,12 +763,10 @@ function assertNoStrayBackslashInCodeSpans(markdown: string): void {
 }
 
 describe('componentMarkdown prose', () => {
-  const AI_MARKER = '*Written by AI from the extracted facts, not read from Figma.*';
-  // Counted by splitting rather than by a regex built from the marker: the
-  // marker is prose carrying `*` and `.`, so a regex needs every one of its
-  // metacharacters escaped, and an escaper that misses one silently counts
-  // the wrong thing. Splitting needs no escaping at all.
-  const countMarkers = (out: string): number => out.split(AI_MARKER).length - 1;
+  // The line that once sat under every model-written section. It cost an agent
+  // tokens and told it nothing, so model prose now carries no marker at all;
+  // only a section a person wrote says so (AUTHORED_MARKER, below).
+  const AI_MARKER = 'Written by AI';
 
   // The seven headings the renderer produces from `guidelines`, per the
   // plan's section mapping: `## Overview`, `## Variants`, `## Do and don't`,
@@ -789,7 +787,7 @@ describe('componentMarkdown prose', () => {
     donts: ['Do not use for navigation.'],
   };
 
-  it('reads the snake_case artifact keys and marks every prose section', () => {
+  it('reads the snake_case artifact keys and leaves model prose unmarked', () => {
     const artifact = buildComponentV5GoldenArtifact();
     const out = componentMarkdown({ ...artifact, guidelines: GUIDELINES } as typeof artifact);
     for (const heading of ['## Overview', '## Variants', "## Do and don't",
@@ -800,7 +798,8 @@ describe('componentMarkdown prose', () => {
     expect(out).toContain('A button triggers an action.');
     expect(out).toContain('- Use for the primary action.');
     expect(out).toContain('- Do not use for navigation.');
-    expect(countMarkers(out)).toBe(7);
+    expect(out).toContain('## Overview\n\nA button triggers an action.');
+    expect(out).not.toContain(AI_MARKER);
     expect(out).not.toContain('[object Object]');
     assertNoStrayBackslashInCodeSpans(out);
   });
@@ -826,10 +825,8 @@ describe('componentMarkdown prose', () => {
     // Two labelled lists: without the subheadings CommonMark reads a bare `-`
     // list, a blank line and a second bare `-` list as ONE loose list, so
     // nothing in the page says which rules are prohibitions.
-    expect(out).toContain(`## Do and don't\n\n${AI_MARKER}\n\n### Do\n\n- **Use one`);
+    expect(out).toContain("## Do and don't\n\n### Do\n\n- **Use one");
     expect(out).toContain("### Don't\n\n- **Don't use a button");
-    // The section still carries exactly one AI marker, on the `##` heading.
-    expect(countMarkers(out)).toBe(1);
   });
 
   it('floors a heading inside a rule at level 3, like every other prose blob', () => {
@@ -865,7 +862,7 @@ describe('componentMarkdown prose', () => {
     expect(out.indexOf('## Variants')).toBeLessThan(out.indexOf("## Do and don't"));
   });
 
-  it('extends the existing Anatomy section with the summary paragraph and its own marker', () => {
+  it('extends the existing Anatomy section with the summary paragraph', () => {
     const artifact = buildComponentV5GoldenArtifact();
     const out = componentMarkdown({
       ...artifact,
@@ -877,9 +874,9 @@ describe('componentMarkdown prose', () => {
     // One `## Anatomy` heading: Task 5's bullets are extended, never duplicated.
     expect(out.match(/^## Anatomy$/m)).toHaveLength(1);
     expect(out).toContain(
-      '## Anatomy\n\n' + AI_MARKER + '\n\nA container wrapping a label and an optional icon.',
+      '## Anatomy\n\nA container wrapping a label and an optional icon.',
     );
-    expect(countMarkers(out)).toBe(1);
+    expect(out).not.toContain(AI_MARKER);
   });
 
   it('renders nothing for the camelCase input names, so the 2026-09-19 mistake cannot return', () => {
@@ -916,7 +913,7 @@ describe('componentMarkdown prose', () => {
     return at < 0 ? undefined : out.slice(at + heading.length + 2).split('\n')[0];
   };
 
-  it('marks each section a person wrote as written on the canvas, and keeps the AI marker on the rest', () => {
+  it('marks each section a person wrote as written on the canvas, and leaves the rest unmarked', () => {
     const artifact = buildComponentV5GoldenArtifact();
     const out = componentMarkdown({
       ...artifact,
@@ -930,18 +927,19 @@ describe('componentMarkdown prose', () => {
     expect(markerUnder(out, '## Interactions')).toBe(AUTHORED_MARKER);
     expect(markerUnder(out, "## Do and don't")).toBe(AUTHORED_MARKER);
     expect(markerUnder(out, '## Anatomy')).toBe(AUTHORED_MARKER);
-    expect(markerUnder(out, '## Variants')).toBe(AI_MARKER);
-    expect(markerUnder(out, '## Accessibility')).toBe(AI_MARKER);
+    expect(markerUnder(out, '## Variants')).toBe('Filled leads. Outlined is secondary.');
+    expect(markerUnder(out, '## Accessibility')).toBe('### Keyboard');
     expect(countAuthored(out)).toBe(4);
-    expect(countMarkers(out)).toBe(4);
+    expect(out).not.toContain(AI_MARKER);
   });
 
-  it('keeps the AI marker on Do and don\'t when only one of its two lists is authored', () => {
+  it('leaves Do and don\'t unmarked when only one of its two lists is authored', () => {
     const artifact = buildComponentV5GoldenArtifact();
     const out = componentMarkdown({
       ...artifact, guidelines: { ...GUIDELINES, authored: ['dos'] },
     } as typeof artifact);
-    expect(markerUnder(out, "## Do and don't")).toBe(AI_MARKER);
+    expect(markerUnder(out, "## Do and don't")).toBe('### Do');
+    expect(out).not.toContain(AUTHORED_MARKER);
   });
 
   it('marks every prose section as written on the canvas under origin: authored', () => {

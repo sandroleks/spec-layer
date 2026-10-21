@@ -8,9 +8,9 @@ import {
 } from '../src/componentFormat';
 
 describe('component format', () => {
-  it("uses the CLI's own two values, with YAML first and the default", () => {
+  it("uses the CLI's own two values, YAML first, with Markdown the default", () => {
     expect(COMPONENT_FORMATS).toEqual(['yaml', 'md']);
-    expect(DEFAULT_COMPONENT_FORMAT).toBe('yaml');
+    expect(DEFAULT_COMPONENT_FORMAT).toBe('md');
   });
 
   it('accepts exactly the two values', () => {
@@ -21,13 +21,13 @@ describe('component format', () => {
     }
   });
 
-  it('reads a missing or unrecognised stored value as YAML, never as a guess', () => {
-    expect(storedComponentFormat(undefined)).toBe('yaml');
-    expect(storedComponentFormat(null)).toBe('yaml');
+  it('reads a missing or unrecognised stored value as Markdown, never as a guess', () => {
+    expect(storedComponentFormat(undefined)).toBe('md');
+    expect(storedComponentFormat(null)).toBe('md');
     expect(storedComponentFormat('yaml')).toBe('yaml');
     expect(storedComponentFormat('md')).toBe('md');
-    expect(storedComponentFormat('markdown')).toBe('yaml');
-    expect(storedComponentFormat(true)).toBe('yaml');
+    expect(storedComponentFormat('markdown')).toBe('md');
+    expect(storedComponentFormat(true)).toBe('md');
   });
 
   it('names each format the way the plugin says it, never as md', () => {

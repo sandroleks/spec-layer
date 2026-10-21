@@ -268,25 +268,25 @@ const COMPONENTS_ONLY = {
 
 describe('buildSkillFiles', () => {
   it('roots everything at spec-layer/ so it unzips into .claude/skills/', () => {
-    const files = buildSkillFiles(COMPONENTS_ONLY, '2026-09-11T10:00:00.000Z');
+    const files = buildSkillFiles(COMPONENTS_ONLY, '2026-09-11T10:00:00.000Z', 'yaml');
     for (const path of Object.keys(files)) expect(path.startsWith('spec-layer/')).toBe(true);
   });
 
   it('writes one brief per component, deduping names the way pull does', () => {
-    const files = buildSkillFiles(COMPONENTS_ONLY, '2026-09-11T10:00:00.000Z');
+    const files = buildSkillFiles(COMPONENTS_ONLY, '2026-09-11T10:00:00.000Z', 'yaml');
     expect(files['spec-layer/components/button.yaml']).toBe('name: Button\n');
     expect(files['spec-layer/components/button-2.yaml']).toBe('name: button\n');
   });
 
   it('omits tokens and fonts entirely when there is no foundation', () => {
-    const files = buildSkillFiles(COMPONENTS_ONLY, '2026-09-11T10:00:00.000Z');
+    const files = buildSkillFiles(COMPONENTS_ONLY, '2026-09-11T10:00:00.000Z', 'yaml');
     const paths = Object.keys(files);
     expect(paths.some((p) => p.startsWith('spec-layer/tokens/'))).toBe(false);
     expect(paths).not.toContain('spec-layer/fonts.json');
   });
 
   it('always writes a SKILL.md that names every other file it carries', () => {
-    const files = buildSkillFiles(COMPONENTS_ONLY, '2026-09-11T10:00:00.000Z');
+    const files = buildSkillFiles(COMPONENTS_ONLY, '2026-09-11T10:00:00.000Z', 'yaml');
     const md = files['spec-layer/SKILL.md'];
     expect(md).toBeDefined();
     for (const path of Object.keys(files)) {
