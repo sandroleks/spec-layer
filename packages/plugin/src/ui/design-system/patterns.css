@@ -1289,6 +1289,31 @@
    place. Rows carry no border so a long list stays dense; the doc head sticks
    while its block scrolls. Sizes and colours follow the Library rows. */
 .sl-writing-header { display: grid; gap: var(--sl-space-2); }
+.sl-writing-title-row { display: flex; align-items: center; gap: var(--sl-space-2); min-width: 0; }
+/* The page heading's own style: it sits one level deeper here, beside its info button. */
+.sl-writing-title-row > h1 {
+  margin: 0;
+  color: var(--sl-color-text);
+  font-size: var(--sl-font-size-display);
+  font-weight: var(--sl-font-weight-bold);
+  line-height: var(--sl-line-height-tight);
+  letter-spacing: var(--sl-tracking-display);
+  white-space: nowrap;
+}
+.sl-writing-why-button { width: 24px; height: 24px; }
+.sl-writing-why-button > svg { width: 15px; height: 15px; }
+.sl-writing-why {
+  display: grid;
+  gap: var(--sl-space-4);
+  justify-items: start;
+  padding: var(--sl-space-10) var(--sl-space-12);
+  background: var(--sl-color-surface-subdued);
+  border: 1px solid var(--sl-color-border-muted);
+  border-radius: var(--sl-radius-md);
+}
+.sl-writing-why h2 { margin: 0; font-size: var(--sl-font-size-support); font-weight: var(--sl-font-weight-semibold); }
+.sl-writing-why p { margin: 0; color: var(--sl-color-text-muted); font-size: var(--sl-font-size-caption); line-height: var(--sl-line-height-reading); }
+.sl-writing-why .sl-button { margin-top: var(--sl-space-4); }
 .sl-writing-subline { display: flex; align-items: center; gap: var(--sl-space-4); min-height: 24px; color: var(--sl-color-text-muted); font-size: var(--sl-font-size-support); }
 .sl-writing-subline-text { min-width: 0; }
 .sl-writing-refresh { width: 24px; height: 24px; }

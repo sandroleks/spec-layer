@@ -307,6 +307,10 @@ const writingErrors = new Map<string, string>();
 const writingDoneOpen = new Set<string>();
 /** Discard all is asking to be confirmed. */
 let writingDiscardConfirm = false;
+/** Whether this person dismissed the explainer; null until main has read it, so it never flashes. */
+let writingIntroSeen: boolean | null = null;
+/** The explainer reopened from its info button. */
+let writingWhyOpen = false;
 /** The draft a field held when it gained focus, so Esc can put it back. */
 let writingFieldStart: { key: string; draft: WritingDraft | null } | null = null;
 /** Tasks that closed this session: docTaskKey -> the gap and the doc it sat under. Completion order. */
@@ -754,6 +758,7 @@ function writingPresentation(): WritingScreenPresentation {
     busy: libraryRefreshing || libraryProbeInFlight || libraryOperation !== null,
     locked: writingLocked(),
     confirmDiscard: writingDiscardConfirm,
+    why: writingWhyOpen || writingIntroSeen === false,
     // As quotaExhaustedNote: "free" only on the free tier, since Pro has its own ceiling.
     freeTier: state.quota?.tier !== 'pro',
     ...libraryCheckLine(pendingChecks),
@@ -1462,6 +1467,16 @@ function restoreWritingField(field: HTMLTextAreaElement): void {
   field.value = draft?.text ?? '';
   growField(field);
   if (view === 'writing') patchWritingTask(refs, writingPresentation(), key);
+}
+
+/** Close the explainer; the first close is remembered for this person. */
+function dismissWritingWhy(): void {
+  if (writingIntroSeen === false) {
+    writingIntroSeen = true;
+    send({ type: 'setWritingIntroSeen' });
+  }
+  writingWhyOpen = false;
+  paintAndFocus('[data-writing-why]');
 }
 
 /** Drop a field's refusal under every doc listing it: it is being written again. */
@@ -2403,6 +2418,18 @@ document.addEventListener('click', (event) => {
     if (view === 'writing') paintWritingFooter(refs, writingPresentation());
     if (target.closest('[data-writing-discard-cancel]')) return;
   }
+  if (target.closest('[data-writing-why-dismiss]')) {
+    dismissWritingWhy();
+    return;
+  }
+  if (target.closest('[data-writing-why]')) {
+    if (writingWhyOpen || writingIntroSeen === false) dismissWritingWhy();
+    else {
+      writingWhyOpen = true;
+      paintAndFocus('[data-writing-why]');
+    }
+    return;
+  }
   const writingDoneToggle = target.closest<HTMLButtonElement>('[data-writing-done-toggle]');
   if (writingDoneToggle?.dataset.writingDoneToggle) {
     const docId = writingDoneToggle.dataset.writingDoneToggle;
@@ -3295,6 +3322,11 @@ const handleMainMessage = (event: MessageEvent): void => {
     case 'userInfo':
       state.figmaUserId = msg.userId;
       void refreshQuota();
+      return;
+
+    case 'writingIntroSeen':
+      writingIntroSeen = msg.value;
+      if (view === 'writing') paint();
       return;
 
     case 'aiEnabled':

@@ -6,6 +6,18 @@
 export const WRITING_HEADING = 'To do';
 export const WRITING_RAIL_LABEL = 'To do';
 export const WRITING_REFRESH = 'Refresh';
+/**
+ * The explainer: why a description is written here and not in a doc. Only
+ * what the plugin does with the field; Dev Mode is left out until a Figma
+ * pass confirms it shows variable and style descriptions.
+ */
+export const WRITING_WHY_HEADING = 'Why write these here?';
+export const WRITING_WHY = [
+  'Your docs are frames on the canvas. Descriptions belong to the variable, style or component itself.',
+  'Saved here, a description travels with it: Copy for AI and published libraries read it, and your docs pick it up on their next Update.',
+  'Sections under On the canvas belong to one doc, so you write those in the doc.',
+] as const;
+export const WRITING_WHY_DISMISS = 'Got it';
 export const WRITING_FIELD_HINTS = {
   variable: 'What this token is for',
   style: 'What this style is for',

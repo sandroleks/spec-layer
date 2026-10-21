@@ -737,8 +737,15 @@ not covered yet.
     Foundation doc reads **Update available**; every component doc keeps
     its badge and its block, no new check count starts, and the Library's
     check line keeps the earlier check's time.
+19. **The explainer.** On a first visit to To do, confirm the "Why write
+    these here?" card shows above the docs and no card flashes before it.
+    Press **Got it**, close and reopen the plugin, and confirm it stays
+    closed; the info button beside the heading opens and closes it again.
+    While it is open, check in Dev Mode whether a saved variable, style and
+    component description shows, and record which: the card does not
+    mention Dev Mode until this is known.
 
-Rows 1 to 18 were added on 2026-10-19, rewritten on 2026-10-20 for the
+Rows 1 to 19 were added on 2026-10-19, rewritten on 2026-10-20 for the
 Writing screen and on 2026-10-21 for the To do screen, and have not been
 run, so none of them is covered yet.
 

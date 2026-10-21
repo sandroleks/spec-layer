@@ -371,6 +371,12 @@ figma.clientStorage.getAsync('aiEnabled').then((value: boolean | undefined) => {
   figma.ui.postMessage(msg);
 }).catch(() => {/* ignore */});
 
+// The To do explainer shows until this person dismisses it once.
+const WRITING_INTRO_KEY = 'writingIntroSeen';
+figma.clientStorage.getAsync(WRITING_INTRO_KEY).then((value: unknown) => {
+  figma.ui.postMessage({ type: 'writingIntroSeen', value: value === true } satisfies MainToUi);
+}).catch(() => figma.ui.postMessage({ type: 'writingIntroSeen', value: false } satisfies MainToUi));
+
 // Default YAML; a corrupt entry cannot choose a format.
 figma.clientStorage.getAsync('componentFormat').then((value: unknown) => {
   const msg: MainToUi = { type: 'componentFormat', value: storedComponentFormat(value) };
@@ -674,6 +680,11 @@ const handleUiMessage = async (raw: unknown): Promise<void> => {
 
     case 'setAiEnabled':
       if (!await writeSetting(figma.clientStorage, 'aiEnabled', msg.value)) notifySettingNotSaved();
+      break;
+
+    // Not worth a toast when it fails: the explainer only shows again next time.
+    case 'setWritingIntroSeen':
+      await writeSetting(figma.clientStorage, WRITING_INTRO_KEY, true);
       break;
 
     case 'setComponentFormat':

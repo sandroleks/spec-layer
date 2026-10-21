@@ -448,6 +448,33 @@ describe('Writing view', () => {
     expect(notes.some((n) => n.startsWith('No draft came back'))).toBe(false);
   });
 
+  it('shows the explainer until it is dismissed once, and the info button brings it back', async () => {
+    const passId = await openWriting();
+    settle(passId, [gap]);
+    // Not until main says whether it was dismissed, so it never flashes.
+    expect(document.querySelector('#sl-writing-why')).toBeNull();
+    dispatch({ type: 'writingIntroSeen', value: false });
+    expect(document.querySelector('#sl-writing-why')).not.toBeNull();
+    click('[data-writing-why-dismiss]');
+    expect(document.querySelector('#sl-writing-why')).toBeNull();
+    expect(count('setWritingIntroSeen')).toBe(1);
+    expect(document.activeElement?.hasAttribute('data-writing-why')).toBe(true);
+    click('[data-writing-why]');
+    expect(document.querySelector('#sl-writing-why')).not.toBeNull();
+    expect(document.querySelector('[data-writing-why]')?.getAttribute('aria-expanded')).toBe('true');
+    click('[data-writing-why]');
+    expect(document.querySelector('#sl-writing-why')).toBeNull();
+    // Reopening and closing it again is not a second dismissal.
+    expect(count('setWritingIntroSeen')).toBe(1);
+  });
+
+  it('shows no explainer to someone who dismissed it before', async () => {
+    const passId = await openWriting();
+    settle(passId, [gap]);
+    dispatch({ type: 'writingIntroSeen', value: true });
+    expect(document.querySelector('#sl-writing-why')).toBeNull();
+  });
+
   it('Enter saves the row and moves to the next field; it never adds a newline', async () => {
     const passId = await openWriting();
     settle(passId, [gap, slot]);

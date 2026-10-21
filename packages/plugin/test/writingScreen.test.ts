@@ -52,6 +52,22 @@ describe('to do header', () => {
   });
 });
 
+describe('to do explainer', () => {
+  it('shows the card above the docs while open, with its info button expanded', () => {
+    const html = writingScrollMarkup(model({ why: true }));
+    expect(html).toContain('id="sl-writing-why"');
+    expect(html).toContain('Why write these here?');
+    expect(html).toContain('data-writing-why-dismiss');
+    expect(html.indexOf('sl-writing-why"')).toBeLessThan(html.indexOf('data-writing-group'));
+    expect(writingHeaderMarkup(model({ why: true }))).toMatch(/data-writing-why aria-label="Why write these here\?"[^>]*aria-controls="sl-writing-why" aria-expanded="true"/);
+  });
+
+  it('keeps only the info button once closed', () => {
+    expect(writingScrollMarkup(model())).not.toContain('sl-writing-why"');
+    expect(writingHeaderMarkup(model())).toContain('aria-expanded="false"');
+  });
+});
+
 describe('to do rows', () => {
   it('draws every field open, under its path, with swatches and mode values', () => {
     const html = writingScrollMarkup(model({ groups: [group({ fields: [{ heading: 'color/surface', tasks: [variable()] }] })] }));

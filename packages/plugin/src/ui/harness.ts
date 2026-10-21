@@ -612,7 +612,10 @@ if (view === 'writing') {
     const checking = stateName === 'checking'
       ? { refreshing: true, checkProgress: { label: 'Checking for source changes', current: 3, total: 9 } }
       : { checkedLabel: 'Checked just now' };
-    renderWritingScreen(refs, { ...model, ...checking, loading: false, freeTier: true, confirmDiscard: stateName === 'confirm' });
+    // The explainer shows as on a first visit; `?why=0` as after it was dismissed.
+    renderWritingScreen(refs, {
+      ...model, ...checking, loading: false, freeTier: true, confirmDiscard: stateName === 'confirm', why: param('why', '1') !== '0',
+    });
   }
 }
 

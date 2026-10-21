@@ -32,6 +32,9 @@ import {
   WRITING_SAVING,
   WRITING_STALE,
   WRITING_UNKNOWN_HEADING,
+  WRITING_WHY,
+  WRITING_WHY_DISMISS,
+  WRITING_WHY_HEADING,
   discardConfirmLabel,
   doneHeading,
   draftCostLabel,
@@ -53,6 +56,8 @@ export interface WritingScreenPresentation extends WritingModel, CheckLinePresen
   confirmDiscard?: boolean;
   /** The free tier, so the draft cost says "free" as the component screen does. */
   freeTier?: boolean;
+  /** The explainer shows: first visit, or reopened from its info button. */
+  why?: boolean;
   // Draft, Save and Discard draft are also disabled while a draft for that
   // group is out; per group via `drafting`.
 }
@@ -230,7 +235,11 @@ export function writingSublineText(model: WritingScreenPresentation): string {
 export function writingHeaderMarkup(model: WritingScreenPresentation): string {
   return (
     '<div class="sl-page-header-copy sl-writing-header">' +
+    '<div class="sl-writing-title-row">' +
     `<h1>${WRITING_HEADING}</h1>` +
+    `<button class="sl-icon-button sl-writing-why-button" type="button" data-writing-why aria-label="${WRITING_WHY_HEADING}" title="${WRITING_WHY_HEADING}" ` +
+    `aria-controls="sl-writing-why" aria-expanded="${model.why === true}">${icon('infoCircle', 15)}</button>` +
+    '</div>' +
     '<div class="sl-writing-subline">' +
     `<span class="sl-writing-subline-text" data-writing-subline>${esc(writingSublineText(model))}</span>` +
     `<button class="sl-icon-button sl-writing-refresh" type="button" data-library-refresh aria-label="${WRITING_REFRESH}" title="${WRITING_REFRESH}"${off(model.busy === true)}>` +
@@ -240,13 +249,24 @@ export function writingHeaderMarkup(model: WritingScreenPresentation): string {
   );
 }
 
+/** Why a description is written here and not in a doc, until dismissed. */
+function whyMarkup(): string {
+  return (
+    '<section class="sl-writing-why" id="sl-writing-why" aria-labelledby="sl-writing-why-heading">' +
+    `<h2 id="sl-writing-why-heading">${WRITING_WHY_HEADING}</h2>` +
+    WRITING_WHY.map((line) => `<p>${line}</p>`).join('') +
+    `<button class="sl-button" data-tone="secondary" data-size="small" type="button" data-writing-why-dismiss>${WRITING_WHY_DISMISS}</button>` +
+    '</section>'
+  );
+}
+
 export function writingScrollMarkup(model: WritingScreenPresentation): string {
   const body = model.loading
     ? loadingRowsMarkup(4)
-    : model.groups.length
+    : (model.why ? whyMarkup() : '') + (model.groups.length
       ? model.groups.map((group) => writingGroupMarkup(group, model)).join('')
-      : emptyMarkup(model);
-  return `<div class="sl-writing-list" data-locked="${model.locked === true}">${body}</div>`;
+      : emptyMarkup(model));
+  return `<div class="sl-writing-list" data-locked="${model.locked === true}" data-why="${model.why === true}">${body}</div>`;
 }
 
 /** Save all and Discard all while anything is unsaved; nothing otherwise. */
@@ -427,6 +447,7 @@ export function patchWritingGroup(refs: ShellRefs, model: WritingScreenPresentat
   if (!refs.screen.classList.contains('sl-writing-screen') || model.loading || model.groups.length === 0) return false;
   const list = refs.scroll.querySelector<HTMLElement>('.sl-writing-list');
   if (!list || list.dataset.locked !== String(model.locked === true)) return false;
+  if (list.dataset.why !== String(model.why === true)) return false;
   const drawn = [...refs.scroll.querySelectorAll<HTMLElement>('[data-writing-group]')].map((el) => el.dataset.writingGroup);
   const wanted = model.groups.map((g) => g.docId);
   if (drawn.length !== wanted.length || drawn.some((id, i) => id !== wanted[i])) return false;

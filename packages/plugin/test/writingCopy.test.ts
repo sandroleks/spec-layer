@@ -30,6 +30,17 @@ describe('to do copy', () => {
     expect(copy.WRITING_REFRESH).toBe('Refresh');
   });
 
+  it('says why a description is written here and not in a doc, claiming only what the plugin does', () => {
+    expect(copy.WRITING_WHY_HEADING).toBe('Why write these here?');
+    expect(copy.WRITING_WHY).toEqual([
+      'Your docs are frames on the canvas. Descriptions belong to the variable, style or component itself.',
+      'Saved here, a description travels with it: Copy for AI and published libraries read it, and your docs pick it up on their next Update.',
+      'Sections under On the canvas belong to one doc, so you write those in the doc.',
+    ]);
+    expect(copy.WRITING_WHY_DISMISS).toBe('Got it');
+    expect(copy.WRITING_WHY.join(' ')).not.toMatch(/Dev Mode|agent/);
+  });
+
   it('sums up what is left, dropping a zero part', () => {
     expect(copy.writingSummary(79, 3, 2)).toBe('79 descriptions and 3 sections left in 2 docs');
     expect(copy.writingSummary(79, 0, 1)).toBe('79 descriptions left in 1 doc');

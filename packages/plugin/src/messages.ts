@@ -74,6 +74,8 @@ export type MainToUi =
   | { type: 'licenseKey'; value: string | null; instanceId: string | null }
   | { type: 'userInfo'; userId: string | null }
   | { type: 'aiEnabled'; value: boolean }
+  /** Whether this person dismissed the To do explainer; per user, from clientStorage. */
+  | { type: 'writingIntroSeen'; value: boolean }
   | { type: 'componentFormat'; value: ComponentFormat }
   | { type: 'brandTheme'; value: BrandTheme }
   | { type: 'fontList'; families: string[] }
@@ -181,6 +183,8 @@ export type UiToMain =
   | { type: 'openBrowser'; url: string }
   | { type: 'setLicenseKey'; value: string; instanceId: string | null }
   | { type: 'setAiEnabled'; value: boolean }
+  /** The To do explainer was dismissed: it stays closed until reopened. */
+  | { type: 'setWritingIntroSeen' }
   | { type: 'setComponentFormat'; value: ComponentFormat }
   | { type: 'setBrandTheme'; value: BrandTheme }
   | { type: 'requestFonts' }
