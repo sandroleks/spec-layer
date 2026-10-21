@@ -529,12 +529,19 @@ Every change merged to `main` that touches `packages/proxy/`,
 3. waits for approval in the GitHub `production` environment, then runs
    `wrangler deploy` and the same smoke test against `api.spec-layer.com`.
 
-The `METRICS` binding needs no setup on the account: Analytics Engine creates
-a dataset the first time a Worker writes to it, so `spec_layer_requests_v1`
-exists once production has answered one request, and the staging dataset
-once the smoke test's three probes have run. Reading it needs an API token
-with Account Analytics Read, kept out of this repository; see "Usage
-metrics" for the query.
+The `METRICS` binding needs Analytics Engine enabled once on the account,
+in the dashboard under Workers & Pages, Analytics Engine
+(`https://dash.cloudflare.com/<account_id>/workers/analytics-engine`).
+Until it is, `wrangler deploy` of either environment fails with Cloudflare
+error 10089, "You need to enable Analytics Engine", and the SQL API answers
+every query, `SELECT 1` included, with HTTP 403 "Authorization error", even
+for a token that holds Account Analytics Read. The dry run in
+`npm run check` never reaches the account, so this shows up only in the
+staging deploy. Once enabled, a dataset is created the first time a Worker
+writes to it: `spec_layer_requests_v1` exists once production has answered
+one request, and the staging dataset once the smoke test's three probes
+have run. Reading needs an API token with Account Analytics Read, kept out
+of this repository; see "Usage metrics" for the query.
 
 A run by hand can pick `rollout: upload-only`, which uploads the production
 version with `wrangler versions upload` and routes no traffic to it, so a
