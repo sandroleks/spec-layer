@@ -26,6 +26,19 @@ export interface WritingGap {
   name: string;
   /** Variable: one entry per mode, "Light = #FFFFFF". Style: "typography" or "effect". */
   facts?: string[];
+  /** Variable only: each mode's value as the row shows it. */
+  modes?: WritingModeValue[];
+}
+
+/** One mode's value on a To do row, read from the dump, never guessed. */
+export interface WritingModeValue {
+  mode: string;
+  /** What the row shows: the alias target, the colour, or the value label. */
+  short: string;
+  /** "Light = #FFFFFF (colors/white)": the row's tooltip, as `facts` says it. */
+  full: string;
+  /** The resolved colour, for a swatch; null when there is none to show. */
+  color: { hex: string; alpha: number } | null;
 }
 
 /** The sections a person writes: every one the plugin draws as a placeholder
@@ -90,6 +103,23 @@ export function valueLabel(value: FoundationValue): string {
   }
 }
 
+function resolvedColor(value: FoundationValue): { hex: string; alpha: number } | null {
+  if (value.kind === 'color') return { hex: value.hex, alpha: value.alpha };
+  if (value.kind === 'alias' && value.resolved) return resolvedColor(value.resolved);
+  return null;
+}
+
+/** One mode's value: an alias by its target's name, since the name is the fact. */
+export function modeValue(mode: string, value: FoundationValue | undefined): WritingModeValue {
+  if (!value) return { mode, short: 'Not set', full: `${mode} = Not set`, color: null };
+  return {
+    mode,
+    short: value.kind === 'alias' ? value.targetName : valueLabel(value),
+    full: `${mode} = ${valueLabel(value)}`,
+    color: resolvedColor(value),
+  };
+}
+
 /** Blank variables, or blank styles, within the doc's scope. No scope, no claim. */
 export function foundationWritingGaps(spec: FoundationSpec, scope: FoundationScope | undefined): WritingGap[] {
   if (!scope) return [];
@@ -98,15 +128,10 @@ export function foundationWritingGaps(spec: FoundationSpec, scope: FoundationSco
     if (!collection) return [];
     return collection.variables
       .filter((v) => (scope.group === undefined || v.group === scope.group) && blank(v.description))
-      .map((v) => ({
-        kind: 'variable' as const,
-        id: v.provenance.id,
-        name: v.name,
-        facts: collection.modes.map((m) => {
-          const value = v.valuesByMode[m.modeId];
-          return `${m.name} = ${value ? valueLabel(value) : 'Not set'}`;
-        }),
-      }));
+      .map((v) => {
+        const modes = collection.modes.map((m) => modeValue(m.name, v.valuesByMode[m.modeId]));
+        return { kind: 'variable' as const, id: v.provenance.id, name: v.name, facts: modes.map((m) => m.full), modes };
+      });
   }
   const styles = scope.target === 'textStyles' ? spec.textStyles : spec.effectStyles;
   const family = scope.target === 'textStyles' ? 'typography' : 'effect';

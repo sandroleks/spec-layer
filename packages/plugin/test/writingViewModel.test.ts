@@ -3,9 +3,10 @@ import type { LibraryEntry } from '../src/messages';
 import type { LibraryDriftState } from '../src/ui/viewModel/library';
 import type { WritingGap } from '../src/writingGaps';
 import { writeKey } from '../src/descriptionWriter';
-import { writingCount } from '../src/ui/writingCopy';
+import { writtenCount } from '../src/ui/writingCopy';
+import { modeValue } from '../src/writingGaps';
 import {
-  buildWritingModel, closedTasks, docTaskKey, openTasks, type TaskRef, taskTitle, taskCaption, writingTaskKey,
+  buildWritingModel, closedTasks, docTaskKey, openTasks, type TaskRef, taskHeading, taskTitle, taskCaption, writingTaskKey,
   writingTaskKnown,
 } from '../src/ui/viewModel/writing';
 
@@ -28,10 +29,61 @@ describe('taskTitle and taskCaption', () => {
     expect(taskTitle(gap({}))).toBe('Description');
     expect(taskTitle(gap({ kind: 'slot', propertyName: 'Content#1:2', name: 'Button / Content' }))).toBe('Slot: Content');
     expect(taskTitle(gap({ kind: 'section', id: 'doc-1', sectionId: 'whenToUse', name: 'When to use' }))).toBe('When to use');
-    expect(taskTitle(gap({ kind: 'variable', id: 'V1', name: 'color/surface', facts: ['Light = #FFF'] }))).toBe('color/surface');
+    expect(taskTitle(gap({ kind: 'variable', id: 'V1', name: 'color/surface', facts: ['Light = #FFF'] }))).toBe('surface');
+    expect(taskTitle(gap({ kind: 'variable', id: 'V1', name: 'surface' }))).toBe('surface');
+    expect(taskTitle(gap({ kind: 'style', id: 'S1', name: 'Body/Medium' }))).toBe('Medium');
     expect(taskCaption(gap({ kind: 'variable', id: 'V1', name: 'color/surface', facts: ['Light = #FFF', 'Dark = #111'] }))).toBe('Light = #FFF · Dark = #111');
     expect(taskCaption(gap({ kind: 'style', id: 'S1', name: 'Body', facts: ['typography'] }))).toBe('Typography');
     expect(taskCaption(gap({}))).toBeNull();
+  });
+
+  it('heads a field task with its parent path or its component', () => {
+    expect(taskHeading(gap({}))).toBe('Button');
+    expect(taskHeading(gap({ kind: 'slot', propertyName: 'Content#1:2', name: 'Button / Content' }))).toBe('Button');
+    expect(taskHeading(gap({ kind: 'variable', id: 'V1', name: 'color/surface/primary/light' }))).toBe('color/surface/primary');
+    expect(taskHeading(gap({ kind: 'variable', id: 'V1', name: 'surface' }))).toBeNull();
+    expect(taskHeading(gap({ kind: 'variable', id: 'V1', name: 'trailing/' }))).toBeNull();
+    expect(taskHeading(gap({ kind: 'section', id: 'doc-1', sectionId: 'whenToUse', name: 'When to use' }))).toBeNull();
+  });
+
+  it('captions mode values short, naming modes only when there are two or more', () => {
+    const blue = { kind: 'color' as const, hex: '#F2F9FF', alpha: 1 };
+    const light = modeValue('Light', { kind: 'alias', targetName: 'colors/blue/25', targetCollection: 'P', external: false, resolved: blue });
+    const dark = modeValue('Dark', { kind: 'unresolved', reason: 'missing' });
+    expect(taskCaption(gap({ kind: 'variable', id: 'V1', name: 'a/b', modes: [light] }))).toBe('colors/blue/25');
+    expect(taskCaption(gap({ kind: 'variable', id: 'V1', name: 'a/b', modes: [light, dark] }))).toBe('Light colors/blue/25 · Dark Not resolved');
+  });
+});
+
+describe('a task row', () => {
+  const blue = { kind: 'color' as const, hex: '#F2F9FF', alpha: 1 };
+  const v = gap({
+    kind: 'variable', id: 'V1', name: 'color/surface/light',
+    modes: [modeValue('Light', blue), modeValue('Dark', { kind: 'unresolved', reason: 'cycle' })],
+  });
+  const f = entry({ docId: 'f', kind: 'foundation', label: 'Semantic', sourceNodeId: '', currentContentHash: 'h', foundationScope: { target: 'collection', collectionId: 'c', collectionName: 'C', modeIds: [] } });
+  const spec = {
+    fileKey: 'f', extractedAt: '', textStyles: [], effectStyles: [],
+    collections: [{ id: 'c', name: 'C', modes: [{ modeId: 'l', name: 'Light' }, { modeId: 'd', name: 'Dark' }], variables: [
+      { name: 'color/surface/light', description: '', provenance: { id: 'V1' }, valuesByMode: { l: blue, d: { kind: 'unresolved', reason: 'cycle' } } },
+    ] }],
+  } as never;
+
+  it('swatches only a resolved colour and puts every full value in the tooltip', () => {
+    const t = buildWritingModel([f], { foundation: spec }).groups[0].tasks[0];
+    expect(t.gap).toMatchObject({ id: v.id, name: v.name });
+    expect(t.swatches).toEqual([{ hex: '#F2F9FF', alpha: 1 }]);
+    expect(t.tooltip).toBe('color/surface/light\nLight = #F2F9FF\nDark = Not resolved');
+  });
+
+  it('shows a save out and a refusal by doc and key', () => {
+    const key = docTaskKey('f', 'variable:V1');
+    const saving = buildWritingModel([f], { foundation: spec, saving: new Map([[key, { state: 'checking' as const, text: 'Base surface.', origin: 'ai' as const }]]) });
+    expect(saving.groups[0].tasks[0].saving).toEqual({ state: 'checking', text: 'Base surface.', origin: 'ai' });
+    expect(saving.groups[0].draftable).toBe(0);
+    expect(saving.groups[0].unsaved).toBe(0);
+    const refused = buildWritingModel([f], { foundation: spec, errors: new Map([[key, 'That variable is no longer in this file.']]) });
+    expect(refused.groups[0].tasks[0].error).toBe('That variable is no longer in this file.');
   });
 });
 
@@ -43,8 +95,8 @@ describe('writingTaskKey and writingCount', () => {
     expect(writingTaskKey(slot)).toBe(writeKey({ kind: 'slot', id: '10:20', propertyName: 'Content#1:2' }));
     expect(writingTaskKey(gap({}))).toBe(writeKey({ kind: 'component', id: '10:20' }));
   });
-  it('counts done of total', () => {
-    expect(writingCount(1, 3)).toBe('1 of 3 done');
+  it('counts written of total', () => {
+    expect(writtenCount(1, 3)).toBe('1 of 3 written');
   });
 });
 
@@ -61,8 +113,32 @@ describe('buildWritingModel', () => {
     const g = model.groups[0];
     expect(g.label).toBe('Button');
     expect(g.tasks.map((t) => [t.title, t.done])).toEqual([['Slot: Content', false], ['When to use', false], ['Description', true]]);
-    expect(g.countLabel).toBe('1 of 3 done');
-    expect(g.canDraft).toBe(true);
+    expect(g.fields).toEqual([{ heading: 'Button', tasks: [g.tasks[0]] }]);
+    expect(g.sections).toEqual([g.tasks[1]]);
+    expect(g.done).toEqual([g.tasks[2]]);
+    expect(g.countLabel).toBe('1 of 3 written');
+    expect(g.draftable).toBe(1);
+    expect(g.unsaved).toBe(0);
+    expect(g.doneOpen).toBe(false);
+    expect(model).toMatchObject({ openFields: 1, openSections: 1, docsWithOpen: 1, unsaved: 0 });
+  });
+
+  it('runs field tasks by heading in gap order, never re-sorted', () => {
+    const v = (id: string, name: string) => gap({ kind: 'variable', id, name });
+    const model = buildWritingModel([entry()], {
+      drift: new Map([['doc-1', 'inSync']]),
+      componentGaps: new Map([['doc-1', [v('1', 'a/x'), v('2', 'a/y'), v('3', 'b/x'), v('4', 'a/z'), v('5', 'plain')]]]),
+      drafts: new Map([['variable:2', { text: 'Y.', origin: 'ai' as const }]]),
+      doneOpen: new Set(['doc-1']),
+    });
+    const g = model.groups[0];
+    expect(g.fields.map((run) => [run.heading, run.tasks.map((t) => t.title)])).toEqual([
+      ['a', ['x', 'y']], ['b', ['x']], ['a', ['z']], [null, ['plain']],
+    ]);
+    expect(g.draftable).toBe(4);
+    expect(g.unsaved).toBe(1);
+    expect(g.doneOpen).toBe(true);
+    expect(model.unsaved).toBe(1);
   });
 
   it('lists no group for a doc with nothing open and nothing done', () => {
@@ -73,7 +149,9 @@ describe('buildWritingModel', () => {
   });
 
   it('tells a file with no docs from one with nothing to write', () => {
-    expect(buildWritingModel([], {})).toEqual({ groups: [], known: true, unknownReasons: [], noDocs: true });
+    expect(buildWritingModel([], {})).toEqual({
+      groups: [], known: true, unknownReasons: [], noDocs: true, openFields: 0, openSections: 0, docsWithOpen: 0, unsaved: 0,
+    });
   });
 
   it('is unknown while a check runs, for an older link, and for an unread doc', () => {
@@ -84,16 +162,15 @@ describe('buildWritingModel', () => {
     expect(older.unknownReasons).toEqual(['Docs built before this version list their sections after an Update.']);
   });
 
-  it('expands one task by key and attaches its draft', () => {
+  it('attaches a draft by key', () => {
     const model = buildWritingModel([entry()], {
       drift: new Map([['doc-1', 'inSync']]),
       componentGaps: new Map([['doc-1', [gap({})]]]),
       drafts: new Map([['component:10:20', { text: 'Starts an action.', origin: 'ai' as const }]]),
-      expandedKey: docTaskKey('doc-1', 'component:10:20'),
     });
-    const task = model.groups[0].tasks[0];
-    expect(task.expanded).toBe(true);
-    expect(task.draft).toEqual({ text: 'Starts an action.', origin: 'ai' });
+    expect(model.groups[0].tasks[0].draft).toEqual({ text: 'Starts an action.', origin: 'ai' });
+    expect(model.groups[0].unsaved).toBe(1);
+    expect(model.groups[0].draftable).toBe(0);
   });
 
   it('lists Foundation tasks within the row scope', () => {
@@ -115,21 +192,24 @@ describe('done tasks', () => {
     const done = new Map<string, TaskRef>([[docTaskKey('a', 'variable:V1'), { gap: gap({ kind: 'variable', id: 'V1', name: 'color/surface' }), docId: 'a' }]]);
     const model = buildWritingModel([foundation('a', 'textStyles'), foundation('b', 'effectStyles')], { foundation: spec, done });
     expect(model.groups.map((g) => g.docId)).toEqual(['a']);
-    expect(model.groups[0].countLabel).toBe('1 of 1 done');
+    expect(model.groups[0].countLabel).toBe('1 of 1 written');
   });
 
-  it('carries no draft and never expands', () => {
+  it('carries no draft, save or refusal', () => {
     const g = gap({});
+    const key = docTaskKey('doc-1', 'component:10:20');
     const model = buildWritingModel([entry()], {
       drift: new Map([['doc-1', 'inSync']]), componentGaps: new Map([['doc-1', []]]),
-      done: new Map([[docTaskKey('doc-1', 'component:10:20'), { gap: g, docId: 'doc-1' }]]),
+      done: new Map([[key, { gap: g, docId: 'doc-1' }]]),
       drafts: new Map([['component:10:20', { text: 'x', origin: 'person' as const }]]),
-      expandedKey: docTaskKey('doc-1', 'component:10:20'),
+      saving: new Map([[key, { state: 'checking' as const, text: 'x', origin: 'person' as const }]]),
+      errors: new Map([[key, 'no']]),
     });
     const t = model.groups[0].tasks[0];
     expect(t.done).toBe(true);
-    expect(t.draft).toBeNull();
-    expect(t.expanded).toBe(false);
+    expect([t.draft, t.saving, t.error]).toEqual([null, null, null]);
+    expect(model.groups[0].done).toEqual([t]);
+    expect(model.groups[0].fields).toEqual([]);
   });
 });
 
@@ -204,14 +284,15 @@ describe('two docs listing one gap', () => {
       done: closed,
     });
     expect(settled.groups.map((g) => [g.docId, g.tasks.map((t) => t.done), g.countLabel])).toEqual([
-      ['one', [true], '1 of 1 done'],
-      ['two', [false], '0 of 1 done'],
+      ['one', [true], '1 of 1 written'],
+      ['two', [false], '0 of 1 written'],
     ]);
   });
 
-  it('expands it under one doc only', () => {
-    const model = buildWritingModel(entries, { foundation: spec, expandedKey: docTaskKey('body', key) });
-    expect(model.groups.map((g) => [g.docId, g.tasks[0]?.expanded])).toEqual([['whole', false], ['body', true]]);
+  it('shows a save out under the doc it was saved from only', () => {
+    const saving = new Map([[docTaskKey('body', key), { state: 'saving' as const, text: 'Body copy.', origin: 'person' as const }]]);
+    const model = buildWritingModel(entries, { foundation: spec, saving });
+    expect(model.groups.map((g) => [g.docId, g.tasks[0]?.saving?.state ?? null])).toEqual([['whole', null], ['body', 'saving']]);
   });
 });
 

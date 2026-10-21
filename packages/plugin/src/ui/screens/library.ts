@@ -15,7 +15,6 @@ import type {
 } from '../viewModel/library';
 import { loadingRowsMarkup, progressMarkup, type ProgressPresentation } from './progress';
 import { esc } from '../escape';
-import { WRITING_UNKNOWN_HEADING } from '../writingCopy';
 
 export type { LibraryFilter } from '../viewModel/library';
 
@@ -502,7 +501,7 @@ function emptyMarkup(
   }
   if (incomplete) {
     return (
-      `<div class="sl-empty-state"><strong>${WRITING_UNKNOWN_HEADING}</strong>` +
+      '<div class="sl-empty-state"><strong>None found in what could be read</strong>' +
       '<p>The list above may still be missing docs, so this could change once a read finishes clean.</p>' +
       '<button class="sl-button" data-tone="secondary" type="button" ' +
       'data-library-filter="all">View all docs</button></div>'

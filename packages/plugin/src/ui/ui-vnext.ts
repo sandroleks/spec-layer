@@ -56,7 +56,8 @@ import { COMPONENT_FORMATS, isComponentFormat, type ComponentFormat } from '../c
 import { computeMenuPlacement } from './fontPicker';
 import { filterFamilies } from '../fonts';
 import { renderLicenseScreen } from './screens/license';
-import { patchWritingGroup, patchWritingTask, renderWritingScreen, type WritingScreenPresentation } from './screens/writing';
+import { growField, paintWritingFooter, patchWritingGroup, patchWritingTask, renderWritingScreen, type WritingScreenPresentation } from './screens/writing';
+import type { DescriptionWrite } from '../descriptionWriter';
 import { cssString, patchLibraryCheckLine, patchLibraryDrift, renderLibraryScreen, revealLibraryRow, type CheckLinePresentation, type LibraryScreenPresentation } from './screens/library';
 import { patchInitialVersion, renderPublishScreen } from './screens/publish';
 import { renderHistoryScreen } from './screens/history';
@@ -91,12 +92,13 @@ import {
   closedTasks,
   docTaskKey,
   openTasks,
+  writingTaskKey,
   writingTaskKnown,
   type BuildWritingModelOptions,
   type TaskRef,
   type WritingDraft,
   type WritingModel,
-  type WritingTask,
+  type WritingSaving,
 } from './viewModel/writing';
 import {
   buildSearchModel,
@@ -152,7 +154,7 @@ import {
   type BuildPresenter,
 } from './actions';
 import { generateDescriptions, generateGroupDescriptions, resolveComponentImage } from './ai';
-import { WRITING_DRAFTS_NOTE, WRITING_UNKNOWN_UNREAD, draftFailedNote, writtenToast } from './writingCopy';
+import { WRITING_UNKNOWN_UNREAD, draftFailedNote, draftedToast, writtenToast } from './writingCopy';
 import { briefFor } from './writingBriefs';
 import type { WritingGap } from '../writingGaps';
 import {
@@ -297,9 +299,16 @@ let foundationRereadPending = false;
 const libraryDrafts = new Map<string, WritingDraft>();
 /** Doc ids with a Draft all call out. */
 const libraryDrafting = new Set<string>();
-let draftsNoteShown = false;
-/** The docTaskKey of the one Writing task whose field shows, or null. */
-let writingExpandedKey: string | null = null;
+/** By docTaskKey: a save out, or written and waiting on the check that closes it. */
+const writingSaving = new Map<string, WritingSaving>();
+/** By docTaskKey: Figma's refusal of the last save, until the field is typed in or saved again. */
+const writingErrors = new Map<string, string>();
+/** Doc ids whose Written this session list is open. */
+const writingDoneOpen = new Set<string>();
+/** Discard all is asking to be confirmed. */
+let writingDiscardConfirm = false;
+/** The draft a field held when it gained focus, so Esc can put it back. */
+let writingFieldStart: { key: string; draft: WritingDraft | null } | null = null;
 /** Tasks that closed this session: docTaskKey -> the gap and the doc it sat under. Completion order. */
 const writingDone = new Map<string, TaskRef>();
 /** Every open task after the last model build, by docTaskKey, to tell a closed task from one that was never listed. */
@@ -716,7 +725,9 @@ function writingOptions(): BuildWritingModelOptions {
     drafts: libraryDrafts,
     drafting: libraryDrafting,
     done: writingDone,
-    expandedKey: writingExpandedKey,
+    saving: writingSaving,
+    errors: writingErrors,
+    doneOpen: writingDoneOpen,
   };
 }
 
@@ -742,6 +753,9 @@ function writingPresentation(): WritingScreenPresentation {
     // Only Refresh waits on these; every field stays usable.
     busy: libraryRefreshing || libraryProbeInFlight || libraryOperation !== null,
     locked: writingLocked(),
+    confirmDiscard: writingDiscardConfirm,
+    // As quotaExhaustedNote: "free" only on the free tier, since Pro has its own ceiling.
+    freeTier: state.quota?.tier !== 'pro',
     ...libraryCheckLine(pendingChecks),
   };
 }
@@ -766,14 +780,29 @@ function syncWritingDone(): void {
   const model = currentWritingModel();
   const open = openTasks(model);
   const known = writingTaskKnown(libraryEntries, writingOptions());
-  for (const [key, ref] of closedTasks(writingOpenBefore, open, known)) writingDone.set(key, ref);
+  for (const [key, ref] of closedTasks(writingOpenBefore, open, known)) {
+    writingDone.set(key, ref);
+    writingSaving.delete(key);
+    writingErrors.delete(key);
+  }
   for (const key of open.keys()) writingDone.delete(key);
+  // A save whose check landed and still lists its task did not take: its text
+  // comes back as a draft, so nothing typed is lost.
+  for (const [key, saving] of writingSaving) {
+    const ref = open.get(key);
+    if (saving.state !== 'checking' || !ref || !known(ref)) continue;
+    writingSaving.delete(key);
+    const draftKey = writingTaskKey(ref.gap);
+    if (!libraryDrafts.has(draftKey)) libraryDrafts.set(draftKey, { text: saving.text, origin: saving.origin });
+  }
   const alive = new Set(libraryEntries.map((e) => e.docId));
   for (const [key, ref] of writingDone) if (!alive.has(ref.docId)) writingDone.delete(key);
+  const docOf = (key: string): string => key.slice(0, key.indexOf('\n'));
+  for (const key of writingSaving.keys()) if (!alive.has(docOf(key))) writingSaving.delete(key);
+  for (const key of writingErrors.keys()) if (!alive.has(docOf(key))) writingErrors.delete(key);
   // Only known tasks move the snapshot; an unknown one stays as it was last listed.
   for (const [key, ref] of writingOpenBefore) if (!known(ref) && alive.has(ref.docId)) open.set(key, ref);
   writingOpenBefore = open;
-  if (writingExpandedKey !== null && !open.has(writingExpandedKey)) writingExpandedKey = null;
 }
 
 /** Repaint Writing after a reply: one doc's group in place when it can, else the whole screen. */
@@ -784,6 +813,11 @@ function paintWriting(docId?: string): void {
 
 /** Re-say "Checked 4 min ago" in place; the rows and the footer are left alone. */
 function paintLibraryCaption(): void {
+  // To do says the same stamp in its subline; a group-less patch moves only that.
+  if (view === 'writing') {
+    paintWriting('');
+    return;
+  }
   if (view !== 'library' || libraryPane !== 'list') return;
   patchLibraryCheckLine(refs, libraryPresentation());
 }
@@ -797,7 +831,7 @@ function syncLibraryCheckedTimer(): void {
     clearTimeout(libraryCheckedTimer);
     libraryCheckedTimer = null;
   }
-  if (view !== 'library' || libraryPane !== 'list') return;
+  if (view !== 'writing' && (view !== 'library' || libraryPane !== 'list')) return;
   const wait = libraryCheckedLabelChangesIn(libraryCheckedAt);
   if (wait === null) return;
   // A little past the boundary, so the label has moved when it is read.
@@ -1356,20 +1390,83 @@ function settleFoundationReread(): void {
   if (libraryOperation === null) rereadLibraryKeepingChecks();
 }
 
-function writingTask(docId: string, key: string): WritingTask | undefined {
-  return currentWritingModel().groups.find((g) => g.docId === docId)?.tasks.find((t) => t.key === key);
+/**
+ * One write for the doc holding every named field with a draft and no save
+ * out. Each row shows Saving until main replies. `sent` names keys another
+ * doc is already saving in this pass, since one field can sit under two docs.
+ */
+function saveWritingItems(docId: string, keys: readonly string[], sent: Set<string> = new Set()): void {
+  const group = currentWritingModel().groups.find((g) => g.docId === docId);
+  if (!group) return;
+  const items: DescriptionWrite[] = [];
+  for (const key of keys) {
+    const t = group.tasks.find((candidate) => candidate.key === key);
+    const draft = libraryDrafts.get(key);
+    if (!t || t.done || t.saving || sent.has(key) || !draft) continue;
+    const g = t.gap;
+    const kind = g.kind;
+    const text = draft.text.trim();
+    if (kind === 'section' || text === '') continue;
+    items.push({ kind, id: g.id, ...(g.propertyName ? { propertyName: g.propertyName } : {}), text, origin: draft.origin });
+    writingSaving.set(docTaskKey(docId, key), { state: 'saving', text, origin: draft.origin });
+    writingErrors.delete(docTaskKey(docId, key));
+    sent.add(key);
+  }
+  if (items.length === 0) return;
+  send({ type: 'writeDescriptions', docId, items });
+  paintWriting(docId);
 }
 
-function saveWritingItem(docId: string, key: string): void {
-  const item = writingTask(docId, key);
-  const draft = libraryDrafts.get(key);
-  if (!item || item.done || !draft || draft.text.trim() === '') return;
-  const g = item.gap;
-  if (g.kind === 'section') return;
-  send({
-    type: 'writeDescriptions', docId,
-    items: [{ kind: g.kind, id: g.id, ...(g.propertyName ? { propertyName: g.propertyName } : {}), text: draft.text.trim(), origin: draft.origin }],
-  });
+/** Save all: every doc's unsaved fields, one write per doc. */
+function saveAllWriting(): void {
+  const sent = new Set<string>();
+  for (const group of currentWritingModel().groups) {
+    const keys = group.fields.flatMap((run) => run.tasks).filter((t) => t.draft && !t.saving).map((t) => t.key);
+    if (keys.length > 0) saveWritingItems(group.docId, keys, sent);
+  }
+}
+
+/** Discard all, once confirmed: every unsaved draft on screen, nothing in Figma. */
+function discardAllWriting(): void {
+  for (const group of currentWritingModel().groups) {
+    for (const t of group.fields.flatMap((run) => run.tasks)) if (t.draft && !t.saving) libraryDrafts.delete(t.key);
+  }
+  writingDiscardConfirm = false;
+  paint();
+  refs.scroll.querySelector<HTMLElement>('textarea.sl-writing-field')?.focus({ preventScroll: true });
+}
+
+/** Enter in a field: save that row and move to the next field still typeable. */
+function saveFieldAndMoveOn(field: HTMLTextAreaElement): void {
+  const fields = [...refs.scroll.querySelectorAll<HTMLTextAreaElement>('textarea.sl-writing-field')];
+  const next = fields.slice(fields.indexOf(field) + 1).find((candidate) => !candidate.readOnly) ?? null;
+  const target = next ? { docId: next.dataset.docId ?? '', key: next.dataset.writingKey ?? '' } : null;
+  const { docId, writingKey: key } = field.dataset;
+  if (docId && key && !writingLocked()) saveWritingItems(docId, [key]);
+  if (!target) return;
+  const moved = refs.scroll.querySelector<HTMLTextAreaElement>(
+    `[data-writing-group="${cssString(target.docId)}"] [data-writing-key="${cssString(target.key)}"]`,
+  );
+  if (!moved) return;
+  moved.focus();
+  moved.setSelectionRange(moved.value.length, moved.value.length);
+}
+
+/** Esc in a field: back to what it held when it gained focus, empty or the AI draft. */
+function restoreWritingField(field: HTMLTextAreaElement): void {
+  const key = field.dataset.writingKey;
+  if (!key || field.readOnly) return;
+  const draft = writingFieldStart?.key === key ? writingFieldStart.draft : libraryDrafts.get(key) ?? null;
+  if (draft) libraryDrafts.set(key, draft);
+  else libraryDrafts.delete(key);
+  field.value = draft?.text ?? '';
+  growField(field);
+  if (view === 'writing') patchWritingTask(refs, writingPresentation(), key);
+}
+
+/** Drop a field's refusal under every doc listing it: it is being written again. */
+function clearWritingErrors(key: string): void {
+  for (const taskKey of [...writingErrors.keys()]) if (taskKey.endsWith(`\n${key}`)) writingErrors.delete(taskKey);
 }
 
 async function draftAllForRow(docId: string): Promise<void> {
@@ -1381,7 +1478,7 @@ async function draftAllForRow(docId: string): Promise<void> {
     scope: entry?.foundationScope,
     projection: libraryLiveProjection.get(docId),
   };
-  const items = group.tasks.filter((t) => !t.done && t.gap.kind !== 'section' && !t.draft).map((t) => briefFor(t.gap, context));
+  const items = group.tasks.filter((t) => !t.done && t.gap.kind !== 'section' && !t.draft && !t.saving).map((t) => briefFor(t.gap, context));
   if (items.length === 0) return;
   libraryDrafting.add(docId);
   paintWriting(docId);
@@ -1401,7 +1498,7 @@ async function draftAllForRow(docId: string): Promise<void> {
     // A batch that failed names why; the drafts from the batches before it stay.
     if (error !== undefined) nativeNotify(aiFailureNote(state, error, 'component'), { error: true });
     else if (landed < open.length) nativeNotify(draftFailedNote(open.length - landed));
-    if (landed > 0 && !draftsNoteShown) { draftsNoteShown = true; nativeNotify(WRITING_DRAFTS_NOTE); }
+    if (landed > 0) nativeNotify(draftedToast(landed));
   } catch (error) {
     nativeNotify(aiFailureNote(state, error, 'component'), { error: true });
   } finally {
@@ -2296,12 +2393,32 @@ document.addEventListener('click', (event) => {
     return;
   }
 
-  const writingToggle = target.closest<HTMLButtonElement>('[data-writing-toggle]');
-  if (writingToggle?.dataset.writingToggle && writingToggle.dataset.docId) {
-    const { writingToggle: key, docId } = writingToggle.dataset;
-    const task = docTaskKey(docId, key);
-    writingExpandedKey = writingExpandedKey === task ? null : task;
-    paintAndFocus(`[data-writing-group="${cssString(docId)}"] [data-writing-toggle="${cssString(key)}"]`);
+  // A pending Discard all is answered by its own two buttons; any other click lets it go.
+  if (writingDiscardConfirm) {
+    if (target.closest('[data-writing-discard-yes]')) {
+      if (!writingLocked()) discardAllWriting();
+      return;
+    }
+    writingDiscardConfirm = false;
+    if (view === 'writing') paintWritingFooter(refs, writingPresentation());
+    if (target.closest('[data-writing-discard-cancel]')) return;
+  }
+  const writingDoneToggle = target.closest<HTMLButtonElement>('[data-writing-done-toggle]');
+  if (writingDoneToggle?.dataset.writingDoneToggle) {
+    const docId = writingDoneToggle.dataset.writingDoneToggle;
+    if (writingDoneOpen.has(docId)) writingDoneOpen.delete(docId);
+    else writingDoneOpen.add(docId);
+    paintWriting(docId);
+    return;
+  }
+  if (target.closest('[data-writing-save-all]')) {
+    if (!writingLocked()) saveAllWriting();
+    return;
+  }
+  if (target.closest('[data-writing-discard-all]')) {
+    if (writingLocked()) return;
+    writingDiscardConfirm = true;
+    paintWritingFooter(refs, writingPresentation());
     return;
   }
   // Beside the disabled attribute on each: a run's lock holds these back.
@@ -2312,14 +2429,22 @@ document.addEventListener('click', (event) => {
   }
   const writingSave = target.closest<HTMLButtonElement>('[data-writing-save]');
   if (writingSave?.dataset.writingSave && writingSave.dataset.docId) {
-    if (!writingLocked()) saveWritingItem(writingSave.dataset.docId, writingSave.dataset.writingSave);
+    if (!writingLocked()) saveWritingItems(writingSave.dataset.docId, [writingSave.dataset.writingSave]);
     return;
   }
   const writingClear = target.closest<HTMLButtonElement>('[data-writing-clear]');
   if (writingClear?.dataset.writingClear) {
     if (writingLocked()) return;
-    libraryDrafts.delete(writingClear.dataset.writingClear);
+    const key = writingClear.dataset.writingClear;
+    libraryDrafts.delete(key);
+    clearWritingErrors(key);
+    const docId = writingClear.dataset.docId;
     paint();
+    // The button went with its draft: focus stays on that row's field.
+    if (docId) {
+      refs.scroll.querySelector<HTMLElement>(`[data-writing-group="${cssString(docId)}"] [data-writing-key="${cssString(key)}"]`)
+        ?.focus({ preventScroll: true });
+    }
     return;
   }
   const writingDraftAll = target.closest<HTMLButtonElement>('[data-writing-draft-all]');
@@ -2712,17 +2837,26 @@ document.addEventListener('input', (event) => {
     onNoteInput(target.value);
     return;
   }
-  const input = target;
-  if (!(input instanceof HTMLInputElement)) return;
-  if (input.matches('.sl-writing-field') && input.dataset.writingKey) {
-    const text = input.value;
-    if (text.trim() === '') libraryDrafts.delete(input.dataset.writingKey);
-    else libraryDrafts.set(input.dataset.writingKey, { text, origin: 'person' });
-    // No paint: the field already shows the text. Its task's AI tag and Clear
-    // draft move in place, so the caret and any IME composition survive.
-    if (view === 'writing') patchWritingTask(refs, writingPresentation(), input.dataset.writingKey);
+  if (target instanceof HTMLTextAreaElement && target.matches('.sl-writing-field') && target.dataset.writingKey) {
+    const key = target.dataset.writingKey;
+    // One line: a pasted newline becomes a space, keeping the caret where it was.
+    if (/[\r\n]/.test(target.value)) {
+      const at = target.selectionStart;
+      target.value = target.value.replace(/\r\n?|\n/g, ' ');
+      target.setSelectionRange(Math.min(at, target.value.length), Math.min(at, target.value.length));
+    }
+    const text = target.value;
+    if (text.trim() === '') libraryDrafts.delete(key);
+    else libraryDrafts.set(key, { text, origin: 'person' });
+    clearWritingErrors(key);
+    growField(target);
+    // No paint: the field already shows the text. Its row's tag, actions and
+    // status move in place, so the caret and any IME composition survive.
+    if (view === 'writing') patchWritingTask(refs, writingPresentation(), key);
     return;
   }
+  const input = target;
+  if (!(input instanceof HTMLInputElement)) return;
   if (input.matches('[data-global-search-input]')) {
     searchQuery = input.value;
     searchActiveIndex = 0;
@@ -2849,6 +2983,26 @@ document.addEventListener('keydown', (event) => {
     }
   }
 
+  // To do fields: Enter saves and moves on, never a newline; Esc puts the field back.
+  if (event.target instanceof HTMLTextAreaElement && event.target.matches('.sl-writing-field')) {
+    if (event.key === 'Enter' && !event.isComposing) {
+      event.preventDefault();
+      if (!event.repeat) saveFieldAndMoveOn(event.target);
+      return;
+    }
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      restoreWritingField(event.target);
+      return;
+    }
+  }
+  if (event.key === 'Escape' && writingDiscardConfirm) {
+    event.preventDefault();
+    writingDiscardConfirm = false;
+    if (view === 'writing') paintWritingFooter(refs, writingPresentation());
+    return;
+  }
+
   if (event.key === 'Enter' && event.target instanceof HTMLInputElement && event.target.id === 'sl-sync-file-url') {
     event.preventDefault();
     saveAnnotateFileUrl(event.target.value);
@@ -2970,6 +3124,19 @@ document.addEventListener('pointerover', (event) => {
 
 document.addEventListener('focusin', (event) => {
   syncSearchPointer(event.target);
+  // Esc's baseline: set on arrival, not again when a redraw refocuses the same field.
+  const field = event.target;
+  if (field instanceof HTMLTextAreaElement && field.matches('.sl-writing-field') && field.dataset.writingKey) {
+    const key = field.dataset.writingKey;
+    if (writingFieldStart?.key !== key) {
+      const draft = libraryDrafts.get(key);
+      writingFieldStart = { key, draft: draft ? { ...draft } : null };
+    }
+  }
+});
+
+document.addEventListener('focusout', (event) => {
+  if (event.target instanceof HTMLTextAreaElement && event.target.matches('.sl-writing-field')) writingFieldStart = null;
 });
 
 refs.scroll.addEventListener('scroll', () => {
@@ -3370,12 +3537,24 @@ const handleMainMessage = (event: MessageEvent): void => {
     }
 
     case 'descriptionsWritten': {
-      for (const key of msg.written) libraryDrafts.delete(key);
-      // A saved task folds up: its field is empty now, and it stays listed until the re-check.
-      if (writingExpandedKey !== null && msg.written.some((key) => docTaskKey(msg.docId, key) === writingExpandedKey)) {
-        writingExpandedKey = null;
+      // A written row reads Saved, checking, with the text it sent, until the
+      // re-check closes it; a refused row keeps its draft and says why.
+      for (const key of msg.written) {
+        const taskKey = docTaskKey(msg.docId, key);
+        const sent = writingSaving.get(taskKey);
+        const draft = libraryDrafts.get(key);
+        writingSaving.set(taskKey, { state: 'checking', text: sent?.text ?? draft?.text ?? '', origin: sent?.origin ?? draft?.origin ?? 'person' });
+        libraryDrafts.delete(key);
       }
-      nativeNotify(writtenToast(msg.written.length, msg.failed), msg.failed.length > 0 ? { error: true } : {});
+      for (const failure of msg.failed) {
+        const taskKey = docTaskKey(msg.docId, failure.key);
+        writingSaving.delete(taskKey);
+        writingErrors.set(taskKey, failure.message);
+      }
+      nativeNotify(
+        writtenToast(msg.written.length, msg.failed, libraryEntry(msg.docId)?.label ?? 'The doc'),
+        msg.failed.length > 0 ? { error: true } : {},
+      );
       const entry = libraryEntry(msg.docId);
       if (msg.written.length === 0) {
         // Nothing moved, so nothing to read again.

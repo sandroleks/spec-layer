@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { FoundationSpec } from '@spec-layer/extractor';
 import {
-  componentWritingGaps, sectionWritingGaps, foundationWritingGaps, valueLabel, WRITING_SECTIONS,
+  componentWritingGaps, sectionWritingGaps, foundationWritingGaps, modeValue, valueLabel, WRITING_SECTIONS,
 } from '../src/writingGaps';
 import { ALL_SECTIONS } from '../src/ui/docModel';
 import { placeholderShapeFor } from '../src/ui/placeholders';
@@ -78,7 +78,13 @@ function spec(): FoundationSpec {
 describe('foundationWritingGaps', () => {
   it('lists blank variables in a collection scope with one value per mode', () => {
     const gaps = foundationWritingGaps(spec(), { target: 'collection', collectionId: 'c1', collectionName: 'Semantic', modeIds: [] });
-    expect(gaps).toEqual([{ kind: 'variable', id: 'V1', name: 'color/surface/primary', facts: ['Light = #FFFFFF', 'Dark = #111111'] }]);
+    expect(gaps).toEqual([{
+      kind: 'variable', id: 'V1', name: 'color/surface/primary', facts: ['Light = #FFFFFF', 'Dark = #111111'],
+      modes: [
+        { mode: 'Light', short: '#FFFFFF', full: 'Light = #FFFFFF', color: { hex: '#FFFFFF', alpha: 1 } },
+        { mode: 'Dark', short: '#111111', full: 'Dark = #111111', color: { hex: '#111111', alpha: 1 } },
+      ],
+    }]);
   });
   it('honours a group within a collection', () => {
     expect(foundationWritingGaps(spec(), { target: 'collection', collectionId: 'c1', collectionName: 'Semantic', group: 'space', modeIds: [] })).toEqual([]);
@@ -89,6 +95,23 @@ describe('foundationWritingGaps', () => {
   });
   it('claims nothing without a scope', () => {
     expect(foundationWritingGaps(spec(), undefined)).toEqual([]);
+  });
+});
+
+describe('modeValue', () => {
+  it('shows an alias by its target and swatches only a resolved colour', () => {
+    const blue = { kind: 'color' as const, hex: '#F2F9FF', alpha: 1 };
+    expect(modeValue('Light', { kind: 'alias', targetName: 'colors/blue/25', targetCollection: 'Primitives', external: false, resolved: blue }))
+      .toEqual({ mode: 'Light', short: 'colors/blue/25', full: 'Light = #F2F9FF (colors/blue/25)', color: { hex: '#F2F9FF', alpha: 1 } });
+    expect(modeValue('Light', { kind: 'alias', targetName: 'x/y', targetCollection: 'P', external: true, resolved: null }))
+      .toEqual({ mode: 'Light', short: 'x/y', full: 'Light = x/y', color: null });
+    expect(modeValue('Dark', { kind: 'color', hex: '#FF0000', alpha: 0.5 }))
+      .toEqual({ mode: 'Dark', short: '#FF0000 50%', full: 'Dark = #FF0000 50%', color: { hex: '#FF0000', alpha: 0.5 } });
+  });
+  it('never guesses a value it does not hold', () => {
+    expect(modeValue('Light', { kind: 'unresolved', reason: 'missing' })).toEqual({ mode: 'Light', short: 'Not resolved', full: 'Light = Not resolved', color: null });
+    expect(modeValue('Light', undefined)).toEqual({ mode: 'Light', short: 'Not set', full: 'Light = Not set', color: null });
+    expect(modeValue('Default', { kind: 'number', value: 16 })).toEqual({ mode: 'Default', short: '16', full: 'Default = 16', color: null });
   });
 });
 

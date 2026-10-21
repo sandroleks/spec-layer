@@ -155,7 +155,7 @@ describe('Writing view', () => {
     settle(passId, [gap]);
     expect(document.querySelector('.sl-loading-rows')).toBeNull();
     expect(taskKeys()).toEqual([GAP_KEY]);
-    expect(groupCount()).toBe('0 of 1 done');
+    expect(groupCount()).toBe('0 of 1 written');
   });
 
   it('claims nothing to write only once the read succeeded', async () => {
@@ -163,13 +163,13 @@ describe('Writing view', () => {
     click('[data-view="writing"]');
     dispatch({ type: 'libraryError', message: 'The library could not be read.' });
     expect(document.querySelector('[data-writing-unknown]')?.textContent).toContain('Some docs could not be read.');
-    expect(document.querySelector('.sl-writing-list')?.textContent).not.toContain('Nothing to write');
+    expect(document.querySelector('.sl-writing-list')?.textContent).not.toContain('Nothing left to do');
     click('[data-library-refresh]');
     dispatch({ type: 'library', entries: [] });
     expect(document.querySelector('[data-writing-unknown]')).toBeNull();
     // A file with no docs is not a file with everything written.
-    expect(document.querySelector('[data-writing-no-docs]')?.textContent).toContain('No docs yet. Create a component or Foundation doc first.');
-    expect(document.querySelector('.sl-writing-list')?.textContent).not.toContain('Nothing to write');
+    expect(document.querySelector('[data-writing-no-docs]')?.textContent).toContain('No docs yet');
+    expect(document.querySelector('.sl-writing-list')?.textContent).not.toContain('Nothing left to do');
     click('[data-empty-nav="foundations"]');
     expect(document.querySelector('.sl-writing-screen')).toBeNull();
     expect(count('requestFoundation')).toBeGreaterThan(0);
@@ -187,28 +187,21 @@ describe('Writing view', () => {
     const passId = await openWriting();
     dispatch({ type: 'driftError', docId: 'doc-1', passId });
     dispatch({ type: 'writingGaps', docId: 'doc-1', passId, gaps: [gap] });
-    click(`[data-writing-toggle="${GAP_KEY}"]`);
     expect(document.querySelector(`[data-writing-key="${GAP_KEY}"]`)).not.toBeNull();
     expect(count('requestDocBaseline')).toBe(0);
   });
 
-  it('expands one task per group; a second click collapses it', async () => {
+  it('draws every field open, with no expand step', async () => {
     const passId = await openWriting();
     settle(passId, [gap, slot]);
-    expect(document.querySelector('.sl-writing-field')).toBeNull();
-    click(`[data-writing-toggle="${GAP_KEY}"]`);
-    expect(document.querySelector(`[data-writing-key="${GAP_KEY}"]`)).not.toBeNull();
-    click(`[data-writing-toggle="${SLOT_KEY}"]`);
-    expect(document.querySelector(`[data-writing-key="${GAP_KEY}"]`)).toBeNull();
-    expect(document.querySelector(`[data-writing-key="${SLOT_KEY}"]`)).not.toBeNull();
-    click(`[data-writing-toggle="${SLOT_KEY}"]`);
-    expect(document.querySelector('.sl-writing-field')).toBeNull();
+    expect(document.querySelector(`textarea[data-writing-key="${GAP_KEY}"]`)).not.toBeNull();
+    expect(document.querySelector(`textarea[data-writing-key="${SLOT_KEY}"]`)).not.toBeNull();
+    expect(document.querySelector('[data-writing-toggle]')).toBeNull();
   });
 
   it('a save sends one write; the reply toasts, clears the draft and checks the row again', async () => {
     const passId = await openWriting();
     settle(passId, [gap]);
-    click(`[data-writing-toggle="${GAP_KEY}"]`);
     type(`[data-writing-key="${GAP_KEY}"]`, 'Starts an action.');
     click(`[data-writing-save="${GAP_KEY}"]`);
     expect(lastOutgoing('writeDescriptions')).toEqual({
@@ -217,16 +210,18 @@ describe('Writing view', () => {
     });
     const drifts = count('requestDrift');
     dispatch({ type: 'descriptionsWritten', docId: 'doc-1', written: [GAP_KEY], failed: [] });
-    expect(lastOutgoing('notify')['message']).toBe('1 description written into Figma.');
+    expect(lastOutgoing('notify')['message']).toBe('1 description saved to Figma. Button now shows Update available.');
     expect(count('requestDrift')).toBe(drifts + 1);
-    expect(document.querySelector<HTMLInputElement>(`[data-writing-key="${GAP_KEY}"]`)?.value ?? '').toBe('');
+    // The row keeps what it sent, read only, until the re-check closes it.
+    const field = document.querySelector<HTMLTextAreaElement>(`[data-writing-key="${GAP_KEY}"]`);
+    expect([field?.value, field?.readOnly]).toEqual(['Starts an action.', true]);
+    expect(document.querySelector(`[data-writing-task="${GAP_KEY}"] .sl-writing-status`)?.textContent).toBe('Saved, checking…');
   });
 
   it('marks a written task done once the re-check no longer lists it, sinks it, and moves the count', async () => {
     const passId = await openWriting();
     settle(passId, [gap, slot]);
-    expect(groupCount()).toBe('0 of 2 done');
-    click(`[data-writing-toggle="${GAP_KEY}"]`);
+    expect(groupCount()).toBe('0 of 2 written');
     type(`[data-writing-key="${GAP_KEY}"]`, 'Starts an action.');
     click(`[data-writing-save="${GAP_KEY}"]`);
     dispatch({ type: 'descriptionsWritten', docId: 'doc-1', written: [GAP_KEY], failed: [] });
@@ -238,15 +233,14 @@ describe('Writing view', () => {
     dispatch({ type: 'writingGaps', docId: 'doc-1', passId: next, gaps: [slot] });
     expect(taskKeys()).toEqual([SLOT_KEY, GAP_KEY]);
     expect(doneKeys()).toEqual([GAP_KEY]);
-    expect(groupCount()).toBe('1 of 2 done');
-    // A done task has no body, so the expanded field went with it.
+    expect(groupCount()).toBe('1 of 2 written');
+    // A done row has no field.
     expect(document.querySelector(`[data-writing-key="${GAP_KEY}"]`)).toBeNull();
   });
 
   it('keeps a saved task in its group, focus included, until the gaps reply, then shows it done', async () => {
     const passId = await openWriting();
     settle(passId, [gap, slot]);
-    click(`[data-writing-toggle="${GAP_KEY}"]`);
     type(`[data-writing-key="${GAP_KEY}"]`, 'Starts an action.');
     document.querySelector<HTMLElement>(`[data-writing-save="${GAP_KEY}"]`)?.focus();
     click(`[data-writing-save="${GAP_KEY}"]`);
@@ -275,25 +269,21 @@ describe('Writing view', () => {
     const { unwrittenSections: _omitted, ...older } = componentEntry('doc-1');
     const passId = await openWriting([older]);
     settle(passId, [gap]);
-    click(`[data-writing-toggle="${GAP_KEY}"]`);
     type(`[data-writing-key="${GAP_KEY}"]`, 'Starts an action.');
     click(`[data-writing-save="${GAP_KEY}"]`);
     dispatch({ type: 'descriptionsWritten', docId: 'doc-1', written: [GAP_KEY], failed: [] });
     settle(lastOutgoing('requestDrift')['passId'] as string, []);
     expect(taskKeys()).toEqual([GAP_KEY]);
     expect(doneKeys()).toEqual([GAP_KEY]);
-    expect(groupCount()).toBe('1 of 1 done');
+    expect(groupCount()).toBe('1 of 1 written');
   });
 
-  it('keeps a gap two docs share apart: expanding and closing it under one leaves the other', async () => {
+  it('keeps a gap two docs share apart: closing it under one leaves the other', async () => {
     const passId = await openWriting([componentEntry('doc-1'), componentEntry('doc-2', { label: 'Button copy' })]);
     settle(passId, [gap], 'doc-1');
     settle(passId, [gap], 'doc-2');
     expect(taskKeys('doc-1')).toEqual([GAP_KEY]);
     expect(taskKeys('doc-2')).toEqual([GAP_KEY]);
-    click(`[data-writing-group="doc-1"] [data-writing-toggle="${GAP_KEY}"]`);
-    expect(document.querySelector(`[data-writing-group="doc-1"] [data-writing-key="${GAP_KEY}"]`)).not.toBeNull();
-    expect(document.querySelector(`[data-writing-group="doc-2"] [data-writing-key="${GAP_KEY}"]`)).toBeNull();
     type(`[data-writing-group="doc-1"] [data-writing-key="${GAP_KEY}"]`, 'Starts an action.');
     click(`[data-writing-group="doc-1"] [data-writing-save="${GAP_KEY}"]`);
     expect(lastOutgoing('writeDescriptions')['docId']).toBe('doc-1');
@@ -302,10 +292,10 @@ describe('Writing view', () => {
     expect(next['docId']).toBe('doc-1');
     settle(next['passId'] as string, [], 'doc-1');
     expect(doneKeys('doc-1')).toEqual([GAP_KEY]);
-    expect(groupCount('doc-1')).toBe('1 of 1 done');
+    expect(groupCount('doc-1')).toBe('1 of 1 written');
     expect(doneKeys('doc-2')).toEqual([]);
     expect(taskKeys('doc-2')).toEqual([GAP_KEY]);
-    expect(groupCount('doc-2')).toBe('0 of 1 done');
+    expect(groupCount('doc-2')).toBe('0 of 1 written');
   });
 
   it('brings a done task back as open when a later pass lists it again', async () => {
@@ -323,7 +313,7 @@ describe('Writing view', () => {
     settle(again, [gap, slot]);
     expect(doneKeys()).toEqual([]);
     expect(taskKeys()).toEqual([GAP_KEY, SLOT_KEY]);
-    expect(groupCount()).toBe('0 of 2 done');
+    expect(groupCount()).toBe('0 of 2 written');
   });
 
   it('closes a task a refresh no longer lists, once its doc is checked again', async () => {
@@ -345,15 +335,15 @@ describe('Writing view', () => {
   it('opens a section in its doc, and Clear draft drops a draft', async () => {
     const passId = await openWriting([componentEntry('doc-1', { unwrittenSections: ['whenToUse'], sections: ['whenToUse'] })]);
     settle(passId, [gap]);
-    const sectionKey = 'section:doc-1:whenToUse';
-    click(`[data-writing-toggle="${sectionKey}"]`);
+    // A section row sits on the canvas list, with no field.
+    expect(document.querySelector('[data-writing-canvas] [data-writing-task="section:doc-1:whenToUse"] textarea')).toBeNull();
     click('[data-writing-open="whenToUse"]');
     expect(lastOutgoing('focusDocSection')).toEqual({ type: 'focusDocSection', docId: 'doc-1', sectionId: 'whenToUse' });
-    click(`[data-writing-toggle="${GAP_KEY}"]`);
     type(`[data-writing-key="${GAP_KEY}"]`, 'Starts an action.');
     click(`[data-writing-clear="${GAP_KEY}"]`);
-    expect(document.querySelector<HTMLInputElement>(`[data-writing-key="${GAP_KEY}"]`)?.value).toBe('');
-    click(`[data-writing-save="${GAP_KEY}"]`);
+    expect(document.querySelector<HTMLTextAreaElement>(`[data-writing-key="${GAP_KEY}"]`)?.value).toBe('');
+    // Nothing left to save, so no Save to press.
+    expect(document.querySelector(`[data-writing-save="${GAP_KEY}"]`)).toBeNull();
     expect(count('writeDescriptions')).toBe(0);
   });
 
@@ -361,8 +351,7 @@ describe('Writing view', () => {
     vi.mocked(generateDescriptions).mockResolvedValue({ drafts: { [GAP_KEY]: 'From the model.' } });
     const passId = await openWriting();
     settle(passId, [gap]);
-    click(`[data-writing-toggle="${GAP_KEY}"]`);
-    const field = document.querySelector<HTMLInputElement>(`[data-writing-key="${GAP_KEY}"]`);
+    const field = document.querySelector<HTMLTextAreaElement>(`[data-writing-key="${GAP_KEY}"]`);
     expect(document.querySelector(`[data-writing-clear="${GAP_KEY}"]`)).toBeNull();
     type(`[data-writing-key="${GAP_KEY}"]`, 'Mine');
     expect(document.querySelector(`[data-writing-key="${GAP_KEY}"]`)).toBe(field);
@@ -373,7 +362,7 @@ describe('Writing view', () => {
     click('[data-writing-draft-all]');
     await new Promise((r) => setTimeout(r, 0));
     expect(document.querySelector(`[data-writing-task="${GAP_KEY}"] .sl-writing-ai-tag`)).not.toBeNull();
-    const drafted = document.querySelector<HTMLInputElement>(`[data-writing-key="${GAP_KEY}"]`);
+    const drafted = document.querySelector<HTMLTextAreaElement>(`[data-writing-key="${GAP_KEY}"]`);
     type(`[data-writing-key="${GAP_KEY}"]`, 'From the model, edited.');
     expect(document.querySelector(`[data-writing-key="${GAP_KEY}"]`)).toBe(drafted);
     expect(document.querySelector(`[data-writing-task="${GAP_KEY}"] .sl-writing-ai-tag`)).toBeNull();
@@ -385,7 +374,6 @@ describe('Writing view', () => {
     settle(passId, [gap]);
     const draftAll = (): HTMLButtonElement | null => document.querySelector('[data-writing-group="doc-1"] [data-writing-draft-all]');
     expect(draftAll()).not.toBeNull();
-    click(`[data-writing-toggle="${GAP_KEY}"]`);
     type(`[data-writing-key="${GAP_KEY}"]`, 'Mine');
     expect(draftAll()).toBeNull();
     type(`[data-writing-key="${GAP_KEY}"]`, '');
@@ -395,14 +383,13 @@ describe('Writing view', () => {
   it('a full paint keeps the focused field and its caret', async () => {
     const passId = await openWriting();
     settle(passId, [gap]);
-    click(`[data-writing-toggle="${GAP_KEY}"]`);
     type(`[data-writing-key="${GAP_KEY}"]`, 'Starts an action.');
-    const field = document.querySelector<HTMLInputElement>(`[data-writing-key="${GAP_KEY}"]`);
+    const field = document.querySelector<HTMLTextAreaElement>(`[data-writing-key="${GAP_KEY}"]`);
     field?.focus();
     field?.setSelectionRange(3, 7);
     // A probe's reply repaints the whole Writing screen.
     dispatch({ type: 'libraryUnchanged' });
-    const next = document.querySelector<HTMLInputElement>(`[data-writing-key="${GAP_KEY}"]`);
+    const next = document.querySelector<HTMLTextAreaElement>(`[data-writing-key="${GAP_KEY}"]`);
     expect(next).not.toBe(field);
     expect(document.activeElement).toBe(next);
     expect([next?.selectionStart, next?.selectionEnd]).toEqual([3, 7]);
@@ -413,7 +400,6 @@ describe('Writing view', () => {
     vi.mocked(generateDescriptions).mockResolvedValue({ drafts: {} });
     const passId = await openWriting([componentEntry('doc-1', { unwrittenSections: ['whenToUse'], sections: ['whenToUse'] })]);
     settle(passId, [gap, slot]);
-    click(`[data-writing-toggle="${SLOT_KEY}"]`);
     type(`[data-writing-key="${SLOT_KEY}"]`, 'Mine.');
     click('[data-writing-draft-all]');
     await new Promise((r) => setTimeout(r, 0));
@@ -427,12 +413,11 @@ describe('Writing view', () => {
     vi.mocked(generateDescriptions).mockReturnValue(new Promise((r) => { resolve = r; }));
     const passId = await openWriting();
     settle(passId, [gap]);
-    click(`[data-writing-toggle="${GAP_KEY}"]`);
     click('[data-writing-draft-all]');
     type(`[data-writing-key="${GAP_KEY}"]`, 'Mine.');
     resolve({ drafts: { [GAP_KEY]: 'From the model.' } });
     await new Promise((r) => setTimeout(r, 0));
-    expect(document.querySelector<HTMLInputElement>(`[data-writing-key="${GAP_KEY}"]`)?.value).toBe('Mine.');
+    expect(document.querySelector<HTMLTextAreaElement>(`[data-writing-key="${GAP_KEY}"]`)?.value).toBe('Mine.');
     click(`[data-writing-save="${GAP_KEY}"]`);
     expect(lastOutgoing('writeDescriptions')['items']).toEqual([
       { kind: 'component', id: '10:20', text: 'Mine.', origin: 'person' },
@@ -448,13 +433,141 @@ describe('Writing view', () => {
     });
     const passId = await openWriting();
     settle(passId, [gap, slot]);
-    click(`[data-writing-toggle="${GAP_KEY}"]`);
     click('[data-writing-draft-all]');
     await new Promise((r) => setTimeout(r, 0));
-    expect(document.querySelector<HTMLInputElement>(`[data-writing-key="${GAP_KEY}"]`)?.value).toBe('Starts an action.');
+    expect(document.querySelector<HTMLTextAreaElement>(`[data-writing-key="${GAP_KEY}"]`)?.value).toBe('Starts an action.');
     const notes = outgoing.filter((m) => m.type === 'notify').map((m) => m['message'] as string);
     expect(notes.some((n) => /AI writing uses this month/.test(n))).toBe(true);
     expect(notes.some((n) => n.startsWith('No draft came back'))).toBe(false);
+  });
+
+  it('Enter saves the row and moves to the next field; it never adds a newline', async () => {
+    const passId = await openWriting();
+    settle(passId, [gap, slot]);
+    type(`[data-writing-key="${GAP_KEY}"]`, 'Starts an action.');
+    const field = document.querySelector<HTMLTextAreaElement>(`[data-writing-key="${GAP_KEY}"]`);
+    field?.focus();
+    const enter = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+    field?.dispatchEvent(enter);
+    expect(enter.defaultPrevented).toBe(true);
+    expect(lastOutgoing('writeDescriptions')['items']).toEqual([{ kind: 'component', id: '10:20', text: 'Starts an action.', origin: 'person' }]);
+    expect((document.activeElement as HTMLElement | null)?.dataset.writingKey).toBe(SLOT_KEY);
+    expect(document.querySelector(`[data-writing-task="${GAP_KEY}"] .sl-writing-status`)?.textContent).toBe('Saving…');
+    // An empty field has nothing to save: Enter only moves on.
+    const writes = count('writeDescriptions');
+    document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    expect(count('writeDescriptions')).toBe(writes);
+  });
+
+  it('a pasted newline becomes a space', async () => {
+    const passId = await openWriting();
+    settle(passId, [gap]);
+    type(`[data-writing-key="${GAP_KEY}"]`, 'Starts\nan action.');
+    expect(document.querySelector<HTMLTextAreaElement>(`[data-writing-key="${GAP_KEY}"]`)?.value).toBe('Starts an action.');
+  });
+
+  it('Esc puts the AI draft back after an edit', async () => {
+    vi.mocked(generateDescriptions).mockResolvedValue({ drafts: { [GAP_KEY]: 'From the model.' } });
+    const passId = await openWriting();
+    settle(passId, [gap]);
+    click('[data-writing-draft-all]');
+    await new Promise((r) => setTimeout(r, 0));
+    expect(outgoing.filter((m) => m.type === 'notify').map((m) => m['message'])).toContain('1 draft ready to review. It’s kept until you close the plugin.');
+    const field = document.querySelector<HTMLTextAreaElement>(`[data-writing-key="${GAP_KEY}"]`);
+    field?.focus();
+    type(`[data-writing-key="${GAP_KEY}"]`, 'Mine instead.');
+    expect(document.querySelector(`[data-writing-task="${GAP_KEY}"] .sl-writing-ai-tag`)).toBeNull();
+    field?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    expect(field?.value).toBe('From the model.');
+    expect(document.querySelector(`[data-writing-task="${GAP_KEY}"] .sl-writing-ai-tag`)).not.toBeNull();
+    click(`[data-writing-save="${GAP_KEY}"]`);
+    expect(lastOutgoing('writeDescriptions')['items']).toEqual([{ kind: 'component', id: '10:20', text: 'From the model.', origin: 'ai' }]);
+  });
+
+  it('Save all sends one write per doc, once for a field two docs list', async () => {
+    const passId = await openWriting([componentEntry('doc-1'), componentEntry('doc-2', { label: 'Button copy' })]);
+    settle(passId, [gap, slot], 'doc-1');
+    settle(passId, [gap], 'doc-2');
+    type(`[data-writing-group="doc-1"] [data-writing-key="${GAP_KEY}"]`, 'Starts an action.');
+    type(`[data-writing-group="doc-1"] [data-writing-key="${SLOT_KEY}"]`, 'An icon before the label.');
+    expect(document.querySelector('[data-writing-bar]')?.textContent).toContain('3 unsaved');
+    click('[data-writing-save-all]');
+    const writes = outgoing.filter((m) => m.type === 'writeDescriptions');
+    expect(writes).toHaveLength(1);
+    expect(writes[0]).toEqual({
+      type: 'writeDescriptions', docId: 'doc-1',
+      items: [
+        { kind: 'component', id: '10:20', text: 'Starts an action.', origin: 'person' },
+        { kind: 'slot', id: '10:20', propertyName: 'Icon#1:2', text: 'An icon before the label.', origin: 'person' },
+      ],
+    });
+  });
+
+  it('Discard all asks first; Cancel keeps the drafts and Yes drops them', async () => {
+    const passId = await openWriting();
+    settle(passId, [gap, slot]);
+    type(`[data-writing-key="${GAP_KEY}"]`, 'Starts an action.');
+    type(`[data-writing-key="${SLOT_KEY}"]`, 'An icon.');
+    click('[data-writing-discard-all]');
+    expect(document.querySelector('[data-writing-bar]')?.textContent).toContain('Discard 2?');
+    click('[data-writing-discard-cancel]');
+    expect(document.querySelector('[data-writing-bar]')?.textContent).toContain('2 unsaved');
+    expect(document.querySelector<HTMLTextAreaElement>(`[data-writing-key="${GAP_KEY}"]`)?.value).toBe('Starts an action.');
+    click('[data-writing-discard-all]');
+    click('[data-writing-discard-yes]');
+    expect(document.querySelector<HTMLTextAreaElement>(`[data-writing-key="${GAP_KEY}"]`)?.value).toBe('');
+    expect(document.querySelector('[data-writing-bar]')).toBeNull();
+    expect(count('writeDescriptions')).toBe(0);
+  });
+
+  it('a refused save keeps its text, says why, and clears the reason once typed in', async () => {
+    const passId = await openWriting();
+    settle(passId, [gap]);
+    type(`[data-writing-key="${GAP_KEY}"]`, 'Starts an action.');
+    click(`[data-writing-save="${GAP_KEY}"]`);
+    dispatch({ type: 'descriptionsWritten', docId: 'doc-1', written: [], failed: [{ key: GAP_KEY, message: 'That component is no longer in this file.' }] });
+    expect(document.querySelector(`[data-writing-task="${GAP_KEY}"] .sl-writing-error`)?.textContent).toBe('That component is no longer in this file.');
+    expect(document.querySelector<HTMLTextAreaElement>(`[data-writing-key="${GAP_KEY}"]`)?.value).toBe('Starts an action.');
+    expect(lastOutgoing('notify')['message']).toBe('Nothing was saved. That component is no longer in this file.');
+    type(`[data-writing-key="${GAP_KEY}"]`, 'Starts an action now.');
+    expect(document.querySelector(`[data-writing-task="${GAP_KEY}"] .sl-writing-error`)).toBeNull();
+  });
+
+  it('a save the re-check still lists gives its text back as a draft', async () => {
+    const passId = await openWriting();
+    settle(passId, [gap]);
+    type(`[data-writing-key="${GAP_KEY}"]`, 'Starts an action.');
+    click(`[data-writing-save="${GAP_KEY}"]`);
+    dispatch({ type: 'descriptionsWritten', docId: 'doc-1', written: [GAP_KEY], failed: [] });
+    settle(lastOutgoing('requestDrift')['passId'] as string, [gap]);
+    const field = document.querySelector<HTMLTextAreaElement>(`[data-writing-key="${GAP_KEY}"]`);
+    expect([field?.value, field?.readOnly]).toEqual(['Starts an action.', false]);
+    expect(document.querySelector(`[data-writing-task="${GAP_KEY}"] .sl-writing-status`)).toBeNull();
+    expect(document.querySelector(`[data-writing-save="${GAP_KEY}"]`)).not.toBeNull();
+  });
+
+  it('opens and folds the done list', async () => {
+    const passId = await openWriting();
+    settle(passId, [gap, slot]);
+    dispatch({ type: 'descriptionsWritten', docId: 'doc-1', written: [GAP_KEY], failed: [] });
+    settle(lastOutgoing('requestDrift')['passId'] as string, [slot]);
+    const list = (): HTMLElement | null => document.querySelector('.sl-writing-done ul');
+    expect(list()?.hidden).toBe(true);
+    click('[data-writing-done-toggle="doc-1"]');
+    expect(list()?.hidden).toBe(false);
+    expect(document.querySelector('[data-writing-done-toggle="doc-1"]')?.getAttribute('aria-expanded')).toBe('true');
+    click('[data-writing-done-toggle="doc-1"]');
+    expect(list()?.hidden).toBe(true);
+  });
+
+  it('holds Save all while a Copy run is out', async () => {
+    const passId = await openWriting();
+    settle(passId, [gap]);
+    type(`[data-writing-key="${GAP_KEY}"]`, 'Starts an action.');
+    startCopy('doc-1');
+    expect(document.querySelector<HTMLButtonElement>('[data-writing-save-all]')?.disabled).toBe(true);
+    click('[data-writing-save-all]');
+    expect(count('writeDescriptions')).toBe(0);
   });
 
   it('keeps the older Checked stamp after one row is checked again', async () => {
@@ -464,15 +577,14 @@ describe('Writing view', () => {
     const passId = await openWriting();
     dispatch({ type: 'driftError', docId: 'doc-1', passId });
     dispatch({ type: 'writingGaps', docId: 'doc-1', passId, gaps: [gap] });
-    expect(document.querySelector('.sl-library-check-label')?.textContent).toBe('Checked just now');
+    expect(document.querySelector('[data-writing-subline]')?.textContent).toBe('1 description left in 1 doc · Checked just now');
     now.mockReturnValue(t0 + 2 * 60 * 60_000);
-    click(`[data-writing-toggle="${GAP_KEY}"]`);
     type(`[data-writing-key="${GAP_KEY}"]`, 'Starts an action.');
     click(`[data-writing-save="${GAP_KEY}"]`);
     dispatch({ type: 'descriptionsWritten', docId: 'doc-1', written: [GAP_KEY], failed: [] });
     const next = lastOutgoing('requestDrift')['passId'] as string;
     dispatch({ type: 'driftError', docId: 'doc-1', passId: next });
-    expect(document.querySelector('.sl-library-check-label')?.textContent).toMatch(/^Checked at /);
+    expect(document.querySelector('[data-writing-subline]')?.textContent).toMatch(/ · Checked at /);
   });
 
   it('a Foundation save reads the Foundation and the list once and leaves settled component docs alone', async () => {
@@ -518,11 +630,10 @@ describe('Writing view', () => {
     const passId = await openWriting([componentEntry('doc-1'), foundationEntry()]);
     dispatch({ type: 'foundation', dump: styleDump('') });
     settle(passId, [gap]);
-    click(`[data-writing-group="doc-1"] [data-writing-toggle="${GAP_KEY}"]`);
     type(`[data-writing-key="${GAP_KEY}"]`, 'Starts an action.');
     startCopy('doc-1');
     expect(count('requestDocProse')).toBe(1);
-    const field = document.querySelector<HTMLInputElement>(`[data-writing-key="${GAP_KEY}"]`);
+    const field = document.querySelector<HTMLTextAreaElement>(`[data-writing-key="${GAP_KEY}"]`);
     expect(field?.disabled).toBe(false);
     expect(field?.value).toBe('Starts an action.');
     expect(document.querySelector<HTMLButtonElement>(`[data-writing-save="${GAP_KEY}"]`)?.disabled).toBe(true);
@@ -570,7 +681,7 @@ describe('Writing view', () => {
     expect(count('requestDrift')).toBe(drifts);
     // The Foundation read is still out, so nothing is claimed from the old spec.
     expect(document.querySelector('[data-writing-unknown]')).not.toBeNull();
-    expect(document.querySelector('.sl-writing-list')?.textContent).not.toContain('Nothing to write');
+    expect(document.querySelector('.sl-writing-list')?.textContent).not.toContain('Nothing left to do');
     dispatch({ type: 'foundation', dump: styleDump('Body copy.') });
     expect(document.querySelector('[data-writing-unknown]')).toBeNull();
 
@@ -593,14 +704,14 @@ describe('Writing view', () => {
     click('[data-view="writing"]');
     dispatch({ type: 'library', entries: [foundationEntry()] });
     dispatch({ type: 'foundation', dump: styleDump('Body copy.') });
-    expect(document.querySelector('.sl-writing-list')?.textContent).toContain('Nothing to write');
+    expect(document.querySelector('.sl-writing-list')?.textContent).toContain('Nothing left to do');
     const before = count('requestFoundation');
     click('[data-library-refresh]');
     expect(count('requestFoundation')).toBe(before + 1);
     dispatch({ type: 'library', entries: [foundationEntry()] });
     // The description was cleared in Figma; until the read lands, nothing is claimed.
     expect(document.querySelector('[data-writing-unknown]')?.textContent).toContain('Checks are still running.');
-    expect(document.querySelector('.sl-writing-list')?.textContent).not.toContain('Nothing to write');
+    expect(document.querySelector('.sl-writing-list')?.textContent).not.toContain('Nothing left to do');
     dispatch({ type: 'foundation', dump: styleDump('') });
     expect(document.querySelector('[data-writing-unknown]')).toBeNull();
     expect(taskKeys('doc-f')).toEqual([STYLE_KEY]);
@@ -627,7 +738,6 @@ describe('Writing view', () => {
   it('leaves no writing pieces in the Library', async () => {
     const passId = await openWriting();
     settle(passId, [gap]);
-    click(`[data-writing-toggle="${GAP_KEY}"]`);
     expect(document.querySelector('.sl-writing-field')).not.toBeNull();
     click('[data-view="library"]');
     dispatch({ type: 'libraryUnchanged' });
