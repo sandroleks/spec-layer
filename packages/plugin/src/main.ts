@@ -18,6 +18,10 @@ import {
 } from '@spec-layer/extractor';
 import { buildDocFrames } from './docFrame';
 import { buildFoundationFrame, isColorRow } from './foundationFrame';
+import {
+  applySpot, boxIn, firstSpot, spotBeside, spotInPlace, spotNear, spotNearPrior,
+} from './docPlacement';
+import { unionBoxes, type Box } from './placement';
 import { emptyBrandTheme, resolveTheme, migrateBrandColors, type BrandTheme, type BrandColors } from './brandColors';
 import { familiesWithRequiredStyles } from './fonts';
 import { isComponentFormat, storedComponentFormat } from './componentFormat';
@@ -848,21 +852,11 @@ const handleUiMessage = async (raw: unknown): Promise<void> => {
         const publishRaw = existing ? existing.getPluginData(PUBLISH_RECORD_KEY) : '';
         const pill: PillState = pillState(parsePublishRecord(publishRaw), msg.contentHash);
 
-        // Regenerate in place: reuse the old doc's position AND its page.
+        // A rebuilt doc stays on the old doc's page; a new one lands on this page.
         let targetPage: PageNode = figma.currentPage;
-        let x = 0, y = 0;
         if (existing) {
-          x = existing.x; y = existing.y;
           const p = pageOf(existing);
           if (p) targetPage = p;
-        } else {
-          try {
-            const comp = await figma.getNodeByIdAsync(msg.nodeId);
-            if (comp && 'x' in comp && 'width' in comp) {
-              const c = comp as SceneNode & { x: number; y: number; width: number };
-              x = c.x + c.width + 80; y = c.y;
-            }
-          } catch { /* source gone since extract — fall back to origin */ }
         }
 
         if (targetPage.id !== figma.currentPage.id) {
@@ -899,13 +893,29 @@ const handleUiMessage = async (raw: unknown): Promise<void> => {
         }));
         if (publishRaw) section.setPluginData(PUBLISH_RECORD_KEY, publishRaw);
 
+        // Chosen while the old doc can still be read. firstSpot never throws:
+        // the old spot when the rebuilt doc still fits there, else beside the
+        // source when it is on this page, else as near the old spot as is
+        // clear; a new doc whose source is gone or elsewhere goes near the
+        // middle of the view.
+        const size = { width: section.width, height: section.height };
+        const exclude = new Set(existingId ? [existingId, section.id] : [section.id]);
+        const source = await figma.getNodeByIdAsync(msg.nodeId).catch(() => null);
+        const sourceHere = source !== null && pageOf(source)?.id === targetPage.id;
+        const spot = firstSpot(targetPage, exclude, [
+          () => (existing ? spotInPlace(existing, size, exclude) : null),
+          () => (source && sourceHere ? spotBeside(source, size, exclude) : null),
+          () => (existing ? spotNearPrior(existing, size, exclude) : null),
+          () => (existing ? null : spotNear(targetPage, { ...figma.viewport.center, width: 0, height: 0 }, size, exclude)),
+        ]);
+
         // Point of no return: after this, `section` IS the doc and must survive
         // any later (cosmetic) failure.
         if (existing) existing.remove();
-        // Re-appending moves it to the end, above its siblings.
-        targetPage.appendChild(section);
-        section.x = x; section.y = y;
         committed = true;
+        // Appending moves it to the end of its host, above its siblings. A
+        // failed append leaves it where it was built, on this page.
+        try { applySpot(section, spot); } catch { /* placed, if not where planned */ }
 
         // Register (idempotent), dropping the replaced doc's id if it changed.
         let reg = readRegistry();
@@ -1091,7 +1101,8 @@ const handleUiMessage = async (raw: unknown): Promise<void> => {
       // doc, and a later throw must not delete the user's only copy).
       let pending: SectionNode | null = null;
       // New units land here; a replacing unit visits its predecessor's page
-      // and returns before the next, so the layout cursor never drifts.
+      // and returns before the next, so each new unit still lines up beside
+      // lastPlaced on this page.
       const invokedPage = figma.currentPage;
       const atBegin = invokedPage.selection.map((node) => node.id);
       try {
@@ -1102,17 +1113,8 @@ const handleUiMessage = async (raw: unknown): Promise<void> => {
         const units = planFoundationUnits(spec, msg.selection);
 
         let replaced = 0;
-        let x = 0;
-        let y = 0;
-
-        // Right of everything on the page, never on top of existing work.
-        for (const child of invokedPage.children) {
-          if ('x' in child && 'width' in child) {
-            const c = child as SceneNode & { x: number; width: number; y: number };
-            x = Math.max(x, c.x + c.width + 120);
-            y = Math.min(y, c.y);
-          }
-        }
+        // The last new unit placed in this run; the next one lines up beside it.
+        let lastPlaced: Box | null = null;
 
         // Tracked foundation Sections on any page, by scope, so a regenerated
         // unit replaces its predecessor in place.
@@ -1123,6 +1125,19 @@ const handleUiMessage = async (raw: unknown): Promise<void> => {
             existingByScope.set(foundationScopeKey(link.scope), existing);
           }
         }
+
+        // The first new unit goes beside the foundation docs already on this
+        // page, else in the middle of the view, else at the page origin.
+        let startAnchor: Box = { x: 0, y: 0, width: 0, height: 0 };
+        try {
+          const centre = figma.viewport.center;
+          startAnchor = { x: centre.x, y: centre.y, width: 0, height: 0 };
+          const here = [...existingByScope.values()]
+            .filter((s) => pageOf(s)?.id === invokedPage.id)
+            .map((s) => boxIn(invokedPage, s))
+            .filter((b): b is Box => b !== null);
+          startAnchor = unionBoxes(here) ?? startAnchor;
+        } catch { /* the middle of the view */ }
 
         // Once per build, and only with the toggle on: colorContrast reads the
         // whole foundation.
@@ -1171,14 +1186,13 @@ const handleUiMessage = async (raw: unknown): Promise<void> => {
             pluginVersion: typeof __PLUGIN_VERSION__ === 'string' ? __PLUGIN_VERSION__ : '',
           };
 
-          targetPage.appendChild(section);
-          if (prior) {
-            section.x = prior.x;
-            section.y = prior.y;
-          } else {
-            section.x = x;
-            section.y = y;
-          }
+          // A regenerated unit keeps its spot when it still fits there; a new
+          // one lines up beside the last unit placed.
+          const size = { width: section.width, height: section.height };
+          const exclude = new Set(prior ? [prior.id, section.id] : [section.id]);
+          applySpot(section, firstSpot(targetPage, exclude, prior
+            ? [() => spotInPlace(prior, size, exclude), () => spotNearPrior(prior, size, exclude)]
+            : [() => spotNear(targetPage, lastPlaced ?? startAnchor, size, exclude)]));
 
           // Stamp before removing the predecessor; see renderDocFrame.
           data.selfHash = textContentHash(collectGeneratedLane(section));
@@ -1201,7 +1215,7 @@ const handleUiMessage = async (raw: unknown): Promise<void> => {
           } else {
             writeRegistry(addDoc(readRegistry(), section.id));
             pending = null;
-            x += section.width + 80;
+            lastPlaced = { x: section.x, y: section.y, width: section.width, height: section.height };
             created++;
           }
 
@@ -1329,12 +1343,15 @@ const handleUiMessage = async (raw: unknown): Promise<void> => {
           pluginVersion: typeof __PLUGIN_VERSION__ === 'string' ? __PLUGIN_VERSION__ : '',
         };
 
-        // Regenerate in place, on the prior doc's page and position.
+        // On the prior doc's page, at its spot when the rebuilt doc still fits there.
         const targetPage = pageOf(prior) ?? figma.currentPage;
         if (targetPage.id !== figma.currentPage.id) await figma.setCurrentPageAsync(targetPage);
-        targetPage.appendChild(section);
-        section.x = prior.x;
-        section.y = prior.y;
+        const size = { width: section.width, height: section.height };
+        const exclude = new Set([prior.id, section.id]);
+        applySpot(section, firstSpot(targetPage, exclude, [
+          () => spotInPlace(prior, size, exclude),
+          () => spotNearPrior(prior, size, exclude),
+        ]));
 
         data.selfHash = textContentHash(collectGeneratedLane(section));
         section.setPluginData(DOC_LINK_KEY, serializeDocLink(data));
