@@ -159,10 +159,6 @@ function draftMarkup(group: WritingGroup, model: WritingScreenPresentation): str
   );
 }
 
-function progressPercent(group: WritingGroup): number {
-  return group.tasks.length === 0 ? 0 : Math.round((group.done.length / group.tasks.length) * 100);
-}
-
 function doneMarkup(group: WritingGroup): string {
   if (group.done.length === 0) return '';
   return (
@@ -195,7 +191,6 @@ export function writingGroupMarkup(group: WritingGroup, model: WritingScreenPres
     '<div class="sl-writing-group-main">' +
     `<h2>${esc(group.label)}</h2>` +
     `<span class="sl-writing-count">${esc(group.countLabel)}</span>` +
-    `<span class="sl-writing-progress" aria-hidden="true"><i style="width: ${progressPercent(group)}%"></i></span>` +
     '</div>' +
     `<div class="sl-writing-draft" data-writing-draft-slot>${draftMarkup(group, model)}</div>` +
     '</header>' +

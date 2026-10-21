@@ -31,7 +31,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   good, remembered per person, and an info button beside the heading brings
   it back. The subline says what is left ("79 descriptions and 3
   sections left in 2 docs") and when the docs were last checked. Each doc
-  is a block with a "12 of 79 written" count and a progress bar. Its open
+  is a block with a "12 of 79 written" count. Its open
   description fields come first: an empty component or slot description,
   and for a Foundation doc each variable or style in its scope with no
   description, grouped under their parent path in Figma's order, with a

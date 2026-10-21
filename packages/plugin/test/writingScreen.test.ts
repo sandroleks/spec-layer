@@ -126,9 +126,10 @@ describe('to do rows', () => {
 });
 
 describe('to do doc blocks', () => {
-  it('heads a doc with its count, progress and Draft, its cost in the tooltip', () => {
+  it('heads a doc with its count and Draft, its cost in the tooltip, and no progress bar', () => {
     const html = writingScrollMarkup(model({ freeTier: true, groups: [group({ draftable: 61, countLabel: '12 of 79 written' })] }));
     expect(html).toContain('12 of 79 written');
+    expect(html).not.toContain('sl-writing-progress');
     expect(html).toMatch(/data-writing-draft-all[^>]*title="Drafts 61 empty fields\. Takes 2 free AI writing uses\."[^>]*>[\s\S]*Draft with AI/);
     expect(writingScrollMarkup(model({ groups: [group({ draftable: 3 })] }))).toContain('Takes 1 AI writing use.');
     expect(writingScrollMarkup(model({ groups: [group({ draftable: 0 })] }))).not.toContain('data-writing-draft-all');

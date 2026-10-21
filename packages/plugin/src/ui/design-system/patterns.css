@@ -1333,11 +1333,9 @@
   background: var(--sl-color-canvas);
   border-bottom: 1px solid var(--sl-color-border-muted);
 }
-.sl-writing-group-main { flex: 1; min-width: 0; display: grid; grid-template-columns: minmax(0, auto) 1fr; align-items: baseline; column-gap: var(--sl-space-8); row-gap: var(--sl-space-4); }
+.sl-writing-group-main { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: var(--sl-space-8); }
 .sl-writing-group-head h2 { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--sl-font-size-body); font-weight: var(--sl-font-weight-semibold); }
 .sl-writing-count { color: var(--sl-color-text-muted); font-size: var(--sl-font-size-caption); white-space: nowrap; }
-.sl-writing-progress { grid-column: 1 / -1; display: block; height: 3px; overflow: hidden; background: var(--sl-color-border-muted); border-radius: var(--sl-radius-pill); }
-.sl-writing-progress > i { display: block; height: 100%; background: var(--sl-color-success); border-radius: inherit; transition: width var(--sl-motion-fast) var(--sl-ease-standard); }
 .sl-writing-draft { flex: none; }
 .sl-writing-draft > .sl-button { gap: var(--sl-space-4); color: var(--sl-color-accent-text); }
 

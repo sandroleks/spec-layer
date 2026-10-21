@@ -679,7 +679,7 @@ not covered yet.
 7. **Done moves to Written this session.** Save a description and wait for
    the re-check. Confirm the row leaves the open list, the folded "Written
    this session (N)" count moves by one and opens to show it with a check,
-   and the doc's count and progress bar move. A row is done only once the
+   and the doc's count moves. A row is done only once the
    source no longer has the gap, not when you press **Enter**.
 8. **A pass that finds the gap again.** Save a description, wait for the
    row to read done, then clear the description in Figma by hand and press
