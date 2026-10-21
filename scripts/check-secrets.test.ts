@@ -38,6 +38,13 @@ describe('SECRET_PATTERNS', () => {
   it('does not match its own pattern sources', () => {
     for (const [, source] of SECRET_PATTERNS) expect(matchLine(source)).toEqual([]);
   });
+
+  it('matches a Cloudflare account or user token, built at runtime', () => {
+    const token = `cfat_${'Ab9'.repeat(15)}`;
+    expect(matchLine(`CLOUDFLARE_ANALYTICS_TOKEN=${token}`).map((m) => m.label)).toEqual(['Cloudflare API token']);
+    expect(matchLine(`cfut_${'x'.repeat(44)}`).map((m) => m.label)).toEqual(['Cloudflare API token']);
+    expect(matchLine('cfat_short')).toEqual([]);
+  });
 });
 
 describe('scanDiff', () => {

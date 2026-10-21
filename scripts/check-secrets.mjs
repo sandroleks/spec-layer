@@ -36,6 +36,8 @@ export const SECRET_PATTERNS = [
   ['Spec Layer pull key', 'sl_[0-9a-f]{48}'],
   ['npm granular access token', 'npm_[A-Za-z0-9]{36}'],
   ['Cloudflare API token pasted as an env assignment', 'CLOUDFLARE_API_TOKEN=[A-Za-z0-9_-]{20,}'],
+  // Account (`cfat_`) and user (`cfut_`) tokens, the shape scripts/analytics-report.mjs reads from the environment.
+  ['Cloudflare API token', 'cf[au]t_[A-Za-z0-9]{40,}'],
 ];
 
 const COMPILED = SECRET_PATTERNS.map(([label, source]) => ({ label, source, re: new RegExp(source) }));

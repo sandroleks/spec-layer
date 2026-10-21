@@ -335,6 +335,17 @@ ORDER BY requests DESC
 callers; a legacy 5.1.0 prose request carries `blob6 = 'v8'`, which is how
 "has 5.1.0 traffic stopped" is answered before its branch is removed.
 
+The week's questions are one command: `npm run report:analytics`
+(`scripts/analytics-report.mjs`) reads the token from
+`CLOUDFLARE_ANALYTICS_TOKEN` in the environment, never from a file, and
+prints a table per question over both datasets: requests by route and
+outcome, active callers, AI generations per tier, builds on the wire, the
+legacy v8 count, publishes, pulls, license verdicts, latency, and once the
+events dataset exists, installs, events, copy sizes, Library check
+durations, where the error toast fires and the switch changes. `--days 30`
+widens the window, `--staging` reads the staging datasets, `--json` gives
+the rows. A dataset that nothing has written to yet is reported as such.
+
 ### Usage events
 
 What happens inside the plugin without a request of its own (a doc built
