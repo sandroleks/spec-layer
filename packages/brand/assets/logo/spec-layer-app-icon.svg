@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Spec Layer">
+  <title>Spec Layer</title>
+  <rect width="512" height="512" fill="#000000"/>
+  <g transform="translate(112 112) scale(6)">
+    <rect width="20" height="20" fill="#FFFFFF"/>
+    <circle cx="38" cy="10" r="8.25" fill="none" stroke="#FFFFFF" stroke-width="3.5"/>
+    <rect x="1.75" y="29.75" width="16.5" height="16.5" fill="none" stroke="#FFFFFF" stroke-width="3.5"/>
+    <circle cx="38" cy="38" r="10" fill="#FFFFFF"/>
+  </g>
+</svg>

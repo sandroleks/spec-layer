@@ -81,6 +81,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   offers the Library's two starts. Nothing written or recorded here enters
   a hash or an artifact. Needs the descriptions prose contract in
   production on the proxy.
+- **Logo files.** `packages/brand/assets/logo/` holds the variant matrix
+  symbol recut on a 48 unit grid (20 unit cells, 8 unit gap, 3.5 unit inside
+  strokes so every shape shares its outer bounds), a horizontal lockup and a
+  wordmark with Manrope SemiBold converted to outlines, a 16 px favicon on its
+  own pixel grid that switches to white under a dark color scheme, and a
+  512 px app icon. The symbol and lockups come in black and white. The
+  existing `logo.svg` is unchanged, and the plugin still reads it.
 
 - **Usage metrics on the proxy.** Every request to `api.spec-layer.com`
   now writes one data point to Workers Analytics Engine: the route, the
