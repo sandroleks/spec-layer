@@ -737,8 +737,8 @@ not covered yet.
     Foundation doc reads **Update available**; every component doc keeps
     its badge and its block, no new check count starts, and the Library's
     check line keeps the earlier check's time.
-19. **The explainer.** On a first visit to To do, confirm the "Why write
-    these here?" card shows above the docs and no card flashes before it.
+19. **The explainer.** On a first visit to To do, confirm the "Why fill
+    these in here?" card shows above the docs and no card flashes before it.
     Press **Got it**, close and reopen the plugin, and confirm it stays
     closed; the info button beside the heading opens and closes it again.
     While it is open, check in Dev Mode whether a saved variable, style and

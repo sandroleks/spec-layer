@@ -23,10 +23,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   Nothing sends it until the plugin change that uses it ships, and that
   change waits for this proxy to be in production.
 - **To do, what is left to write per doc.** A To do entry in the rail opens
-  a screen that, on a first visit, says why these are written here and not
-  in a doc: a description belongs to the variable, style or component
-  itself, so Copy for AI, published libraries and the docs' next Update all
-  read it, while canvas sections belong to one doc. **Got it** closes it for
+  a screen that, on a first visit, says why these are filled in here: they
+  are the description fields on variables, styles and components, not part
+  of a doc; Copy for AI uses them right away, and docs and published
+  libraries get them on their next update or publish. Canvas sections are
+  part of a doc and are written there. **Got it** closes it for
   good, remembered per person, and an info button beside the heading brings
   it back. The subline says what is left ("79 descriptions and 3
   sections left in 2 docs") and when the docs were last checked. Each doc

@@ -11,11 +11,11 @@ export const WRITING_REFRESH = 'Refresh';
  * what the plugin does with the field; Dev Mode is left out until a Figma
  * pass confirms it shows variable and style descriptions.
  */
-export const WRITING_WHY_HEADING = 'Why write these here?';
+export const WRITING_WHY_HEADING = 'Why fill these in here?';
 export const WRITING_WHY = [
-  'Your docs are frames on the canvas. Descriptions belong to the variable, style or component itself.',
-  'Saved here, a description travels with it: Copy for AI and published libraries read it, and your docs pick it up on their next Update.',
-  'Sections under On the canvas belong to one doc, so you write those in the doc.',
+  'These are the description fields on your variables, styles and components. They aren’t part of a doc.',
+  'Copy for AI uses them right away. Your docs and published library get them the next time you update or publish.',
+  'Sections under On the canvas are part of a doc, so you write them there.',
 ] as const;
 export const WRITING_WHY_DISMISS = 'Got it';
 export const WRITING_FIELD_HINTS = {

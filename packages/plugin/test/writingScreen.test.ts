@@ -56,10 +56,10 @@ describe('to do explainer', () => {
   it('shows the card above the docs while open, with its info button expanded', () => {
     const html = writingScrollMarkup(model({ why: true }));
     expect(html).toContain('id="sl-writing-why"');
-    expect(html).toContain('Why write these here?');
+    expect(html).toContain('Why fill these in here?');
     expect(html).toContain('data-writing-why-dismiss');
     expect(html.indexOf('sl-writing-why"')).toBeLessThan(html.indexOf('data-writing-group'));
-    expect(writingHeaderMarkup(model({ why: true }))).toMatch(/data-writing-why aria-label="Why write these here\?"[^>]*aria-controls="sl-writing-why" aria-expanded="true"/);
+    expect(writingHeaderMarkup(model({ why: true }))).toMatch(/data-writing-why aria-label="Why fill these in here\?"[^>]*aria-controls="sl-writing-why" aria-expanded="true"/);
   });
 
   it('keeps only the info button once closed', () => {
