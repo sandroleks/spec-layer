@@ -1,6 +1,6 @@
-import { draftProse, draftGroupDescriptions } from '@spec-layer/extractor';
+import { draftProse, draftGroupDescriptions, draftDescriptions } from '@spec-layer/extractor';
 import type {
-  IntermediateSpec, ProseValidation, ProseV2Key, ProxyQuota, GroupDraftInput, GroupDraft,
+  DescriptionDraftInput, DescriptionDraftResult, IntermediateSpec, ProseValidation, ProseV2Key, ProxyQuota, GroupDraftInput, GroupDraft,
 } from '@spec-layer/extractor';
 import { send } from './actions';
 import { PROXY_URL, type ProxyAuth } from './proxy';
@@ -69,5 +69,21 @@ export async function generateGroupDescriptions(
       figmaUserId: auth.figmaUserId,
       onQuota,
     },
+  });
+}
+
+/** One call per batch of a row's blank fields; shares the prose cache, so a
+ *  retry of an answered batch is free. A failing batch comes back as `error`
+ *  beside the drafts the batches before it produced. */
+export async function generateDescriptions(
+  input: DescriptionDraftInput,
+  auth: ProxyAuth,
+  onQuota?: (q: ProxyQuota) => void,
+): Promise<DescriptionDraftResult> {
+  return draftDescriptions(input, {
+    apiKey: null,
+    fetcher: window.fetch.bind(window),
+    cacheStore,
+    proxy: { url: PROXY_URL, licenseKey: auth.licenseKey, licenseInstanceId: auth.licenseInstanceId, figmaUserId: auth.figmaUserId, onQuota },
   });
 }

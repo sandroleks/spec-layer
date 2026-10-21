@@ -50,6 +50,15 @@ const SHAPES: Partial<Record<SectionId, PlaceholderShape>> = {
   },
 };
 
+/**
+ * Every section the plugin draws as a placeholder, in frame order (SHAPES is
+ * written in ALL_SECTIONS order; a test pins that). Read from SHAPES and not
+ * from ALL_SECTIONS: docModel.ts imports this module, so a value import back
+ * would be circular. Pure, no DOM; the main thread reads it through
+ * writingGaps.ts.
+ */
+export const PLACEHOLDER_SECTION_IDS: readonly SectionId[] = Object.keys(SHAPES) as SectionId[];
+
 /** Null for a spec-built section, where an empty one has nothing to write. */
 export function placeholderShapeFor(id: SectionId): PlaceholderShape | null {
   return SHAPES[id] ?? null;

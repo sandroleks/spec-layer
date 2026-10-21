@@ -1285,6 +1285,140 @@
   line-height: var(--sl-line-height-reading);
 }
 
+/* The To do screen (view id writing): one block per doc, every field typed in
+   place. Rows carry no border so a long list stays dense; the doc head sticks
+   while its block scrolls. Sizes and colours follow the Library rows. */
+.sl-writing-header { display: grid; gap: var(--sl-space-2); }
+.sl-writing-title-row { display: flex; align-items: center; gap: var(--sl-space-2); min-width: 0; }
+/* The page heading's own style: it sits one level deeper here, beside its info button. */
+.sl-writing-title-row > h1 {
+  margin: 0;
+  color: var(--sl-color-text);
+  font-size: var(--sl-font-size-display);
+  font-weight: var(--sl-font-weight-bold);
+  line-height: var(--sl-line-height-tight);
+  letter-spacing: var(--sl-tracking-display);
+  white-space: nowrap;
+}
+.sl-writing-why-button { width: 24px; height: 24px; }
+.sl-writing-why-button > svg { width: 15px; height: 15px; }
+.sl-writing-why {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--sl-space-4);
+  justify-items: start;
+  padding: var(--sl-space-10) var(--sl-space-12);
+  background: var(--sl-color-surface-subdued);
+  border: 1px solid var(--sl-color-border-muted);
+  border-radius: var(--sl-radius-md);
+}
+.sl-writing-why h2 { margin: 0; font-size: var(--sl-font-size-support); font-weight: var(--sl-font-weight-semibold); }
+.sl-writing-why p { margin: 0; color: var(--sl-color-text-muted); font-size: var(--sl-font-size-caption); line-height: var(--sl-line-height-reading); }
+.sl-writing-why .sl-button { margin-top: var(--sl-space-4); }
+.sl-writing-subline { display: flex; align-items: center; gap: var(--sl-space-4); min-height: 24px; color: var(--sl-color-text-muted); font-size: var(--sl-font-size-support); }
+.sl-writing-subline-text { min-width: 0; }
+.sl-writing-refresh { width: 24px; height: 24px; }
+.sl-writing-refresh > svg { width: 15px; height: 15px; }
+
+/* minmax(0, 1fr) on every grid here: an auto track grows to fit a long doc
+   name, path or token that cannot wrap, and the screen scrolls sideways. */
+.sl-writing-screen .sl-writing-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sl-space-20); padding-top: var(--sl-space-4); }
+.sl-writing-group { display: grid; grid-template-columns: minmax(0, 1fr); }
+.sl-writing-group-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--sl-space-10);
+  padding: var(--sl-space-8) 0;
+  /* The screen's own ground, so rows scroll under it without a band. */
+  background: var(--sl-color-canvas);
+  border-bottom: 1px solid var(--sl-color-border-muted);
+}
+.sl-writing-group-main { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: var(--sl-space-8); }
+.sl-writing-group-head h2 { min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--sl-font-size-body); font-weight: var(--sl-font-weight-semibold); }
+.sl-writing-count { color: var(--sl-color-text-muted); font-size: var(--sl-font-size-caption); white-space: nowrap; }
+.sl-writing-draft { flex: none; }
+.sl-writing-draft > .sl-button { gap: var(--sl-space-4); color: var(--sl-color-accent-text); }
+
+.sl-writing-run { display: grid; grid-template-columns: minmax(0, 1fr); padding-top: var(--sl-space-10); }
+.sl-writing-subhead {
+  margin: 0 0 var(--sl-space-2);
+  overflow: hidden;
+  color: var(--sl-color-text-muted);
+  font-size: var(--sl-font-size-caption);
+  font-weight: var(--sl-font-weight-semibold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sl-writing-note { margin: 0 0 var(--sl-space-4); color: var(--sl-color-text-muted); font-size: var(--sl-font-size-caption); line-height: var(--sl-line-height-reading); }
+.sl-writing-tasks { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); }
+
+.sl-writing-task { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sl-space-2); padding: var(--sl-space-6) var(--sl-space-6); margin-inline: calc(-1 * var(--sl-space-6)); border-radius: var(--sl-radius-md); }
+.sl-writing-task:hover, .sl-writing-task:focus-within { background: var(--sl-color-surface-hover); }
+.sl-writing-row-head { display: flex; align-items: baseline; gap: var(--sl-space-6); min-width: 0; }
+.sl-writing-swatches { display: inline-flex; align-self: center; gap: 2px; }
+.sl-writing-swatches:empty { display: none; }
+.sl-writing-swatch { width: 12px; height: 12px; border-radius: 3px; box-shadow: inset 0 0 0 1px var(--sl-color-border); }
+.sl-writing-title { flex: none; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--sl-font-size-support); font-weight: var(--sl-font-weight-semibold); }
+.sl-writing-caption { flex: 1; min-width: 0; overflow: hidden; color: var(--sl-color-text-muted); font-size: var(--sl-font-size-caption); text-overflow: ellipsis; white-space: nowrap; }
+.sl-writing-tag-slot { margin-left: auto; flex: none; display: inline-flex; align-self: center; }
+.sl-writing-tag-slot:empty { display: none; }
+.sl-writing-ai-mark { display: inline-flex; color: var(--sl-color-accent-text); }
+.sl-writing-state { color: var(--sl-color-text-muted); font-size: var(--sl-font-size-caption); white-space: nowrap; }
+
+.sl-writing-field-line { display: flex; align-items: flex-start; gap: var(--sl-space-4); }
+.sl-writing-field {
+  flex: 1;
+  min-width: 0;
+  min-height: 28px;
+  margin: 0;
+  padding: var(--sl-space-4) var(--sl-space-6);
+  overflow: hidden;
+  resize: none;
+  color: var(--sl-color-text);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--sl-radius-sm);
+  font: inherit;
+  font-size: var(--sl-font-size-support);
+  line-height: var(--sl-line-height-reading);
+  field-sizing: content;
+}
+.sl-writing-field::placeholder { color: var(--sl-color-text-quiet); }
+.sl-writing-field:hover { border-color: var(--sl-color-border); }
+.sl-writing-field:focus { outline: none; background: var(--sl-color-surface); border-color: var(--sl-color-focus); box-shadow: 0 0 0 2px var(--sl-color-accent-soft); }
+.sl-writing-task[data-origin="ai"] .sl-writing-field { background: var(--sl-color-ai-surface); border-color: var(--sl-color-ai-border); }
+.sl-writing-task[data-state] .sl-writing-field[readonly] { color: var(--sl-color-text-muted); }
+.sl-writing-task[data-error] .sl-writing-field { border-color: var(--sl-color-danger-border); }
+/* One fixed column on every row, so fields share a right edge with or without a draft. */
+.sl-writing-actions { flex: none; width: 24px; display: flex; align-items: center; padding-top: 2px; }
+.sl-writing-discard { width: 24px; height: 24px; opacity: 0; }
+/* Shown where it can be used: under the pointer or with focus in the row. */
+.sl-writing-task:hover .sl-writing-discard,
+.sl-writing-task:focus-within .sl-writing-discard { opacity: 1; }
+.sl-writing-discard > svg { width: 14px; height: 14px; }
+.sl-writing-status-slot:empty { display: none; }
+.sl-writing-error { margin: 0; padding-inline: var(--sl-space-6); color: var(--sl-color-danger); font-size: var(--sl-font-size-caption); line-height: var(--sl-line-height-reading); }
+
+.sl-writing-section-row { display: flex; align-items: center; justify-content: space-between; gap: var(--sl-space-8); }
+.sl-writing-section-row .sl-writing-title { flex: 1; min-width: 0; max-width: none; font-weight: var(--sl-font-weight-medium); }
+
+.sl-writing-done { padding-top: var(--sl-space-10); }
+.sl-writing-done-toggle { display: inline-flex; align-items: center; gap: var(--sl-space-4); padding: var(--sl-space-2) 0; color: var(--sl-color-text-muted); background: none; border: 0; border-radius: var(--sl-radius-sm); font: inherit; font-size: var(--sl-font-size-caption); font-weight: var(--sl-font-weight-semibold); cursor: pointer; }
+.sl-writing-done-toggle:hover { color: var(--sl-color-text); }
+.sl-writing-done-toggle:focus-visible { outline: 2px solid var(--sl-color-focus); outline-offset: 2px; }
+.sl-writing-chevron { display: inline-flex; transform: rotate(-90deg); transition: transform var(--sl-motion-fast) var(--sl-ease-standard); }
+.sl-writing-chevron.is-expanded { transform: none; }
+.sl-writing-task.is-done { display: flex; align-items: center; gap: var(--sl-space-6); padding-block: var(--sl-space-4); color: var(--sl-color-text-muted); }
+.sl-writing-task.is-done:hover { background: none; }
+.sl-writing-task.is-done .sl-writing-title { flex: 1; min-width: 0; max-width: none; font-weight: var(--sl-font-weight-regular); }
+.sl-writing-check { display: inline-flex; color: var(--sl-color-success); }
+
+.sl-writing-bar { justify-content: flex-end; }
+.sl-writing-bar-label { margin-right: auto; color: var(--sl-color-text-muted); font-size: var(--sl-font-size-support); }
+
 .sl-library-menu-scrim {
   position: fixed;
   z-index: 15;

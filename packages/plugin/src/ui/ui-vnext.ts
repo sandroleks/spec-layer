@@ -56,7 +56,9 @@ import { COMPONENT_FORMATS, isComponentFormat, type ComponentFormat } from '../c
 import { computeMenuPlacement } from './fontPicker';
 import { filterFamilies } from '../fonts';
 import { renderLicenseScreen } from './screens/license';
-import { patchLibraryCheckLine, patchLibraryDrift, renderLibraryScreen, revealLibraryRow, type LibraryScreenPresentation } from './screens/library';
+import { growField, paintWritingFooter, patchWritingGroup, patchWritingTask, renderWritingScreen, type WritingScreenPresentation } from './screens/writing';
+import type { DescriptionWrite } from '../descriptionWriter';
+import { cssString, patchLibraryCheckLine, patchLibraryDrift, renderLibraryScreen, revealLibraryRow, type CheckLinePresentation, type LibraryScreenPresentation } from './screens/library';
 import { patchInitialVersion, renderPublishScreen } from './screens/publish';
 import { renderHistoryScreen } from './screens/history';
 import { globalSearchMarkup, patchGlobalSearch, setSearchActive } from './screens/search';
@@ -85,6 +87,19 @@ import {
   type LibraryDriftState,
   type LibraryFilter,
 } from './viewModel/library';
+import {
+  buildWritingModel,
+  closedTasks,
+  docTaskKey,
+  openTasks,
+  writingTaskKey,
+  writingTaskKnown,
+  type BuildWritingModelOptions,
+  type TaskRef,
+  type WritingDraft,
+  type WritingModel,
+  type WritingSaving,
+} from './viewModel/writing';
 import {
   buildSearchModel,
   nextSearchIndex,
@@ -138,7 +153,10 @@ import {
   updateFromSource,
   type BuildPresenter,
 } from './actions';
-import { generateGroupDescriptions, resolveComponentImage } from './ai';
+import { generateDescriptions, generateGroupDescriptions, resolveComponentImage } from './ai';
+import { WRITING_UNKNOWN_UNREAD, draftFailedNote, draftedToast, writtenToast } from './writingCopy';
+import { briefFor } from './writingBriefs';
+import type { WritingGap } from '../writingGaps';
 import {
   activateLicense as activateLicenseKey,
   deactivateLicense,
@@ -271,6 +289,34 @@ const currentHasDoc = (): boolean => {
   return id ? componentHasDoc.get(id) === true : false;
 };
 const libraryDrift = new Map<string, LibraryDriftState>();
+/** Component docs' blank descriptions and sections, from the current drift pass. */
+const libraryComponentGaps = new Map<string, WritingGap[]>();
+/** Docs written to whose fresh `writingGaps` reply is still out; their old gaps stay listed but nothing about them is known. */
+const libraryGapsPending = new Set<string>();
+/** A Foundation save landed while a pass ran: the list is read again when the pass settles. */
+let foundationRereadPending = false;
+/** Typed or AI-drafted text, by writing key; kept until a write clears it. */
+const libraryDrafts = new Map<string, WritingDraft>();
+/** Doc ids with a Draft all call out. */
+const libraryDrafting = new Set<string>();
+/** By docTaskKey: a save out, or written and waiting on the check that closes it. */
+const writingSaving = new Map<string, WritingSaving>();
+/** By docTaskKey: Figma's refusal of the last save, until the field is typed in or saved again. */
+const writingErrors = new Map<string, string>();
+/** Doc ids whose Written this session list is open. */
+const writingDoneOpen = new Set<string>();
+/** Discard all is asking to be confirmed. */
+let writingDiscardConfirm = false;
+/** Whether this person dismissed the explainer; null until main has read it, so it never flashes. */
+let writingIntroSeen: boolean | null = null;
+/** The explainer reopened from its info button. */
+let writingWhyOpen = false;
+/** The draft a field held when it gained focus, so Esc can put it back. */
+let writingFieldStart: { key: string; draft: WritingDraft | null } | null = null;
+/** Tasks that closed this session: docTaskKey -> the gap and the doc it sat under. Completion order. */
+const writingDone = new Map<string, TaskRef>();
+/** Every open task after the last model build, by docTaskKey, to tell a closed task from one that was never listed. */
+let writingOpenBefore = new Map<string, TaskRef>();
 const libraryBaseline = new Map<string, string>();
 /** The current drift pass; see libraryPass.ts. */
 const driftQueue = new DriftQueue();
@@ -579,6 +625,9 @@ function paintScreen(): void {
         renderLibraryScreen(refs, libraryPresentation());
       }
       return;
+    case 'writing':
+      renderWritingScreen(refs, writingPresentation());
+      return;
     case 'license': {
       const quota = state.quota;
       const limit = quota?.limit ?? 0;
@@ -599,15 +648,39 @@ function paintScreen(): void {
   }
 }
 
+/** No list to show yet: the first read, or a refresh, is out and no doc is known. */
+function libraryListLoading(): boolean {
+  return (!libraryRequested || libraryRefreshing) && libraryEntries.length === 0;
+}
+
+/**
+ * The source check line the Library and Writing share: a running check's
+ * progress, else the stamp of the last one. `pendingChecks` is whether any
+ * row still reads pending.
+ */
+function libraryCheckLine(pendingChecks: boolean): CheckLinePresentation {
+  const checkTotal = [...libraryDrift.values()].length;
+  const checkDone = [...libraryDrift.values()]
+    .filter((status) => status !== 'pending').length;
+  const checkProgress = libraryRefreshing || pendingChecks
+    ? {
+        label: libraryEntries.length === 0 ? 'Finding docs in this file' : 'Checking for source changes',
+        ...(checkTotal > 0 ? { current: checkDone, total: checkTotal } : {}),
+      }
+    : null;
+  return {
+    refreshing: libraryRefreshing || pendingChecks,
+    checkedLabel: formatLibraryCheckedAt(libraryCheckedAt),
+    checkProgress,
+  };
+}
+
 /** The Library list's presentation, shared by the full paint and the per-row patch. */
 function libraryPresentation(): LibraryScreenPresentation {
   const model = currentLibraryModel();
   const update = libraryOperation?.kind === 'update' ? libraryOperation : null;
   const pendingChecks = model.allRows.some((row) => row.status === 'pending');
   const failedChecks = model.allRows.some((row) => row.status === 'unavailable');
-  const checkTotal = [...libraryDrift.values()].length;
-  const checkDone = [...libraryDrift.values()]
-    .filter((status) => status !== 'pending').length;
   // An Update run's progress floats above its footer buttons; a source check's
   // goes in the check line under the filters, so its start and end move no row.
   const progress = update
@@ -618,24 +691,16 @@ function libraryPresentation(): LibraryScreenPresentation {
         total: update.total,
       }
     : null;
-  const checkProgress = libraryRefreshing || pendingChecks
-    ? {
-        label: libraryEntries.length === 0 ? 'Finding docs in this file' : 'Checking for source changes',
-        ...(checkTotal > 0 ? { current: checkDone, total: checkTotal } : {}),
-      }
-    : null;
   return {
     ...model,
     menuDocId: libraryMenuDocId,
     revealedDocId: libraryRevealDocId,
     error: libraryError,
     readIncomplete: libraryReadIncomplete,
-    loading: (!libraryRequested || libraryRefreshing) && libraryEntries.length === 0,
-    refreshing: libraryRefreshing || pendingChecks,
+    loading: libraryListLoading(),
     probing: libraryProbeInFlight,
     checksIncomplete: failedChecks,
-    checkedLabel: formatLibraryCheckedAt(libraryCheckedAt),
-    checkProgress,
+    ...libraryCheckLine(pendingChecks),
     updatingAll: Boolean(update?.batch),
     updatingDocId: update?.currentDocId ?? null,
     annotating: annotateBusy,
@@ -649,8 +714,115 @@ function paintLibraryDrift(): void {
   if (!patchLibraryDrift(refs, libraryPresentation())) paint();
 }
 
+// ---------------------------------------------------------------------------
+// Writing
+// ---------------------------------------------------------------------------
+
+function writingOptions(): BuildWritingModelOptions {
+  return {
+    drift: libraryDrift,
+    componentGaps: libraryComponentGaps,
+    gapsPending: libraryGapsPending,
+    foundation: currentFoundationSpec(),
+    // A refresh reads it again: the spec in hand is no longer current.
+    foundationLoading: foundationRequested && (!currentFoundationSpec() || foundationRefreshing),
+    drafts: libraryDrafts,
+    drafting: libraryDrafting,
+    done: writingDone,
+    saving: writingSaving,
+    errors: writingErrors,
+    doneOpen: writingDoneOpen,
+  };
+}
+
+function currentWritingModel(): WritingModel {
+  return buildWritingModel(libraryEntries, writingOptions());
+}
+
+function writingPresentation(): WritingScreenPresentation {
+  const model = currentWritingModel();
+  // The Library reads this off its rows; Writing lists only docs with tasks, so read the checks.
+  const pendingChecks = [...libraryDrift.values()].some((status) => status === 'pending');
+  // A failed or partial read may have missed docs, so an empty list is no fact.
+  const unknownReasons = (libraryError !== null || libraryReadIncomplete) && !model.unknownReasons.includes(WRITING_UNKNOWN_UNREAD)
+    ? [...model.unknownReasons, WRITING_UNKNOWN_UNREAD]
+    : model.unknownReasons;
+  return {
+    ...model,
+    known: unknownReasons.length === 0,
+    unknownReasons,
+    // As the Library: no list until the first read lands, so an empty file is
+    // never claimed before main has answered.
+    loading: libraryListLoading(),
+    // Only Refresh waits on these; every field stays usable.
+    busy: libraryRefreshing || libraryProbeInFlight || libraryOperation !== null,
+    locked: writingLocked(),
+    confirmDiscard: writingDiscardConfirm,
+    why: writingWhyOpen || writingIntroSeen === false,
+    // As quotaExhaustedNote: "free" only on the free tier, since Pro has its own ceiling.
+    freeTier: state.quota?.tier !== 'pro',
+    ...libraryCheckLine(pendingChecks),
+  };
+}
+
+/**
+ * An Update, Copy or Annotate run is out: a write would race it (a save moves
+ * the source an Annotate run reads, and its re-read can land mid-run), so
+ * Save, Clear draft, Draft all and Open in doc wait. A plain source check does not lock.
+ */
+function writingLocked(): boolean {
+  return libraryOperation !== null || annotateBusy;
+}
+
+/**
+ * After any reply that can change the open set: a task that was open and is
+ * gone, while its state is known right now, closed; a task back in the open
+ * set is open again. A task whose state is unknown (check pending or failed,
+ * gaps reply missing, Foundation reloading, sections not recorded) changes
+ * nothing, so a cleared map never reads as a finished list.
+ */
+function syncWritingDone(): void {
+  const model = currentWritingModel();
+  const open = openTasks(model);
+  const known = writingTaskKnown(libraryEntries, writingOptions());
+  for (const [key, ref] of closedTasks(writingOpenBefore, open, known)) {
+    writingDone.set(key, ref);
+    writingSaving.delete(key);
+    writingErrors.delete(key);
+  }
+  for (const key of open.keys()) writingDone.delete(key);
+  // A save whose check landed and still lists its task did not take: its text
+  // comes back as a draft, so nothing typed is lost.
+  for (const [key, saving] of writingSaving) {
+    const ref = open.get(key);
+    if (saving.state !== 'checking' || !ref || !known(ref)) continue;
+    writingSaving.delete(key);
+    const draftKey = writingTaskKey(ref.gap);
+    if (!libraryDrafts.has(draftKey)) libraryDrafts.set(draftKey, { text: saving.text, origin: saving.origin });
+  }
+  const alive = new Set(libraryEntries.map((e) => e.docId));
+  for (const [key, ref] of writingDone) if (!alive.has(ref.docId)) writingDone.delete(key);
+  const docOf = (key: string): string => key.slice(0, key.indexOf('\n'));
+  for (const key of writingSaving.keys()) if (!alive.has(docOf(key))) writingSaving.delete(key);
+  for (const key of writingErrors.keys()) if (!alive.has(docOf(key))) writingErrors.delete(key);
+  // Only known tasks move the snapshot; an unknown one stays as it was last listed.
+  for (const [key, ref] of writingOpenBefore) if (!known(ref) && alive.has(ref.docId)) open.set(key, ref);
+  writingOpenBefore = open;
+}
+
+/** Repaint Writing after a reply: one doc's group in place when it can, else the whole screen. */
+function paintWriting(docId?: string): void {
+  if (view !== 'writing') return;
+  if (docId === undefined || !patchWritingGroup(refs, writingPresentation(), docId)) paint();
+}
+
 /** Re-say "Checked 4 min ago" in place; the rows and the footer are left alone. */
 function paintLibraryCaption(): void {
+  // To do says the same stamp in its subline; a group-less patch moves only that.
+  if (view === 'writing') {
+    paintWriting('');
+    return;
+  }
   if (view !== 'library' || libraryPane !== 'list') return;
   patchLibraryCheckLine(refs, libraryPresentation());
 }
@@ -664,7 +836,7 @@ function syncLibraryCheckedTimer(): void {
     clearTimeout(libraryCheckedTimer);
     libraryCheckedTimer = null;
   }
-  if (view !== 'library' || libraryPane !== 'list') return;
+  if (view !== 'writing' && (view !== 'library' || libraryPane !== 'list')) return;
   const wait = libraryCheckedLabelChangesIn(libraryCheckedAt);
   if (wait === null) return;
   // A little past the boundary, so the label has moved when it is read.
@@ -696,11 +868,11 @@ function navigateToView(
   // Never while a Library operation runs: the reply clears the drift maps a
   // queued update started from (and the row a Copy reads). A build's lock is no
   // reason to skip it, or a first visit stays on the loading skeleton.
-  if (view === 'library' && options.refreshLibrary !== false && libraryOperation === null) checkLibrary();
+  if ((view === 'library' || view === 'writing') && options.refreshLibrary !== false && libraryOperation === null) checkLibrary();
   // An arrival that sends no probe must still resume a paused pass, or its rows
   // stay "Checking…" with nothing in flight. Only on arrival: a new pass id
   // while already here would throw away main's resolver memo mid-pass.
-  else if (arrived && view === 'library' && !driftQueue.done()) {
+  else if (arrived && (view === 'library' || view === 'writing') && !driftQueue.done()) {
     driftQueue.resume(newPassId());
     pumpDriftQueue();
   }
@@ -1032,7 +1204,7 @@ function refreshLibrary(carry: LibraryCarry | null = null): void {
   libraryLiveProjection.clear();
   libraryChanges.clear();
   driftQueue.clear();
-  if (view === 'library') paint();
+  if (view === 'library' || view === 'writing') paint();
   send({ type: 'requestLibrary' });
 }
 
@@ -1058,7 +1230,12 @@ function checkLibrary(): void {
 
 function startLibraryDriftChecks(carry: LibraryCarry | null): void {
   libraryCarriedCheckedAt = carry?.checkedAt ?? null;
+  // A carried row is not checked again, so the gaps its check read still hold.
+  const carriedGaps = new Map([...libraryComponentGaps].filter(([docId]) => carry?.checks.has(docId)));
   libraryDrift.clear();
+  libraryComponentGaps.clear();
+  // A new pass reads every gap again, or carries the settled ones.
+  libraryGapsPending.clear();
   libraryBaseline.clear();
   libraryExtractorVersion.clear();
   libraryLiveProjection.clear();
@@ -1078,6 +1255,8 @@ function startLibraryDriftChecks(carry: LibraryCarry | null): void {
     if (carried) {
       libraryDrift.set(entry.docId, carried.status);
       if (carried.projection) libraryLiveProjection.set(entry.docId, carried.projection);
+      const gaps = carriedGaps.get(entry.docId);
+      if (gaps) libraryComponentGaps.set(entry.docId, gaps);
       continue;
     }
     libraryDrift.set(entry.docId, 'pending');
@@ -1098,7 +1277,7 @@ function startLibraryDriftChecks(carry: LibraryCarry | null): void {
  * sending while another view is up is the pause; the queue resumes on return.
  */
 function pumpDriftQueue(): void {
-  if (view !== 'library') return;
+  if (view !== 'library' && view !== 'writing') return;
   const check = driftQueue.next();
   if (check === null) return;
   const entry = libraryEntries.find((candidate) => candidate.docId === check.docId);
@@ -1138,7 +1317,10 @@ function closeLibraryMenu(restoreFocus = false): void {
 function toggleLibraryReview(docId: string): void {
   const opening = libraryExpandedDocId !== docId;
   libraryExpandedDocId = opening ? docId : null;
-  if (opening && !libraryChanges.has(docId)) {
+  // A row that opens only to write descriptions has no changes to compare.
+  const status = currentLibraryModel().allRows.find((row) => row.docId === docId)?.status;
+  const hasChanges = status === 'updateAvailable' || status === 'rebuildNeeded';
+  if (opening && hasChanges && !libraryChanges.has(docId)) {
     libraryChanges.set(docId, { state: 'pending' });
     send({ type: 'requestDocBaseline', docId });
   }
@@ -1163,6 +1345,181 @@ function libraryPresenter(onError?: (message: string) => void): BuildPresenter {
 
 function libraryEntry(docId: string): LibraryEntry | undefined {
   return libraryEntries.find((entry) => entry.docId === docId);
+}
+
+/** One row's source check again, after a write moved its source. */
+function recheckLibraryRow(docId: string): void {
+  const entry = libraryEntry(docId);
+  if (!entry || entry.kind !== 'component' || !entry.sourceExists) return;
+  libraryDrift.set(docId, 'pending');
+  // The old gaps are what the write changed, but they stay listed so the saved
+  // task does not leave its group; the marker keeps the doc unknown, so nothing
+  // closes until this check's `writingGaps` lands, between `driftSource` and that reply too.
+  libraryGapsPending.add(docId);
+  // The old diff was resolved against the projection this check replaces.
+  libraryChanges.delete(docId);
+  // One row's check must not stamp the whole library as freshly checked.
+  if (driftQueue.done() && libraryCheckedAt !== null) libraryCarriedCheckedAt = libraryCheckedAt;
+  // start() forgets the check in flight, so carry it too, or its reply is
+  // rejected and its row reads pending for good.
+  const inFlight = driftQueue.inFlight();
+  const pending = [...new Set([...(inFlight ? [inFlight] : []), ...driftQueue.pending(), docId])];
+  driftQueue.start(newPassId(), pending);
+  libraryRefreshing = true;
+  pumpDriftQueue();
+}
+
+/**
+ * Read the list again without checking settled component docs again: a
+ * Foundation write moves no component source, so the rescan keeps every
+ * settled check and its gaps; see libraryCarry.
+ */
+function rereadLibraryKeepingChecks(): void {
+  pendingLibraryCarry = libraryCarry({
+    drift: libraryDrift,
+    projections: libraryLiveProjection,
+    checkedAt: libraryCheckedAt,
+    rebuilt: [],
+  });
+  send({ type: 'requestLibrary' });
+}
+
+/**
+ * A pass just ended its last check. A Foundation save that landed during it
+ * left the Foundation row's hash on the spec the pass started from, so the
+ * list is read now, unless a run owns it (its own end-of-run read covers it).
+ */
+function settleFoundationReread(): void {
+  if (!foundationRereadPending || libraryRefreshing) return;
+  foundationRereadPending = false;
+  if (libraryOperation === null) rereadLibraryKeepingChecks();
+}
+
+/**
+ * One write for the doc holding every named field with a draft and no save
+ * out. Each row shows Saving until main replies. `sent` names keys another
+ * doc is already saving in this pass, since one field can sit under two docs.
+ */
+function saveWritingItems(docId: string, keys: readonly string[], sent: Set<string> = new Set()): void {
+  const group = currentWritingModel().groups.find((g) => g.docId === docId);
+  if (!group) return;
+  const items: DescriptionWrite[] = [];
+  for (const key of keys) {
+    const t = group.tasks.find((candidate) => candidate.key === key);
+    const draft = libraryDrafts.get(key);
+    if (!t || t.done || t.saving || sent.has(key) || !draft) continue;
+    const g = t.gap;
+    const kind = g.kind;
+    const text = draft.text.trim();
+    if (kind === 'section' || text === '') continue;
+    items.push({ kind, id: g.id, ...(g.propertyName ? { propertyName: g.propertyName } : {}), text, origin: draft.origin });
+    writingSaving.set(docTaskKey(docId, key), { state: 'saving', text, origin: draft.origin });
+    writingErrors.delete(docTaskKey(docId, key));
+    sent.add(key);
+  }
+  if (items.length === 0) return;
+  send({ type: 'writeDescriptions', docId, items });
+  paintWriting(docId);
+}
+
+/** Save all: every doc's unsaved fields, one write per doc. */
+function saveAllWriting(): void {
+  const sent = new Set<string>();
+  for (const group of currentWritingModel().groups) {
+    const keys = group.fields.flatMap((run) => run.tasks).filter((t) => t.draft && !t.saving).map((t) => t.key);
+    if (keys.length > 0) saveWritingItems(group.docId, keys, sent);
+  }
+}
+
+/** Discard all, once confirmed: every unsaved draft on screen, nothing in Figma. */
+function discardAllWriting(): void {
+  for (const group of currentWritingModel().groups) {
+    for (const t of group.fields.flatMap((run) => run.tasks)) if (t.draft && !t.saving) libraryDrafts.delete(t.key);
+  }
+  writingDiscardConfirm = false;
+  paint();
+  refs.scroll.querySelector<HTMLElement>('textarea.sl-writing-field')?.focus({ preventScroll: true });
+}
+
+/** Enter in a field: save that row and move to the next field still typeable. */
+function saveFieldAndMoveOn(field: HTMLTextAreaElement): void {
+  const fields = [...refs.scroll.querySelectorAll<HTMLTextAreaElement>('textarea.sl-writing-field')];
+  const next = fields.slice(fields.indexOf(field) + 1).find((candidate) => !candidate.readOnly) ?? null;
+  const target = next ? { docId: next.dataset.docId ?? '', key: next.dataset.writingKey ?? '' } : null;
+  const { docId, writingKey: key } = field.dataset;
+  if (docId && key && !writingLocked()) saveWritingItems(docId, [key]);
+  if (!target) return;
+  const moved = refs.scroll.querySelector<HTMLTextAreaElement>(
+    `[data-writing-group="${cssString(target.docId)}"] [data-writing-key="${cssString(target.key)}"]`,
+  );
+  if (!moved) return;
+  moved.focus();
+  moved.setSelectionRange(moved.value.length, moved.value.length);
+}
+
+/** Esc in a field: back to what it held when it gained focus, empty or the AI draft. */
+function restoreWritingField(field: HTMLTextAreaElement): void {
+  const key = field.dataset.writingKey;
+  if (!key || field.readOnly) return;
+  const draft = writingFieldStart?.key === key ? writingFieldStart.draft : libraryDrafts.get(key) ?? null;
+  if (draft) libraryDrafts.set(key, draft);
+  else libraryDrafts.delete(key);
+  field.value = draft?.text ?? '';
+  growField(field);
+  if (view === 'writing') patchWritingTask(refs, writingPresentation(), key);
+}
+
+/** Close the explainer; the first close is remembered for this person. */
+function dismissWritingWhy(): void {
+  if (writingIntroSeen === false) {
+    writingIntroSeen = true;
+    send({ type: 'setWritingIntroSeen' });
+  }
+  writingWhyOpen = false;
+  paintAndFocus('[data-writing-why]');
+}
+
+/** Drop a field's refusal under every doc listing it: it is being written again. */
+function clearWritingErrors(key: string): void {
+  for (const taskKey of [...writingErrors.keys()]) if (taskKey.endsWith(`\n${key}`)) writingErrors.delete(taskKey);
+}
+
+async function draftAllForRow(docId: string): Promise<void> {
+  const group = currentWritingModel().groups.find((g) => g.docId === docId);
+  if (!group || libraryDrafting.has(docId)) return;
+  const entry = libraryEntry(docId);
+  const context = {
+    foundation: currentFoundationSpec(),
+    scope: entry?.foundationScope,
+    projection: libraryLiveProjection.get(docId),
+  };
+  const items = group.tasks.filter((t) => !t.done && t.gap.kind !== 'section' && !t.draft && !t.saving).map((t) => briefFor(t.gap, context));
+  if (items.length === 0) return;
+  libraryDrafting.add(docId);
+  paintWriting(docId);
+  try {
+    const { drafts, error } = await generateDescriptions(
+      { items },
+      effectiveAuth(state.licenseKey, state.licenseInstanceId, state.figmaUserId, state.licenseActive),
+      (quota) => { state.quota = quota; quotaFetched = true; paintAllowance(); },
+    );
+    let landed = 0;
+    // A field the person typed in while the call was out keeps their text.
+    const open = items.filter((item) => !libraryDrafts.has(item.key));
+    for (const item of open) {
+      const text = drafts[item.key];
+      if (text) { libraryDrafts.set(item.key, { text, origin: 'ai' }); landed++; }
+    }
+    // A batch that failed names why; the drafts from the batches before it stay.
+    if (error !== undefined) nativeNotify(aiFailureNote(state, error, 'descriptions'), { error: true });
+    else if (landed < open.length) nativeNotify(draftFailedNote(open.length - landed));
+    if (landed > 0) nativeNotify(draftedToast(landed));
+  } catch (error) {
+    nativeNotify(aiFailureNote(state, error, 'descriptions'), { error: true });
+  } finally {
+    libraryDrafting.delete(docId);
+    paintWriting(docId);
+  }
 }
 
 /**
@@ -1265,6 +1622,7 @@ function finishLibraryOperation(error = '', canceled = false): void {
   libraryOperation = null;
   completeOperation();
   if (view === 'library') paint();
+  paintWriting();
   // The rescan keeps what this run did not change; see libraryCarry.
   refreshLibrary(libraryCarry({
     drift: libraryDrift,
@@ -1863,7 +2221,12 @@ document.addEventListener('click', (event) => {
 
   if (target.closest('[data-library-refresh]')) {
     // Beside the disabled attribute: a probe's reply may start a pass itself.
-    if (!operation.active && !libraryProbeInFlight) refreshLibrary();
+    if (!operation.active && !libraryProbeInFlight) {
+      // Writing lists Foundation tasks from the spec, which is otherwise read
+      // once per session; a description cleared in Figma comes back only on a read.
+      if (view === 'writing' && libraryEntries.some((entry) => entry.kind === 'foundation')) refreshFoundations();
+      refreshLibrary();
+    }
     return;
   }
 
@@ -2042,6 +2405,73 @@ document.addEventListener('click', (event) => {
 
   if (target.closest('[data-library-menu-close]')) {
     closeLibraryMenu(true);
+    return;
+  }
+
+  // A pending Discard all is answered by its own two buttons; any other click lets it go.
+  if (writingDiscardConfirm) {
+    if (target.closest('[data-writing-discard-yes]')) {
+      if (!writingLocked()) discardAllWriting();
+      return;
+    }
+    writingDiscardConfirm = false;
+    if (view === 'writing') paintWritingFooter(refs, writingPresentation());
+    if (target.closest('[data-writing-discard-cancel]')) return;
+  }
+  if (target.closest('[data-writing-why-dismiss]')) {
+    dismissWritingWhy();
+    return;
+  }
+  if (target.closest('[data-writing-why]')) {
+    if (writingWhyOpen || writingIntroSeen === false) dismissWritingWhy();
+    else {
+      writingWhyOpen = true;
+      paintAndFocus('[data-writing-why]');
+    }
+    return;
+  }
+  const writingDoneToggle = target.closest<HTMLButtonElement>('[data-writing-done-toggle]');
+  if (writingDoneToggle?.dataset.writingDoneToggle) {
+    const docId = writingDoneToggle.dataset.writingDoneToggle;
+    if (writingDoneOpen.has(docId)) writingDoneOpen.delete(docId);
+    else writingDoneOpen.add(docId);
+    paintWriting(docId);
+    return;
+  }
+  if (target.closest('[data-writing-save-all]')) {
+    if (!writingLocked()) saveAllWriting();
+    return;
+  }
+  if (target.closest('[data-writing-discard-all]')) {
+    if (writingLocked()) return;
+    writingDiscardConfirm = true;
+    paintWritingFooter(refs, writingPresentation());
+    return;
+  }
+  // Beside the disabled attribute on each: a run's lock holds these back.
+  const writingOpen = target.closest<HTMLButtonElement>('[data-writing-open]');
+  if (writingOpen?.dataset.writingOpen && writingOpen.dataset.docId) {
+    if (!writingLocked()) send({ type: 'focusDocSection', docId: writingOpen.dataset.docId, sectionId: writingOpen.dataset.writingOpen as SectionId });
+    return;
+  }
+  const writingClear = target.closest<HTMLButtonElement>('[data-writing-clear]');
+  if (writingClear?.dataset.writingClear) {
+    if (writingLocked()) return;
+    const key = writingClear.dataset.writingClear;
+    libraryDrafts.delete(key);
+    clearWritingErrors(key);
+    const docId = writingClear.dataset.docId;
+    paint();
+    // The button went with its draft: focus stays on that row's field.
+    if (docId) {
+      refs.scroll.querySelector<HTMLElement>(`[data-writing-group="${cssString(docId)}"] [data-writing-key="${cssString(key)}"]`)
+        ?.focus({ preventScroll: true });
+    }
+    return;
+  }
+  const writingDraftAll = target.closest<HTMLButtonElement>('[data-writing-draft-all]');
+  if (writingDraftAll?.dataset.docId) {
+    if (!writingLocked()) void draftAllForRow(writingDraftAll.dataset.docId);
     return;
   }
 
@@ -2429,6 +2859,24 @@ document.addEventListener('input', (event) => {
     onNoteInput(target.value);
     return;
   }
+  if (target instanceof HTMLTextAreaElement && target.matches('.sl-writing-field') && target.dataset.writingKey) {
+    const key = target.dataset.writingKey;
+    // One line: a pasted newline becomes a space, keeping the caret where it was.
+    if (/[\r\n]/.test(target.value)) {
+      const at = target.selectionStart;
+      target.value = target.value.replace(/\r\n?|\n/g, ' ');
+      target.setSelectionRange(Math.min(at, target.value.length), Math.min(at, target.value.length));
+    }
+    const text = target.value;
+    if (text.trim() === '') libraryDrafts.delete(key);
+    else libraryDrafts.set(key, { text, origin: 'person' });
+    clearWritingErrors(key);
+    growField(target);
+    // No paint: the field already shows the text. Its row's tag, actions and
+    // status move in place, so the caret and any IME composition survive.
+    if (view === 'writing') patchWritingTask(refs, writingPresentation(), key);
+    return;
+  }
   const input = target;
   if (!(input instanceof HTMLInputElement)) return;
   if (input.matches('[data-global-search-input]')) {
@@ -2557,6 +3005,26 @@ document.addEventListener('keydown', (event) => {
     }
   }
 
+  // To do fields: Enter saves and moves on, never a newline; Esc puts the field back.
+  if (event.target instanceof HTMLTextAreaElement && event.target.matches('.sl-writing-field')) {
+    if (event.key === 'Enter' && !event.isComposing) {
+      event.preventDefault();
+      if (!event.repeat) saveFieldAndMoveOn(event.target);
+      return;
+    }
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      restoreWritingField(event.target);
+      return;
+    }
+  }
+  if (event.key === 'Escape' && writingDiscardConfirm) {
+    event.preventDefault();
+    writingDiscardConfirm = false;
+    if (view === 'writing') paintWritingFooter(refs, writingPresentation());
+    return;
+  }
+
   if (event.key === 'Enter' && event.target instanceof HTMLInputElement && event.target.id === 'sl-sync-file-url') {
     event.preventDefault();
     saveAnnotateFileUrl(event.target.value);
@@ -2678,6 +3146,19 @@ document.addEventListener('pointerover', (event) => {
 
 document.addEventListener('focusin', (event) => {
   syncSearchPointer(event.target);
+  // Esc's baseline: set on arrival, not again when a redraw refocuses the same field.
+  const field = event.target;
+  if (field instanceof HTMLTextAreaElement && field.matches('.sl-writing-field') && field.dataset.writingKey) {
+    const key = field.dataset.writingKey;
+    if (writingFieldStart?.key !== key) {
+      const draft = libraryDrafts.get(key);
+      writingFieldStart = { key, draft: draft ? { ...draft } : null };
+    }
+  }
+});
+
+document.addEventListener('focusout', (event) => {
+  if (event.target instanceof HTMLTextAreaElement && event.target.matches('.sl-writing-field')) writingFieldStart = null;
 });
 
 refs.scroll.addEventListener('scroll', () => {
@@ -2843,6 +3324,11 @@ const handleMainMessage = (event: MessageEvent): void => {
       void refreshQuota();
       return;
 
+    case 'writingIntroSeen':
+      writingIntroSeen = msg.value;
+      if (view === 'writing') paint();
+      return;
+
     case 'aiEnabled':
       state.aiEnabled = msg.value;
       selection.aiEnabled = msg.value;
@@ -2952,6 +3438,8 @@ const handleMainMessage = (event: MessageEvent): void => {
       onFoundationMessage(msg.dump, msg.groupDescriptions);
       foundationScreen = { kind: 'ready' };
       foundationRefreshing = false;
+      // A Foundation read is what closes a Foundation task. The full paint covers Writing.
+      syncWritingDone();
       paint();
       return;
 
@@ -3048,15 +3536,79 @@ const handleMainMessage = (event: MessageEvent): void => {
       // With no component docs there is no pass to wait for; this reply is the check.
       if (driftQueue.done()) stampLibraryChecked();
       libraryRefreshing = [...libraryDrift.values()].some((value) => value === 'pending');
+      // This reply is itself a fresh read, so a Foundation save before it is covered.
+      foundationRereadPending = false;
       syncLibraryBadge();
       // Fired from the reply, not navigateToView: only a file with a foundation
       // doc needs the dump, and the prefetch's guard keeps it once per session.
       if (msg.entries.some((entry) => entry.kind === 'foundation')) {
         prefetchFoundationsForCopy();
       }
+      syncWritingDone();
       if (view === 'library') paint();
+      paintWriting();
       if (searchOpen) renderGlobalSearch();
       return;
+
+    case 'writingGaps': {
+      // Rides with the drift reply; the drift reply settles the check, this
+      // one only has to belong to the current pass.
+      if (driftQueue.id() !== msg.passId && !driftQueue.settledUnder(msg.docId, msg.passId)) return;
+      libraryComponentGaps.set(msg.docId, msg.gaps);
+      libraryGapsPending.delete(msg.docId);
+      syncWritingDone();
+      // Patched in place like the drift reply it rides with: a pass of N docs
+      // must not cost N full paints.
+      paintWriting(msg.docId);
+      return;
+    }
+
+    case 'descriptionsWritten': {
+      // A written row reads Saved, checking, with the text it sent, until the
+      // re-check closes it; a refused row keeps its draft and says why.
+      for (const key of msg.written) {
+        const taskKey = docTaskKey(msg.docId, key);
+        const sent = writingSaving.get(taskKey);
+        const draft = libraryDrafts.get(key);
+        writingSaving.set(taskKey, { state: 'checking', text: sent?.text ?? draft?.text ?? '', origin: sent?.origin ?? draft?.origin ?? 'person' });
+        libraryDrafts.delete(key);
+      }
+      for (const failure of msg.failed) {
+        const taskKey = docTaskKey(msg.docId, failure.key);
+        writingSaving.delete(taskKey);
+        writingErrors.set(taskKey, failure.message);
+      }
+      nativeNotify(
+        writtenToast(msg.written.length, msg.failed, libraryEntry(msg.docId)?.label ?? 'The doc'),
+        msg.failed.length > 0 ? { error: true } : {},
+      );
+      const entry = libraryEntry(msg.docId);
+      if (msg.written.length === 0) {
+        // Nothing moved, so nothing to read again.
+      } else if (entry?.kind === 'foundation') {
+        // Read again, and not current until its reply lands.
+        foundationRequested = true;
+        foundationRefreshing = true;
+        send({ type: 'requestFoundation' });
+        // The list is read again only when nothing else owns it: mid-run the
+        // reply would clear the drift maps a queued update started from, and a
+        // run's own end-of-run read covers the row. A pass out is not a run: a
+        // list read now would drop its checks, so it waits for the pass to
+        // settle, or the row keeps its old hash and reads In sync meanwhile.
+        if (libraryOperation === null) {
+          if (libraryRefreshing) foundationRereadPending = true;
+          else rereadLibraryKeepingChecks();
+        }
+      } else {
+        recheckLibraryRow(msg.docId);
+      }
+      // A write closes nothing by itself: the task stays open until the
+      // re-check (or the Foundation read) no longer lists it.
+      syncWritingDone();
+      if (view === 'library') paint();
+      paintWriting(msg.docId);
+      return;
+    }
 
     case 'libraryUnchanged':
       libraryProbeInFlight = false;
@@ -3067,7 +3619,9 @@ const handleMainMessage = (event: MessageEvent): void => {
         pumpDriftQueue();
       }
       // The probe held Update, Update all and Refresh disabled; give them back.
+      syncWritingDone();
       paintLibraryDrift();
+      paintWriting();
       return;
 
     case 'driftSource': {
@@ -3097,9 +3651,25 @@ const handleMainMessage = (event: MessageEvent): void => {
           libraryDrift.set(msg.docId, 'unavailable');
         }
       }
+      const settledState = libraryDrift.get(msg.docId);
+      // No gaps reply is awaited from a check that read nothing usable.
+      if (settledState === 'unavailable' || settledState === 'staleVersion') libraryGapsPending.delete(msg.docId);
       libraryRefreshing = [...libraryDrift.values()].some((value) => value === 'pending');
+      settleFoundationReread();
+      // A re-check dropped the open row's change list; ask for it again, or the
+      // row reads pending for good.
+      if (
+        libraryExpandedDocId === msg.docId
+        && !libraryChanges.has(msg.docId)
+        && currentLibraryModel().allRows.find((row) => row.docId === msg.docId)?.status === 'updateAvailable'
+      ) {
+        libraryChanges.set(msg.docId, { state: 'pending' });
+        send({ type: 'requestDocBaseline', docId: msg.docId });
+      }
       syncLibraryBadge();
+      syncWritingDone();
       paintLibraryDrift();
+      paintWriting(msg.docId);
       return;
     }
 
@@ -3107,9 +3677,13 @@ const handleMainMessage = (event: MessageEvent): void => {
       if (!settleDriftCheck(msg.docId, msg.passId)) return;
       if (!libraryBaseline.has(msg.docId)) return;
       libraryDrift.set(msg.docId, 'unavailable');
+      libraryGapsPending.delete(msg.docId);
       libraryRefreshing = [...libraryDrift.values()].some((value) => value === 'pending');
+      settleFoundationReread();
       syncLibraryBadge();
+      syncWritingDone();
       paintLibraryDrift();
+      paintWriting(msg.docId);
       return;
 
     case 'libraryError':
@@ -3117,6 +3691,8 @@ const handleMainMessage = (event: MessageEvent): void => {
       // rather than keeping an unconfirmed badge, and Refresh comes back.
       libraryRequested = true;
       libraryRefreshing = false;
+      foundationRereadPending = false;
+      libraryGapsPending.clear();
       // So a paused pass has nothing to resume.
       driftQueue.clear();
       pendingLibraryCarry = null;
@@ -3129,7 +3705,7 @@ const handleMainMessage = (event: MessageEvent): void => {
       libraryBaseline.clear();
       libraryChanges.clear();
       syncLibraryBadge();
-      if (view === 'library') paint();
+      if (view === 'library' || view === 'writing') paint();
       if (searchOpen) renderGlobalSearch();
       return;
 
@@ -3174,6 +3750,7 @@ const handleMainMessage = (event: MessageEvent): void => {
           libraryOperation = null;
           completeOperation();
           if (view === 'library') paint();
+          paintWriting();
         });
         return;
       }
@@ -3263,6 +3840,8 @@ const handleMainMessage = (event: MessageEvent): void => {
       }
       libraryEntries = libraryEntries.filter((entry) => entry.docId !== msg.docId);
       libraryDrift.delete(msg.docId);
+      libraryComponentGaps.delete(msg.docId);
+      libraryGapsPending.delete(msg.docId);
       libraryBaseline.delete(msg.docId);
       libraryExtractorVersion.delete(msg.docId);
       libraryLiveProjection.delete(msg.docId);
@@ -3270,8 +3849,11 @@ const handleMainMessage = (event: MessageEvent): void => {
       if (libraryExpandedDocId === msg.docId) libraryExpandedDocId = null;
       if (libraryRevealDocId === msg.docId) libraryRevealDocId = null;
       if (libraryMenuDocId === msg.docId) libraryMenuDocId = null;
+      // Drops the doc's done tasks and its open snapshot with it.
+      syncWritingDone();
       syncLibraryBadge();
       if (view === 'library') paint();
+      paintWriting();
       if (searchOpen) renderGlobalSearch();
       invalidatePublishAfterChange();
       return;

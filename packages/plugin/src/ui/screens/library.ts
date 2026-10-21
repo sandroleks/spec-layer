@@ -174,13 +174,13 @@ function changeContentMarkup(row: LibraryRowPresentation): string {
 }
 
 function changeDetailsMarkup(row: LibraryRowPresentation): string {
+  const changes = isUpdate(row)
+    ? `<h2>Changes</h2><div class="sl-library-change-list">${changeContentMarkup(row)}</div>`
+    : '';
   return (
     `<div id="sl-library-details-${esc(row.docId)}" class="sl-library-details"` +
     `${row.expanded ? '' : ' hidden'}>` +
-    '<div class="sl-library-details-inner">' +
-    '<h2>Changes</h2>' +
-    `<div class="sl-library-change-list">${changeContentMarkup(row)}</div>` +
-    '</div></div>'
+    `<div class="sl-library-details-inner">${changes}</div></div>`
   );
 }
 
@@ -466,23 +466,36 @@ function incompleteEmptyMarkup(): string {
 }
 
 /**
+ * A file with no docs: two starts, the same two views the rail opens. Nothing
+ * here creates. Shared with the Writing screen's empty file.
+ */
+export function emptyNavActionsMarkup(): string {
+  return (
+    '<div class="sl-empty-actions">' +
+    '<button class="sl-button" data-tone="secondary" type="button" data-empty-nav="component">' +
+    `${icon('puzzle', 15)}<span>Document a component</span></button>` +
+    '<button class="sl-button" data-tone="quiet" type="button" data-empty-nav="foundations">' +
+    `${icon('layoutGrid', 15)}<span>Document foundations</span></button>` +
+    '</div>'
+  );
+}
+
+/**
  * `incomplete`: a failed re-read or partial scan means the filter's empty subset
  * is not a complete count, so "None found" is all either filter can claim.
  */
-function emptyMarkup(filter: LibraryFilter, hasRows: boolean, incomplete: boolean): string {
+function emptyMarkup(
+  filter: LibraryFilter,
+  hasRows: boolean,
+  incomplete: boolean,
+): string {
   if (!hasRows) {
-    // Two starts, the same two views the rail opens. Nothing here creates.
     return (
       '<div class="sl-empty-state sl-empty-illustrated">' +
       EMPTY_ILLUSTRATION +
       '<strong>No docs yet</strong>' +
       '<p>Docs you create in this file appear here, so you can see when their source changes and update them.</p>' +
-      '<div class="sl-empty-actions">' +
-      '<button class="sl-button" data-tone="secondary" type="button" data-empty-nav="component">' +
-      `${icon('puzzle', 15)}<span>Document a component</span></button>` +
-      '<button class="sl-button" data-tone="quiet" type="button" data-empty-nav="foundations">' +
-      `${icon('layoutGrid', 15)}<span>Document foundations</span></button>` +
-      '</div>' +
+      emptyNavActionsMarkup() +
       '</div>'
     );
   }
@@ -532,6 +545,13 @@ function libraryFilterCount(model: LibraryScreenPresentation, id: LibraryFilter)
   }
 }
 
+/** The three fields the check line reads, so the Writing screen can draw it too. */
+export interface CheckLinePresentation {
+  refreshing?: boolean;
+  checkProgress?: ProgressPresentation | null;
+  checkedLabel?: string | null;
+}
+
 /**
  * The check line under the filters: a running check's progress, else when the
  * rows were last checked, else nothing. Always drawn at a fixed height
@@ -544,7 +564,7 @@ type CheckLineState =
   | { mode: 'text'; label: string; live: boolean }
   | { mode: 'empty' };
 
-function checkLineState(model: LibraryScreenPresentation): CheckLineState {
+export function checkLineState(model: CheckLinePresentation): CheckLineState {
   const progress = model.checkProgress;
   if (progress) {
     const { label, current, total } = progress;
@@ -578,7 +598,7 @@ function checkLineLive(state: CheckLineState): 'polite' | 'off' {
   return state.mode === 'progress' || (state.mode === 'text' && state.live) ? 'polite' : 'off';
 }
 
-function libraryCheckLineMarkup(model: LibraryScreenPresentation): string {
+export function libraryCheckLineMarkup(model: CheckLinePresentation): string {
   const state = checkLineState(model);
   return (
     `<div class="sl-library-check-line" data-library-check-line data-mode="${state.mode}" ` +
@@ -774,7 +794,7 @@ export function revealScrollTop(metrics: RevealMetrics): number {
 }
 
 /** A docId inside a double-quoted attribute selector. */
-function cssString(value: string): string {
+export function cssString(value: string): string {
   return value.replace(/["\\]/g, '\\$&');
 }
 

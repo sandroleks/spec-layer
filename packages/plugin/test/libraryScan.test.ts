@@ -213,4 +213,16 @@ describe('libraryReply', () => {
     expect(message).toEqual({ type: 'libraryError', message: 'boom' });
     expect(prune).toBe(false);
   });
+
+  it('carries unwrittenSections from the link to the entry', async () => {
+    const spec = buildFoundation(dump());
+    const source = node('COMPONENT', 'src:1', { name: 'Button' });
+    page('Components', [source]);
+    const link = { ...componentLink('src:1'), unwrittenSections: ['whenToUse' as const] };
+    const doc = docSection('doc:1', 'Button: Documentation', link);
+    page('Docs', [doc]);
+    const scan = await scanLibrary(['doc:1'], host({ 'doc:1': doc, 'src:1': source }, spec));
+    expect(scan.entries[0]?.unwrittenSections).toEqual(['whenToUse']);
+    expect(scan.entries[0]?.sections).toEqual(link.config.sections);
+  });
 });

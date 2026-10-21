@@ -503,8 +503,42 @@ describe('descriptions contract', () => {
     });
     const out = await draftDescriptions({ items }, { apiKey: null, fetcher, cacheStore: memStore(), proxy: proxyOpts() });
     expect(calls).toHaveLength(2);
-    expect(Object.keys(out)).toHaveLength(DESCRIPTION_CHUNK + 1);
-    expect(out.k0).toBe('About k0.');
+    expect(out.error).toBeUndefined();
+    expect(Object.keys(out.drafts)).toHaveLength(DESCRIPTION_CHUNK + 1);
+    expect(out.drafts.k0).toBe('About k0.');
+  });
+
+  it('keeps the drafts of the chunks before a failing one, and a retry replays them from cache', async () => {
+    const items = Array.from({ length: DESCRIPTION_CHUNK * 2 + 1 }, (_, i) => item(`k${i}`));
+    const store = memStore();
+    let requests = 0;
+    const fetcher = (async (_url: string, init: RequestInit) => {
+      requests += 1;
+      const body = JSON.parse(init.body as string) as DescriptionBody;
+      const content = body.request.messages[0]!.content;
+      // The second chunk starts at k60: the allowance runs out there.
+      if (content.includes(`key: k${DESCRIPTION_CHUNK}\n`)) {
+        return { ok: false, status: 402, headers: { get: () => null }, json: async () => ({ resetsAt: '2026-11-01T00:00:00Z' }) };
+      }
+      const answer: Record<string, string> = {};
+      for (const m of content.matchAll(/key: (\S+)/g)) answer[m[1]!] = `About ${m[1]}.`;
+      return { ok: true, status: 200, headers: { get: () => null }, json: async () => ({ content: [{ type: 'text', text: JSON.stringify(answer) }] }) };
+    }) as unknown as typeof fetch;
+
+    const first = await draftDescriptions({ items }, { apiKey: null, fetcher, cacheStore: store, proxy: proxyOpts() });
+    expect(first.error).toBeInstanceOf(ProseProxyError);
+    expect((first.error as ProseProxyError).code).toBe('quota_exhausted');
+    expect(Object.keys(first.drafts)).toHaveLength(DESCRIPTION_CHUNK);
+    expect(first.drafts.k0).toBe('About k0.');
+    expect(first.drafts[`k${DESCRIPTION_CHUNK}`]).toBeUndefined();
+    // The third chunk is never sent once the second has failed.
+    expect(requests).toBe(2);
+
+    requests = 0;
+    const retry = await draftDescriptions({ items }, { apiKey: null, fetcher, cacheStore: store, proxy: proxyOpts() });
+    expect(requests).toBe(1);
+    expect(Object.keys(retry.drafts)).toHaveLength(DESCRIPTION_CHUNK);
+    expect((retry.error as ProseProxyError).code).toBe('quota_exhausted');
   });
 
   it('replays a cached chunk without a request', async () => {
@@ -513,12 +547,12 @@ describe('descriptions contract', () => {
     await store.set(cacheKey, '{"a": "Cached."}');
     const fetcher = fakeFetcher(() => { throw new Error('must not be called'); });
     const out = await draftDescriptions({ items: [item('a')] }, { apiKey: null, fetcher, cacheStore: store, proxy: proxyOpts() });
-    expect(out).toEqual({ a: 'Cached.' });
+    expect(out).toEqual({ drafts: { a: 'Cached.' } });
   });
 
   it('returns nothing with no proxy and no key, and for no items', async () => {
     const fetcher = fakeFetcher(() => { throw new Error('must not be called'); });
-    expect(await draftDescriptions({ items: [item('a')] }, { apiKey: null, fetcher, cacheStore: memStore() })).toEqual({});
-    expect(await draftDescriptions({ items: [] }, { apiKey: null, fetcher, cacheStore: memStore(), proxy: proxyOpts() })).toEqual({});
+    expect(await draftDescriptions({ items: [item('a')] }, { apiKey: null, fetcher, cacheStore: memStore() })).toEqual({ drafts: {} });
+    expect(await draftDescriptions({ items: [] }, { apiKey: null, fetcher, cacheStore: memStore(), proxy: proxyOpts() })).toEqual({ drafts: {} });
   });
 });

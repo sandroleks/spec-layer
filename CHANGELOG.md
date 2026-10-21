@@ -15,13 +15,68 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   version moves, and diagnostics sit outside `semanticContentHash`, so no
   artifact identity moves. The artifact bytes change for such a file, which
   `EXTRACTOR_VERSION` `'4'` already covers.
-- **A descriptions prompt, for the plugin's Needs writing list.** The
+- **A descriptions prompt, for the plugin's To do screen.** The
   extractor builds a third `/v1/prose` contract that drafts one sentence for
   a blank variable, style, component or slot description from the facts it
   is given and nothing else, in batches of up to 60 per generation, and the
   proxy allowlists it byte for byte under the same quota and rate limits.
   Nothing sends it until the plugin change that uses it ships, and that
   change waits for this proxy to be in production.
+- **To do, what is left to write per doc.** A To do entry in the rail opens
+  a screen that, on a first visit, says why these are filled in here: they
+  are the description fields on variables, styles and components, not part
+  of a doc; Copy for AI uses them right away, and docs and published
+  libraries get them on their next update or publish. Canvas sections are
+  part of a doc and are written there. **Got it** closes it for
+  good, remembered per person, and an info button beside the heading brings
+  it back. The subline says what is left ("79 descriptions and 3
+  sections left in 2 docs") and when the docs were last checked. Each doc
+  is a block with a "12 of 79 written" count. Its open
+  description fields come first: an empty component or slot description,
+  and for a Foundation doc each variable or style in its scope with no
+  description, grouped under their parent path in Figma's order, with a
+  swatch for each mode whose colour resolves; a token's full values, alias
+  names included, are in its tooltip, and a value that is not a resolved
+  colour is spelled out on the row. Every field is typed in place, with no expand step: **Enter**
+  saves the row and moves to the next field, **Esc** puts the field back,
+  and a bar at the foot offers **Save all** for every unsaved field, one
+  write per doc, and **Discard all** behind a confirm; a row's own discard
+  shows under the pointer or with focus. A save writes into Figma's own
+  field, so Dev Mode and the next extraction see it, and the
+  doc then shows Update available. Doc sections still showing their
+  placeholder (any of the seven the plugin draws one for, from Overview to
+  Content) are listed apart under "On the canvas", each with **Open in
+  doc**. A row is done only when the source no longer has the gap: it reads
+  "Saved, checking" until the re-check lands, then moves to a folded
+  "Written this session" list, and a pass that finds the gap again brings
+  it back. A save the check still lists gives its text back as a draft, and
+  a refusal shows under its field in Figma's words. A doc with nothing open
+  and nothing written this session is not listed. A Foundation save reads
+  the Foundation and the list again but keeps every component row's settled
+  check, and **Refresh** reads the Foundation again too. While an Update,
+  Copy for AI or Annotate run is out, every save, discard, draft and **Open
+  in doc** waits; the fields stay typeable.
+  **Draft with AI** on a doc fills its open fields without a draft, one
+  generation per 60 fields; its tooltip says how many fields and the cost
+  in AI writing uses before you press it. Drafts show tinted, with a small
+  AI mark on the row, until you edit them. Each field's brief carries only facts the plugin already
+  holds: a variable's values in the doc's modes and the token every mode
+  aliases, a text style's font or an effect style's layer count, and a
+  component's or slot's properties, variant count and preferred components
+  from its last source check. A batch that fails, for example when the free
+  allowance runs out partway through a doc, stops the run, keeps the drafts
+  the batches before it produced, and says why; a retry asks only for the
+  fields still open. A draft saved unedited has the hash of its text
+  recorded in the entry's plugin data; nothing reads that mark yet.
+  Component gaps are read in the same pass as the drift check; section gaps
+  come from the doc link, which now records which sections were drawn as
+  placeholders at the last build, so a doc built before this version lists
+  none until it is updated. The screen says "Nothing left to do" only once
+  every doc's state is known; until then it says "Not everything is checked
+  yet" and gives the reasons. A file with no docs says "No docs yet" and
+  offers the Library's two starts. Nothing written or recorded here enters
+  a hash or an artifact. Needs the descriptions prose contract in
+  production on the proxy.
 
 ### Changed
 
