@@ -268,6 +268,61 @@ under its `$extensions["com.spec-layer"]` block.
     the preset, spring and Hold are absent from the set files with one
     `type_not_expressible` entry each in `report` naming the preset.
 
+## Doc placement
+
+Every newly placed doc keeps at least 80px from anything beside it and 64px
+from the edge of a Section that holds it. A doc that stays where you put it
+is exempt (row 6). Check each with the Section selected and its position
+read from the design panel.
+
+1. **On a page.** Put a component on a page with a frame 100px to its right.
+   Create docs. The doc Section sits below the component, not over the
+   frame, and not far away on the page.
+2. **In a Section with room.** Put a component near the top left of a large
+   Section placed far from the page origin (for example at 4000, 2000).
+   Create docs. The doc is inside that Section, beside the component, and
+   the Section's size does not change.
+3. **In a full Section.** Shrink the Section until the component nearly
+   fills it and create docs again from a fresh component. The doc is inside
+   the Section and the Section grew right or down only: its top left corner
+   did not move, and nothing else in it moved.
+4. **Growth blocked.** Make a new Section 200px wider than the doc from
+   row 2 and 128px taller than a duplicate of the row 2 component. Put the
+   duplicate 64px in from the Section's top left corner, so it nearly fills
+   the Section's height, and create no doc for it yet. Put a second Section
+   100px to the right of the first. Create docs for the duplicate. The doc
+   is inside the first Section, below the component, and that Section grew
+   down only: its width and its top left corner did not change. The second
+   Section did not change.
+   Then set the same scene up again with another new Section and duplicate,
+   and also put a third Section 100px below the first. Create docs. The doc
+   goes beside the first Section on the page, inside none of the three
+   Sections, and no Section changed size.
+5. **Variants and frames.** Create docs for a component set inside a Section,
+   then for a component inside a plain frame inside a Section. Each doc is
+   in the Section, beside the set or the frame, not inside the frame.
+6. **Moved by hand.** Drag a doc somewhere else, 40px from another node, and
+   regenerate it. It stays where you put it. Then add sections to the doc so
+   the rebuilt doc grows into its neighbour, and regenerate. It moves back
+   beside its component instead of overlapping.
+7. **Several in a row.** Put five components side by side 50px apart and
+   create docs for each in turn. No two docs overlap and none covers a
+   component.
+8. **Foundations.** On a page with no foundation docs, scroll to an empty
+   area and create docs for three collections. They appear near the middle
+   of the view, side by side, not far right of everything on the page. Run
+   it again with one more collection selected: the existing docs stay put
+   and the new one lines up beside them.
+9. **Foundation update.** From **Library**, update a foundation doc that has
+   grown into a neighbour. It moves to the nearest clear spot; one that
+   still fits stays where it is.
+10. **Locked and hidden Sections.** Put a component in a Section with room
+    and lock the Section. Select the component in the layers panel and
+    create docs. The doc is not inside the locked Section; it sits beside
+    it, in the Section that holds it or on the page. Repeat with a fresh
+    component in a hidden Section instead of a locked one: the doc is not
+    inside the hidden Section either.
+
 ## Doc frame content
 
 Build one component Section with every section enabled, against a component
