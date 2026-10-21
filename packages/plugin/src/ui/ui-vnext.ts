@@ -1511,11 +1511,11 @@ async function draftAllForRow(docId: string): Promise<void> {
       if (text) { libraryDrafts.set(item.key, { text, origin: 'ai' }); landed++; }
     }
     // A batch that failed names why; the drafts from the batches before it stay.
-    if (error !== undefined) nativeNotify(aiFailureNote(state, error, 'component'), { error: true });
+    if (error !== undefined) nativeNotify(aiFailureNote(state, error, 'descriptions'), { error: true });
     else if (landed < open.length) nativeNotify(draftFailedNote(open.length - landed));
     if (landed > 0) nativeNotify(draftedToast(landed));
   } catch (error) {
-    nativeNotify(aiFailureNote(state, error, 'component'), { error: true });
+    nativeNotify(aiFailureNote(state, error, 'descriptions'), { error: true });
   } finally {
     libraryDrafting.delete(docId);
     paintWriting(docId);

@@ -604,6 +604,16 @@ describe('Writing view', () => {
     expect(count('writeDescriptions')).toBe(0);
   });
 
+  it('says a failed draft left the fields empty, never that sections became placeholders', async () => {
+    const { ProseProxyError } = await import('@spec-layer/extractor');
+    vi.mocked(generateDescriptions).mockResolvedValue({ drafts: {}, error: new ProseProxyError('bad_request') });
+    const passId = await openWriting();
+    settle(passId, [gap]);
+    click('[data-writing-draft-all]');
+    await new Promise((r) => setTimeout(r, 0));
+    expect(lastOutgoing('notify')['message']).toBe('AI writing failed, so the fields without a draft are still empty. Try again.');
+  });
+
   it('keeps the older Checked stamp after one row is checked again', async () => {
     const now = vi.spyOn(Date, 'now');
     const t0 = 1_800_000_000_000;

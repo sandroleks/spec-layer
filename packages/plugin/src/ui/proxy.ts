@@ -89,6 +89,8 @@ export const AI_CONSEQUENCE = {
   rebuild: 'sections that needed AI were left as placeholders',
   // A foundation frame renders either way; only descriptions are AI.
   foundation: 'the AI descriptions were left out',
+  // To do's Draft with AI: drafts that landed stay; the rest stay blank, nothing is written.
+  descriptions: 'the fields without a draft are still empty',
 } as const;
 
 export type AiBuildKind = keyof typeof AI_CONSEQUENCE;
