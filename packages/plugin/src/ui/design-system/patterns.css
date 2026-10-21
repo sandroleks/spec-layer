@@ -1305,7 +1305,8 @@
   align-items: center;
   gap: var(--sl-space-10);
   padding: var(--sl-space-8) 0;
-  background: var(--sl-color-surface);
+  /* The screen's own ground, so rows scroll under it without a band. */
+  background: var(--sl-color-canvas);
   border-bottom: 1px solid var(--sl-color-border-muted);
 }
 .sl-writing-group-main { flex: 1; min-width: 0; display: grid; grid-template-columns: minmax(0, auto) 1fr; align-items: baseline; column-gap: var(--sl-space-8); row-gap: var(--sl-space-4); }

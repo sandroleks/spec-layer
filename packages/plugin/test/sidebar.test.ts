@@ -31,7 +31,7 @@ it('places Writing in the Library group, after Library, with its own glyph', () 
   const ids = navigation.map((item) => item.id);
   expect(ids.indexOf('writing')).toBe(ids.indexOf('library') + 1);
   expect(navigation.find((item) => item.id === 'writing')?.group).toBe('library');
-  expect(railIcon('writing')).toBe('pencil');
+  expect(railIcon('writing')).toBe('listCheck');
   expect(sidebarMarkup('writing')).toContain('data-view="writing" aria-current="page"');
 });
 

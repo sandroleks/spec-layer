@@ -28,7 +28,7 @@ const ICONS: Record<PluginView, IconName> = {
   component: 'fileDescription',
   foundations: 'layoutGrid',
   library: 'folder',
-  writing: 'pencil',
+  writing: 'listCheck',
   settings: 'settings',
   license: 'key',
 };

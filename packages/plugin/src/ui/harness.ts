@@ -7,7 +7,7 @@
  *   ui-harness.html?view=library&pane=publish&publish=published&format=md
  *   ui-harness.html?view=library&pane=history&history=ready
  *   ui-harness.html?view=settings&tab=export&format=md
- *   ui-harness.html?view=writing&state=unknown
+ *   ui-harness.html?view=writing&state=confirm (also checking, loading, unknown, empty)
  *
  * It feeds the shapes the real UI receives and must never gain behavior of its
  * own: anything it can do that the plugin cannot is a lie about what we verify.
@@ -482,7 +482,7 @@ const LIBRARY_ENTRIES: LibraryEntry[] = LIBRARY_NAMES.map((name, index) => ({
             target: 'collection' as const,
             collectionId: 'mapped-colors',
             collectionName: 'Mapped Colors',
-            modeIds: ['light', 'dark', 'contrast'],
+            modeIds: ['light', 'dark'],
           },
         }
         : {}),
@@ -515,40 +515,74 @@ const WRITING_COMPONENT_GAPS = new Map<string, WritingGap[]>(WRITING_FIXTURE
       : [],
   ])
   : []);
+/** A semantic colour collection shaped like a real one: aliases into a
+ *  primitive scale, one mode that does not resolve, and one direct colour
+ *  with alpha. Eight of its variables are blank. */
+const WRITING_PRIMITIVES: Record<string, string> = {
+  'colors/blue/25': '#F2F9FF', 'colors/blue/400': '#4E84DA', 'colors/blue/500': '#2E72D1',
+  'colors/blue/600': '#1D5FB0', 'colors/blue/700': '#104E8F', 'colors/blue/900': '#002A4D',
+  'colors/gray/25': '#F7F8FA', 'colors/gray/300': '#A9AEB8', 'colors/gray/600': '#5B6070',
+  'colors/gray/800': '#3B3E4D', 'colors/gray/900': '#1B1D24',
+};
+const alias = (target: string): unknown => ({
+  kind: 'alias', targetName: target, targetCollection: 'Primitives', external: false,
+  resolved: { kind: 'color', hex: WRITING_PRIMITIVES[target], alpha: 1 },
+});
+const WRITING_VARIABLES: [string, unknown, unknown, string][] = [
+  ['color/surface/primary/light', alias('colors/blue/25'), alias('colors/blue/900'), ''],
+  ['color/surface/primary/default', alias('colors/blue/500'), alias('colors/blue/500'), ''],
+  ['color/surface/primary/hover', alias('colors/blue/600'), alias('colors/blue/500'), ''],
+  ['color/surface/primary/focus', alias('colors/blue/500'), alias('colors/blue/400'), ''],
+  ['color/surface/primary/press', alias('colors/blue/700'), alias('colors/blue/600'), ''],
+  ['color/surface/primary/disabled', alias('colors/gray/300'), alias('colors/gray/800'), ''],
+  ['color/surface/secondary/default', alias('colors/gray/25'), alias('colors/gray/900'), 'Described.'],
+  ['color/text/primary/default', alias('colors/gray/900'), alias('colors/gray/25'), ''],
+  ['color/text/primary/muted', alias('colors/gray/600'), { kind: 'unresolved', reason: 'missing' }, ''],
+  ['color/border/strong', { kind: 'color', hex: '#000000', alpha: 0.2 }, { kind: 'color', hex: '#FFFFFF', alpha: 0.24 }, 'Described.'],
+];
 const WRITING_FOUNDATION: FoundationSpec | null = WRITING_FIXTURE
   ? ({
     ...FOUNDATION_SPEC,
-    collections: FOUNDATION_SPEC.collections.map((collection) => ({
-      ...collection,
-      variables: collection.variables.map((variable, index) => ({
-        ...variable,
-        group: 'Mapped',
-        description: collection.id === 'mapped-colors' && index === 0 ? '' : 'Described.',
-        provenance: { id: `VariableID:${(variable as unknown as { id: string }).id}` },
-        valuesByMode: Object.fromEntries(collection.modes.map((mode) => [
-          mode.modeId,
-          { kind: 'color', hex: mode.modeId === 'light' ? '#FFFFFF' : '#101010', alpha: 1 },
-        ])),
+    collections: [{
+      id: 'mapped-colors', name: 'Mapped Colors', defaultModeId: 'light',
+      modes: [{ modeId: 'light', name: 'Light' }, { modeId: 'dark', name: 'Dark' }],
+      variables: WRITING_VARIABLES.map(([name, light, dark, description], index) => ({
+        id: `writing-${index}`, name, resolvedType: 'COLOR', group: 'Mapped', description,
+        provenance: { id: `VariableID:writing-${index}` },
+        valuesByMode: { light, dark },
       })),
-    })),
+    }],
   } as unknown as FoundationSpec)
   : null;
-/** One AI draft on the slot, so the AI tag shows. */
+const writingVariableKey = (index: number): string => `variable:VariableID:writing-${index}`;
+const WRITING_SLOT_KEY = writingTaskKey({ kind: 'slot', id: '10:20', propertyName: 'Content#1:2', name: 'Button / Content' });
+/** AI drafts on four tokens and the slot, a person's draft on two. */
 const WRITING_DRAFTS = new Map<string, WritingDraft>(WRITING_FIXTURE
-  ? [[
-    writingTaskKey({ kind: 'slot', id: '10:20', propertyName: 'Content#1:2', name: 'Button / Content' }),
-    { text: 'Holds the label and an optional leading icon.', origin: 'ai' },
-  ]]
+  ? [
+    [writingVariableKey(0), { text: 'Tinted background for primary content on light surfaces, such as selected rows.', origin: 'ai' }],
+    [writingVariableKey(1), { text: 'Fill for primary actions at rest.', origin: 'ai' }],
+    [writingVariableKey(2), { text: 'Fill for primary actions under the pointer.', origin: 'ai' }],
+    [writingVariableKey(3), { text: 'Fill for primary actions with keyboard focus.', origin: 'ai' }],
+    [writingVariableKey(7), { text: 'Body text on any surface.', origin: 'person' }],
+    [writingVariableKey(8), { text: 'Secondary text', origin: 'person' }],
+    [WRITING_SLOT_KEY, { text: 'Holds the label and an optional leading icon.', origin: 'ai' }],
+  ]
   : []);
 
 if (view === 'writing') {
   const stateName = param('state', 'ready');
-  // One closed task that is no longer an open gap, so a done row shows.
+  const semantic = LIBRARY_ENTRIES.find((entry) => entry.label === 'Foundations · Semantic');
+  const semanticId = semantic?.docId ?? '';
+  // One closed task per doc that is no longer an open gap, so the done list shows.
   const overviewGap = { kind: 'section' as const, id: 'doc-1', sectionId: 'definition' as SectionId, name: 'Overview' };
-  const done = new Map<string, TaskRef>([[docTaskKey('doc-1', writingTaskKey(overviewGap)), { gap: overviewGap, docId: 'doc-1' }]]);
+  const doneVariable = { kind: 'variable' as const, id: 'VariableID:writing-6', name: 'color/surface/secondary/default' };
+  const done = new Map<string, TaskRef>([
+    [docTaskKey('doc-1', writingTaskKey(overviewGap)), { gap: overviewGap, docId: 'doc-1' }],
+    [docTaskKey(semanticId, writingTaskKey(doneVariable)), { gap: doneVariable, docId: semanticId }],
+  ]);
   const none = { groups: [], noDocs: false, openFields: 0, openSections: 0, docsWithOpen: 0, unsaved: 0 };
   if (stateName === 'loading') {
-    renderWritingScreen(refs, { ...none, known: true, unknownReasons: [], loading: true });
+    renderWritingScreen(refs, { ...none, known: true, unknownReasons: [], loading: true, refreshing: true, checkProgress: { label: 'Finding docs in this file' } });
   } else if (stateName === 'unknown') {
     renderWritingScreen(refs, {
       ...none,
@@ -557,16 +591,28 @@ if (view === 'writing') {
       loading: false,
     });
   } else if (stateName === 'empty') {
-    renderWritingScreen(refs, { ...none, known: true, unknownReasons: [], loading: false });
+    renderWritingScreen(refs, { ...none, known: true, unknownReasons: [], loading: false, checkedLabel: 'Checked just now' });
   } else {
+    // A save waiting on its check, and one Figma refused.
+    const saving = new Map([[docTaskKey(semanticId, writingVariableKey(4)), {
+      state: 'checking' as const, text: 'Fill for primary actions while pressed.', origin: 'person' as const,
+    }]]);
+    const errors = new Map([[docTaskKey(semanticId, writingVariableKey(8)), 'That variable is no longer in this file.']]);
     const model = buildWritingModel(LIBRARY_ENTRIES, {
       drift: new Map<string, LibraryDriftState>(LIBRARY_ENTRIES.map((entry) => [entry.docId, 'inSync'])),
       componentGaps: WRITING_COMPONENT_GAPS,
       foundation: WRITING_FOUNDATION,
       drafts: WRITING_DRAFTS,
       done,
+      saving,
+      errors,
+      doneOpen: new Set(['doc-1']),
     });
-    renderWritingScreen(refs, { ...model, loading: false });
+    // `?state=checking` shows the subline while a pass is out.
+    const checking = stateName === 'checking'
+      ? { refreshing: true, checkProgress: { label: 'Checking for source changes', current: 3, total: 9 } }
+      : { checkedLabel: 'Checked just now' };
+    renderWritingScreen(refs, { ...model, ...checking, loading: false, freeTier: true, confirmDiscard: stateName === 'confirm' });
   }
 }
 
