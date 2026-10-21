@@ -61,12 +61,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   in AI writing uses before you press it. Drafts show tinted, with a small
   AI mark on the row, until you edit them. Each field's brief carries only facts the plugin already
   holds: a variable's values in the doc's modes and the token every mode
-  aliases, a text style's font or an effect style's layer count, and a
+  aliases, a text style's font, line height and letter spacing and the size
+  range of its group, an effect style's layer count, and a
   component's or slot's properties, variant count and preferred components
-  from its last source check. A batch that fails, for example when the free
+  from its last source check. A text style's name usually states its size
+  and weight already, so a brief of the font alone gave the model nothing
+  to add and every text style came back without a draft. A batch that fails, for example when the free
   allowance runs out partway through a doc, stops the run, keeps the drafts
   the batches before it produced, and says why; a retry asks only for the
-  fields still open. A draft saved unedited has the hash of its text
+  fields still open. An answer with no usable draft is never cached, so a
+  retry asks the model again instead of replaying the same empty answer. A draft saved unedited has the hash of its text
   recorded in the entry's plugin data; nothing reads that mark yet.
   Component gaps are read in the same pass as the drift check; section gaps
   come from the doc link, which now records which sections were drawn as

@@ -550,6 +550,28 @@ describe('descriptions contract', () => {
     expect(out).toEqual({ drafts: { a: 'Cached.' } });
   });
 
+  it('neither caches nor replays an answer with no usable draft, so a retry asks again', async () => {
+    const store = memStore();
+    let requests = 0;
+    const fetcher = fakeFetcher(() => {
+      requests += 1;
+      return { content: [{ type: 'text', text: requests === 1 ? '{}' : '{"a": "Second try."}' }] };
+    });
+    const first = await draftDescriptions({ items: [item('a')] }, { apiKey: null, fetcher, cacheStore: store, proxy: proxyOpts() });
+    expect(first).toEqual({ drafts: {} });
+    const retry = await draftDescriptions({ items: [item('a')] }, { apiKey: null, fetcher, cacheStore: store, proxy: proxyOpts() });
+    expect(requests).toBe(2);
+    expect(retry).toEqual({ drafts: { a: 'Second try.' } });
+
+    // An empty answer cached before this rule is asked again too.
+    const stale = memStore();
+    const { cacheKey } = descriptionProseRequest({ items: [item('a')] }, 'free');
+    await stale.set(cacheKey, '{}');
+    const fresh = await draftDescriptions({ items: [item('a')] }, { apiKey: null, fetcher, cacheStore: stale, proxy: proxyOpts() });
+    expect(requests).toBe(3);
+    expect(fresh).toEqual({ drafts: { a: 'Second try.' } });
+  });
+
   it('returns nothing with no proxy and no key, and for no items', async () => {
     const fetcher = fakeFetcher(() => { throw new Error('must not be called'); });
     expect(await draftDescriptions({ items: [item('a')] }, { apiKey: null, fetcher, cacheStore: memStore() })).toEqual({ drafts: {} });

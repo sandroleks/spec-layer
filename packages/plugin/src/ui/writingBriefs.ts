@@ -5,7 +5,8 @@
  * Pure; nothing here enters a hash.
  */
 import type {
-  DescriptionBrief, FoundationMode, FoundationScope, FoundationSpec, FoundationVariable, SpecHashProjection,
+  DescriptionBrief, FoundationMode, FoundationScope, FoundationSpec, FoundationTextStyle, FoundationVariable,
+  SpecHashProjection,
 } from '@spec-layer/extractor';
 import { valueLabel, type WritingGap } from '../writingGaps';
 import { writingTaskKey } from './viewModel/writing';
@@ -52,6 +53,30 @@ function variableBrief(key: string, gap: WritingGap, context: BriefContext): Des
   };
 }
 
+function lineHeightLabel(lh: FoundationTextStyle['lineHeight']): string {
+  if (lh.unit === 'AUTO') return 'auto';
+  if (lh.value === undefined) return 'unknown';
+  return lh.unit === 'PERCENT' ? `${lh.value}%` : `${lh.value}px`;
+}
+
+/**
+ * A text style's name usually states its size and weight already ("L : 36px
+ * Regular"), and the system prompt bans restating a name, so a brief of the
+ * font alone left the model nothing true to add. The metrics and the size
+ * range of the style's group are facts beyond the name.
+ */
+function typographyFacts(style: FoundationTextStyle, all: readonly FoundationTextStyle[]): string[] {
+  const spacing = style.letterSpacing.unit === 'PERCENT' ? `${style.letterSpacing.value}%` : `${style.letterSpacing.value}px`;
+  const facts = [
+    `Font: ${style.fontFamily} ${style.fontStyle}, ${style.fontSize}px, line height ${lineHeightLabel(style.lineHeight)}, letter spacing ${spacing}`,
+  ];
+  const sizes = all.filter((s) => s.group === style.group).map((s) => s.fontSize);
+  if (sizes.length > 1) {
+    facts.push(`Group: ${style.group}, ${sizes.length} text styles from ${Math.min(...sizes)}px to ${Math.max(...sizes)}px`);
+  }
+  return facts;
+}
+
 function styleBrief(key: string, gap: WritingGap, context: BriefContext): DescriptionBrief {
   const family = gap.facts?.[0] ?? 'style';
   const spec = context.foundation;
@@ -59,7 +84,7 @@ function styleBrief(key: string, gap: WritingGap, context: BriefContext): Descri
     const style = spec?.textStyles.find((s) => s.id === gap.id);
     return {
       key, kind: 'style', name: gap.name, type: family,
-      ...(style ? { facts: [`Font: ${style.fontFamily} ${style.fontStyle}, ${style.fontSize}px`] } : {}),
+      ...(style && spec ? { facts: typographyFacts(style, spec.textStyles) } : {}),
     };
   }
   if (family === 'effect') {
