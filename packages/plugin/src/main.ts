@@ -18,6 +18,7 @@ import {
 } from '@spec-layer/extractor';
 import { buildDocFrames } from './docFrame';
 import { buildFoundationFrame, isColorRow } from './foundationFrame';
+import { applySpot, firstSpot, spotBeside, spotInPlace, spotNearPrior } from './docPlacement';
 import { emptyBrandTheme, resolveTheme, migrateBrandColors, type BrandTheme, type BrandColors } from './brandColors';
 import { familiesWithRequiredStyles } from './fonts';
 import { isComponentFormat, storedComponentFormat } from './componentFormat';
@@ -815,21 +816,11 @@ const handleUiMessage = async (raw: unknown): Promise<void> => {
         const publishRaw = existing ? existing.getPluginData(PUBLISH_RECORD_KEY) : '';
         const pill: PillState = pillState(parsePublishRecord(publishRaw), msg.contentHash);
 
-        // Regenerate in place: reuse the old doc's position AND its page.
+        // A rebuilt doc stays on the old doc's page; a new one lands on this page.
         let targetPage: PageNode = figma.currentPage;
-        let x = 0, y = 0;
         if (existing) {
-          x = existing.x; y = existing.y;
           const p = pageOf(existing);
           if (p) targetPage = p;
-        } else {
-          try {
-            const comp = await figma.getNodeByIdAsync(msg.nodeId);
-            if (comp && 'x' in comp && 'width' in comp) {
-              const c = comp as SceneNode & { x: number; y: number; width: number };
-              x = c.x + c.width + 80; y = c.y;
-            }
-          } catch { /* source gone since extract — fall back to origin */ }
         }
 
         if (targetPage.id !== figma.currentPage.id) {
@@ -866,13 +857,26 @@ const handleUiMessage = async (raw: unknown): Promise<void> => {
         }));
         if (publishRaw) section.setPluginData(PUBLISH_RECORD_KEY, publishRaw);
 
+        // Chosen while the old doc can still be read. firstSpot never throws:
+        // the old spot when the rebuilt doc still fits there, else beside the
+        // source when it is on this page, else as near the old spot as is clear.
+        const size = { width: section.width, height: section.height };
+        const exclude = new Set(existingId ? [existingId, section.id] : [section.id]);
+        const source = await figma.getNodeByIdAsync(msg.nodeId).catch(() => null);
+        const sourceHere = source !== null && pageOf(source)?.id === targetPage.id;
+        const spot = firstSpot(targetPage, exclude, [
+          () => (existing ? spotInPlace(existing, size, exclude) : null),
+          () => (source && sourceHere ? spotBeside(source, size, exclude) : null),
+          () => (existing ? spotNearPrior(existing, size, exclude) : null),
+        ]);
+
         // Point of no return: after this, `section` IS the doc and must survive
         // any later (cosmetic) failure.
         if (existing) existing.remove();
-        // Re-appending moves it to the end, above its siblings.
-        targetPage.appendChild(section);
-        section.x = x; section.y = y;
         committed = true;
+        // Appending moves it to the end of its host, above its siblings. A
+        // failed append leaves it where it was built, on this page.
+        try { applySpot(section, spot); } catch { /* placed, if not where planned */ }
 
         // Register (idempotent), dropping the replaced doc's id if it changed.
         let reg = readRegistry();
