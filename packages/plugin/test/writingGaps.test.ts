@@ -1,0 +1,130 @@
+import { describe, expect, it } from 'vitest';
+import type { FoundationSpec } from '@spec-layer/extractor';
+import {
+  componentWritingGaps, sectionWritingGaps, foundationWritingGaps, modeValue, valueLabel, WRITING_SECTIONS,
+} from '../src/writingGaps';
+import { ALL_SECTIONS } from '../src/ui/docModel';
+import { placeholderShapeFor } from '../src/ui/placeholders';
+
+describe('componentWritingGaps', () => {
+  it('names an empty description and each slot without one', () => {
+    const gaps = componentWritingGaps({
+      id: '1:1', name: 'Card', description: '  ',
+      componentPropertyDefinitions: {
+        'Content#1:2': { type: 'SLOT', description: null },
+        'Footer#1:3': { type: 'SLOT', description: 'What sits under the body.' },
+        'Size': { type: 'VARIANT' },
+        'Label#1:4': { type: 'TEXT' },
+      },
+    });
+    expect(gaps).toEqual([
+      { kind: 'component', id: '1:1', name: 'Card' },
+      { kind: 'slot', id: '1:1', propertyName: 'Content#1:2', name: 'Card / Content' },
+    ]);
+  });
+  it('counts text Annotate wrote as filled', () => {
+    expect(componentWritingGaps({ id: '1:1', name: 'Card', description: 'Card groups content.\n\nWritten by Spec Layer.' })).toEqual([]);
+  });
+});
+
+describe('sectionWritingGaps', () => {
+  it('lists only unwritten sections that are still ticked on, in section order', () => {
+    const gaps = sectionWritingGaps('doc-1', ['keyboard', 'definition', 'variants'], ['definition', 'keyboard', 'anatomy']);
+    expect(gaps.map((g) => g.sectionId)).toEqual(['definition', 'keyboard']);
+    expect(gaps[0]).toEqual({ kind: 'section', id: 'doc-1', sectionId: 'definition', name: 'Overview' });
+  });
+  it('is empty when the link predates the field', () => {
+    expect(sectionWritingGaps('doc-1', undefined, ['definition'])).toEqual([]);
+  });
+  it('never lists a section that is not a writing section', () => {
+    expect(WRITING_SECTIONS).toEqual([
+      'definition', 'whenToUse', 'dosDonts', 'keyboard', 'pointer', 'accessibility', 'contentConsiderations',
+    ]);
+    expect(sectionWritingGaps('doc-1', ['anatomy'], ['anatomy'])).toEqual([]);
+  });
+  it('is every section drawn as a placeholder, in frame order', () => {
+    const drawn = ALL_SECTIONS.filter((s) => placeholderShapeFor(s.id) !== null).map((s) => s.id);
+    expect(WRITING_SECTIONS).toEqual(drawn);
+  });
+  it('lists a Pointer and touch placeholder', () => {
+    expect(sectionWritingGaps('doc-1', ['pointer'], ['pointer', 'keyboard'])).toEqual([
+      { kind: 'section', id: 'doc-1', sectionId: 'pointer', name: 'Pointer and touch' },
+    ]);
+  });
+});
+
+function spec(): FoundationSpec {
+  return {
+    fileKey: 'f', collections: [{
+      id: 'c1', name: 'Semantic', defaultModeId: 'm1',
+      modes: [{ modeId: 'm1', name: 'Light' }, { modeId: 'm2', name: 'Dark' }],
+      variables: [
+        { name: 'color/surface/primary', group: 'color', resolvedType: 'COLOR', description: '', codeSyntax: {},
+          valuesByMode: { m1: { kind: 'color', hex: '#FFFFFF', alpha: 1 }, m2: { kind: 'color', hex: '#111111', alpha: 1 } },
+          provenance: { id: 'V1', valuesByMode: {}, scopes: ['ALL_FILLS'] } as never },
+        { name: 'space/md', group: 'space', resolvedType: 'FLOAT', description: 'Medium gap.', codeSyntax: {},
+          valuesByMode: { m1: { kind: 'number', value: 16 }, m2: { kind: 'number', value: 16 } },
+          provenance: { id: 'V2', valuesByMode: {}, scopes: [] } as never },
+      ],
+    }],
+    textStyles: [{ id: 'S1', name: 'Body/Medium', group: 'Body', description: '', fontFamily: 'Inter', fontStyle: 'Regular', fontSize: 16,
+      lineHeight: { unit: 'AUTO' }, letterSpacing: { unit: 'PERCENT', value: 0 }, paragraphSpacing: 0, paragraphIndent: 0,
+      textCase: 'ORIGINAL', textDecoration: 'NONE', boundVariables: {} } as never],
+    effectStyles: [{ id: 'E1', name: 'Shadow/Low', group: 'Shadow', description: 'Resting elevation.', effects: [] } as never],
+    extractedAt: '2026-10-19T00:00:00.000Z',
+  } as FoundationSpec;
+}
+
+describe('foundationWritingGaps', () => {
+  it('lists blank variables in a collection scope with one value per mode', () => {
+    const gaps = foundationWritingGaps(spec(), { target: 'collection', collectionId: 'c1', collectionName: 'Semantic', modeIds: [] });
+    expect(gaps).toEqual([{
+      kind: 'variable', id: 'V1', name: 'color/surface/primary', facts: ['Light = #FFFFFF', 'Dark = #111111'],
+      modes: [
+        { mode: 'Light', short: '#FFFFFF', full: 'Light = #FFFFFF', color: { hex: '#FFFFFF', alpha: 1 } },
+        { mode: 'Dark', short: '#111111', full: 'Dark = #111111', color: { hex: '#111111', alpha: 1 } },
+      ],
+    }]);
+  });
+  it('honours a group within a collection', () => {
+    expect(foundationWritingGaps(spec(), { target: 'collection', collectionId: 'c1', collectionName: 'Semantic', group: 'space', modeIds: [] })).toEqual([]);
+  });
+  it('lists blank styles for a style scope and nothing for the other family', () => {
+    expect(foundationWritingGaps(spec(), { target: 'textStyles' })).toEqual([{ kind: 'style', id: 'S1', name: 'Body/Medium', facts: ['typography'] }]);
+    expect(foundationWritingGaps(spec(), { target: 'effectStyles' })).toEqual([]);
+  });
+  it('claims nothing without a scope', () => {
+    expect(foundationWritingGaps(spec(), undefined)).toEqual([]);
+  });
+});
+
+describe('modeValue', () => {
+  it('shows an alias by its target and swatches only a resolved colour', () => {
+    const blue = { kind: 'color' as const, hex: '#F2F9FF', alpha: 1 };
+    expect(modeValue('Light', { kind: 'alias', targetName: 'colors/blue/25', targetCollection: 'Primitives', external: false, resolved: blue }))
+      .toEqual({ mode: 'Light', short: 'colors/blue/25', full: 'Light = #F2F9FF (colors/blue/25)', color: { hex: '#F2F9FF', alpha: 1 } });
+    expect(modeValue('Light', { kind: 'alias', targetName: 'x/y', targetCollection: 'P', external: true, resolved: null }))
+      .toEqual({ mode: 'Light', short: 'x/y', full: 'Light = x/y', color: null });
+    expect(modeValue('Dark', { kind: 'color', hex: '#FF0000', alpha: 0.5 }))
+      .toEqual({ mode: 'Dark', short: '#FF0000 50%', full: 'Dark = #FF0000 50%', color: { hex: '#FF0000', alpha: 0.5 } });
+  });
+  it('never guesses a value it does not hold', () => {
+    expect(modeValue('Light', { kind: 'unresolved', reason: 'missing' })).toEqual({ mode: 'Light', short: 'Not resolved', full: 'Light = Not resolved', color: null });
+    expect(modeValue('Light', undefined)).toEqual({ mode: 'Light', short: 'Not set', full: 'Light = Not set', color: null });
+    expect(modeValue('Default', { kind: 'number', value: 16 })).toEqual({ mode: 'Default', short: '16', full: 'Default = 16', color: null });
+  });
+});
+
+describe('valueLabel', () => {
+  it('renders each value kind without inventing', () => {
+    expect(valueLabel({ kind: 'color', hex: '#FFFFFF', alpha: 1 })).toBe('#FFFFFF');
+    expect(valueLabel({ kind: 'color', hex: '#FFFFFF', alpha: 0.5 })).toBe('#FFFFFF 50%');
+    expect(valueLabel({ kind: 'number', value: 16 })).toBe('16');
+    expect(valueLabel({ kind: 'string', value: 'Inter' })).toBe('Inter');
+    expect(valueLabel({ kind: 'boolean', value: true })).toBe('true');
+    expect(valueLabel({ kind: 'alias', targetName: 'color/neutral/0', targetCollection: 'Primitives', external: false, resolved: { kind: 'color', hex: '#FFFFFF', alpha: 1 } })).toBe('#FFFFFF (color/neutral/0)');
+    expect(valueLabel({ kind: 'alias', targetName: 'x', targetCollection: 'y', external: true, resolved: null })).toBe('x');
+    expect(valueLabel({ kind: 'unresolved', reason: 'missing' })).toBe('Not resolved');
+  });
+});
+

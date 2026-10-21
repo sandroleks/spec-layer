@@ -639,7 +639,115 @@ record.
     content", "limits", "default content"), and the badge and the list
     agree.
 
-Row 28 was added on 2026-10-11 for Figma slots and has not been run.
+Row 28 was added on 2026-10-11 for Figma slots and has not been run, so it is
+not covered yet.
+
+## To do
+
+1. **The rail entry and the first scan.** With the plugin freshly opened in a
+   file with component docs, confirm **To do** has its own entry in the
+   rail, after Library. Open it before the first scan has finished and
+   confirm it shows loading rows rather than an empty list, then the doc
+   blocks when the scan ends, and that the subline reads "Checking N of M
+   docs…" while checks run and the check time after. Open Library and
+   confirm it has no writing filter and no writing line on its rows.
+2. **Blocks, counts and the subline.** In a file with a component whose
+   description is empty, a component with a slot property without a
+   description, a doc whose When to use section is still a placeholder, and
+   a Foundation doc over a collection with undescribed variables, confirm
+   each doc has its own block with "N of M written", that the counts and the
+   subline ("N descriptions and N sections left in N docs") match what is
+   listed, and that a doc with nothing open is not listed.
+3. **Rows at a glance.** On the Foundation block, confirm tokens sit under
+   their parent path in Figma's order, each row shows the last segment of
+   its name, a swatch per mode whose colour resolves, the alias each mode
+   points at, and the full name and values on hover. A mode whose value does
+   not resolve shows "Not resolved" and no swatch.
+4. **Type and press Enter, the field in Figma, Update available.** Type a
+   component description and press **Enter**. Confirm focus moves to the
+   next field, the row reads "Saving…" then "Saved, checking…", the toast
+   names the doc, Figma's description field shows the text, and the doc
+   reads **Update available** in Library after the re-check. Confirm
+   **Enter** never adds a newline, a pasted newline becomes a space, and
+   **Esc** puts back what the field held when you entered it.
+5. **A slot row.** Type a description for a slot property, press **Enter**,
+   and confirm the text in the property's settings in Figma.
+6. **A variable and a style on a Foundation block.** Save a variable
+   description and a style description. Confirm each in the Variables panel
+   and the style's settings, and that the Foundation doc reads **Update
+   available** in Library.
+7. **Done moves to Written this session.** Save a description and wait for
+   the re-check. Confirm the row leaves the open list, the folded "Written
+   this session (N)" count moves by one and opens to show it with a check,
+   and the doc's count moves. A row is done only once the
+   source no longer has the gap, not when you press **Enter**.
+8. **A pass that finds the gap again.** Save a description, wait for the
+   row to read done, then clear the description in Figma by hand and press
+   **Refresh**. Confirm the row returns to the open list and the count moves
+   back.
+9. **Draft with AI, then Save all.** On a component block and on a
+   Foundation block with more than 60 open fields, hover **Draft with AI**
+   and read the field count and cost, then press it. Confirm the allowance
+   ring moves by the number of batches of 60, every field gets a tinted
+   draft with the AI mark or a note names how many did not, editing a draft
+   removes the mark, and the footer reads "N unsaved". Press **Save all**
+   and confirm every
+   field lands in Figma. Close and reopen the plugin and confirm unsaved
+   drafts are gone.
+10. **Save all and undo.** After a **Save all** of several fields, press
+    Edit > Undo once in Figma and record whether it removes every saved
+    description, only the last, or none. No copy may promise undo until
+    this row has a recorded result.
+11. **Discard all.** With several unsaved drafts, press **Discard all**.
+    Confirm it asks "Discard N?", that **Cancel**, Esc or a click elsewhere
+    keeps every draft, and that **Yes** empties them without writing.
+12. **The free allowance runs out mid-doc.** On the free plan with fewer
+    uses left than a Foundation block has batches of 60 open fields, press
+    **Draft with AI**. Confirm the fields from the batches that ran get
+    drafts, the no-uses-left note names the allowance, and no note claims
+    those drafts did not come back. Press it again: the drafts already shown
+    stay and the allowance does not move. With no uses left at all, confirm
+    the no-uses-left note shows and the fields stay editable.
+13. **A refused save.** Delete a variable in Figma while its row holds a
+    draft, then save it. Confirm the row keeps its text, the reason shows
+    under the field, and typing clears it.
+14. **On the canvas.** On a section row, press **Open in doc** and confirm
+    the canvas focuses that section's placeholder. Build a doc whose Pointer
+    and touch, Semantics and focus, and Content sections are placeholders
+    and confirm its block lists each of the three by its heading under "On
+    the canvas".
+15. **The edited-doc note.** Edit a doc's generated text by hand. Confirm
+    the "On the canvas" list says the doc was edited on the canvas. Run
+    **Update this doc** and confirm the note goes away and the section list
+    is current.
+16. **A doc built before this version.** Open To do with a doc built by an
+    earlier version. Confirm it lists no section rows until it is updated,
+    while its description rows still list.
+17. **Empty states.** In a file where every doc has been read and nothing is
+    open, confirm To do says "Nothing left to do" and "Every description
+    and section in your docs is filled." In a file where some docs could not
+    be read, or the first scan has not finished, confirm it does not say
+    that: it says "Not everything is checked yet" and names each reason,
+    from "Checks are still running.", "Docs built before this version list
+    their sections after an Update." and "Some docs could not be read." In a
+    file with no docs, confirm it says "No docs yet" with **Document a
+    component** and **Document foundations**.
+18. **Foundation save keeps the component rows.** With several component
+    docs checked, save a description on the Foundation block. The
+    Foundation doc reads **Update available**; every component doc keeps
+    its badge and its block, no new check count starts, and the Library's
+    check line keeps the earlier check's time.
+19. **The explainer.** On a first visit to To do, confirm the "Why fill
+    these in here?" card shows above the docs and no card flashes before it.
+    Press **Got it**, close and reopen the plugin, and confirm it stays
+    closed; the info button beside the heading opens and closes it again.
+    While it is open, check in Dev Mode whether a saved variable, style and
+    component description shows, and record which: the card does not
+    mention Dev Mode until this is known.
+
+Rows 1 to 19 were added on 2026-10-19, rewritten on 2026-10-20 for the
+Writing screen and on 2026-10-21 for the To do screen, and have not been
+run, so none of them is covered yet.
 
 ## AI-writing allowance (free plan)
 

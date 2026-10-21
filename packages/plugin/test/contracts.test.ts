@@ -9,15 +9,15 @@ describe('assertNever', () => {
 });
 
 describe('navigation', () => {
-  it('lists the five workflows in rail order', () => {
+  it('lists the six workflows in rail order', () => {
     expect(navigation.map((item) => item.id)).toEqual([
-      'component', 'foundations', 'library', 'settings', 'license',
+      'component', 'foundations', 'library', 'writing', 'settings', 'license',
     ]);
   });
 
   it('groups them so the rail can draw its two separators', () => {
     expect(navigation.map((item) => item.group)).toEqual([
-      'create', 'create', 'library', 'settings', 'settings',
+      'create', 'create', 'library', 'library', 'settings', 'settings',
     ]);
   });
 
@@ -29,8 +29,8 @@ describe('navigation', () => {
 });
 
 describe('isPluginView', () => {
-  it('accepts exactly the five rail destinations', () => {
-    for (const id of ['component', 'foundations', 'library', 'settings', 'license']) {
+  it('accepts exactly the six rail destinations', () => {
+    for (const id of ['component', 'foundations', 'library', 'writing', 'settings', 'license']) {
       expect(isPluginView(id)).toBe(true);
     }
     expect(isPluginView('publish')).toBe(false);

@@ -25,11 +25,13 @@ export class DriftQueue {
   private passId: string | null = null;
   private queue: string[] = [];
   private current: DriftCheck | null = null;
+  private last: DriftCheck | null = null;
 
   start(passId: string, docIds: readonly string[]): void {
     this.passId = passId;
     this.queue = [...docIds];
     this.current = null;
+    this.last = null;
   }
 
   resume(passId: string): void {
@@ -40,6 +42,7 @@ export class DriftQueue {
     this.passId = null;
     this.queue = [];
     this.current = null;
+    this.last = null;
   }
 
   id(): string | null {
@@ -56,8 +59,19 @@ export class DriftQueue {
   /** True when this reply answers the check in flight, which it then clears. */
   settle(docId: string, passId: string): boolean {
     if (this.current === null || this.current.docId !== docId || this.current.passId !== passId) return false;
+    this.last = this.current;
     this.current = null;
     return true;
+  }
+
+  /** The check the last accepted reply answered, for a companion reply that follows it across a resume(). */
+  lastSettled(): DriftCheck | null {
+    return this.last;
+  }
+
+  /** True when this doc's last accepted reply was under this pass id. */
+  settledUnder(docId: string, passId: string): boolean {
+    return this.last !== null && this.last.docId === docId && this.last.passId === passId;
   }
 
   inFlight(): string | null {

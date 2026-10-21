@@ -4,10 +4,12 @@ import type {
 } from '@spec-layer/extractor';
 import type { BrandTheme } from './brandColors';
 import type { ComponentFormat } from './componentFormat';
-import type { DocFrameModel } from './ui/docModel';
+import type { DocFrameModel, SectionId } from './ui/docModel';
 import type { DocConfig, FoundationConfig, DocBaseline } from './docLink';
 import type { FoundationIconKind } from './foundationIcon';
 import type { SyncScope, SyncPlanResult, SyncResult } from './syncFigma';
+import type { WritingGap } from './writingGaps';
+import type { DescriptionWrite } from './descriptionWriter';
 
 /** `update` refreshes the generated lane; `rebuild` is a stale-version rebuild
  *  that may first ask the model for empty sections. Echoed on `docSource`. */
@@ -34,6 +36,11 @@ export interface LibraryEntry {
   /** Component rows only, so drift hashes the same anatomy the baseline was
    *  computed over. Absent reads as false. */
   includeHidden?: boolean;
+  /** Component rows only: sections drawn as placeholders at the last build.
+   *  Absent on older links or main threads, which reads as unknown. */
+  unwrittenSections?: SectionId[];
+  /** Component rows only: the sections the doc has ticked on (`config.sections`). */
+  sections?: SectionId[];
   /** Foundation rows only: the live hash for this scope. Absent when the live
    *  extraction failed; the row must then not read as drifted. */
   currentContentHash?: string | undefined;
@@ -67,6 +74,8 @@ export type MainToUi =
   | { type: 'licenseKey'; value: string | null; instanceId: string | null }
   | { type: 'userInfo'; userId: string | null }
   | { type: 'aiEnabled'; value: boolean }
+  /** Whether this person dismissed the To do explainer; per user, from clientStorage. */
+  | { type: 'writingIntroSeen'; value: boolean }
   | { type: 'componentFormat'; value: ComponentFormat }
   | { type: 'brandTheme'; value: BrandTheme }
   | { type: 'fontList'; families: string[] }
@@ -98,6 +107,10 @@ export type MainToUi =
    *  (ui/libraryPass.ts). */
   | { type: 'driftSource'; docId: string; passId: string; node: SerializedNode; fileKey: string; fileName?: string }
   | { type: 'driftError'; docId: string; passId: string }
+  /** The component's empty description fields, read in the same pass as
+   *  driftSource; the same pass id rules apply (ui/libraryPass.ts). */
+  | { type: 'writingGaps'; docId: string; passId: string; gaps: WritingGap[] }
+  | { type: 'descriptionsWritten'; docId: string; written: string[]; failed: { key: string; message: string }[] }
   /** `prose` is the canvas read back through its editorial tags, the stored
    *  DOC_PROSE_KEY blob filling gaps. Update builds from it, never regenerates. */
   | { type: 'docSource'; docId: string; node: SerializedNode; fileKey: string; fileName?: string; config: DocConfig; selfEdited: boolean; prose: ProseV2 | null; intent: DocSourceIntent }
@@ -170,6 +183,8 @@ export type UiToMain =
   | { type: 'openBrowser'; url: string }
   | { type: 'setLicenseKey'; value: string; instanceId: string | null }
   | { type: 'setAiEnabled'; value: boolean }
+  /** The To do explainer was dismissed: it stays closed until reopened. */
+  | { type: 'setWritingIntroSeen' }
   | { type: 'setComponentFormat'; value: ComponentFormat }
   | { type: 'setBrandTheme'; value: BrandTheme }
   | { type: 'requestFonts' }
@@ -194,6 +209,10 @@ export type UiToMain =
   /** Main keeps one resolver memo per `passId`, shared by every doc in a
    *  Library check. The UI starts a new id per scan and per resume. */
   | { type: 'requestDrift'; docId: string; sourceNodeId: string; passId: string }
+  /** Writes each item into Figma's own description field; see descriptionWriter.ts. */
+  | { type: 'writeDescriptions'; docId: string; items: DescriptionWrite[] }
+  /** Focus the section frame a placeholder sits in. */
+  | { type: 'focusDocSection'; docId: string; sectionId: SectionId }
   /** As `passId`, for an update run: one resolver memo, and one Foundation read
    *  and contrast report. */
   | { type: 'requestDocSource'; docId: string; intent: DocSourceIntent; batchId?: string }

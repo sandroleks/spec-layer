@@ -251,4 +251,23 @@ describe('/v1/prose accepts the descriptions client', () => {
     expect(validateProseBody(bent)).toBe('invalid messages');
     expect(validateProseBody({ ...good, request: { ...good.request, model: 'claude-haiku-4-5' } })).toBe('model not allowed');
   });
+
+  const withContent = (content: string) => {
+    const good = descriptionProseRequest(descriptionInput, 'free');
+    return { ...good, request: { ...good.request, messages: [{ role: 'user', content }] } };
+  };
+
+  it('refuses a prompt without the Return JSON line', () => {
+    const content = (descriptionProseRequest(descriptionInput, 'free').request.messages[0] as { content: string }).content;
+    const cut = content.slice(0, content.indexOf('\nReturn JSON: '));
+    expect(cut.startsWith('Items to describe:\n')).toBe(true);
+    expect(validateProseBody(withContent(cut))).toBe('invalid messages');
+  });
+
+  it('refuses a prompt longer than the proxy allows', () => {
+    // MAX_PROMPT_CHARS in handlers.ts is 100,000.
+    const long = `Items to describe:\n${'x'.repeat(100_000)}\nReturn JSON: {}`;
+    expect(validateProseBody(withContent(long))).toBe('invalid messages');
+    expect(validateProseBody(withContent('Items to describe:\n  key: a\nReturn JSON: {}'))).toBeNull();
+  });
 });

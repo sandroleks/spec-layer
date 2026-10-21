@@ -218,6 +218,12 @@ export interface ComponentDocLink {
   /** `EXTRACTOR_VERSION` that produced this doc, so a drift check can tell an
    *  extractor change from a content change. Absent means stale: rebuilt once. */
   extractorVersion?: string;
+  /**
+   * Sections drawn as placeholders at the last build or Update, so the
+   * Library can list what nobody has written without reading the canvas.
+   * Absent on older links, which reads as unknown, never as none.
+   */
+  unwrittenSections?: SectionId[];
   /** Legacy name for extractorVersion: read, never written. Its values
    *  ('0.1'/'0.2') never equal an EXTRACTOR_VERSION, so such a doc reads as
    *  rebuild-required. */
@@ -375,10 +381,14 @@ function parseComponentLink(j: Partial<ComponentDocLink>): ComponentDocLink | nu
   };
   // Normalize `specVersion` forward, so consumers read one field.
   const extractorVersion = j.extractorVersion ?? j.specVersion;
+  const unwrittenSections = Array.isArray(j.unwrittenSections)
+    ? migrateSectionIds(j.unwrittenSections)
+    : undefined;
   return {
     ...(j as ComponentDocLink),
     config,
     ...(extractorVersion === undefined ? {} : { extractorVersion }),
+    ...(unwrittenSections === undefined ? {} : { unwrittenSections }),
   };
 }
 

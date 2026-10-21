@@ -3,10 +3,13 @@
  * domain state. They do not replace the plugin state or message protocol.
  */
 
+import { WRITING_RAIL_LABEL } from "../writingCopy";
+
 export type PluginView =
   | "component"
   | "foundations"
   | "library"
+  | "writing"
   | "settings"
   | "license";
 
@@ -60,6 +63,7 @@ export const navigation: readonly NavigationItem[] = [
   { id: "component", label: "Create component docs", group: "create" },
   { id: "foundations", label: "Create foundation docs", group: "create" },
   { id: "library", label: "Library", group: "library" },
+  { id: "writing", label: WRITING_RAIL_LABEL, group: "library" },
   { id: "settings", label: "Settings", group: "settings" },
   { id: "license", label: "License", group: "settings" },
 ] as const;

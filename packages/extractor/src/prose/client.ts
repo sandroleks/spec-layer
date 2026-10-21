@@ -386,28 +386,41 @@ export function descriptionProseRequest(input: DescriptionDraftInput, tier: Pros
   };
 }
 
+/** What a Draft all run produced: every draft from the chunks that answered,
+ *  and the error of the chunk that stopped the run, if one did. */
+export interface DescriptionDraftResult {
+  drafts: Record<string, string>;
+  error?: unknown;
+}
+
 /**
  * One request per chunk of DESCRIPTION_CHUNK items, in order, merged. A chunk
- * that throws stops the run and the error propagates (the UI's failure notes
- * read it); chunks already answered sit in the cache under their own keys, so
- * a retry replays them without a second generation.
+ * that fails stops the run, and its error is returned beside the drafts the
+ * earlier chunks produced, never thrown over them: those chunks were billed,
+ * and a run that ends on an exhausted allowance must still hand them back.
+ * Answered chunks also sit in the cache under their own keys, so a retry
+ * replays them without a second generation.
  */
 export async function draftDescriptions(
   input: DescriptionDraftInput,
   opts: Pick<DraftOptions, 'apiKey' | 'fetcher' | 'cacheStore' | 'proxy'>,
-): Promise<Record<string, string>> {
-  const out: Record<string, string> = {};
-  if (!opts.apiKey && !opts.proxy) return out;
+): Promise<DescriptionDraftResult> {
+  const drafts: Record<string, string> = {};
+  if (!opts.apiKey && !opts.proxy) return { drafts };
   const tier: ProseTier = opts.proxy?.licenseKey ? 'pro' : 'free';
   for (const items of chunkDescriptionItems(input.items)) {
     const keys = items.map((item) => item.key);
-    const { cacheKey, request } = descriptionProseRequest({ items }, tier);
-    const hit = await opts.cacheStore.get(cacheKey);
-    if (hit) { Object.assign(out, parseDescriptionDraft(hit, keys)); continue; }
-    const raw = await postCompletion(opts.proxy ? request : { model: DIRECT_MODEL, ...request }, cacheKey, opts);
-    // Parse before caching, as draftProse does.
-    Object.assign(out, parseDescriptionDraft(raw, keys));
-    await opts.cacheStore.set(cacheKey, raw);
+    try {
+      const { cacheKey, request } = descriptionProseRequest({ items }, tier);
+      const hit = await opts.cacheStore.get(cacheKey);
+      if (hit) { Object.assign(drafts, parseDescriptionDraft(hit, keys)); continue; }
+      const raw = await postCompletion(opts.proxy ? request : { model: DIRECT_MODEL, ...request }, cacheKey, opts);
+      // Parse before caching, as draftProse does.
+      Object.assign(drafts, parseDescriptionDraft(raw, keys));
+      await opts.cacheStore.set(cacheKey, raw);
+    } catch (error) {
+      return { drafts, error };
+    }
   }
-  return out;
+  return { drafts };
 }

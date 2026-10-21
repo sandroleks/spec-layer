@@ -22,10 +22,12 @@ The proxy accepts only the three request contracts built by the extractor:
 component prose (`prose:v9:`), Foundation group descriptions
 (`prose:v3:groups:<tier>:`) and one-sentence descriptions for blank fields
 (`prose:v1:descriptions:<tier>:`, one request per batch of up to 60 items).
-Each carries the exact system prompt and few-shot
-messages the extractor ships, the fixed output limit, a bounded generated
-prompt, one `cache_control` breakpoint on the exemplar answer, and supported
-base64 image blocks. The request names no model: the proxy assigns
+Each carries the exact system prompt the extractor ships, the fixed output
+limit and a bounded generated prompt. The component contract alone also
+carries the shipped few-shot messages, one `cache_control` breakpoint on the
+exemplar answer, and supported base64 image blocks; the group and
+description contracts are one user message with no image. The request names
+no model: the proxy assigns
 `claude-sonnet-5-5` with `output_config.effort: low` to a proved Pro license and
 `claude-haiku-4-5` to a Figma identity, and rejects a body that names one. The
 cache key names the tier the client believes it has (`pro` or `free`); a key
