@@ -1018,6 +1018,8 @@ if (view === 'settings') {
     pluginVersion: param('version', '5.0.0') || null,
     tab: isSettingsTab(tabParam) ? tabParam : 'frames',
     componentFormat: storedComponentFormat(param('format', 'md')),
+    // `?usage=off` shows the switch off; the harness sends no events either way.
+    usageDataEnabled: param('usage', 'on') !== 'off',
   };
   let customDraft: BrandTheme = { ...THEME_PRESETS[0].theme };
   const renderSettingsFixture = () => renderSettingsScreen(refs, settingsState);

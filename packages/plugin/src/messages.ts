@@ -77,6 +77,12 @@ export type MainToUi =
   /** Whether this person dismissed the To do explainer; per user, from clientStorage. */
   | { type: 'writingIntroSeen'; value: boolean }
   | { type: 'componentFormat'; value: ComponentFormat }
+  /** The usage data switch and the install id events are counted under, from
+   *  clientStorage; `installId` null when none is stored, and the UI mints one. */
+  | { type: 'usageData'; enabled: boolean; installId: string | null }
+  /** A UI message the main thread's handler threw on (uiDispatch.ts), so the
+   *  UI can count the toast. Only the message type, never the error. */
+  | { type: 'mainFailed'; messageType: string }
   | { type: 'brandTheme'; value: BrandTheme }
   | { type: 'fontList'; families: string[] }
   | { type: 'logoCaptured'; base64: string }
@@ -186,6 +192,9 @@ export type UiToMain =
   /** The To do explainer was dismissed: it stays closed until reopened. */
   | { type: 'setWritingIntroSeen' }
   | { type: 'setComponentFormat'; value: ComponentFormat }
+  /** The usage data switch. Off deletes the stored install id; on stores the
+   *  one the UI minted, so turning it on again starts under a new id. */
+  | { type: 'setUsageData'; enabled: boolean; installId: string | null }
   | { type: 'setBrandTheme'; value: BrandTheme }
   | { type: 'requestFonts' }
   | { type: 'captureLogo' }

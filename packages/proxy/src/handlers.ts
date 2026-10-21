@@ -14,6 +14,7 @@ import { quotaHeaders } from './quota';
 import type { CommitOptions, QuotaProfile, QuotaSnapshot, ReleaseOptions, ReserveOptions, ReserveResult, Tier } from './quota';
 import type { RateLimiter } from './ratelimit';
 import { readBodyCapped } from './body';
+import { handleEvents } from './events';
 import { factsCollector, recordRequest, type MetricsSink, type RequestFacts, type RouteName } from './metrics';
 
 export { licenseIdentityId };
@@ -47,6 +48,8 @@ export interface HandlerDeps {
    * hashed ids only, never content.
    */
   record(facts: Partial<RequestFacts>): void;
+  /** Where the plugin's usage events go (events.ts): its own dataset, beside the per-request points. */
+  events: MetricsSink;
 }
 
 /** What the Worker adapter supplies: a handler's deps without the per-request
@@ -534,6 +537,7 @@ function matchRoute(req: Request): { name: RouteName; handle: Handler } {
   if (req.method === 'POST' && rotate) return { name: 'rotate', handle: (r, d) => handleRotate(r, d, rotate[1]) };
   const versions = /^\/v1\/libraries\/(lib_[0-9a-f]{24})\/versions$/.exec(pathname);
   if (req.method === 'GET' && versions) return { name: 'versions', handle: (r, d) => handleVersions(r, d, versions[1]) };
+  if (req.method === 'POST' && pathname === '/v1/events') return { name: 'events', handle: handleEvents };
   return { name: 'unmatched', handle: async () => json(404, { error: 'not_found' }) };
 }
 

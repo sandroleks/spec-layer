@@ -42,6 +42,14 @@ describe('dispatchUiMessage', () => {
     expect(d.commitUndo).toHaveBeenCalledTimes(1);
   });
 
+  it('reports the failed message type, and only the type, when asked to', async () => {
+    const report = vi.fn<(type: string) => void>();
+    await dispatchUiMessage({ type: 'removeDoc', docId: 'd1' }, async () => { throw new Error('boom'); }, { ...deps(), report });
+    expect(report).toHaveBeenCalledWith('removeDoc');
+    await dispatchUiMessage({ type: 'removeDoc' }, async () => {}, { ...deps(), report });
+    expect(report).toHaveBeenCalledTimes(1);
+  });
+
   it('survives a message with no type', async () => {
     const d = deps();
     await dispatchUiMessage(null, async () => { throw new Error('bad'); }, d);

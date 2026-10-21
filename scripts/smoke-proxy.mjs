@@ -121,6 +121,15 @@ export async function smokeProblems(base, fetchFn = fetch) {
     if (!/\bno-store\b/.test(res.headers.get('cache-control') ?? '')) return 'Cache-Control does not say no-store';
     return null;
   });
+  // No X-Plugin-Version, so the route refuses it before reading the body and
+  // writes nothing to the events dataset.
+  await probe('Usage events without a plugin build', '/v1/events', {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}',
+  }, async (res) => {
+    if (res.status !== 400) return `HTTP ${res.status}, expected 400${await answeredBy(res)}`;
+    if ((await body(res))?.error !== 'client_required') return 'body is not {"error":"client_required"}';
+    return null;
+  });
   return problems;
 }
 
@@ -143,7 +152,7 @@ async function main() {
     for (const p of problems) console.error(`  ${p}`);
     process.exit(1);
   }
-  console.log(`Smoke test against ${base}: 3 probes ok.`);
+  console.log(`Smoke test against ${base}: 4 probes ok.`);
 }
 
 function invokedRealPath() {

@@ -16,6 +16,7 @@ import type { Tier } from './quota';
 export type RouteName =
   | 'prose' | 'quota' | 'activate' | 'deactivate'
   | 'publish' | 'pull' | 'rotate' | 'versions'
+  | 'events'
   | 'preflight' | 'unmatched';
 
 /** What a handler learns that route() cannot see. Every field has an empty default. */

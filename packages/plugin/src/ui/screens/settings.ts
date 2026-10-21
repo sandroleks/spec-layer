@@ -64,6 +64,8 @@ export interface SettingsScreenState {
   annotateBusy?: boolean;
   /** Another operation holds the plugin, so no run can start. */
   operationActive?: boolean;
+  /** The usage data switch. Absent reads as on, the default (usageSettings.ts). */
+  usageDataEnabled?: boolean;
 }
 
 /** The "Default (Inter)" row's value: clearing the field back to the default. */
@@ -341,6 +343,34 @@ function aboutSection(state: SettingsScreenState): string {
 }
 
 /**
+ * The usage data switch, on About with the versions: what leaves the plugin
+ * and under what name. The copy claims only what `ui/usage.ts` and the proxy
+ * do: counts under a random id, deleted with the switch, kept three months.
+ */
+function usageSection(state: SettingsScreenState): string {
+  const on = state.usageDataEnabled !== false;
+  return (
+    '<section class="sl-settings-section sl-usage-setting" aria-labelledby="sl-usage-heading">' +
+    '<div class="sl-settings-section-heading">' +
+    '<h2 id="sl-usage-heading">Usage data</h2>' +
+    '<p>Counts which features you use and which errors you see, so Spec Layer knows what to fix. ' +
+    'Never names, content or your Figma user ID.</p>' +
+    '</div>' +
+    '<div class="sl-doc-option">' +
+    '<span class="sl-doc-option-copy"><strong>Send anonymous usage data</strong></span>' +
+    '<label class="sl-switch-control">' +
+    '<input class="sl-switch-input" id="sl-usage-data" type="checkbox" role="switch" ' +
+    `aria-label="Send anonymous usage data"${on ? ' checked' : ''} />` +
+    '<span class="sl-switch-track" aria-hidden="true"><span class="sl-switch-thumb"></span></span>' +
+    '</label>' +
+    '</div>' +
+    '<p class="sl-settings-hint">Counted under a random ID that is deleted when you turn this off. ' +
+    'Spec Layer keeps the counts for three months.</p>' +
+    '</section>'
+  );
+}
+
+/**
  * The tab strip, in the page header so it holds still while the panel scrolls.
  * A roving tabindex keeps it one Tab stop. Underline tabs, not `.sl-segmented`,
  * which picks a value and would read as a second setting above Export's.
@@ -388,7 +418,7 @@ function framesPanel(state: SettingsScreenState): string {
 export function settingsScrollMarkup(state: SettingsScreenState): string {
   const tab = state.tab ?? 'frames';
   const body = tab === 'about'
-    ? aboutSection(state)
+    ? aboutSection(state) + usageSection(state)
     : tab === 'export'
       ? exportSection(state.componentFormat ?? DEFAULT_COMPONENT_FORMAT) + syncSection(state)
       : framesPanel(state);

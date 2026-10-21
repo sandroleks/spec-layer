@@ -34,6 +34,7 @@ import {
   selectAll, clearAll, allSelected, groupBriefs,
 } from './foundationState';
 import { copyText, renderManualCopyModal } from './clipboard';
+import { trackUsage } from './usage';
 
 /** The stamped build version, or null when unstamped. One reader, in proxy.ts,
  *  so the artifacts' `build` and the proxy header never disagree. */
@@ -654,13 +655,18 @@ export interface CopyBriefOptions {
 /** Above this, a copy warns that some chat windows will not take it whole. */
 export const LARGE_COPY_BYTES = 200 * 1024;
 
+/** UTF-8 bytes of a copy, what a chat window pays in. */
+export function textBytes(text: string): number {
+  return new TextEncoder().encode(text).length;
+}
+
 /**
  * Size caveat in KB. Bytes, not lines: the DTCG copy is one line of compact
  * JSON, and a chat window pays in bytes. Leading space so it appends to
  * "Copied.".
  */
 export function sizeCaveat(text: string): string {
-  const bytes = new TextEncoder().encode(text).length;
+  const bytes = textBytes(text);
   if (bytes <= LARGE_COPY_BYTES) return '';
   return ` It’s ${Math.round(bytes / 1024)} KB, which some chat windows can’t take in one paste.`;
 }
@@ -704,12 +710,17 @@ export async function copyBriefFromSource(
     const noProse = prose || options.guidelinesNote === false ? '' : ' This doc has no saved guidelines.';
     const caveat = `${size}${missing}${noProse}`.trim();
     const tier = await copyText(text);
+    // The size answers how large a copy really is; the text never leaves here.
+    trackUsage('copy_for_ai', {
+      kind: 'component', detail: format, outcome: tier === 'manual' ? 'manual' : 'ok', bytes: textBytes(text),
+    });
     if (tier === 'manual') {
       renderManualCopyModal(text, caveat || undefined);
       return;
     }
     ui.info(`Copied as ${COMPONENT_FORMAT_NAME[format]}.${size}${missing}${noProse}`);
   } catch (err) {
+    trackUsage('copy_for_ai', { kind: 'component', detail: state.componentFormat, outcome: 'failed' });
     const msg = err instanceof Error ? err.message : String(err);
     ui.error(`Couldn’t read that component. Nothing was copied. (${msg})`);
   }
@@ -774,12 +785,17 @@ async function deliverBrief(buildText: () => string, ui: BuildPresenter): Promis
     const text = buildText();
     const size = sizeCaveat(text);
     const tier = await copyText(text);
+    // How large the DTCG clipboard really is, a question the manual pass left open.
+    trackUsage('copy_for_ai', {
+      kind: 'foundation', detail: 'dtcg', outcome: tier === 'manual' ? 'manual' : 'ok', bytes: textBytes(text),
+    });
     if (tier === 'manual') {
       renderManualCopyModal(text, size.trim() || undefined);
       return;
     }
     ui.info(`Copied.${size}`);
   } catch (err) {
+    trackUsage('copy_for_ai', { kind: 'foundation', detail: 'dtcg', outcome: 'failed' });
     const msg = err instanceof Error ? err.message : String(err);
     ui.error(`Couldn’t read this file’s variables and styles. Nothing was copied. (${msg})`);
   }

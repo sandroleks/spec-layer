@@ -2,11 +2,12 @@
 export const MAX_KEYS_PER_SURFACE = 10_000;
 /**
  * One surface's worth of keys per prefix sharing the map: `requestLimiter` has
- * five (prose:, quota:, libreq:, libdry:, libpull:), `licenseLimiter` three
- * (bare IP on license routes, libpub:, librot:). The map is still shared, so
- * enough distinct addresses on one surface in one window can fill it.
+ * six (prose:, quota:, libreq:, libdry:, libpull:, events:), `licenseLimiter`
+ * three (bare IP on license routes, libpub:, librot:). The map is still
+ * shared, so enough distinct addresses on one surface in one window can fill
+ * it.
  */
-export const REQUEST_LIMITER_MAX_KEYS = 5 * MAX_KEYS_PER_SURFACE;
+export const REQUEST_LIMITER_MAX_KEYS = 6 * MAX_KEYS_PER_SURFACE;
 export const LICENSE_LIMITER_MAX_KEYS = 3 * MAX_KEYS_PER_SURFACE;
 
 /** What a handler asks before doing work for a caller: may `key` go ahead now? */

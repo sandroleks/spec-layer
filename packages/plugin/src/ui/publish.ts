@@ -16,6 +16,7 @@ import { PROXY_URL, authHeaders, clientHeaders, isLibraryId, type ProxyAuth } fr
 import { formatResetDate } from './viewModel/allowance';
 import { buildSkillFiles, skillZipFilename } from './skillZip';
 import { downloadBytes, zipFiles } from './download';
+import { trackUsage } from './usage';
 import type { MainToUi, PublishComponentSource, PublishStampComponent, UiToMain } from '../messages';
 
 export interface PublishSources {
@@ -744,12 +745,13 @@ export async function onPublishSources(
     try {
       const generatedAt = new Date().toISOString();
       const bundle = buildPublishBundle(msg, generatedAt);
-      downloadBytes(
-        zipFiles(buildSkillFiles(bundle, generatedAt, state.downloadFormat)),
-        skillZipFilename(bundle.fileName),
-        'application/zip',
-      );
+      const zip = zipFiles(buildSkillFiles(bundle, generatedAt, state.downloadFormat));
+      downloadBytes(zip, skillZipFilename(bundle.fileName), 'application/zip');
+      trackUsage('snapshot_download', {
+        detail: state.downloadFormat, outcome: 'ok', count: bundle.components.length, bytes: zip.byteLength,
+      });
     } catch {
+      trackUsage('snapshot_download', { detail: state.downloadFormat, outcome: 'failed' });
       state = { ...state, status: 'error', message: DOWNLOAD_FAILED_MESSAGE };
       host.repaint();
       return;

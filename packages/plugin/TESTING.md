@@ -48,6 +48,15 @@ and the proxy records one usage data point per request (route, outcome,
 tier, client version, status, duration, sizes and counts), never content;
 `packages/proxy/README.md` lists the columns.
 
+While **Send anonymous usage data** on the Settings About tab is on, which it
+is by default, the plugin also posts usage events to the same proxy
+(`POST /v1/events`): which features were used and which errors showed, as
+catalogued names, tokens and counts under a random install id, never a
+name, a description, prose or a Figma user ID. Turning the switch off sends
+that change as the last event and deletes the id; turning it on mints a new
+one. A development build has no version stamp and sends no events at all,
+so this pass exercises the switch, not the sending.
+
 Free users receive 20 generations per UTC calendar month. Pro has no fixed monthly cap for normal individual use, subject to fair
 use and rate limits. Component requests carry a structured summary and, when it
 fits the export limits, a rendered image of the selected node. Foundation group
@@ -1161,10 +1170,18 @@ all.
 14. **Beta badge.** In the section picker, Motion carries a Beta badge and
     the note "Variant transitions from prototype interactions. New in this
     release; tell us what is missing." No other row carries the badge.
+15. **Usage data.** On **About**, below the versions, **Usage data** shows the
+    switch **Send anonymous usage data** on, with the hint naming the random
+    ID and the three months. Turn it off, close the plugin and reopen it: it
+    is still off. Turn it on again. In a stamped build with the plugin's
+    network panel open, a `POST` to `api.spec-layer.com/v1/events` follows
+    within a few seconds of an action such as Copy for AI, and none follows
+    while the switch is off. No toast accompanies the switch either way.
 
 Foundation copy matrix row 12, Doc frame content row 41, and Settings row 14
 were added on 2026-10-03 for motion variables and variant transitions. None
-of the three have been run.
+of the three have been run. Settings row 15 was added on 2026-10-21 for the
+usage data switch and has not been run.
 
 ## Automated checks
 

@@ -80,6 +80,17 @@ Foundation documents, connected-document maintenance, library publishing with
 semantic versions and a version history, a downloadable snapshot, frame themes,
 and license management. There is one UI and one bundle.
 
+The UI also counts what it does (`packages/plugin/src/ui/usage.ts`): a dozen
+catalogued events such as a doc built, a Copy for AI with its size, a Library
+check with its duration, or the "Something went wrong" toast, sent to the
+proxy in small batches while the Settings switch "Send anonymous usage data"
+is on. The main thread owns the switch and the random install id in client
+storage (`usageSettings.ts`) and reports a handler failure to the UI by
+message type alone; the UI owns `fetch`, queues events until the switch is
+known, and flushes with `keepalive` when the iframe is hidden or closes.
+Nothing is awaited on a build path, nothing feeds a hash or an artifact, and
+an unstamped build sends nothing.
+
 Copy for AI and the snapshot download write components as YAML or Markdown,
 per the Component format setting on the Settings Export tab; the Publish
 screen's setup command carries `--component-format md` when it is Markdown.
@@ -129,6 +140,18 @@ the point once the answer is final, and a failed write is logged and never
 changes the answer. The plugin names its build in `X-Plugin-Version` on
 every request so the metrics can tell which builds are in use; the proxy's
 README lists the columns.
+
+What happens inside Figma without a request of its own reaches the proxy as
+usage events on `POST /v1/events` (`packages/proxy/src/events.ts`), one data
+point each in a second Analytics Engine dataset. The catalogue of events,
+their vocabularies and the validator are one module in the extractor
+(`usageEvents.ts`), shared with the plugin, so the proxy refuses an envelope
+it does not recognise and drops any event, token or number outside the
+catalogue; no event names a node, a component, a file, a person or a URL. The
+plugin sends them only while its Settings switch is on, under a random
+install id it mints and deletes with the switch, and only from a stamped
+build; the route asks for the plugin version header and nothing else, and
+answers nothing the plugin reads.
 
 `packages/proxy/src/libraries.ts` adds four `/v1/libraries` routes that store
 and serve a published library bundle without ever deriving it: the proxy
@@ -379,8 +402,9 @@ identity and profile that serializes quota updates, keeps each cached response
 under its own key (the newest 500), and, for publishing, holds each library's
 lock and the identity's library count. Neither stores a license key or a pull
 key in the clear. Beside that state, the Worker writes one usage data point
-per request to an Analytics Engine dataset, kept for three months: a record
-of requests, never something an answer reads back.
+per request to an Analytics Engine dataset, and one per plugin usage event
+to a second, both kept for three months: a record of requests and of what
+the plugin did, never something an answer reads back.
 
 ## Verification
 

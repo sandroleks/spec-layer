@@ -11,7 +11,7 @@
     "allowedDomains": [
       "https://api.spec-layer.com"
     ],
-    "reasoning": "The Spec Layer server at api.spec-layer.com uses Anthropic to write the optional AI text, checks free plan limits and Pro license keys, and stores the libraries you publish for developers to pull. AI requests send a summary of the component or variables being documented and, for a component, an image of it. Your Figma user ID is sent to count free plan use, and the plugin's version number is sent so Spec Layer knows which builds are in use. You never need an API key of your own.",
+    "reasoning": "The Spec Layer server at api.spec-layer.com uses Anthropic to write the optional AI text, checks free plan limits and Pro license keys, and stores the libraries you publish for developers to pull. AI requests send a summary of the component or variables being documented and, for a component, an image of it. Your Figma user ID is sent to count free plan use, and the plugin's version number is sent so Spec Layer knows which builds are in use. Unless you turn off usage data in Settings, the plugin also sends anonymous counts of which features you use and which errors you see, under a random ID with no names, content or Figma user ID. You never need an API key of your own.",
     "devAllowedDomains": [
       "https://api.spec-layer.com"
     ]

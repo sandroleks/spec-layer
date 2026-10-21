@@ -22,6 +22,9 @@ import { emptyBrandTheme, resolveTheme, migrateBrandColors, type BrandTheme, typ
 import { familiesWithRequiredStyles } from './fonts';
 import { isComponentFormat, storedComponentFormat } from './componentFormat';
 import {
+  USAGE_DATA_DEFAULT, USAGE_DATA_KEY, USAGE_INSTALL_KEY, storedInstallId, storedUsageDataEnabled,
+} from './usageSettings';
+import {
   DOC_LINK_KEY, DOC_REGISTRY_KEY, DOC_PROSE_KEY, DOC_BASELINE_KEY,
   parseDocLink, serializeDocLink, parseRegistry, serializeRegistry, addDoc, removeDoc, pruneRegistry,
   textContentHash, isFoundationLink, foundationScopeKey, retargetScope,
@@ -383,6 +386,21 @@ figma.clientStorage.getAsync('componentFormat').then((value: unknown) => {
   figma.ui.postMessage(msg);
 }).catch(() => {/* ignore */});
 
+// Usage data: the per-user switch and the random install id the UI counts
+// under (usageSettings.ts). The UI holds every event until this lands, and
+// mints an id when the switch is on and none is stored. A read that fails
+// reports the default with no id, so the session counts under a fresh one.
+Promise.all([
+  figma.clientStorage.getAsync(USAGE_DATA_KEY) as Promise<unknown>,
+  figma.clientStorage.getAsync(USAGE_INSTALL_KEY) as Promise<unknown>,
+]).then(([enabled, installId]) => {
+  figma.ui.postMessage({
+    type: 'usageData', enabled: storedUsageDataEnabled(enabled), installId: storedInstallId(installId),
+  } satisfies MainToUi);
+}).catch(() => {
+  figma.ui.postMessage({ type: 'usageData', enabled: USAGE_DATA_DEFAULT, installId: null } satisfies MainToUi);
+});
+
 // Annotate in Dev Mode: the per-user switch, and the file link every editor shares.
 const SYNC_ON_UPDATE_KEY = 'syncOnUpdate';
 const SYNC_FILE_URL_KEY = 'speclayer.sync.fileUrl';
@@ -693,6 +711,21 @@ const handleUiMessage = async (raw: unknown): Promise<void> => {
         if (!await writeSetting(figma.clientStorage, 'componentFormat', msg.value)) notifySettingNotSaved();
       }
       break;
+
+    case 'setUsageData': {
+      const enabled = msg.enabled === true;
+      // Off deletes the id with the switch, so nothing links a later session
+      // to this one; a malformed id is dropped rather than stored.
+      const installId = enabled ? storedInstallId(msg.installId) : null;
+      let ok = await writeSetting(figma.clientStorage, USAGE_DATA_KEY, enabled);
+      ok = (installId
+        ? await writeSetting(figma.clientStorage, USAGE_INSTALL_KEY, installId)
+        : await deleteSetting(figma.clientStorage, USAGE_INSTALL_KEY)) && ok;
+      // The UI also sends this at launch to store a minted id, and a toast at
+      // every launch would be noise; only a refused "off" matters to the person.
+      if (!ok && !enabled) notifySettingNotSaved();
+      break;
+    }
 
     case 'setBrandTheme':
       brandTheme = msg.value;
@@ -1782,6 +1815,8 @@ const dispatchDeps: DispatchDeps = {
   commitUndo: () => figma.commitUndo(),
   notifyError: (message) => { figma.notify(message, { error: true }); },
   log: (message, err) => console.error(message, err),
+  // The message type alone: the UI counts the toast under it, never the error.
+  report: (type) => figma.ui.postMessage({ type: 'mainFailed', messageType: type } satisfies MainToUi),
 };
 
 // dispatchUiMessage catches every throw, so the promise it returns never rejects.

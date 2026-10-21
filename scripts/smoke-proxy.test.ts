@@ -33,6 +33,7 @@ function deployment(overrides: Partial<HandlerDeps> = {}) {
     licenseLimiter: new SlidingWindowLimiter(20, 60_000),
     requestLimiter: new SlidingWindowLimiter(60, 60_000),
     libraryStore: new MemKV(),
+    events: { write: vi.fn() },
     ...overrides,
   };
   const fetchFn = ((input: string, init?: RequestInit) => route(new Request(input, init), deps)) as typeof fetch;
@@ -45,6 +46,8 @@ describe('smokeProblems', () => {
     expect(await smokeProblems('https://staging.test/', fetchFn)).toEqual([]);
     expect(upstream).not.toHaveBeenCalled();
     expect((deps.libraryStore as unknown as MemKV).map.size).toBe(0);
+    // The events probe names no plugin build, so it is refused before any point is written.
+    expect(deps.events.write).not.toHaveBeenCalled();
   });
 
   it('names Cloudflare as the answerer when its security features block the probe', async () => {
@@ -66,7 +69,7 @@ describe('smokeProblems', () => {
   it('names an unreachable host instead of throwing', async () => {
     const fetchFn = (async () => { throw new Error('getaddrinfo ENOTFOUND'); }) as unknown as typeof fetch;
     const problems = await smokeProblems('https://staging.test', fetchFn);
-    expect(problems).toHaveLength(3);
+    expect(problems).toHaveLength(4);
     expect(problems[0]).toMatch(/request failed \(getaddrinfo ENOTFOUND\)/);
   });
 });

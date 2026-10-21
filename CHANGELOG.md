@@ -92,6 +92,28 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   still on the wire" and "how many callers a month" are in
   `packages/proxy/README.md` under "Usage metrics". Production and staging
   write to separate datasets.
+- **Usage events from the plugin, behind a switch.** What happens inside
+  Figma without a request of its own is now counted: the plugin opened, a
+  doc built or updated (with or without AI, how many sections, how many
+  placeholders) or failed, Foundation docs built, Copy for AI and the
+  snapshot download with their format and size, a Library check with its
+  duration and how many rows offered an update, Update all, Annotate in Dev
+  Mode, To do drafts and saves, a setting changed, an outbound link, and
+  the "Something went wrong" toast in either thread. Each event is a name
+  from a catalogue the plugin and the proxy share
+  (`packages/extractor/src/usageEvents.ts`), a few tokens from closed
+  vocabularies and a few counts, under a random install id; never a name,
+  a description, prose, a URL, a key or a Figma user ID, and the proxy
+  drops anything outside the catalogue. The new Settings About section
+  **Usage data** holds the switch **Send anonymous usage data**, on by
+  default; off deletes the id and sends nothing, on mints a new one. Events
+  go to the proxy's new `POST /v1/events` in small batches a moment apart,
+  with `keepalive` when the plugin closes, and a send that fails is never
+  shown. The proxy writes them to their own Analytics Engine dataset,
+  `spec_layer_events_v1` (staging has its own), with the columns and
+  queries in `packages/proxy/README.md` under "Usage events". The route
+  needs the proxy in production before a plugin build that sends events is
+  listed. A development build sends nothing.
 
 ### Changed
 
@@ -102,6 +124,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   unstamped build (a test, the harness) sends nothing. The manifest's
   network reasoning says so. The proxy allows the header through CORS, so
   it deploys before any plugin build that sends it.
+- **The manifest's network reasoning names the usage events.** It now says
+  that unless usage data is turned off in Settings, the plugin sends
+  anonymous counts of which features are used and which errors show, under
+  a random ID, with no names, content or Figma user ID. A listing update
+  carries it.
+- **The deploy smoke test runs four probes.** The fourth posts to
+  `/v1/events` with no plugin version and expects the refusal, so a deploy
+  with the events route missing or the binding broken fails on staging.
 - **Markdown is the plugin's default component format.** Copy for AI, the
   snapshot download and the developer setup command now write Markdown
   unless Settings, Export is set to YAML. Only a plugin that never stored a

@@ -227,6 +227,25 @@ the log bytes and a matching `If-None-Match` gets a bare `304`, with the same
 list and weak-tag handling and the same `Cache-Control`. A library that
 predates versioning answers an empty log. Errors: `401`, `404`, `429`.
 
+### `POST /v1/events`
+
+Body: `{ "install": "inst_<32 hex>", "tier": "free" | "pro", "events": [ … ] }`,
+up to 50 events, 16 KB. No identity header: the one requirement is a valid
+`X-Plugin-Version`, since only a stamped plugin build with the usage data
+switch on sends events, and a request without it is refused with
+`400 {"error":"client_required"}` before the body is read. Each event is a
+name from the catalogue in `packages/extractor/src/usageEvents.ts`, shared
+with the plugin, plus `kind`, `outcome` and `detail` tokens from closed
+vocabularies and `count`, `count2`, `bytes` and `duration_ms` numbers. The
+envelope is validated whole and refused with the reason (`bad install`,
+`bad tier`, `missing events`, `too many events`, `unexpected body field`);
+inside it an event outside the catalogue, a string that is not a token or a
+number that is not a count is dropped and counted, never stored. Each
+accepted event is one data point in the `EVENTS` dataset (see "Usage
+events" below). Answers `202 { accepted, dropped }`, which the plugin never
+reads. Errors: `400`, `413 {"error":"request_too_large"}`,
+`429 {"error":"rate_limited"}` from the 60/min per-IP request budget.
+
 ## Quota rules
 
 - Free: 20 generations per UTC calendar month. Only uncached, successful
@@ -316,6 +335,59 @@ ORDER BY requests DESC
 callers; a legacy 5.1.0 prose request carries `blob6 = 'v8'`, which is how
 "has 5.1.0 traffic stopped" is answered before its branch is removed.
 
+### Usage events
+
+What happens inside the plugin without a request of its own (a doc built
+without AI, a Copy for AI, a Library check, the error toast) arrives as
+events on `POST /v1/events` and is written, one data point per event, to
+the `EVENTS` binding (`src/events.ts`, dataset `spec_layer_events_v1`;
+staging writes to `spec_layer_events_v1_staging`). The plugin sends them
+only while its Settings switch, "Send anonymous usage data", is on; it is
+on by default and the manifest's network reasoning says so. The catalogue
+of events and their vocabularies is `packages/extractor/src/usageEvents.ts`,
+the one definition both sides use, and its validator is the whole contract:
+nothing outside it is stored. No event names a node, component, file, token,
+collection, person or URL, and no event carries prose or a description.
+
+The index is the plugin's install id: `inst_` and 32 random hex digits,
+minted by the plugin when the switch is on and no id is stored, kept in
+Figma's per-user client storage, and deleted when the switch goes off, so
+turning it on again starts under a new id. It is never derived from a Figma
+user id or a license key, and nothing links it to the hashed identity the
+request dataset carries.
+
+| Column | Value |
+|---|---|
+| `index1` | The install id |
+| `blob1` | Event: `plugin_opened`, `doc_build`, `foundation_build`, `copy_for_ai`, `snapshot_download`, `library_check`, `library_update`, `annotate`, `description_draft`, `description_save`, `setting_changed`, `external_link`, `unexpected_error` |
+| `blob2` | Client: `plugin/<version>` from `X-Plugin-Version` |
+| `blob3` | Kind, the event's own category: `create`, `update` or `rebuild` on `doc_build`; `component`, `foundation`, `setup_command` or `agent_setup` on `copy_for_ai`; the setting on `setting_changed`; `ui` or `main` on `unexpected_error`; the scope on `annotate`; `one` or `all` on `library_update` |
+| `blob4` | Outcome: `ok`, `failed`, `manual` (the copy dialog showed the text), `canceled`, `incomplete`, `unreachable`, or the proxy error code an AI call failed with |
+| `blob5` | Detail: `ai` or `no_ai` on builds; the format (`md`, `yaml`, `dtcg`, `text`) on copies and downloads; the new value on `setting_changed`; the message type the main thread failed on for `unexpected_error` |
+| `blob6` | The plan the plugin last saw, `free`, `pro`, or empty |
+| `double1` | Count: sections drawn, docs created, components in a snapshot, docs checked, docs updated, drafts landed, descriptions written |
+| `double2` | Second count: placeholders, docs replaced, docs with an update offered, docs asked, fields asked, descriptions refused |
+| `double3` | Bytes: the copied text, the snapshot zip |
+| `double4` | Duration in milliseconds: a Library check from the scan to its last row |
+
+The same SQL API answers for this dataset. Installs active in a week, and
+what they did:
+
+```sql
+SELECT blob1 AS event, blob3 AS kind, blob4 AS outcome, blob5 AS detail,
+       SUM(_sample_interval) AS events, COUNT(DISTINCT index1) AS installs
+FROM spec_layer_events_v1
+WHERE timestamp > NOW() - INTERVAL '7' DAY
+GROUP BY event, kind, outcome, detail
+ORDER BY events DESC
+```
+
+`blob1 = 'copy_for_ai' AND blob5 = 'dtcg'` with
+`quantileWeighted(0.9)(double3, _sample_interval)` answers how large the
+DTCG clipboard really is, and
+`blob1 = 'unexpected_error'` grouped by `blob3, blob5` says where the
+"Something went wrong" toast fires, two questions the manual pass left open.
+
 ## Accepted risks and operational notes
 
 - **License identities are hashed.** License-cache keys, quota Durable Object
@@ -326,6 +398,13 @@ callers; a legacy 5.1.0 prose request carries `blob6 = 'v8'`, which is how
   Engine for three months, longer than Workers Logs keep a line. Nothing in a
   point reverses to a key or a Figma id, and no content is recorded; see
   "Usage metrics".
+- **Usage events are unauthenticated and keep a random install id for three
+  months.** `POST /v1/events` asks for a plugin version header and nothing
+  else, so anyone can post catalogued events under an id of their own and
+  skew a count; the 60/min per-IP budget bounds it, and the catalogue bounds
+  what a row can say. The install id is random, is stored only in the
+  plugin's per-user client storage, is deleted when the switch goes off, and
+  is never joined to a Figma id or a license key; see "Usage events".
 - **Device instances are validated per request.** Every call checks the
   `key:instanceId` bearer against Lemon Squeezy; deactivating a device in the
   LS dashboard frees its slot, visible here within the 24h cache TTL.
@@ -512,6 +591,7 @@ the model assigned by the proxy for the tier (Haiku on free).
 | `LICENSE_CACHE` | KV namespace | Two unrelated datasets. License status cache keyed by a SHA-256 digest (30-day TTL), **and** durable library storage under `lib:` / `libowner:` keys with no expiry (see ARCHITECTURE.md for the record layout). Despite the name, this namespace is not disposable. |
 | `QUOTA` | Durable Object → `QuotaDO` | Per-identity quota state |
 | `METRICS` | Analytics Engine dataset | One data point per request (`src/metrics.ts`), queried with SQL, kept three months. Staging writes to its own dataset. |
+| `EVENTS` | Analytics Engine dataset | One data point per plugin usage event (`src/events.ts`), its own dataset beside `METRICS`, kept three months. Staging writes to its own dataset. |
 | `ANTHROPIC_API_KEY` | secret | Upstream auth |
 | `FIGMA_ID_SALT` | secret | Salted hashing of Figma user IDs. Rotating it resets all free-tier quotas — don't rotate casually. |
 
@@ -524,12 +604,12 @@ Every change merged to `main` that touches `packages/proxy/`,
 1. runs the full `check:ci` gate on that commit;
 2. deploys to **staging** (`spec-layer-proxy-staging` at
    `staging-api.spec-layer.com`, its own KV namespace, Durable Object
-   storage and secrets) and runs `scripts/smoke-proxy.mjs` against it, three
+   storage and secrets) and runs `scripts/smoke-proxy.mjs` against it, four
    probes that call no upstream and write nothing;
 3. waits for approval in the GitHub `production` environment, then runs
    `wrangler deploy` and the same smoke test against `api.spec-layer.com`.
 
-The `METRICS` binding needs Analytics Engine enabled once on the account,
+The `METRICS` and `EVENTS` bindings need Analytics Engine enabled once on the account,
 in the dashboard under Workers & Pages, Analytics Engine
 (`https://dash.cloudflare.com/<account_id>/workers/analytics-engine`).
 Until it is, `wrangler deploy` of either environment fails with Cloudflare
@@ -539,9 +619,13 @@ for a token that holds Account Analytics Read. The dry run in
 `npm run check` never reaches the account, so this shows up only in the
 staging deploy. Once enabled, a dataset is created the first time a Worker
 writes to it: `spec_layer_requests_v1` exists once production has answered
-one request, and the staging dataset once the smoke test's three probes
-have run. Reading needs an API token with Account Analytics Read, kept out
-of this repository; see "Usage metrics" for the query.
+one request, and the staging dataset once the smoke test's four probes
+have run. `spec_layer_events_v1` exists once a plugin build with the usage
+data switch on has sent its first batch; the smoke test's events probe is
+refused before any point is written, so staging's events dataset appears
+only when a plugin is pointed at staging. Reading needs an API token with
+Account Analytics Read, kept out of this repository; see "Usage metrics"
+for the query.
 
 A run by hand can pick `rollout: upload-only`, which uploads the production
 version with `wrangler versions upload` and routes no traffic to it, so a
@@ -586,10 +670,11 @@ for their support.
 
 ## Smoke test
 
-`node scripts/smoke-proxy.mjs https://api.spec-layer.com` runs the three
-probes the deploy workflow gates on (CORS preflight, an unknown path, and a
-pull of an unknown library, which reads KV). By hand, the quota route also
-proves the Durable Object answers:
+`node scripts/smoke-proxy.mjs https://api.spec-layer.com` runs the four
+probes the deploy workflow gates on (CORS preflight, an unknown path, a
+pull of an unknown library, which reads KV, and a usage events post with no
+plugin version, which is refused before the body is read). By hand, the
+quota route also proves the Durable Object answers:
 
 ```bash
 curl -s -D - https://api.spec-layer.com/v1/quota -H 'X-Figma-User: smoke-test-1'
