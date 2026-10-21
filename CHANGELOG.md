@@ -122,13 +122,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   component inside a Section got its doc at the component's position within
   that Section, read as a page position, so the doc landed far from the
   component, often near the page origin. A doc now nests in the component's
-  Section at the nearest clear spot: right of the component, then below,
-  left or above, at least 80px from anything beside it and 64px from the
-  Section's edge. A Section with no room grows right or down, and only when
-  that runs into nothing; otherwise the doc goes beside the Section. A
-  rebuilt doc keeps its spot, and its Section, when it still fits there, so
-  a doc you moved by hand stays put; one that grew into a neighbour moves
-  to the nearest clear spot. New foundation docs line up beside the ones
+  Section at the nearest clear spot to its right, below, left or above
+  (right wins a tie), at least 80px from anything beside it and 64px from
+  the Section's edge. A Section with no room grows down or right when that
+  runs into nothing; only when no growth is clear does the doc go beside
+  the Section. A locked or hidden Section never takes a new doc. A rebuilt
+  doc keeps its spot, and its Section, when it still fits there, so a doc
+  you moved by hand stays put; one that grew into a neighbour goes back
+  beside its component, and a foundation doc moves to the nearest clear
+  spot. New foundation docs line up beside the ones
   already on the page, or in the middle of the view, instead of right of
   everything on the page. Docs already on the canvas are not moved. No
   extraction output changes, so `EXTRACTOR_VERSION` does not move.
