@@ -7,7 +7,7 @@
  */
 import { DOC_LINK_KEY } from './docLink';
 import {
-  placeDoc, placeFrom, isClear, growthClear, rightOfAll,
+  rankDoc, rankFrom, isClear, growthClear, rightOfAll,
   type Box, type Size, type Placement,
 } from './placement';
 
@@ -27,14 +27,26 @@ function parentHost(node: SceneNode): Host | null {
   return parent && (parent.type === 'PAGE' || parent.type === 'SECTION') ? parent as Host : null;
 }
 
+/** A locked or hidden Section locks or hides everything inside it. */
+function isShut(node: BaseNode): boolean {
+  return node.type === 'SECTION' && ((node as SectionNode).locked || !(node as SectionNode).visible);
+}
+
 /** The nearest host above `node`, and the ancestor of `node` (or `node`
- *  itself) that is that host's direct child. Null when `node` is not on a page. */
+ *  itself) that is that host's direct child. A Section hosts only when it is
+ *  not locked or hidden and no Section between it and the page is either;
+ *  otherwise the next usable Section up, or the page, does. Null when `node`
+ *  is not on a page. */
 export function hostAbove(node: BaseNode): { host: Host; anchor: SceneNode } | null {
+  // The deepest usable Section seen so far, reset by a shut Section above it.
+  let found: { host: Host; anchor: SceneNode } | null = null;
   let cur: BaseNode = node;
   for (;;) {
     const parent: BaseNode | null = cur.parent;
     if (!parent || parent.type === 'DOCUMENT') return null;
-    if (parent.type === 'PAGE' || isHostSection(parent)) return { host: parent as Host, anchor: cur as SceneNode };
+    if (parent.type === 'PAGE') return found ?? { host: parent as PageNode, anchor: cur as SceneNode };
+    if (isShut(parent)) found = null;
+    else if (!found && isHostSection(parent)) found = { host: parent, anchor: cur as SceneNode };
     cur = parent;
   }
 }
@@ -46,12 +58,15 @@ function originOf(host: Host): { x: number; y: number } {
   return { x: b.x, y: b.y };
 }
 
+/** `node`'s bounding box relative to `origin`, or null when Figma has none. */
+function boxFrom(origin: { x: number; y: number }, node: SceneNode): Box | null {
+  const b = node.absoluteBoundingBox;
+  return b ? { x: b.x - origin.x, y: b.y - origin.y, width: b.width, height: b.height } : null;
+}
+
 /** `node`'s bounding box in `host`'s space, or null when Figma has none. */
 export function boxIn(host: Host, node: SceneNode): Box | null {
-  const b = node.absoluteBoundingBox;
-  if (!b) return null;
-  const o = originOf(host);
-  return { x: b.x - o.x, y: b.y - o.y, width: b.width, height: b.height };
+  return boxFrom(originOf(host), node);
 }
 
 /** A Section's own rect in its own space; a page has no bounds. */
@@ -60,13 +75,15 @@ function boundsOf(host: Host): Box | null {
 }
 
 /** The host's children as obstacles, minus `exclude`. A child that cannot be
- *  read is skipped. */
+ *  read is skipped; a host with no bounds throws, since every child would be
+ *  skipped and the host would look empty. */
 function obstaclesIn(host: Host, exclude: ReadonlySet<string>): Box[] {
+  const origin = originOf(host);
   const out: Box[] = [];
   for (const child of host.children) {
     try {
       if (exclude.has(child.id)) continue;
-      const b = boxIn(host, child);
+      const b = boxFrom(origin, child);
       if (b) out.push(b);
     } catch { /* skip unresolved child */ }
   }
@@ -82,27 +99,33 @@ function growthFits(host: SectionNode, grow: Size, exclude: ReadonlySet<string>)
     && growthClear(box, grow, obstaclesIn(parent, new Set([...exclude, host.id])), boundsOf(parent));
 }
 
-/** Take `first` in `host`; when the host Section would have to grow into a
- *  neighbour, go up a level and place beside the host instead. A page never
- *  grows, so this ends. */
-function settle(host: Host, first: Placement, size: Size, exclude: ReadonlySet<string>): DocSpot {
+/** Take the best of `ranked` in `host` that needs no growth; else, in a
+ *  Section, the best whose growth runs into nothing. Only when no growth is
+ *  clear, go up a level and rank the spots beside the host instead. A page
+ *  never grows, so this ends. */
+function settle(host: Host, ranked: readonly Placement[], size: Size, exclude: ReadonlySet<string>): DocSpot {
   let h = host;
-  let p = first;
+  let list = ranked;
   for (;;) {
-    if (p.grow === null || h.type === 'PAGE') return { host: h, x: p.x, y: p.y, grow: null };
-    if (growthFits(h, p.grow, exclude)) return { host: h, x: p.x, y: p.y, grow: p.grow };
+    const fit = list.find((p) => p.grow === null);
+    if (fit) return { host: h, x: fit.x, y: fit.y, grow: null };
+    // Never reached: a page has no bounds, so every spot on it fits.
+    if (h.type === 'PAGE') throw new Error('No spot on the page.');
+    const section = h;
+    const grown = list.find((p) => p.grow !== null && growthFits(section, p.grow, exclude));
+    if (grown) return { host: h, x: grown.x, y: grown.y, grow: grown.grow };
     const up = hostAbove(h);
     if (!up) throw new Error('The host Section is not on a page.');
     const anchor = boxIn(up.host, up.anchor);
     if (!anchor) throw new Error('The host Section has no bounds.');
     h = up.host;
-    p = placeDoc({ anchor, size, obstacles: obstaclesIn(h, exclude), bounds: boundsOf(h) });
+    list = rankDoc({ anchor, size, obstacles: obstaclesIn(h, exclude), bounds: boundsOf(h) });
   }
 }
 
 /** The nearest clear spot beside `anchor` (in `host`'s space). */
 export function spotNear(host: Host, anchor: Box, size: Size, exclude: ReadonlySet<string>): DocSpot {
-  return settle(host, placeDoc({ anchor, size, obstacles: obstaclesIn(host, exclude), bounds: boundsOf(host) }), size, exclude);
+  return settle(host, rankDoc({ anchor, size, obstacles: obstaclesIn(host, exclude), bounds: boundsOf(host) }), size, exclude);
 }
 
 /** A doc beside its source, nested in the source's Section. */
@@ -129,8 +152,7 @@ export function spotInPlace(prior: SectionNode, size: Size, exclude: ReadonlySet
 export function spotNearPrior(prior: SectionNode, size: Size, exclude: ReadonlySet<string>): DocSpot | null {
   const host = parentHost(prior);
   if (!host) return null;
-  const first = placeFrom({ x: prior.x, y: prior.y }, size, obstaclesIn(host, exclude), boundsOf(host));
-  return settle(host, first, size, exclude);
+  return settle(host, rankFrom({ x: prior.x, y: prior.y }, size, obstaclesIn(host, exclude), boundsOf(host)), size, exclude);
 }
 
 /** The last resort: right of every child of the page. Always clear. */

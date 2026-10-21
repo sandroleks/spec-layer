@@ -862,7 +862,9 @@ const handleUiMessage = async (raw: unknown): Promise<void> => {
 
         // Chosen while the old doc can still be read. firstSpot never throws:
         // the old spot when the rebuilt doc still fits there, else beside the
-        // source when it is on this page, else as near the old spot as is clear.
+        // source when it is on this page, else as near the old spot as is
+        // clear; a new doc whose source is gone or elsewhere goes near the
+        // middle of the view.
         const size = { width: section.width, height: section.height };
         const exclude = new Set(existingId ? [existingId, section.id] : [section.id]);
         const source = await figma.getNodeByIdAsync(msg.nodeId).catch(() => null);
@@ -871,6 +873,7 @@ const handleUiMessage = async (raw: unknown): Promise<void> => {
           () => (existing ? spotInPlace(existing, size, exclude) : null),
           () => (source && sourceHere ? spotBeside(source, size, exclude) : null),
           () => (existing ? spotNearPrior(existing, size, exclude) : null),
+          () => (existing ? null : spotNear(targetPage, { ...figma.viewport.center, width: 0, height: 0 }, size, exclude)),
         ]);
 
         // Point of no return: after this, `section` IS the doc and must survive
@@ -1065,7 +1068,8 @@ const handleUiMessage = async (raw: unknown): Promise<void> => {
       // doc, and a later throw must not delete the user's only copy).
       let pending: SectionNode | null = null;
       // New units land here; a replacing unit visits its predecessor's page
-      // and returns before the next, so the layout cursor never drifts.
+      // and returns before the next, so each new unit still lines up beside
+      // lastPlaced on this page.
       const invokedPage = figma.currentPage;
       const atBegin = invokedPage.selection.map((node) => node.id);
       try {
@@ -1090,10 +1094,11 @@ const handleUiMessage = async (raw: unknown): Promise<void> => {
         }
 
         // The first new unit goes beside the foundation docs already on this
-        // page, else in the middle of the view.
-        const centre = figma.viewport.center;
-        let startAnchor: Box = { x: centre.x, y: centre.y, width: 0, height: 0 };
+        // page, else in the middle of the view, else at the page origin.
+        let startAnchor: Box = { x: 0, y: 0, width: 0, height: 0 };
         try {
+          const centre = figma.viewport.center;
+          startAnchor = { x: centre.x, y: centre.y, width: 0, height: 0 };
           const here = [...existingByScope.values()]
             .filter((s) => pageOf(s)?.id === invokedPage.id)
             .map((s) => boxIn(invokedPage, s))

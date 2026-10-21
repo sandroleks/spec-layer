@@ -105,44 +105,51 @@ function slide(dir: Direction, from: Box, blocked: readonly Box[]): Box {
   }
 }
 
-/** A candidate that fits beats one that needs growth; then the shortest
- *  distance wins; a tie keeps the earlier candidate. */
-function choose(
+/** Every candidate worth trying, best first: one that fits beats one that
+ *  needs growth; then the shortest distance wins; a tie keeps the earlier
+ *  candidate. Left and above survive only when they fit, so right and below
+ *  are always there and the list is never empty. */
+function rank(
   candidates: readonly Candidate[], distance: (b: Box) => number,
   bounds: Box | null, content: Box | null,
-): Placement {
-  let best: { box: Box; fits: boolean; distance: number } | null = null;
-  for (const { dir, box } of candidates) {
+): Placement[] {
+  const scored: { box: Box; fits: boolean; distance: number; order: number }[] = [];
+  for (const [order, { dir, box }] of candidates.entries()) {
     const fits = content === null || contains(content, box);
     if (!fits && (dir === 'left' || dir === 'above')) continue;
-    const d = distance(box);
-    if (best === null || (fits && !best.fits) || (fits === best.fits && d < best.distance)) {
-      best = { box, fits, distance: d };
-    }
+    scored.push({ box, fits, distance: distance(box), order });
   }
-  // A right or below candidate is never skipped, so this cannot happen.
-  if (best === null) throw new Error('No placement candidate.');
-  const grow = best.fits || bounds === null ? null : {
-    width: Math.max(bounds.width, best.box.x + best.box.width + HOST_PAD),
-    height: Math.max(bounds.height, best.box.y + best.box.height + HOST_PAD),
-  };
-  return { x: best.box.x, y: best.box.y, grow };
+  scored.sort((a, b) => Number(b.fits) - Number(a.fits) || a.distance - b.distance || a.order - b.order);
+  return scored.map(({ box, fits }) => ({
+    x: box.x,
+    y: box.y,
+    grow: fits || bounds === null ? null : {
+      width: Math.max(bounds.width, box.x + box.width + HOST_PAD),
+      height: Math.max(bounds.height, box.y + box.height + HOST_PAD),
+    },
+  }));
 }
 
-/** The nearest clear spot beside `anchor`: right, below, left, then above. */
-export function placeDoc(input: PlaceInput): Placement {
+/** Every clear spot beside `anchor`, nearest first; a tie in distance goes
+ *  right, below, left, then above. */
+export function rankDoc(input: PlaceInput): Placement[] {
   const { anchor, size, obstacles, bounds } = input;
   const blocked = [anchor, ...obstacles].map((b) => inflate(b, GAP));
   const content = bounds ? inflate(bounds, -HOST_PAD) : null;
   const candidates = DIRECTIONS.map((dir) => ({ dir, box: slide(dir, start(dir, anchor, size, content), blocked) }));
-  return choose(candidates, (b) => edgeDistance(b, anchor), bounds, content);
+  return rank(candidates, (b) => edgeDistance(b, anchor), bounds, content);
+}
+
+/** The nearest clear spot beside `anchor`: rankDoc's first. */
+export function placeDoc(input: PlaceInput): Placement {
+  return rankDoc(input)[0];
 }
 
 /** A rebuilt doc that no longer fits where it was: its old origin, slid right
- *  or down past whatever is in the way, whichever moves it less. */
-export function placeFrom(
+ *  or down past whatever is in the way, the one that moves it less first. */
+export function rankFrom(
   origin: { x: number; y: number }, size: Size, obstacles: readonly Box[], bounds: Box | null,
-): Placement {
+): Placement[] {
   const blocked = obstacles.map((b) => inflate(b, GAP));
   const content = bounds ? inflate(bounds, -HOST_PAD) : null;
   const from: Box = {
@@ -154,7 +161,14 @@ export function placeFrom(
     { dir: 'right', box: slide('right', from, blocked) },
     { dir: 'below', box: slide('below', from, blocked) },
   ];
-  return choose(candidates, (b) => Math.hypot(b.x - origin.x, b.y - origin.y), bounds, content);
+  return rank(candidates, (b) => Math.hypot(b.x - origin.x, b.y - origin.y), bounds, content);
+}
+
+/** rankFrom's first: whichever slide moves the doc less. */
+export function placeFrom(
+  origin: { x: number; y: number }, size: Size, obstacles: readonly Box[], bounds: Box | null,
+): Placement {
+  return rankFrom(origin, size, obstacles, bounds)[0];
 }
 
 /** Whether `box` overlaps none of `obstacles` and, with `area`, lies inside it.

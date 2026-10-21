@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   GAP, HOST_PAD, inflate, intersects, contains, unionBoxes,
-  placeDoc, placeFrom, isClear, growthClear, rightOfAll, type Box, type Size,
+  placeDoc, placeFrom, rankDoc, rankFrom, isClear, growthClear, rightOfAll, type Box, type Size,
 } from '../src/placement';
 
 const box = (x: number, y: number, width: number, height: number): Box => ({ x, y, width, height });
@@ -138,6 +138,7 @@ describe('placeDoc properties', () => {
       const withBounds = trial % 2 === 0;
       const bounds = withBounds ? box(0, 0, 2000, 2000) : null;
       const p = placeDoc({ anchor, size, obstacles, bounds });
+      expect(p).toEqual(rankDoc({ anchor, size, obstacles, bounds })[0]);
       const doc = at(p, size);
       for (const o of [anchor, ...obstacles]) expect(intersects(doc, inflate(o, GAP))).toBe(false);
       if (bounds) {
@@ -147,6 +148,49 @@ describe('placeDoc properties', () => {
         expect(p.grow).toBeNull();
       }
     }
+  });
+});
+
+describe('rankDoc', () => {
+  it('ranks a tie in distance by direction: right, below, left, above', () => {
+    expect(rankDoc({ anchor: box(0, 0, 100, 100), size: { width: 50, height: 50 }, obstacles: [], bounds: null }))
+      .toEqual([
+        { x: 180, y: 0, grow: null },
+        { x: 0, y: 180, grow: null },
+        { x: -130, y: 0, grow: null },
+        { x: 0, y: -130, grow: null },
+      ]);
+  });
+
+  it('ranks a fit before growth, then the shorter distance, and drops left and above that do not fit', () => {
+    // Left fits; below (516 away) and right (660 away) need growth; above
+    // would leave the Section, so it is not a candidate.
+    expect(rankDoc({
+      anchor: box(1200, 64, 200, 100), size: { width: 300, height: 200 },
+      obstacles: [box(1480, 0, 500, 600)], bounds: box(0, 0, 2000, 600),
+    })).toEqual([
+      { x: 820, y: 64, grow: null },
+      { x: 1200, y: 680, grow: { width: 2000, height: 944 } },
+      { x: 2060, y: 64, grow: { width: 2424, height: 600 } },
+    ]);
+  });
+
+  it('keeps every growth candidate, each with its own growth', () => {
+    expect(rankDoc({
+      anchor: box(64, 64, 400, 200), size: { width: 300, height: 200 },
+      obstacles: [], bounds: box(0, 0, 600, 400),
+    })).toEqual([
+      { x: 544, y: 64, grow: { width: 908, height: 400 } },
+      { x: 64, y: 344, grow: { width: 600, height: 608 } },
+    ]);
+  });
+});
+
+describe('rankFrom', () => {
+  it('ranks the slide that moves the doc less first, and placeFrom takes it', () => {
+    const args = [{ x: 0, y: 0 }, { width: 400, height: 100 }, [box(300, 0, 100, 100)], null] as const;
+    expect(rankFrom(...args)).toEqual([{ x: 0, y: 180, grow: null }, { x: 480, y: 0, grow: null }]);
+    expect(placeFrom(...args)).toEqual(rankFrom(...args)[0]);
   });
 });
 
