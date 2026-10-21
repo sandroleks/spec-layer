@@ -5,7 +5,8 @@ import {
   PROSE_SYSTEM_PROMPT, PROSE_MAX_TOKENS, proseFewShot, FOUNDATION_SYSTEM_PROMPT,
   LEGACY_PROSE_SYSTEM_PROMPT, legacyProseFewShot, LEGACY_PROSE_MAX_TOKENS,
   LEGACY_FOUNDATION_SYSTEM_PROMPT, LEGACY_GROUP_MAX_TOKENS, GROUP_MAX_TOKENS,
-  type FoundationGroupBrief, type IntermediateSpec,
+  descriptionProseRequest, DESCRIPTION_SYSTEM_PROMPT,
+  type FoundationGroupBrief, type IntermediateSpec, type DescriptionBrief,
 } from '@spec-layer/extractor';
 
 /**
@@ -220,5 +221,34 @@ describe('upstreamRequest', () => {
   it('forwards a legacy request untouched', () => {
     const legacy = { ...request, model: 'claude-haiku-4-5' };
     expect(upstreamRequest(legacy, 'pro', true)).toEqual(legacy);
+  });
+});
+
+const descriptionInput = { items: [{
+  key: 'VariableID:1:1', kind: 'variable', name: 'color/surface/primary', type: 'COLOR', values: ['Light = #FFFFFF'],
+} satisfies DescriptionBrief] };
+
+describe('/v1/prose accepts the descriptions client', () => {
+  it('accepts the payload for both tiers', () => {
+    expect(validateProseBody(descriptionProseRequest(descriptionInput, 'free'))).toBeNull();
+    expect(validateProseBody(descriptionProseRequest(descriptionInput, 'pro'))).toBeNull();
+  });
+
+  it('parses the key as its own kind, with a tier', () => {
+    const { cacheKey } = descriptionProseRequest(descriptionInput, 'pro');
+    expect(parseProseCacheKey(cacheKey)).toEqual({ version: 1, kind: 'descriptions', tier: 'pro' });
+  });
+
+  it('refuses a descriptions key with no tier: there is no legacy client', () => {
+    expect(parseProseCacheKey('prose:v1:descriptions:abcdef')).toBeNull();
+  });
+
+  it('refuses a changed system prompt, limit, or prompt shape', () => {
+    const good = descriptionProseRequest(descriptionInput, 'free');
+    expect(validateProseBody({ ...good, request: { ...good.request, system: `${DESCRIPTION_SYSTEM_PROMPT} ` } })).toBe('system not allowed');
+    expect(validateProseBody({ ...good, request: { ...good.request, max_tokens: 10 } })).toBe('max_tokens not allowed');
+    const bent = { ...good, request: { ...good.request, messages: [{ role: 'user', content: 'Collection: x' }] } };
+    expect(validateProseBody(bent)).toBe('invalid messages');
+    expect(validateProseBody({ ...good, request: { ...good.request, model: 'claude-haiku-4-5' } })).toBe('model not allowed');
   });
 });

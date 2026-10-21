@@ -730,3 +730,50 @@ describe('motion variables', () => {
     expect(artifact.diagnostics.some((d) => d.code === 'INVALID_SOURCE_COLOR')).toBe(false);
   });
 });
+
+describe('MISSING_DESCRIPTION', () => {
+  it('names a variable whose description is empty, at info', () => {
+    const spec = buildFoundation(dump([
+      collection('c1', 'Semantic', [{ modeId: 'm1', name: 'Light' }], 'm1', [
+        variable('v1', 'color/surface', 'COLOR', { m1: { r: 1, g: 1, b: 1, a: 1 } }),
+      ]),
+    ]));
+    const { artifact } = buildFoundationArtifactV5(spec, META);
+    const found = artifact.diagnostics.filter((d) => d.code === 'MISSING_DESCRIPTION');
+    expect(found).toEqual([expect.objectContaining({ severity: 'info', entity_id: 'v1' })]);
+  });
+
+  it('is silent for a variable with a description', () => {
+    const described = { ...variable('v1', 'color/surface', 'COLOR', { m1: { r: 1, g: 1, b: 1, a: 1 } }), description: 'Page background.' };
+    const spec = buildFoundation(dump([
+      collection('c1', 'Semantic', [{ modeId: 'm1', name: 'Light' }], 'm1', [described]),
+    ]));
+    const { artifact } = buildFoundationArtifactV5(spec, META);
+    expect(artifact.diagnostics.some((d) => d.code === 'MISSING_DESCRIPTION')).toBe(false);
+  });
+
+  it('treats whitespace as empty', () => {
+    const blank = { ...variable('v1', 'color/surface', 'COLOR', { m1: { r: 1, g: 1, b: 1, a: 1 } }), description: '   ' };
+    const spec = buildFoundation(dump([
+      collection('c1', 'Semantic', [{ modeId: 'm1', name: 'Light' }], 'm1', [blank]),
+    ]));
+    const { artifact } = buildFoundationArtifactV5(spec, META);
+    expect(artifact.diagnostics.filter((d) => d.code === 'MISSING_DESCRIPTION')).toHaveLength(1);
+  });
+
+  it('names a text style and an effect style with no description', () => {
+    const serialized = JSON.parse(readFileSync(DIRECT_INPUT_PATH, 'utf8')) as SerializedFoundation;
+    const text = serialized.textStyles[0];
+    const effect = serialized.effectStyles[0];
+    expect(text && effect).toBeTruthy();
+    const edited: SerializedFoundation = {
+      ...serialized,
+      textStyles: [{ ...text, description: '' }],
+      effectStyles: [{ ...effect, description: '' }],
+    };
+    const { artifact } = buildFoundationArtifactV5(buildFoundation(edited), DIRECT_META);
+    const ids = artifact.diagnostics.filter((d) => d.code === 'MISSING_DESCRIPTION').map((d) => d.entity_id);
+    expect(ids).toContain(text.id);
+    expect(ids).toContain(effect.id);
+  });
+});

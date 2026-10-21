@@ -973,6 +973,13 @@ export function buildFoundationArtifactV5(
           details: { scopes: uniqueSorted(variable.provenance.scopes) },
         }));
       }
+      // Info, never a defect: a consumer learns the purpose from name and values alone.
+      if (variable.description.trim() === '') {
+        diagnostics.push(diagnostic('MISSING_DESCRIPTION', {
+          entity_id: variable.provenance.id,
+          message: 'The variable has no description in Figma.',
+        }));
+      }
       tokens.push({
         id: variable.provenance.id,
         name: nfc(variable.name),
@@ -998,12 +1005,25 @@ export function buildFoundationArtifactV5(
         const projected = typographyStyleOf(
           style, normalizedPaths, tokensById, diagnostics,
         );
+        if (projected !== null && projected.description.trim() === '') {
+          diagnostics.push(diagnostic('MISSING_DESCRIPTION', {
+            entity_id: projected.id,
+            message: 'The style has no description in Figma.',
+          }));
+        }
         return projected === null ? [] : [projected];
       })
     : [];
   const effects = includesEffects
     ? foundation.effectStyles.flatMap((style) => {
         const projected = effectStyleOf(style, tokensById, diagnostics);
+        // The projected effect style carries no description; the source style does.
+        if (projected !== null && style.description.trim() === '') {
+          diagnostics.push(diagnostic('MISSING_DESCRIPTION', {
+            entity_id: projected.id,
+            message: 'The style has no description in Figma.',
+          }));
+        }
         return projected === null ? [] : [projected];
       })
     : [];

@@ -125,6 +125,7 @@ references:
             code_syntax: { WEB: "--md-sys-color-primary-hover" }
             values: { Default: "#5b438f" }
     styles: { typography: [], effects: [] }
+    issue_counts: { info: { MISSING_DESCRIPTION: 5 } }
 unbound:
   - path: Container/container
     property: gap
