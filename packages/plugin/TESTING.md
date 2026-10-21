@@ -670,7 +670,7 @@ not covered yet.
    reads **Update available** in Library after the re-check. Confirm
    **Enter** never adds a newline, a pasted newline becomes a space, and
    **Esc** puts back what the field held when you entered it.
-5. **A slot row.** Type a description for a slot property, press **Save**,
+5. **A slot row.** Type a description for a slot property, press **Enter**,
    and confirm the text in the property's settings in Figma.
 6. **A variable and a style on a Foundation block.** Save a variable
    description and a style description. Confirm each in the Variables panel
@@ -680,17 +680,18 @@ not covered yet.
    the re-check. Confirm the row leaves the open list, the folded "Written
    this session (N)" count moves by one and opens to show it with a check,
    and the doc's count and progress bar move. A row is done only once the
-   source no longer has the gap, not when you press **Save**.
+   source no longer has the gap, not when you press **Enter**.
 8. **A pass that finds the gap again.** Save a description, wait for the
    row to read done, then clear the description in Figma by hand and press
    **Refresh**. Confirm the row returns to the open list and the count moves
    back.
 9. **Draft with AI, then Save all.** On a component block and on a
-   Foundation block with more than 60 open fields, read the cost under
-   **Draft N with AI**, then press it. Confirm the allowance ring moves by
-   the number of batches of 60, every field gets a tinted draft tagged AI
-   draft or a note names how many did not, editing a draft removes the tag,
-   and the footer reads "N unsaved". Press **Save all N** and confirm every
+   Foundation block with more than 60 open fields, hover **Draft with AI**
+   and read the field count and cost, then press it. Confirm the allowance
+   ring moves by the number of batches of 60, every field gets a tinted
+   draft with the AI mark or a note names how many did not, editing a draft
+   removes the mark, and the footer reads "N unsaved". Press **Save all**
+   and confirm every
    field lands in Figma. Close and reopen the plugin and confirm unsaved
    drafts are gone.
 10. **Save all and undo.** After a **Save all** of several fields, press
@@ -702,7 +703,7 @@ not covered yet.
     keeps every draft, and that **Yes** empties them without writing.
 12. **The free allowance runs out mid-doc.** On the free plan with fewer
     uses left than a Foundation block has batches of 60 open fields, press
-    **Draft N with AI**. Confirm the fields from the batches that ran get
+    **Draft with AI**. Confirm the fields from the batches that ran get
     drafts, the no-uses-left note names the allowance, and no note claims
     those drafts did not come back. Press it again: the drafts already shown
     stay and the allowance does not move. With no uses left at all, confirm

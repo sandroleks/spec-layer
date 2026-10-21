@@ -237,9 +237,14 @@ export function taskHeading(gap: WritingGap): string | null {
   }
 }
 
-/** Each mode's short value, named when there are two or more modes. */
+/**
+ * Each mode's short value, named when there are two or more modes. A colour
+ * every mode resolves is said by its swatches, so it has no caption; the
+ * tooltip still carries every value.
+ */
 export function taskCaption(gap: WritingGap): string | null {
   if (gap.kind === 'variable') {
+    if (gap.modes?.length && gap.modes.every((m) => m.color !== null)) return null;
     if (gap.modes?.length) {
       const named = gap.modes.length > 1;
       return gap.modes.map((m) => (named ? `${m.mode} ${m.short}` : m.short)).join(' · ');

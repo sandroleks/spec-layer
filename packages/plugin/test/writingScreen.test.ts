@@ -4,7 +4,7 @@ import {
 } from '../src/ui/screens/writing';
 import {
   WRITING_AI_TAG, WRITING_CANVAS_HEADING, WRITING_CHECKING, WRITING_EMPTY, WRITING_EMPTY_HEADING, WRITING_FIELD_HINTS,
-  WRITING_INTRO, WRITING_NO_DOCS_HEADING, WRITING_SAVING, WRITING_STALE, WRITING_UNKNOWN_HEADING, WRITING_UNKNOWN_RUNNING,
+  WRITING_NO_DOCS_HEADING, WRITING_SAVING, WRITING_STALE, WRITING_UNKNOWN_HEADING, WRITING_UNKNOWN_RUNNING,
 } from '../src/ui/writingCopy';
 import type { WritingGroup, WritingTask } from '../src/ui/viewModel/writing';
 
@@ -40,16 +40,15 @@ describe('to do header', () => {
     const html = writingHeaderMarkup(model({ openFields: 79, openSections: 3, docsWithOpen: 2, checkedLabel: 'Checked just now' }));
     expect(html).toContain('<h1>To do</h1>');
     expect(html).toContain('79 descriptions and 3 sections left in 2 docs · Checked just now');
-    expect(html).toContain(WRITING_INTRO);
+    expect(html).not.toContain('sl-writing-intro');
     expect(html).toMatch(/data-library-refresh[^>]*aria-label="Refresh"/);
     expect(writingHeaderMarkup(model({ busy: true }))).toMatch(/data-library-refresh[^>]*disabled/);
   });
 
-  it('shows a running check by doc count, and no intro without a list', () => {
+  it('shows a running check by doc count', () => {
     expect(writingSublineText(model({ refreshing: true, checkProgress: { label: 'x', current: 2, total: 5 } })))
       .toBe('1 description left in 1 doc · Checking 2 of 5 docs…');
     expect(writingSublineText(model({ loading: true, groups: [] }))).toBe('');
-    expect(writingHeaderMarkup(model({ groups: [], openFields: 0, docsWithOpen: 0 }))).not.toContain(WRITING_INTRO);
   });
 });
 
@@ -78,27 +77,27 @@ describe('to do rows', () => {
     expect(html).toContain(`placeholder="${WRITING_FIELD_HINTS.component}"`);
   });
 
-  it('tags an AI draft, and offers Save and Discard only with a draft', () => {
+  it('marks an AI draft without a text tag, and offers Discard only with a draft', () => {
     const empty = writingScrollMarkup(model());
-    expect(empty).not.toContain('data-writing-save=');
     expect(empty).not.toContain('data-writing-clear=');
     const ai = writingScrollMarkup(model({ groups: [group({ fields: [{ heading: 'Button', tasks: [task({ draft: { text: 'Starts an action.', origin: 'ai' } })] }] })] }));
-    expect(ai).toContain(`<span class="sl-writing-ai-tag">${WRITING_AI_TAG}</span>`);
+    expect(ai).toMatch(new RegExp(`sl-writing-ai-mark" title="${WRITING_AI_TAG}"><svg[\\s\\S]*<span class="sl-sr-only">${WRITING_AI_TAG}</span>`));
     expect(ai).toContain('data-origin="ai"');
     expect(ai).toContain('>Starts an action.</textarea>');
-    expect(ai).toContain('data-writing-save="component:10:20"');
+    // No per-row Save: Enter saves a row, the footer saves all.
+    expect(ai).not.toContain('data-writing-save');
     expect(ai).toMatch(/data-writing-clear="component:10:20"[^>]*aria-label="Discard draft"/);
     const mine = writingScrollMarkup(model({ groups: [group({ fields: [{ heading: 'Button', tasks: [task({ draft: { text: 'Mine.', origin: 'person' } })] }] })] }));
-    expect(mine).not.toContain('sl-writing-ai-tag');
+    expect(mine).not.toContain('sl-writing-ai-mark');
     expect(mine).toContain('data-origin="person"');
   });
 
   it('holds a field read only while its save is out or checking, showing what was sent', () => {
     const saving = writingScrollMarkup(model({ groups: [group({ fields: [{ heading: 'Button', tasks: [task({ saving: { state: 'saving', text: 'Sent.', origin: 'ai' } })] }] })] }));
     expect(saving).toMatch(/<textarea[^>]*readonly>Sent\.<\/textarea>/);
-    expect(saving).toContain(WRITING_SAVING);
-    expect(saving).not.toContain('sl-writing-ai-tag');
-    expect(saving).not.toContain('data-writing-save=');
+    expect(saving).toContain(`<span class="sl-writing-state" role="status">${WRITING_SAVING}</span>`);
+    expect(saving).not.toContain('sl-writing-ai-mark');
+    expect(saving).not.toContain('data-writing-clear=');
     const checking = writingScrollMarkup(model({ groups: [group({ fields: [{ heading: 'Button', tasks: [task({ saving: { state: 'checking', text: 'Sent.', origin: 'person' } })] }] })] }));
     expect(checking).toContain(WRITING_CHECKING);
     expect(checking).toContain('data-state="checking"');
@@ -111,14 +110,13 @@ describe('to do rows', () => {
 });
 
 describe('to do doc blocks', () => {
-  it('heads a doc with its count, progress and the draft cost', () => {
+  it('heads a doc with its count, progress and Draft, its cost in the tooltip', () => {
     const html = writingScrollMarkup(model({ freeTier: true, groups: [group({ draftable: 61, countLabel: '12 of 79 written' })] }));
     expect(html).toContain('12 of 79 written');
-    expect(html).toContain('Draft 61 with AI');
-    expect(html).toContain('Takes 2 free AI writing uses');
-    expect(writingScrollMarkup(model({ groups: [group({ draftable: 3 })] }))).toContain('Takes 1 AI writing use');
+    expect(html).toMatch(/data-writing-draft-all[^>]*title="Drafts 61 empty fields\. Takes 2 free AI writing uses\."[^>]*>[\s\S]*Draft with AI/);
+    expect(writingScrollMarkup(model({ groups: [group({ draftable: 3 })] }))).toContain('Takes 1 AI writing use.');
     expect(writingScrollMarkup(model({ groups: [group({ draftable: 0 })] }))).not.toContain('data-writing-draft-all');
-    expect(writingScrollMarkup(model({ groups: [group({ drafting: true })] }))).toMatch(/data-writing-draft-all[^>]*disabled[^>]*>[\s\S]*Drafting 1…/);
+    expect(writingScrollMarkup(model({ groups: [group({ drafting: true })] }))).toMatch(/data-writing-draft-all[^>]*disabled[^>]*>[\s\S]*Drafting…/);
   });
 
   it('lists sections apart, with the edited doc note there', () => {
@@ -169,7 +167,6 @@ describe('to do states', () => {
     const drafted = task({ draft: { text: 'Starts an action.', origin: 'person' } });
     const groups = [group({ fields: [{ heading: 'Button', tasks: [drafted] }], sections: [section], unsaved: 1 })];
     const locked = writingScrollMarkup(model({ locked: true, groups }));
-    expect(locked).toMatch(/data-writing-save="component:10:20"[^>]*disabled/);
     expect(locked).toMatch(/data-writing-clear="component:10:20"[^>]*disabled/);
     expect(locked).toMatch(/data-writing-draft-all[^>]*disabled/);
     expect(locked).toMatch(/data-writing-open="whenToUse"[^>]*disabled/);
@@ -190,7 +187,7 @@ describe('to do footer', () => {
   it('offers Save all and Discard all for every unsaved field', () => {
     const html = writingFooterMarkup(model({ unsaved: 67 }));
     expect(html).toContain('67 unsaved');
-    expect(html).toMatch(/data-writing-save-all[^>]*>Save all 67</);
+    expect(html).toMatch(/data-writing-save-all[^>]*>Save all</);
     expect(html).toMatch(/data-writing-discard-all[^>]*>Discard all</);
   });
 

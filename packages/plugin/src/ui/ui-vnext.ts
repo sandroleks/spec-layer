@@ -2427,11 +2427,6 @@ document.addEventListener('click', (event) => {
     if (!writingLocked()) send({ type: 'focusDocSection', docId: writingOpen.dataset.docId, sectionId: writingOpen.dataset.writingOpen as SectionId });
     return;
   }
-  const writingSave = target.closest<HTMLButtonElement>('[data-writing-save]');
-  if (writingSave?.dataset.writingSave && writingSave.dataset.docId) {
-    if (!writingLocked()) saveWritingItems(writingSave.dataset.docId, [writingSave.dataset.writingSave]);
-    return;
-  }
   const writingClear = target.closest<HTMLButtonElement>('[data-writing-clear]');
   if (writingClear?.dataset.writingClear) {
     if (writingLocked()) return;

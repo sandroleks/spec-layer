@@ -21,22 +21,20 @@ import {
   WRITING_EMPTY,
   WRITING_EMPTY_HEADING,
   WRITING_FIELD_HINTS,
+  WRITING_DRAFT_ALL,
+  WRITING_DRAFTING,
   WRITING_HEADING,
-  WRITING_INTRO,
   WRITING_NO_DOCS,
   WRITING_NO_DOCS_HEADING,
   WRITING_OPEN,
   WRITING_REFRESH,
-  WRITING_SAVE,
+  WRITING_SAVE_ALL,
   WRITING_SAVING,
   WRITING_STALE,
   WRITING_UNKNOWN_HEADING,
   discardConfirmLabel,
   doneHeading,
-  draftAllLabel,
   draftCostLabel,
-  draftingLabel,
-  saveAllLabel,
   unsavedLabel,
   writingCheckingLabel,
   writingSummary,
@@ -71,26 +69,28 @@ function swatchMarkup(color: { hex: string; alpha: number }): string {
   return `<span class="sl-writing-swatch" style="background-color: ${fill}" aria-hidden="true"></span>`;
 }
 
-/** The AI draft tag, while the field holds the model's text unedited. */
+/**
+ * The end of the name line: a save out or waiting on its check, else the AI
+ * mark while the field holds the model's text unedited, else nothing.
+ */
 function tagMarkup(t: WritingTask): string {
-  return !t.saving && t.draft?.origin === 'ai' ? `<span class="sl-writing-ai-tag">${WRITING_AI_TAG}</span>` : '';
+  if (t.saving) return `<span class="sl-writing-state" role="status">${t.saving.state === 'saving' ? WRITING_SAVING : WRITING_CHECKING}</span>`;
+  if (t.draft?.origin !== 'ai') return '';
+  return `<span class="sl-writing-ai-mark" title="${WRITING_AI_TAG}">${icon('sparkles', 13)}<span class="sl-sr-only">${WRITING_AI_TAG}</span></span>`;
 }
 
-/** Save and Discard draft, once the row holds unsaved text. */
+/** Discard draft, once the row holds unsaved text. Enter or Save all saves it. */
 function actionsMarkup(t: WritingTask, docId: string, disabled: boolean): string {
   if (!t.draft || t.saving) return '';
   return (
-    `<button class="sl-button" data-tone="secondary" data-size="small" type="button" data-writing-save="${esc(t.key)}" data-doc-id="${esc(docId)}"${off(disabled)}>${WRITING_SAVE}</button>` +
     `<button class="sl-icon-button sl-writing-discard" type="button" data-writing-clear="${esc(t.key)}" data-doc-id="${esc(docId)}" ` +
     `aria-label="${WRITING_DISCARD}" title="${WRITING_DISCARD}"${off(disabled)}>${icon('x', 14)}</button>`
   );
 }
 
-/** A save out, a save waiting on its check, or Figma's refusal. */
+/** Figma's refusal of the last save, under the field. */
 function statusMarkup(t: WritingTask): string {
-  if (t.saving) return `<p class="sl-writing-status" role="status">${t.saving.state === 'saving' ? WRITING_SAVING : WRITING_CHECKING}</p>`;
-  if (t.error) return `<p class="sl-writing-error" role="alert">${esc(t.error)}</p>`;
-  return '';
+  return t.error ? `<p class="sl-writing-error" role="alert">${esc(t.error)}</p>` : '';
 }
 
 /** What a screen reader hears for the field: the token, or the component and the task. */
@@ -142,14 +142,15 @@ function doneRowMarkup(t: WritingTask): string {
   );
 }
 
+/** Draft with AI, its field count and cost in the tooltip, before it is pressed. */
 function draftMarkup(group: WritingGroup, model: WritingScreenPresentation): string {
   if (group.draftable === 0) return '';
   const disabled = group.drafting || model.locked === true;
-  const generations = Math.ceil(group.draftable / DESCRIPTION_CHUNK);
+  const cost = draftCostLabel(group.draftable, Math.ceil(group.draftable / DESCRIPTION_CHUNK), model.freeTier === true);
   return (
-    `<button class="sl-button" data-tone="secondary" data-size="small" type="button" data-writing-draft-all data-doc-id="${esc(group.docId)}"${off(disabled)}>` +
-    `${icon('bolt', 14)}<span>${group.drafting ? draftingLabel(group.draftable) : draftAllLabel(group.draftable)}</span></button>` +
-    `<span class="sl-writing-cost">${draftCostLabel(generations, model.freeTier === true)}</span>`
+    `<button class="sl-button" data-tone="quiet" data-size="small" type="button" data-writing-draft-all data-doc-id="${esc(group.docId)}" ` +
+    `title="${esc(cost)}"${off(disabled)}>` +
+    `${icon('sparkles', 14)}<span>${group.drafting ? WRITING_DRAFTING : WRITING_DRAFT_ALL}</span></button>`
   );
 }
 
@@ -235,7 +236,6 @@ export function writingHeaderMarkup(model: WritingScreenPresentation): string {
     `<button class="sl-icon-button sl-writing-refresh" type="button" data-library-refresh aria-label="${WRITING_REFRESH}" title="${WRITING_REFRESH}"${off(model.busy === true)}>` +
     `${icon('refresh', 15)}</button>` +
     '</div>' +
-    (model.groups.length > 0 ? `<p class="sl-writing-intro">${WRITING_INTRO}</p>` : '') +
     '</div>'
   );
 }
@@ -267,7 +267,7 @@ export function writingFooterMarkup(model: WritingScreenPresentation): string {
     '<div class="sl-footer-actions sl-writing-bar" data-writing-bar>' +
     `<span class="sl-writing-bar-label">${unsavedLabel(n)}</span>` +
     `<button class="sl-button" data-tone="quiet" type="button" data-writing-discard-all${off(locked)}>${WRITING_DISCARD_ALL}</button>` +
-    `<button class="sl-button" data-tone="primary" type="button" data-writing-save-all${off(locked)}>${saveAllLabel(n)}</button>` +
+    `<button class="sl-button" data-tone="primary" type="button" data-writing-save-all${off(locked)}>${WRITING_SAVE_ALL}</button>` +
     '</div>'
   );
 }
@@ -309,7 +309,7 @@ function restoreField(refs: ShellRefs, focus: FieldFocus | null): boolean {
   return true;
 }
 
-const GROUP_CONTROLS = ['data-writing-save', 'data-writing-clear', 'data-writing-open', 'data-writing-done-toggle', 'data-writing-draft-all'] as const;
+const GROUP_CONTROLS = ['data-writing-clear', 'data-writing-open', 'data-writing-done-toggle', 'data-writing-draft-all'] as const;
 
 /** The focused button inside a group, by the attribute it carries and its value, to put back after a redraw. */
 function focusedControl(group: Element): { selector: string; key: string } | null {
@@ -328,7 +328,7 @@ function restoreControl(group: HTMLElement, focus: { selector: string; key: stri
   if (!focus) return;
   const within = (selector: string): HTMLElement | null => group.querySelector<HTMLElement>(selector);
   const same = focus.key === '' ? `[${focus.selector}]` : `[${focus.selector}="${cssString(focus.key)}"]`;
-  const row = focus.selector === 'data-writing-save' || focus.selector === 'data-writing-clear'
+  const row = focus.selector === 'data-writing-clear'
     ? within(`[data-writing-key="${cssString(focus.key)}"]`)
     : null;
   const next = [within(same), row, within('[data-writing-key]')]
@@ -427,8 +427,6 @@ export function patchWritingGroup(refs: ShellRefs, model: WritingScreenPresentat
   if (!refs.screen.classList.contains('sl-writing-screen') || model.loading || model.groups.length === 0) return false;
   const list = refs.scroll.querySelector<HTMLElement>('.sl-writing-list');
   if (!list || list.dataset.locked !== String(model.locked === true)) return false;
-  // The intro shows only with groups, so an empty list coming or going repaints fully.
-  if (!refs.pageHeader.querySelector('.sl-writing-intro')) return false;
   const drawn = [...refs.scroll.querySelectorAll<HTMLElement>('[data-writing-group]')].map((el) => el.dataset.writingGroup);
   const wanted = model.groups.map((g) => g.docId);
   if (drawn.length !== wanted.length || drawn.some((id, i) => id !== wanted[i])) return false;

@@ -50,8 +50,10 @@ describe('taskTitle and taskCaption', () => {
     const blue = { kind: 'color' as const, hex: '#F2F9FF', alpha: 1 };
     const light = modeValue('Light', { kind: 'alias', targetName: 'colors/blue/25', targetCollection: 'P', external: false, resolved: blue });
     const dark = modeValue('Dark', { kind: 'unresolved', reason: 'missing' });
-    expect(taskCaption(gap({ kind: 'variable', id: 'V1', name: 'a/b', modes: [light] }))).toBe('colors/blue/25');
+    // Every mode a colour: the swatches say it, and the tooltip carries the values.
+    expect(taskCaption(gap({ kind: 'variable', id: 'V1', name: 'a/b', modes: [light] }))).toBeNull();
     expect(taskCaption(gap({ kind: 'variable', id: 'V1', name: 'a/b', modes: [light, dark] }))).toBe('Light colors/blue/25 · Dark Not resolved');
+    expect(taskCaption(gap({ kind: 'variable', id: 'V1', name: 'a/b', modes: [modeValue('Default', { kind: 'number', value: 16 })] }))).toBe('16');
   });
 });
 

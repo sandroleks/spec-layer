@@ -8,9 +8,8 @@ function everySentence(): string[] {
   return [
     ...fixed,
     copy.writingSummary(79, 3, 2), copy.writingSummary(1, 1, 1), copy.writingCheckingLabel(2, 5),
-    copy.writtenCount(12, 79), copy.draftAllLabel(67), copy.draftingLabel(67),
-    copy.draftCostLabel(2, true), copy.draftCostLabel(1, false), copy.unsavedLabel(3),
-    copy.saveAllLabel(3), copy.discardConfirmLabel(3), copy.doneHeading(12),
+    copy.writtenCount(12, 79), copy.draftCostLabel(61, 2, true), copy.draftCostLabel(1, 1, false),
+    copy.unsavedLabel(3), copy.discardConfirmLabel(3), copy.doneHeading(12),
     copy.writtenToast(2, [], 'Button'), copy.writtenToast(2, [{ message: 'a' }], 'Button'),
     copy.writtenToast(0, [{ message: 'a' }], 'Button'), copy.draftedToast(1), copy.draftedToast(5),
     copy.draftFailedNote(1), copy.draftFailedNote(4), copy.WRITING_TASK_SLOT('Content'),
@@ -28,7 +27,6 @@ describe('to do copy', () => {
   it('names the screen and says what it is for', () => {
     expect(copy.WRITING_RAIL_LABEL).toBe('To do');
     expect(copy.WRITING_HEADING).toBe('To do');
-    expect(copy.WRITING_INTRO).toBe('These save into Figma’s own description fields, where Dev Mode and Copy for AI read them.');
     expect(copy.WRITING_REFRESH).toBe('Refresh');
   });
 
@@ -43,11 +41,11 @@ describe('to do copy', () => {
 
   it('words a doc head and its draft button', () => {
     expect(copy.writtenCount(12, 79)).toBe('12 of 79 written');
-    expect(copy.draftAllLabel(67)).toBe('Draft 67 with AI');
-    expect(copy.draftingLabel(67)).toBe('Drafting 67…');
-    expect(copy.draftCostLabel(1, true)).toBe('Takes 1 free AI writing use');
-    expect(copy.draftCostLabel(2, true)).toBe('Takes 2 free AI writing uses');
-    expect(copy.draftCostLabel(2, false)).toBe('Takes 2 AI writing uses');
+    expect(copy.WRITING_DRAFT_ALL).toBe('Draft with AI');
+    expect(copy.WRITING_DRAFTING).toBe('Drafting…');
+    expect(copy.draftCostLabel(1, 1, true)).toBe('Drafts 1 empty field. Takes 1 free AI writing use.');
+    expect(copy.draftCostLabel(61, 2, true)).toBe('Drafts 61 empty fields. Takes 2 free AI writing uses.');
+    expect(copy.draftCostLabel(61, 2, false)).toBe('Drafts 61 empty fields. Takes 2 AI writing uses.');
   });
 
   it('words each row', () => {
@@ -58,7 +56,6 @@ describe('to do copy', () => {
       slot: 'What goes in this slot',
     });
     expect(copy.WRITING_AI_TAG).toBe('AI draft');
-    expect(copy.WRITING_SAVE).toBe('Save');
     expect(copy.WRITING_SAVING).toBe('Saving…');
     expect(copy.WRITING_CHECKING).toBe('Saved, checking…');
     expect(copy.WRITING_DISCARD).toBe('Discard draft');
@@ -77,7 +74,7 @@ describe('to do copy', () => {
     expect(copy.doneHeading(12)).toBe('Written this session (12)');
     expect(copy.unsavedLabel(67)).toBe('67 unsaved');
     expect(copy.WRITING_DISCARD_ALL).toBe('Discard all');
-    expect(copy.saveAllLabel(67)).toBe('Save all 67');
+    expect(copy.WRITING_SAVE_ALL).toBe('Save all');
     expect(copy.discardConfirmLabel(67)).toBe('Discard 67?');
     expect(copy.WRITING_CONFIRM_YES).toBe('Yes');
     expect(copy.WRITING_CONFIRM_CANCEL).toBe('Cancel');

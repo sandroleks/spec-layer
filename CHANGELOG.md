@@ -29,12 +29,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   description fields come first: an empty component or slot description,
   and for a Foundation doc each variable or style in its scope with no
   description, grouped under their parent path in Figma's order, with a
-  swatch for each mode whose colour resolves and the alias each mode
-  points at. Every field is typed in place, with no expand step: **Enter**
+  swatch for each mode whose colour resolves; a token's full values, alias
+  names included, are in its tooltip, and a value that is not a resolved
+  colour is spelled out on the row. Every field is typed in place, with no expand step: **Enter**
   saves the row and moves to the next field, **Esc** puts the field back,
   and a bar at the foot offers **Save all** for every unsaved field, one
-  write per doc, and **Discard all** behind a confirm. **Save** writes into
-  Figma's own field, so Dev Mode and the next extraction see it, and the
+  write per doc, and **Discard all** behind a confirm; a row's own discard
+  shows under the pointer or with focus. A save writes into Figma's own
+  field, so Dev Mode and the next extraction see it, and the
   doc then shows Update available. Doc sections still showing their
   placeholder (any of the seven the plugin draws one for, from Overview to
   Content) are listed apart under "On the canvas", each with **Open in
@@ -48,10 +50,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   check, and **Refresh** reads the Foundation again too. While an Update,
   Copy for AI or Annotate run is out, every save, discard, draft and **Open
   in doc** waits; the fields stay typeable.
-  **Draft N with AI** on a doc fills its open fields without a draft, one
-  generation per 60 fields, and says the cost in AI writing uses before you
-  press it. Drafts show tinted and tagged AI draft in their rows until you
-  edit them. Each field's brief carries only facts the plugin already
+  **Draft with AI** on a doc fills its open fields without a draft, one
+  generation per 60 fields; its tooltip says how many fields and the cost
+  in AI writing uses before you press it. Drafts show tinted, with a small
+  AI mark on the row, until you edit them. Each field's brief carries only facts the plugin already
   holds: a variable's values in the doc's modes and the token every mode
   aliases, a text style's font or an effect style's layer count, and a
   component's or slot's properties, variant count and preferred components

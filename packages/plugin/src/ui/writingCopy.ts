@@ -5,8 +5,6 @@
 
 export const WRITING_HEADING = 'To do';
 export const WRITING_RAIL_LABEL = 'To do';
-/** Dev Mode and Copy for AI read these fields; nothing else is claimed. */
-export const WRITING_INTRO = 'These save into Figma’s own description fields, where Dev Mode and Copy for AI read them.';
 export const WRITING_REFRESH = 'Refresh';
 export const WRITING_FIELD_HINTS = {
   variable: 'What this token is for',
@@ -14,8 +12,8 @@ export const WRITING_FIELD_HINTS = {
   component: 'What it is and when to use it',
   slot: 'What goes in this slot',
 } as const;
+/** Said by the row's AI mark, which shows no text of its own. */
 export const WRITING_AI_TAG = 'AI draft';
-export const WRITING_SAVE = 'Save';
 export const WRITING_SAVING = 'Saving…';
 /** Main wrote it; the source check that closes the task has not landed. */
 export const WRITING_CHECKING = 'Saved, checking…';
@@ -65,16 +63,20 @@ export function writtenCount(done: number, total: number): string {
   return `${done} of ${total} written`;
 }
 
-export const draftAllLabel = (n: number): string => `Draft ${n} with AI`;
-export const draftingLabel = (n: number): string => `Drafting ${n}…`;
+export const WRITING_DRAFT_ALL = 'Draft with AI';
+export const WRITING_DRAFTING = 'Drafting…';
+export const WRITING_SAVE_ALL = 'Save all';
 
-/** One generation per DESCRIPTION_CHUNK fields, worded as the component screen words a use. */
-export function draftCostLabel(generations: number, free: boolean): string {
-  return `Takes ${generations} ${free ? 'free ' : ''}AI writing use${generations === 1 ? '' : 's'}`;
+/**
+ * The Draft button's tooltip: how many fields, and what it costs, worded as
+ * the component screen words a use. One generation per DESCRIPTION_CHUNK fields.
+ */
+export function draftCostLabel(fields: number, generations: number, free: boolean): string {
+  const uses = `${generations} ${free ? 'free ' : ''}AI writing use${generations === 1 ? '' : 's'}`;
+  return `Drafts ${plural(fields, 'empty field', 'empty fields')}. Takes ${uses}.`;
 }
 
 export const unsavedLabel = (n: number): string => `${n} unsaved`;
-export const saveAllLabel = (n: number): string => `Save all ${n}`;
 export const discardConfirmLabel = (n: number): string => `Discard ${n}?`;
 export const doneHeading = (n: number): string => `Written this session (${n})`;
 
