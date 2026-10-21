@@ -8,8 +8,8 @@ document it points you at for the area you are touching.
 Spec Layer is a **Figma plugin** that turns components, variables, and styles
 into design-system documentation: connected canvas Sections, and context on the
 clipboard for an AI coding agent ("Copy for AI"). A component copies as a
-compact YAML brief or, when Settings is set to Markdown, a readable Markdown
-page; a Foundation copies as a DTCG resolver document (JSON). A Pro user can
+readable Markdown page by default or, when Settings is set to YAML, a compact
+YAML brief; a Foundation copies as a DTCG resolver document (JSON). A Pro user can
 publish a library and a developer pulls it into a repository with
 the `spec-layer` CLI. It ships as a published Community plugin with a free tier
 and a $7.99/mo Pro tier.
@@ -167,7 +167,8 @@ report. Never a plausible default, never a fake reference.
 never feeds a hash. It drops the per-row machine fields the YAML carries
 (`source_id`, `collection_id`, `issue_counts`) and keeps the same `spec_layer`
 and `source` envelope, so a page can still be matched to the artifact it came
-from. It marks AI prose as AI written and never invents a value. Nothing
+from. It marks prose a person wrote on the canvas as authored, leaves model
+prose unmarked, and never invents a value. Nothing
 parses it back, and it has no version of its own.
 
 **Shared brand values are generated, never copied.** `packages/brand/src` is

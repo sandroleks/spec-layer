@@ -9,8 +9,10 @@ export const COMPONENT_FORMATS = ['yaml', 'md'] as const;
 
 export type ComponentFormat = (typeof COMPONENT_FORMATS)[number];
 
-/** YAML, on both sides: every existing repository and guide names YAML files. */
-export const DEFAULT_COMPONENT_FORMAT: ComponentFormat = 'yaml';
+/** Markdown in the plugin. The CLI keeps YAML as its own default, because
+ * every existing repository names YAML files, so the setup command always
+ * spells out `--component-format md`. */
+export const DEFAULT_COMPONENT_FORMAT: ComponentFormat = 'md';
 
 export function isComponentFormat(value: unknown): value is ComponentFormat {
   return typeof value === 'string' && (COMPONENT_FORMATS as readonly string[]).includes(value);

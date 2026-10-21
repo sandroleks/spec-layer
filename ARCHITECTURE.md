@@ -50,7 +50,7 @@ YAML but with `profile: markdown`, then title, description lead, Related,
 Overview, Properties, Anatomy, Layout, Token bindings, Tokens used, Effects,
 Unbound values, and Issues, followed by the AI prose sections Variants, Do and
 don't, Accessibility, Interactions, Content considerations, and Design
-considerations, with each AI-written prose section marked by an italic line stating the prose came from AI rather than Figma. It reuses
+considerations. A prose section a person wrote on the canvas carries an italic line saying so; model-written prose carries none. It reuses
 `componentFoundationAiSlice` for the Foundation dependency slice and
 `componentEnvelope` for the shared envelope rather than re-implementing
 either. Like the DTCG projection, it never feeds a hash, is never stored in a

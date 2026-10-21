@@ -17,8 +17,6 @@ Related: Icon
 
 ## Overview
 
-*Written by AI from the extracted facts, not read from Figma.*
-
 A button triggers an action in place, such as submitting a form or confirming a choice.
 
 A button is where a decision becomes a change, so its weight tells people which action the
@@ -36,8 +34,6 @@ so the choice reads at a glance rather than after a comparison.
 States: Enabled, Hovered, Disabled
 
 ## Anatomy
-
-*Written by AI from the extracted facts, not read from Figma.*
 
 A container holds a text label and an optional icon. The container carries the fill, the
 corner radius and the padding, so the label and the icon only have to sit inside it.
@@ -93,8 +89,6 @@ Modes: Default (default).
 
 ## Variants
 
-*Written by AI from the extracted facts, not read from Figma.*
-
 One axis varies the visual weight: Style is either Filled or Outlined. A separate boolean
 controls whether the icon shows.
 
@@ -103,8 +97,6 @@ controls whether the icon shows.
   alone in a quieter area.
 
 ## Do and don't
-
-*Written by AI from the extracted facts, not read from Figma.*
 
 ### Do
 
@@ -119,8 +111,6 @@ controls whether the icon shows.
 - **Don't disable a button without explaining why.** A disabled control gives no reason and drops out of the tab order, so use inline validation instead.
 
 ## Accessibility
-
-*Written by AI from the extracted facts, not read from Figma.*
 
 ### Keyboard
 
@@ -138,8 +128,6 @@ controls whether the icon shows.
 
 ## Interactions
 
-*Written by AI from the extracted facts, not read from Figma.*
-
 - **Hover:** the container fill moves to `md.sys.color.primary-hover`.
 - **Pressed:** this component records no pressed state, so choose one in build and apply it
   to every button.
@@ -147,8 +135,6 @@ controls whether the icon shows.
   required, not optional.
 
 ## Content considerations
-
-*Written by AI from the extracted facts, not read from Figma.*
 
 - **Verb first:** write the label as an action in one to three words, such as "Save" or
   "Add item", never a bare "OK".
@@ -158,8 +144,6 @@ controls whether the icon shows.
   carrying half the meaning.
 
 ## Design considerations
-
-*Written by AI from the extracted facts, not read from Figma.*
 
 - **Contrast:** keep label-to-background contrast at 4.5:1 or better in both styles,
   including the hover fill.

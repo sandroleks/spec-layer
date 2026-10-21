@@ -888,7 +888,9 @@ describe('component format on the publish screen', () => {
     const md = publishScrollMarkup(PUBLISHED, allowance, undefined, 'md');
     expect(block(md, 'Developer setup')).toContain(setupCommand(LIBRARY_ID, PULL_KEY, 'md'));
     expect(block(md, 'AI agent setup')).toContain('--component-format md');
-    expect(publishScrollMarkup(PUBLISHED, allowance)).not.toContain('--component-format');
+    expect(publishScrollMarkup(PUBLISHED, allowance, undefined, 'yaml')).not.toContain('--component-format');
+    // Markdown is the plugin's default, so the screen spells the flag out unasked.
+    expect(publishScrollMarkup(PUBLISHED, allowance)).toContain('--component-format md');
   });
 
   it('names the format in the download block in both formats and every state, with a way to Settings', () => {

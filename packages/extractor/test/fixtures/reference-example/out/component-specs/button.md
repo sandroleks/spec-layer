@@ -17,8 +17,6 @@ Related: Icon
 
 ## Overview
 
-*Written by AI from the extracted facts, not read from Figma.*
-
 A button triggers an action in place, such as saving a form or confirming a choice.
 
 Its visual weight tells people which action the view expects next, so keep one leading
@@ -36,8 +34,6 @@ action per view and let the rest sit quieter.
 States: hover, disabled
 
 ## Anatomy
-
-*Written by AI from the extracted facts, not read from Figma.*
 
 The component itself is the container: it carries the fill or border, the corner radius,
 the padding and the gap. Inside it sit an icon slot and a text label.
@@ -154,8 +150,6 @@ Modes: Default (default).
 
 ## Variants
 
-*Written by AI from the extracted facts, not read from Figma.*
-
 Two axes vary the look, and two switches record state.
 
 - **Style:** Filled for the single leading action, Outlined for a secondary action.
@@ -164,8 +158,6 @@ Two axes vary the look, and two switches record state.
   condition a binding can name.
 
 ## Do and don't
-
-*Written by AI from the extracted facts, not read from Figma.*
 
 ### Do
 
@@ -180,8 +172,6 @@ Two axes vary the look, and two switches record state.
 - **Don't disable a button without saying why.** A disabled control gives no reason and drops out of the tab order.
 
 ## Accessibility
-
-*Written by AI from the extracted facts, not read from Figma.*
 
 ### Keyboard
 
@@ -206,8 +196,6 @@ Two axes vary the look, and two switches record state.
 
 ## Interactions
 
-*Written by AI from the extracted facts, not read from Figma.*
-
 - **Hover:** a Filled button moves to `color/action/primary-hover` and lifts with the
   `Elevation/1` shadow. An Outlined button records no hover change.
 - **Disabled:** a Filled button moves to `color/action/disabled`; an Outlined button keeps
@@ -217,15 +205,11 @@ Two axes vary the look, and two switches record state.
 
 ## Content considerations
 
-*Written by AI from the extracted facts, not read from Figma.*
-
 - **Verb first:** write the label as an action in one to three words, such as "Save" or
   "Add item", never a bare "OK".
 - **Length:** allow for labels to grow by a third in translation.
 
 ## Design considerations
-
-*Written by AI from the extracted facts, not read from Figma.*
 
 - **Tokens, not values:** fill, border, radius, padding and gap are all bound to tokens,
   so a change to the foundation reaches every button.

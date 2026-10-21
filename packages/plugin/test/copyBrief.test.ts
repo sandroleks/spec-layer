@@ -61,10 +61,17 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
+/** Most tests here read the copy as YAML; Markdown is the default now. */
+function yamlState(): ReturnType<typeof createState> {
+  const state = createState();
+  state.componentFormat = 'yaml';
+  return state;
+}
+
 describe('copyBriefFromSource', () => {
   it('copies parseable YAML naming the component', async () => {
     const ui = presenter();
-    await copyBriefFromSource(createState(), SRC, null, ui);
+    await copyBriefFromSource(yamlState(), SRC, null, ui);
     expect(copyText).toHaveBeenCalledTimes(1);
     const y = load(copyText.mock.calls[0][0]) as ParsedCopyBrief;
     expect(y.spec_layer.kind).toBe('component');
@@ -76,7 +83,7 @@ describe('copyBriefFromSource', () => {
   });
 
   it('names the source node and keeps the file name in the AI envelope', async () => {
-    await copyBriefFromSource(createState(), { ...SRC, fileName: 'Design System' }, null, presenter());
+    await copyBriefFromSource(yamlState(), { ...SRC, fileName: 'Design System' }, null, presenter());
     const y = load(copyText.mock.calls[0][0]) as ParsedCopyBrief;
     expect(y.spec_layer.source.file_name).toBe('Design System');
     expect(y.source.node_id).toBe('1:100');
@@ -84,43 +91,43 @@ describe('copyBriefFromSource', () => {
   });
 
   it('omits file_name when the stored source carries no file name', async () => {
-    await copyBriefFromSource(createState(), SRC, null, presenter());
+    await copyBriefFromSource(yamlState(), SRC, null, presenter());
     const y = load(copyText.mock.calls[0][0]) as ParsedCopyBrief;
     expect('file_name' in y.spec_layer.source).toBe(false);
   });
 
   it('includes stored guidelines without generating any', async () => {
-    await copyBriefFromSource(createState(), SRC, STORED, presenter());
+    await copyBriefFromSource(yamlState(), SRC, STORED, presenter());
     const y = load(copyText.mock.calls[0][0]) as ParsedCopyBrief;
     expect(y.guidelines?.definition).toBe('A button.');
   });
 
   it('says which guidelines a person wrote on the canvas', async () => {
-    await copyBriefFromSource(createState(), SRC, { ...STORED, authored: ['semantics'] }, presenter());
+    await copyBriefFromSource(yamlState(), SRC, { ...STORED, authored: ['semantics'] }, presenter());
     const partly = load(copyText.mock.calls[0][0]) as { guidelines?: Record<string, unknown> };
     expect(partly.guidelines).toMatchObject({ origin: 'generated', authored: ['accessibility'] });
-    await copyBriefFromSource(createState(), SRC, { ...STORED, authored: ['overview', 'semantics'] }, presenter());
+    await copyBriefFromSource(yamlState(), SRC, { ...STORED, authored: ['overview', 'semantics'] }, presenter());
     const wholly = load(copyText.mock.calls[1][0]) as { guidelines?: Record<string, unknown> };
     expect(wholly.guidelines?.origin).toBe('authored');
     expect(wholly.guidelines && 'authored' in wholly.guidelines).toBe(false);
   });
 
   it('omits guidelines when the document has none stored', async () => {
-    await copyBriefFromSource(createState(), SRC, null, presenter());
+    await copyBriefFromSource(yamlState(), SRC, null, presenter());
     expect('guidelines' in (load(copyText.mock.calls[0][0]) as ParsedCopyBrief)).toBe(false);
   });
 
   it('reports a failure without copying when extraction throws', async () => {
     const ui = presenter();
     const broken: DocSource = { ...SRC, node: null as never };
-    await copyBriefFromSource(createState(), broken, null, ui);
+    await copyBriefFromSource(yamlState(), broken, null, ui);
     expect(copyText).not.toHaveBeenCalled();
     expect(ui.error).toHaveBeenCalled();
   });
 
   it('carries the honesty caveats into the tier-3 modal, not just the toast', async () => {
     copyText.mockResolvedValue('manual');
-    await copyBriefFromSource(createState(), SRC, null, presenter());
+    await copyBriefFromSource(yamlState(), SRC, null, presenter());
     expect(renderManualCopyModal).toHaveBeenCalledTimes(1);
     const [, notice] = renderManualCopyModal.mock.calls[0];
     expect(notice).toContain(
@@ -131,7 +138,7 @@ describe('copyBriefFromSource', () => {
 
   it('omits the modal caveat entirely when nothing is missing', async () => {
     copyText.mockResolvedValue('manual');
-    await copyBriefFromSource(createState(), SRC, STORED, presenter());
+    await copyBriefFromSource(yamlState(), SRC, STORED, presenter());
     // foundationSpec is still unset in this test file's module state, so the
     // "token values missing" caveat is unavoidable here; assert only that a
     // present prose stops contributing its own half of the caveat.
@@ -142,7 +149,7 @@ describe('copyBriefFromSource', () => {
   it('never posts a canvas-mutating message', async () => {
     const sent: unknown[] = [];
     vi.stubGlobal('parent', { postMessage: (m: { pluginMessage: unknown }) => sent.push(m.pluginMessage) });
-    await copyBriefFromSource(createState(), SRC, null, presenter());
+    await copyBriefFromSource(yamlState(), SRC, null, presenter());
     const types = sent.map((m) => (m as { type: string }).type);
     expect(types).not.toContain('renderDocFrame');
     expect(types).not.toContain('updateFoundationDoc');
@@ -150,7 +157,7 @@ describe('copyBriefFromSource', () => {
 
   it('accepts a bare selection source with no doc id or config', async () => {
     const ui = presenter();
-    await copyBriefFromSource(createState(), { node: NODE, fileKey: 'F1' }, null, ui);
+    await copyBriefFromSource(yamlState(), { node: NODE, fileKey: 'F1' }, null, ui);
     expect(copyText).toHaveBeenCalledTimes(1);
     const y = load(copyText.mock.calls[0][0]) as ParsedCopyBrief;
     expect(y.source.node_id).toBe('1:100');
@@ -158,7 +165,7 @@ describe('copyBriefFromSource', () => {
 
   it('omits the guidelines note when the caller says no document is involved', async () => {
     copyText.mockResolvedValue('manual');
-    await copyBriefFromSource(createState(), { node: NODE, fileKey: 'F1' }, null, presenter(), { guidelinesNote: false });
+    await copyBriefFromSource(yamlState(), { node: NODE, fileKey: 'F1' }, null, presenter(), { guidelinesNote: false });
     const [, notice] = renderManualCopyModal.mock.calls[0];
     expect(notice ?? '').not.toContain('no saved guidelines');
     expect(notice ?? '').toContain('Token values are missing');
@@ -173,7 +180,7 @@ describe('copyBriefFromSource', () => {
       })),
     } as never;
     copyText.mockResolvedValue('manual');
-    await copyBriefFromSource(createState(), { node: wide, fileKey: 'F1' }, null, presenter());
+    await copyBriefFromSource(yamlState(), { node: wide, fileKey: 'F1' }, null, presenter());
     const [text, notice] = renderManualCopyModal.mock.calls[0];
     const bytes = new TextEncoder().encode(text).length;
     expect(bytes).toBeGreaterThan(LARGE_COPY_BYTES);
@@ -181,10 +188,17 @@ describe('copyBriefFromSource', () => {
     expect(notice ?? '').not.toMatch(/\d+ lines/);
   });
 
-  it('says which format it copied, YAML by default', async () => {
+  it('says which format it copied, Markdown by default', async () => {
     const ui = presenter();
     await copyBriefFromSource(createState(), SRC, STORED, ui);
     expect(ui.info).toHaveBeenCalledTimes(1);
+    expect(ui.info.mock.calls[0][0]).toMatch(/^Copied as Markdown\./);
+    expect((copyText.mock.calls[0][0] as string).startsWith(COMPONENT_MARKDOWN_MARKER)).toBe(true);
+  });
+
+  it('says YAML when YAML is chosen', async () => {
+    const ui = presenter();
+    await copyBriefFromSource(yamlState(), SRC, STORED, ui);
     expect(ui.info.mock.calls[0][0]).toMatch(/^Copied as YAML\./);
   });
 
@@ -203,7 +217,7 @@ describe('copyBriefFromSource', () => {
   });
 
   it('renders both formats from the same artifact, so both carry the same content hash', async () => {
-    await copyBriefFromSource(createState(), SRC, STORED, presenter());
+    await copyBriefFromSource(yamlState(), SRC, STORED, presenter());
     const markdown = createState();
     markdown.componentFormat = 'md';
     await copyBriefFromSource(markdown, SRC, STORED, presenter());
@@ -250,7 +264,7 @@ describe('copyBriefFromSource', () => {
       })),
     } as never;
 
-    await copyBriefFromSource(createState(), { ...SRC, node: boundNode }, null, presenter());
+    await copyBriefFromSource(yamlState(), { ...SRC, node: boundNode }, null, presenter());
     const y = load(copyText.mock.calls[0][0]) as unknown as {
       spec_layer: { foundation_hash: string };
       references: {

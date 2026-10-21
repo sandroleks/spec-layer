@@ -245,7 +245,7 @@ artifact, written or not, and `status` compares one hash.
 ## Component format
 
 `component-specs/` holds YAML by default: the same compact brief the plugin's
-**Copy for AI** copies. Set `componentSpecsFormat` to `md` to write one
+**Copy for AI** copies when its Settings are set to YAML. Set `componentSpecsFormat` to `md` to write one
 Markdown page per component instead:
 
 ```json
@@ -262,8 +262,8 @@ the flag for one run. Without the flag, `show` follows `componentSpecsFormat`,
 then the last pull, and `show foundation` refuses `--component-format`. The page is rendered from the published canonical
 artifact at pull time, so every library already published gets it without a
 republish. It opens with front matter carrying the same `spec_layer` envelope
-the YAML does, with `profile: markdown`, and marks any AI-written section as
-AI written. Switching formats removes the other format's files on the next
+the YAML does, with `profile: markdown`, and marks any section a person wrote
+on the Figma canvas as written there. Switching formats removes the other format's files on the next
 pull. Foundations are unaffected: `.speclayer/tokens/` stays DTCG in either
 format, and the CSS output directory from `outputs` is unaffected too.
 
