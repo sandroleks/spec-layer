@@ -33,6 +33,7 @@ export {
 export * from './prose/prompt';
 export * from './prose/promptV2';
 export * from './prose/foundationPrompt';
+export * from './prose/descriptionPrompt';
 export * from './prose/client';
 export * from './prose/v2';
 export * from './yaml';

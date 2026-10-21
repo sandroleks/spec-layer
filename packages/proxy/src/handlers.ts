@@ -4,6 +4,7 @@ import {
   LEGACY_PROSE_SYSTEM_PROMPT, LEGACY_PROSE_MAX_TOKENS, LEGACY_GROUP_MAX_TOKENS, legacyProseFewShot,
   LEGACY_FOUNDATION_SYSTEM_PROMPT,
   GROUP_MAX_TOKENS,
+  DESCRIPTION_SYSTEM_PROMPT, DESCRIPTION_MAX_TOKENS,
 } from '@spec-layer/extractor';
 import { identityFromHeaders, licenseIdentityId, callerProofs } from './identity';
 import { handlePublish, handlePull, handleRotate, handleVersions, truncateUtf16 } from './libraries';
@@ -101,21 +102,24 @@ export function requestLog(req: Request, sink: (line: string) => void): HandlerD
   return (event, fields) => sink(JSON.stringify({ event, ray, route, ...fields }));
 }
 
-export interface ProseKeyInfo { version: number; kind: 'component' | 'groups'; tier: Tier | null }
+export interface ProseKeyInfo { version: number; kind: 'component' | 'groups' | 'descriptions'; tier: Tier | null }
 
 /**
- * `prose:v9:pro:<hash>...`, `prose:v3:groups:free:<hash>...`, or the shipped
- * v8 / groups v1 shapes with no tier. Null for anything else.
+ * `prose:v9:pro:<hash>...`, `prose:v3:groups:free:<hash>...`,
+ * `prose:v1:descriptions:free:<hash>...`, or the shipped v8 / groups v1 shapes
+ * with no tier. Null for anything else.
  */
 export function parseProseCacheKey(key: string): ProseKeyInfo | null {
-  const m = /^prose:v(\d+):(groups:)?(?:(pro|free):)?[^:]/.exec(key);
+  const m = /^prose:v(\d+):(groups:|descriptions:)?(?:(pro|free):)?[^:]/.exec(key);
   if (!m) return null;
   const version = Number(m[1]);
-  const kind = m[2] ? 'groups' : 'component';
+  const kind = m[2] === 'groups:' ? 'groups' : m[2] === 'descriptions:' ? 'descriptions' : 'component';
   const tier = (m[3] as Tier | undefined) ?? null;
   // The v2 groups key never shipped; refusing it keeps its cache entries from
   // ever answering a v3 request.
   if (kind === 'groups' && version === 2) return null;
+  // No client ever sent a descriptions key without a tier.
+  if (kind === 'descriptions' && tier === null) return null;
   const legacy = (kind === 'component' && version <= 8) || (kind === 'groups' && version <= 1);
   if (legacy && tier !== null) return null;
   if (!legacy && tier === null) return null;
@@ -186,6 +190,22 @@ export function validateProseBody(body: unknown): string | null {
   }
   if (!Number.isInteger(r.max_tokens) || (r.max_tokens as number) <= 0) return 'invalid max_tokens';
   if (!Array.isArray(r.messages)) return 'missing messages';
+
+  if (info.kind === 'descriptions') {
+    if (r.system !== DESCRIPTION_SYSTEM_PROMPT) return 'system not allowed';
+    if (r.max_tokens !== DESCRIPTION_MAX_TOKENS) return 'max_tokens not allowed';
+    if (r.messages.length !== 1) return 'invalid messages';
+    const message = r.messages[0] as Record<string, unknown> | null;
+    if (
+      !message || typeof message !== 'object' || Array.isArray(message) ||
+      !hasOnlyFields(message, new Set(['role', 'content'])) ||
+      message.role !== 'user' || typeof message.content !== 'string' ||
+      message.content.length > MAX_PROMPT_CHARS ||
+      !message.content.startsWith('Items to describe:\n') ||
+      !message.content.includes('\nReturn JSON: ')
+    ) return 'invalid messages';
+    return null;
+  }
 
   if (info.kind === 'groups') {
     // The foundation prompt versions separately (GROUP_PROMPT_VERSION). A 5.1.0

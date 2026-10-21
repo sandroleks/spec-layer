@@ -16,6 +16,11 @@ import {
   type GroupDraft,
   type GroupDraftInput,
 } from './foundationPrompt';
+import {
+  DESCRIPTION_SYSTEM_PROMPT, DESCRIPTION_MAX_TOKENS,
+  buildDescriptionPrompt, parseDescriptionDraft, chunkDescriptionItems,
+  type DescriptionDraftInput,
+} from './descriptionPrompt';
 
 /**
  * Bump whenever the prompt, system prompt, or few-shot changes the produced
@@ -349,4 +354,60 @@ export async function draftGroupDescriptions(
   const parsed = parseGroupDraft(raw, folders, collectionIds);
   await opts.cacheStore.set(cacheKey, raw);
   return parsed;
+}
+
+// ---------------------------------------------------------------------------
+// One-sentence descriptions for blank fields
+// ---------------------------------------------------------------------------
+
+/** Bump when the description prompt changes the produced voice. */
+export const DESCRIPTION_PROMPT_VERSION = 'v1';
+
+/** `descriptions:` keeps these keys out of the component and group namespaces.
+ *  The hash is over the rendered prompt, so the key moves on exactly what the
+ *  model sees and a tier never replays the other tier's draft. */
+export function descriptionCacheKey(input: DescriptionDraftInput, tier: ProseTier): string {
+  return `prose:${DESCRIPTION_PROMPT_VERSION}:descriptions:${tier}:${contentHash(buildDescriptionPrompt(input))}`;
+}
+
+/** The exact `{cacheKey, request}` payload, exported so a test can run the
+ *  proxy's validator against it. */
+export function descriptionProseRequest(input: DescriptionDraftInput, tier: ProseTier): {
+  cacheKey: string;
+  request: { max_tokens: number; system: string; messages: unknown[] };
+} {
+  return {
+    cacheKey: descriptionCacheKey(input, tier),
+    request: {
+      max_tokens: DESCRIPTION_MAX_TOKENS,
+      system: DESCRIPTION_SYSTEM_PROMPT,
+      messages: [{ role: 'user', content: buildDescriptionPrompt(input) }],
+    },
+  };
+}
+
+/**
+ * One request per chunk of DESCRIPTION_CHUNK items, in order, merged. A chunk
+ * that throws stops the run and the error propagates (the UI's failure notes
+ * read it); chunks already answered sit in the cache under their own keys, so
+ * a retry replays them without a second generation.
+ */
+export async function draftDescriptions(
+  input: DescriptionDraftInput,
+  opts: Pick<DraftOptions, 'apiKey' | 'fetcher' | 'cacheStore' | 'proxy'>,
+): Promise<Record<string, string>> {
+  const out: Record<string, string> = {};
+  if (!opts.apiKey && !opts.proxy) return out;
+  const tier: ProseTier = opts.proxy?.licenseKey ? 'pro' : 'free';
+  for (const items of chunkDescriptionItems(input.items)) {
+    const keys = items.map((item) => item.key);
+    const { cacheKey, request } = descriptionProseRequest({ items }, tier);
+    const hit = await opts.cacheStore.get(cacheKey);
+    if (hit) { Object.assign(out, parseDescriptionDraft(hit, keys)); continue; }
+    const raw = await postCompletion(opts.proxy ? request : { model: DIRECT_MODEL, ...request }, cacheKey, opts);
+    // Parse before caching, as draftProse does.
+    Object.assign(out, parseDescriptionDraft(raw, keys));
+    await opts.cacheStore.set(cacheKey, raw);
+  }
+  return out;
 }

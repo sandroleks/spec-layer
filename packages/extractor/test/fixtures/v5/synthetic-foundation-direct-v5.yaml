@@ -695,6 +695,74 @@ diagnostics:
       hidden_from_publishing_unavailable: true
       lifecycle_unavailable: true
       consuming_mode_unavailable: true
+  - code: MISSING_DESCRIPTION
+    severity: info
+    entity_id: VariableID:chain-bridge
+    message: The variable has no description in Figma.
+  - code: MISSING_DESCRIPTION
+    severity: info
+    entity_id: VariableID:chain-middle
+    message: The variable has no description in Figma.
+  - code: MISSING_DESCRIPTION
+    severity: info
+    entity_id: VariableID:chain-terminal
+    message: The variable has no description in Figma.
+  - code: MISSING_DESCRIPTION
+    severity: info
+    entity_id: VariableID:cycle-a
+    message: The variable has no description in Figma.
+  - code: MISSING_DESCRIPTION
+    severity: info
+    entity_id: VariableID:cycle-b
+    message: The variable has no description in Figma.
+  - code: MISSING_DESCRIPTION
+    severity: info
+    entity_id: VariableID:external-owner-readable
+    message: The variable has no description in Figma.
+  - code: MISSING_DESCRIPTION
+    severity: info
+    entity_id: VariableID:external-owner-unreadable
+    message: The variable has no description in Figma.
+  - code: MISSING_DESCRIPTION
+    severity: info
+    entity_id: VariableID:font-family
+    message: The variable has no description in Figma.
+  - code: MISSING_DESCRIPTION
+    severity: info
+    entity_id: VariableID:font-weight
+    message: The variable has no description in Figma.
+  - code: MISSING_DESCRIPTION
+    severity: info
+    entity_id: VariableID:gap
+    message: The variable has no description in Figma.
+  - code: MISSING_DESCRIPTION
+    severity: info
+    entity_id: VariableID:motion-button
+    message: The variable has no description in Figma.
+  - code: MISSING_DESCRIPTION
+    severity: info
+    entity_id: VariableID:motion-emphasized
+    message: The variable has no description in Figma.
+  - code: MISSING_DESCRIPTION
+    severity: info
+    entity_id: VariableID:motion-spring
+    message: The variable has no description in Figma.
+  - code: MISSING_DESCRIPTION
+    severity: info
+    entity_id: VariableID:motion-standard
+    message: The variable has no description in Figma.
+  - code: MISSING_DESCRIPTION
+    severity: info
+    entity_id: VariableID:motion-step
+    message: The variable has no description in Figma.
+  - code: MISSING_DESCRIPTION
+    severity: info
+    entity_id: VariableID:motion-unknown
+    message: The variable has no description in Figma.
+  - code: MISSING_DESCRIPTION
+    severity: info
+    entity_id: VariableID:unknown-number
+    message: The variable has no description in Figma.
 statistics:
   collections: 3
   modes: 6
@@ -702,4 +770,4 @@ statistics:
   styles: { typography: 1, effects: 1 }
   aliases: { total: 14, resolved: 8, unresolved: 6 }
   lifecycle: { active: 0, deprecated: 0, archived: 0 }
-  diagnostics: { error: 10, warning: 3, info: 1 }
+  diagnostics: { error: 10, warning: 3, info: 18 }
