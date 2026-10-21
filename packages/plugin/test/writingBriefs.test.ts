@@ -25,6 +25,12 @@ function spec(): FoundationSpec {
     }],
     textStyles: [{ id: 'S1', name: 'Body/Medium', group: 'Body', description: '', fontFamily: 'Inter', fontStyle: 'Regular', fontSize: 16,
       lineHeight: { unit: 'AUTO' }, letterSpacing: { unit: 'PERCENT', value: 0 }, paragraphSpacing: 0, paragraphIndent: 0,
+      textCase: 'ORIGINAL', textDecoration: 'NONE', boundVariables: {} },
+    { id: 'S2', name: 'Body/Small', group: 'Body', description: '', fontFamily: 'Inter', fontStyle: 'Medium', fontSize: 14,
+      lineHeight: { unit: 'PIXELS', value: 20 }, letterSpacing: { unit: 'PIXELS', value: -0.2 }, paragraphSpacing: 0, paragraphIndent: 0,
+      textCase: 'ORIGINAL', textDecoration: 'NONE', boundVariables: {} },
+    { id: 'S3', name: 'Display', group: 'Display', description: '', fontFamily: 'Inter', fontStyle: 'Bold', fontSize: 48,
+      lineHeight: { unit: 'PERCENT', value: 110 }, letterSpacing: { unit: 'PERCENT', value: -2 }, paragraphSpacing: 0, paragraphIndent: 0,
       textCase: 'ORIGINAL', textDecoration: 'NONE', boundVariables: {} }],
     effectStyles: [{ id: 'E1', name: 'Shadow/Low', group: 'Shadow', description: '', effects: [{}, {}] as never }],
   } as unknown as FoundationSpec;
@@ -64,10 +70,20 @@ describe('briefFor', () => {
     expect(brief.scopes).toBeUndefined();
   });
 
-  it('describes a typography style by its font', () => {
+  it('describes a typography style by its metrics and its place in its group', () => {
+    // A text style's name usually states its size and weight already, so the
+    // brief must carry facts beyond the name or the model has nothing to add.
     expect(briefFor({ kind: 'style', id: 'S1', name: 'Body/Medium', facts: ['typography'] }, { foundation: spec() })).toEqual({
-      key: 'style:S1', kind: 'style', name: 'Body/Medium', type: 'typography', facts: ['Font: Inter Regular, 16px'],
+      key: 'style:S1', kind: 'style', name: 'Body/Medium', type: 'typography',
+      facts: ['Font: Inter Regular, 16px, line height auto, letter spacing 0%', 'Group: Body, 2 text styles from 14px to 16px'],
     });
+    expect(briefFor({ kind: 'style', id: 'S2', name: 'Body/Small', facts: ['typography'] }, { foundation: spec() }).facts)
+      .toEqual(['Font: Inter Medium, 14px, line height 20px, letter spacing -0.2px', 'Group: Body, 2 text styles from 14px to 16px']);
+  });
+
+  it('claims no group scale for a text style alone in its group', () => {
+    expect(briefFor({ kind: 'style', id: 'S3', name: 'Display', facts: ['typography'] }, { foundation: spec() }).facts)
+      .toEqual(['Font: Inter Bold, 48px, line height 110%, letter spacing -2%']);
   });
 
   it('describes an effect style by its layer count', () => {

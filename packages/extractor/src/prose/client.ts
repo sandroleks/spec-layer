@@ -412,12 +412,16 @@ export async function draftDescriptions(
     const keys = items.map((item) => item.key);
     try {
       const { cacheKey, request } = descriptionProseRequest({ items }, tier);
+      // An answer with no usable draft is never kept or replayed: a retry of
+      // the same fields would otherwise get the same nothing back forever.
       const hit = await opts.cacheStore.get(cacheKey);
-      if (hit) { Object.assign(drafts, parseDescriptionDraft(hit, keys)); continue; }
+      const cached = hit ? parseDescriptionDraft(hit, keys) : {};
+      if (Object.keys(cached).length > 0) { Object.assign(drafts, cached); continue; }
       const raw = await postCompletion(opts.proxy ? request : { model: DIRECT_MODEL, ...request }, cacheKey, opts);
       // Parse before caching, as draftProse does.
-      Object.assign(drafts, parseDescriptionDraft(raw, keys));
-      await opts.cacheStore.set(cacheKey, raw);
+      const parsed = parseDescriptionDraft(raw, keys);
+      Object.assign(drafts, parsed);
+      if (Object.keys(parsed).length > 0) await opts.cacheStore.set(cacheKey, raw);
     } catch (error) {
       return { drafts, error };
     }
