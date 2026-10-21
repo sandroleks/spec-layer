@@ -154,6 +154,7 @@ function deps(overrides: Partial<TestDeps> = {}): TestDeps {
     requestLimiter: new SlidingWindowLimiter(60, 60_000),
     libraryStore: new MemKV(),
     record: () => {},
+    events: { write: () => {} },
     ...overrides,
   };
 }

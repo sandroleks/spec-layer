@@ -20,6 +20,7 @@ const QUERIES = [
   'view=library&pane=publish&publish=proposal&plan=free',
   'view=library&pane=history&history=ready',
   'view=settings&tab=export',
+  'view=settings&tab=about&usage=off',
   'view=license&licenseState=expired',
 ];
 

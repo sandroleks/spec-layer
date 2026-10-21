@@ -37,6 +37,23 @@ describe('settings screen presentation', () => {
     expect(markup).toContain('aria-label="Tech doc theme"');
   });
 
+  it('puts the usage data switch on About, on by default, under the versions', () => {
+    const base = { theme: { ...THEME_PRESETS[2].theme }, customMode: false, logoAttached: false, pluginVersion: '7.1.0' };
+    const markup = settingsScrollMarkup({ ...base, tab: 'about' });
+    expect(markup).toContain('<h2 id="sl-usage-heading">Usage data</h2>');
+    expect(markup).toMatch(/id="sl-usage-data" type="checkbox" role="switch" aria-label="Send anonymous usage data" checked \/>/);
+    expect(markup.indexOf('sl-about-versions')).toBeLessThan(markup.indexOf('sl-usage-heading'));
+    // Only what the plugin and the proxy do: counts under a random id, deleted with the switch, kept three months.
+    expect(markup).toContain('Never names, content or your Figma user ID.');
+    expect(markup).toContain('random ID that is deleted when you turn this off');
+    expect(markup).toContain('three months');
+    expect(markup).not.toMatch(/—/);
+    const off = settingsScrollMarkup({ ...base, tab: 'about', usageDataEnabled: false });
+    expect(off).toMatch(/id="sl-usage-data" type="checkbox" role="switch" aria-label="Send anonymous usage data" \/>/);
+    expect(settingsScrollMarkup({ ...base, tab: 'export' })).not.toContain('sl-usage-heading');
+    expect(settingsScrollMarkup({ ...base, tab: 'frames' })).not.toContain('sl-usage-heading');
+  });
+
   it('puts Annotate in Dev Mode on the Export tab, off and without a link by default', () => {
     const base = { theme: { ...THEME_PRESETS[2].theme }, customMode: false, logoAttached: false, pluginVersion: '6.1.0' };
     const markup = settingsScrollMarkup({ ...base, tab: 'export' });

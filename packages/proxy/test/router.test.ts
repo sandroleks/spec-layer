@@ -36,6 +36,7 @@ const baseDeps = () => ({
   requestLimiter: new SlidingWindowLimiter(60, 60_000),
   libraryStore: new MemKV(),
   metrics: { write: vi.fn() },
+  events: { write: vi.fn() },
 });
 
 /** The `n`th data point the route wrote. */

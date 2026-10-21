@@ -21,6 +21,8 @@ export interface DispatchDeps {
   commitUndo(): void;
   notifyError(message: string): void;
   log(message: string, err: unknown): void;
+  /** Tell the UI which message type failed, so it can count the toast. */
+  report?(type: string): void;
 }
 
 /** Shown for a failure no handler anticipated. Plain, second person, no em dashes. */
@@ -35,6 +37,7 @@ export async function dispatchUiMessage(
   } catch (err) {
     deps.log(`[Spec Layer] ${type} failed`, err);
     deps.notifyError(UNEXPECTED_ERROR);
+    deps.report?.(type);
   } finally {
     // After a failure too: whatever the handler changed before it threw is
     // one step, not merged into the next action's.

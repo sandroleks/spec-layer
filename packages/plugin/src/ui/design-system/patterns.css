@@ -2519,10 +2519,18 @@
 /* Every section after the first is separated the same way. */
 .sl-logo-setting,
 .sl-about-section,
-.sl-sync-setting {
+.sl-sync-setting,
+.sl-usage-setting {
   margin-top: var(--sl-space-16);
   padding-top: var(--sl-space-14);
   border-top: 1px solid var(--sl-color-border-muted);
+}
+
+/* About opens with the versions, which carry no divider of their own. */
+.sl-settings-panel > .sl-about-section:first-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
 }
 
 /* Annotate in Dev Mode stacks a field and two button rows under its hints,
@@ -2534,7 +2542,8 @@
   margin-top: var(--sl-space-10);
 }
 
-.sl-sync-setting .sl-doc-option {
+.sl-sync-setting .sl-doc-option,
+.sl-usage-setting .sl-doc-option {
   margin: 0;
 }
 

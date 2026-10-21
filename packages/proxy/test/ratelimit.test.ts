@@ -26,7 +26,8 @@ describe('SlidingWindowLimiter', () => {
   });
 
   it('gives each surface sharing a limiter its own ten thousand keys', () => {
-    expect(REQUEST_LIMITER_MAX_KEYS).toBe(5 * MAX_KEYS_PER_SURFACE);
+    // Six prefixes share requestLimiter since the events route joined (ratelimit.ts).
+    expect(REQUEST_LIMITER_MAX_KEYS).toBe(6 * MAX_KEYS_PER_SURFACE);
     expect(LICENSE_LIMITER_MAX_KEYS).toBe(3 * MAX_KEYS_PER_SURFACE);
     const l = new SlidingWindowLimiter(60, 60_000, REQUEST_LIMITER_MAX_KEYS);
     // Two surfaces each fill the old single-surface ceiling; a fresh key on a third still gets in.

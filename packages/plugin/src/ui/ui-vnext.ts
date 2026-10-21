@@ -139,6 +139,7 @@ import {
   omissionsMessage,
   onFoundationToggleAll,
   pluginBuild,
+  canGenerate,
   restoreDraft,
   resultOutcome,
   send,
@@ -195,6 +196,10 @@ import {
 } from './history';
 import { DriftQueue, libraryCarry, type LibraryCarry } from './libraryPass';
 import { BlockWatch } from '../timing';
+import { usageToken } from '@spec-layer/extractor';
+import {
+  createUsageTracker, externalLinkKind, failureOutcome, licenseLinkKind, mintInstallId, setUsageTracker, trackUsage,
+} from './usage';
 
 const refs: ShellRefs = mountShell('component');
 wireShellTheme(refs);
@@ -214,12 +219,16 @@ let failedBuildPaintedAt = 0;
 let foundationRequested = false;
 let foundationRefreshing = false;
 let foundationAiNote = '';
+/** Whether the running Foundations build asked the model, for its event. */
+let foundationBuildAi = false;
 let settingsCustomMode = false;
 /** A fresh launch opens Settings on Frames; within a session it reopens on the last tab. */
 let settingsTab: SettingsTab = 'frames';
 let settingsColorError = '';
 let settingsFontWarning = '';
 let settingsLogoError = '';
+/** A logo capture is out, so the next `logoCaptured` is a change, not the stored logo at launch. */
+let logoCapturePending = false;
 /** Annotate in Dev Mode, as main last reported it. */
 let annotateOnUpdate = false;
 let annotateFileUrl: string | null = null;
@@ -228,6 +237,47 @@ let annotateFileUrlError = '';
 let annotateFileUrlDraft: string | null = null;
 /** A run is planning, confirming or writing; one at a time. */
 let annotateBusy = false;
+/** Usage data, as main last reported it: the switch and the install id. */
+let usageDataEnabled = true;
+let usageInstallId: string | null = null;
+
+/**
+ * Usage events (ui/usage.ts): queued until main reports the switch, sent in
+ * batches, and flushed with `keepalive` when the iframe is hidden or goes.
+ */
+const usage = createUsageTracker({
+  fetcher: (url, init) => window.fetch(url, init),
+  build: pluginBuild(),
+  tier: () => state.quota?.tier ?? null,
+  schedule: (callback, ms) => window.setTimeout(callback, ms),
+  cancel: (handle) => window.clearTimeout(handle as number),
+});
+setUsageTracker(usage);
+window.addEventListener('pagehide', () => usage.flush());
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') usage.flush();
+});
+
+/**
+ * The Settings switch. On mints a new id; off sends its own change as the
+ * install's last event, then drops the id, so nothing links a later session
+ * to this one. Main stores or deletes the id with the switch.
+ */
+function setUsageDataEnabled(enabled: boolean): void {
+  if (enabled) {
+    usageDataEnabled = true;
+    usageInstallId = mintInstallId();
+    usage.configure(true, usageInstallId);
+    trackUsage('setting_changed', { kind: 'usage_data', detail: 'on' });
+  } else {
+    trackUsage('setting_changed', { kind: 'usage_data', detail: 'off' });
+    usage.flush();
+    usageDataEnabled = false;
+    usageInstallId = null;
+    usage.configure(false, null);
+  }
+  send({ type: 'setUsageData', enabled, installId: usageInstallId });
+}
 
 /** Plan first, confirm, then write. Main plans again before it writes. A run
  *  holds the operation gate throughout, dialogs included, so no build,
@@ -329,6 +379,8 @@ let libraryCheckedAt: number | null = null;
 let pendingLibraryCarry: LibraryCarry | null = null;
 /** The running pass kept results from this earlier check, so it ends no fresher. */
 let libraryCarriedCheckedAt: number | null = null;
+/** When the current pass's scan started, for the `library_check` event's duration. */
+let libraryPassStartedAt: number | null = null;
 /** Wakes when the caption's label next changes, while the Library list shows. */
 let libraryCheckedTimer: ReturnType<typeof setTimeout> | null = null;
 /** The same `DRIFT_TIMING=1` build define main.ts reads; see build.mjs. */
@@ -381,6 +433,8 @@ type LibraryUpdateOperation = {
   /** Each row with the intent decided at start; see libraryUpdateIntent. */
   queue: Array<{ docId: string; intent: DocSourceIntent }>;
   currentDocId: string | null;
+  /** The current row's intent, for its `doc_build` event. */
+  currentIntent: DocSourceIntent | null;
   completed: number;
   total: number;
   batch: boolean;
@@ -506,7 +560,11 @@ function nativeNotify(
 }
 
 installErrorReporting(window, {
-  log: (message, detail) => console.error(message, detail),
+  log: (message, detail) => {
+    console.error(message, detail);
+    // Counted per console line, not per toast: the quiet period hides repeats.
+    trackUsage('unexpected_error', { kind: 'ui' });
+  },
   notify: (message) => nativeNotify(message, { error: true }),
   now: () => Date.now(),
 });
@@ -603,6 +661,7 @@ function paintScreen(): void {
         annotateFileUrl,
         annotateBusy,
         operationActive: operation.active,
+        usageDataEnabled,
         ...(annotateFileUrlDraft !== null ? { annotateFileUrlDraft } : {}),
         ...(annotateFileUrlError ? { annotateFileUrlError } : {}),
         ...(settingsColorError ? { colorError: settingsColorError } : {}),
@@ -851,6 +910,17 @@ function stampLibraryChecked(): void {
   libraryCheckedAt = libraryCarriedCheckedAt ?? Date.now();
   libraryCarriedCheckedAt = null;
   syncLibraryCheckedTimer();
+  // One event per settled pass: how many docs, how many offer an Update or a
+  // rebuild, and how long the checks took from the scan.
+  let offered = 0;
+  for (const status of libraryDrift.values()) if (status === 'drifted' || status === 'staleVersion') offered += 1;
+  trackUsage('library_check', {
+    outcome: libraryReadIncomplete ? 'incomplete' : 'ok',
+    count: libraryEntries.length,
+    count2: offered,
+    duration_ms: libraryPassStartedAt === null ? 0 : Date.now() - libraryPassStartedAt,
+  });
+  libraryPassStartedAt = null;
 }
 
 function navigateToView(
@@ -1115,6 +1185,7 @@ async function buildFoundations(): Promise<void> {
   let groupDescriptions: Record<string, string> | undefined;
   let collectionOverviews: Record<string, string> | undefined;
   const briefs = currentGroupBriefs();
+  foundationBuildAi = briefs !== null && foundationAiRequested(state, briefs);
 
   // One brief per selected collection, so a spacing-only collection still gets an overview.
   if (briefs && foundationAiRequested(state, briefs)) {
@@ -1229,6 +1300,7 @@ function checkLibrary(): void {
 }
 
 function startLibraryDriftChecks(carry: LibraryCarry | null): void {
+  libraryPassStartedAt = Date.now();
   libraryCarriedCheckedAt = carry?.checkedAt ?? null;
   // A carried row is not checked again, so the gaps its check read still hold.
   const carriedGaps = new Map([...libraryComponentGaps].filter(([docId]) => carry?.checks.has(docId)));
@@ -1514,7 +1586,11 @@ async function draftAllForRow(docId: string): Promise<void> {
     if (error !== undefined) nativeNotify(aiFailureNote(state, error, 'descriptions'), { error: true });
     else if (landed < open.length) nativeNotify(draftFailedNote(open.length - landed));
     if (landed > 0) nativeNotify(draftedToast(landed));
+    trackUsage('description_draft', {
+      outcome: error !== undefined ? failureOutcome(error) : 'ok', count: landed, count2: open.length,
+    });
   } catch (error) {
+    trackUsage('description_draft', { outcome: failureOutcome(error), count: 0, count2: items.length });
     nativeNotify(aiFailureNote(state, error, 'descriptions'), { error: true });
   } finally {
     libraryDrafting.delete(docId);
@@ -1609,6 +1685,14 @@ function finishLibraryOperation(error = '', canceled = false): void {
   // Backstop for an operation that aborted before the docSource handler drained
   // this slot: a leftover note must not reach a later, unrelated action.
   state.pendingAiNote = '';
+  if (active.kind === 'update') {
+    trackUsage('library_update', {
+      kind: active.batch ? 'all' : 'one',
+      outcome: canceled ? 'canceled' : error ? 'failed' : 'ok',
+      count: active.completed,
+      count2: active.total,
+    });
+  }
   if (message) {
     nativeNotify(
       message,
@@ -1647,6 +1731,7 @@ function dispatchNextLibraryUpdate(): void {
     return;
   }
   active.currentDocId = docId;
+  active.currentIntent = intent;
   if (entry.kind === 'foundation') {
     send({ type: 'updateFoundationDoc', docId, batchId: active.batchId });
   } else {
@@ -1702,6 +1787,7 @@ async function startLibraryUpdates(
     kind: 'update',
     queue: docIds.map((docId) => ({ docId, intent: libraryUpdateIntent(libraryDrift.get(docId)) })),
     currentDocId: null,
+    currentIntent: null,
     completed: 0,
     total: docIds.length,
     batch,
@@ -1717,8 +1803,22 @@ async function startLibraryUpdates(
 function completeCurrentLibraryUpdate(): void {
   const active = libraryOperation;
   if (!active || active.kind !== 'update' || !active.currentDocId) return;
+  // One event per doc, as Create sends one: a Foundation row is one replaced
+  // doc and never asks the model; a component row counts its placeholders.
+  if (libraryEntry(active.currentDocId)?.kind === 'foundation') {
+    trackUsage('foundation_build', { kind: 'update', detail: 'no_ai', outcome: 'ok', count: 0, count2: 1 });
+  } else {
+    trackUsage('doc_build', {
+      kind: active.currentIntent === 'rebuild' ? 'rebuild' : 'update',
+      detail: active.currentIntent === 'rebuild' && canGenerate(state) ? 'ai' : 'no_ai',
+      outcome: 'ok',
+      count: 0,
+      count2: state.lastOmitted.filter((o) => o.reason === 'placeholder').length,
+    });
+  }
   active.completed += 1;
   active.currentDocId = null;
+  active.currentIntent = null;
   // Fold in this doc's omissions and clear the slot so the next doc cannot
   // inherit them; deduplicated so a batch reports each once.
   for (const o of state.lastOmitted) {
@@ -2089,7 +2189,10 @@ function selectSettingsTab(next: SettingsTab): void {
 }
 
 function chooseComponentFormat(value: ComponentFormat): void {
-  if (value !== state.componentFormat) setComponentFormat(state, value);
+  if (value !== state.componentFormat) {
+    setComponentFormat(state, value);
+    trackUsage('setting_changed', { kind: 'component_format', detail: value });
+  }
   paintAndFocus(`[data-component-format="${value}"]`);
 }
 
@@ -2326,6 +2429,7 @@ document.addEventListener('click', (event) => {
     if (libraryId && pullKey) {
       const command = setupCommand(libraryId, pullKey, state.componentFormat);
       void copyText(command).then((tier) => {
+        trackUsage('copy_for_ai', { kind: 'setup_command', detail: 'text', outcome: tier === 'manual' ? 'manual' : 'ok' });
         if (tier === 'manual') renderManualCopyModal(command);
         else nativeNotify('Copied.');
       });
@@ -2338,6 +2442,7 @@ document.addEventListener('click', (event) => {
     if (libraryId && pullKey) {
       const message = agentSetupMessage(libraryId, pullKey, state.componentFormat);
       void copyText(message).then((tier) => {
+        trackUsage('copy_for_ai', { kind: 'agent_setup', detail: 'text', outcome: tier === 'manual' ? 'manual' : 'ok' });
         if (tier === 'manual') renderManualCopyModal(message);
         else nativeNotify('Copied.');
       });
@@ -2539,7 +2644,10 @@ document.addEventListener('click', (event) => {
   const licenseOpen = target.closest<HTMLButtonElement>('[data-license-open]');
   if (licenseOpen?.dataset.licenseOpen) {
     const url = licenseExternalUrl(licenseOpen.dataset.licenseOpen);
-    if (url) send({ type: 'openBrowser', url });
+    if (url) {
+      trackUsage('external_link', { kind: licenseLinkKind(licenseOpen.dataset.licenseOpen) });
+      send({ type: 'openBrowser', url });
+    }
     return;
   }
 
@@ -2602,6 +2710,7 @@ document.addEventListener('click', (event) => {
     settingsCustomMode = true;
     settingsCustomDraft ??= { ...THEME_PRESETS[0].theme };
     setBrandTheme(state, { ...settingsCustomDraft });
+    trackUsage('setting_changed', { kind: 'frame_theme', detail: 'custom' });
     paintAndFocus('[data-theme-preset="__custom__"]');
     return;
   }
@@ -2616,12 +2725,15 @@ document.addEventListener('click', (event) => {
     if (!preset) return;
     settingsCustomMode = false;
     setBrandTheme(state, { ...preset.theme });
+    // A preset's name is a product constant, never something a person typed.
+    trackUsage('setting_changed', { kind: 'frame_theme', detail: usageToken(preset.name.toLowerCase()) });
     paintAndFocus(`[data-theme-preset="${themeChoice.dataset.themePreset}"]`);
     return;
   }
 
   if (target.closest('[data-settings-logo-capture]')) {
     settingsLogoError = '';
+    logoCapturePending = true;
     send({ type: 'captureLogo' });
     return;
   }
@@ -2746,7 +2858,14 @@ document.addEventListener('change', (event) => {
   if (input.id === 'sl-sync-on-update') {
     annotateOnUpdate = input.checked;
     send({ type: 'setAnnotateOnUpdate', value: input.checked });
+    trackUsage('setting_changed', { kind: 'annotate_on_update', detail: input.checked ? 'on' : 'off' });
     paintAndFocus('#sl-sync-on-update');
+    return;
+  }
+
+  if (input.id === 'sl-usage-data') {
+    setUsageDataEnabled(input.checked);
+    paintAndFocus('#sl-usage-data');
     return;
   }
 
@@ -2795,6 +2914,7 @@ document.addEventListener('change', (event) => {
   if (input.id === 'sl-ai-toggle') {
     selection.aiEnabled = input.checked;
     setAiEnabled(state, input.checked);
+    trackUsage('setting_changed', { kind: 'ai_writing', detail: input.checked ? 'on' : 'off' });
     paintAndFocus('#sl-ai-toggle');
     return;
   }
@@ -3269,6 +3389,13 @@ const handleMainMessage = (event: MessageEvent): void => {
         const note = state.pendingAiNote;
         // Every omission is named, placeholders included; the AI note says why.
         const outcome = omissionsMessage(resultOutcome(Boolean(msg.replaced)), state.lastOmitted);
+        trackUsage('doc_build', {
+          kind: msg.replaced ? 'update' : 'create',
+          detail: canGenerate(state) ? 'ai' : 'no_ai',
+          outcome: 'ok',
+          count: selection.sections.size,
+          count2: state.lastOmitted.filter((o) => o.reason === 'placeholder').length,
+        });
         screen = {
           kind: 'success',
           componentName: currentName(),
@@ -3292,9 +3419,15 @@ const handleMainMessage = (event: MessageEvent): void => {
 
     case 'docFrameError':
       if (libraryOperation?.kind === 'update' && libraryOperation.currentDocId) {
+        trackUsage('doc_build', {
+          kind: libraryOperation.currentIntent === 'rebuild' ? 'rebuild' : 'update', outcome: 'failed',
+        });
         finishLibraryOperation(`Couldn’t update this doc. (${msg.message})`);
         return;
       }
+      trackUsage('doc_build', {
+        kind: currentHasDoc() ? 'update' : 'create', detail: canGenerate(state) ? 'ai' : 'no_ai', outcome: 'failed',
+      });
       stopComponentProgress();
       // The failure stays on the panel until the next Create or selection: a
       // toast is gone before the reader looks up. Create is the retry; a
@@ -3340,6 +3473,24 @@ const handleMainMessage = (event: MessageEvent): void => {
       paint();
       return;
 
+    case 'usageData':
+      usageDataEnabled = msg.enabled;
+      usageInstallId = msg.installId;
+      // On with no stored id: this install's first session under the switch,
+      // or a damaged entry. Mint one and have main keep it.
+      if (usageDataEnabled && usageInstallId === null) {
+        usageInstallId = mintInstallId();
+        send({ type: 'setUsageData', enabled: true, installId: usageInstallId });
+      }
+      usage.configure(usageDataEnabled, usageInstallId);
+      if (view === 'settings') paint();
+      return;
+
+    case 'mainFailed':
+      // The message type is one of this file's own constants, never a value.
+      trackUsage('unexpected_error', { kind: 'main', detail: usageToken(msg.messageType) });
+      return;
+
     case 'annotateSettings':
       annotateOnUpdate = msg.onUpdate;
       annotateFileUrl = msg.fileUrl;
@@ -3366,6 +3517,12 @@ const handleMainMessage = (event: MessageEvent): void => {
     case 'annotateDone': {
       const toast = resultToast(msg.result);
       nativeNotify(toast.message, toast.error ? { error: true } : {});
+      trackUsage('annotate', {
+        kind: msg.scope.kind,
+        outcome: msg.result.failed.length > 0 ? 'failed' : 'ok',
+        count: msg.result.components,
+        count2: msg.result.failed.length,
+      });
       // Replace is offered from what this run kept and had not reported
       // before, so a kept value is asked about once, and never on top of a
       // failure, which the toast is still reporting. A row's run with
@@ -3381,6 +3538,7 @@ const handleMainMessage = (event: MessageEvent): void => {
 
     case 'annotateError':
       nativeNotify(`Couldn’t annotate in Dev Mode: ${msg.message}`, { error: true });
+      trackUsage('annotate', { outcome: 'failed' });
       endAnnotate();
       return;
 
@@ -3404,18 +3562,23 @@ const handleMainMessage = (event: MessageEvent): void => {
       return;
 
     case 'logoCaptured':
+      // The same reply announces a stored logo at launch; only a capture counts.
+      if (logoCapturePending) trackUsage('setting_changed', { kind: 'logo', detail: 'set' });
+      logoCapturePending = false;
       state.logoBase64 = msg.base64;
       settingsLogoError = '';
       paint();
       return;
 
     case 'logoCleared':
+      trackUsage('setting_changed', { kind: 'logo', detail: 'removed' });
       state.logoBase64 = null;
       settingsLogoError = '';
       paint();
       return;
 
     case 'logoError':
+      logoCapturePending = false;
       settingsLogoError = msg.message;
       paint();
       return;
@@ -3477,6 +3640,9 @@ const handleMainMessage = (event: MessageEvent): void => {
         return;
       }
       setFoundationGenerating(false);
+      trackUsage('foundation_build', {
+        kind: 'create', detail: foundationBuildAi ? 'ai' : 'no_ai', outcome: 'ok', count: msg.created, count2: msg.replaced,
+      });
       {
         // Nothing landed means the selected sources are gone; said even with an
         // AI note, which alone would leave the empty result unexplained.
@@ -3504,10 +3670,14 @@ const handleMainMessage = (event: MessageEvent): void => {
         libraryOperation.currentDocId &&
         libraryEntry(libraryOperation.currentDocId)?.kind === 'foundation'
       ) {
+        trackUsage('foundation_build', { kind: 'update', detail: 'no_ai', outcome: 'failed' });
         finishLibraryOperation(`Couldn’t update this doc. (${msg.message})`);
         return;
       }
       setFoundationGenerating(false);
+      trackUsage('foundation_build', {
+        kind: 'create', detail: foundationBuildAi ? 'ai' : 'no_ai', outcome: 'failed', count: msg.created,
+      });
       nativeNotify(
         msg.created > 0
           ? `Created ${msg.created} doc${msg.created === 1 ? '' : 's'}, then the build stopped. `
@@ -3582,6 +3752,9 @@ const handleMainMessage = (event: MessageEvent): void => {
         writtenToast(msg.written.length, msg.failed, libraryEntry(msg.docId)?.label ?? 'The doc'),
         msg.failed.length > 0 ? { error: true } : {},
       );
+      trackUsage('description_save', {
+        outcome: msg.failed.length > 0 ? 'failed' : 'ok', count: msg.written.length, count2: msg.failed.length,
+      });
       const entry = libraryEntry(msg.docId);
       if (msg.written.length === 0) {
         // Nothing moved, so nothing to read again.
@@ -3689,6 +3862,8 @@ const handleMainMessage = (event: MessageEvent): void => {
     case 'libraryError':
       // A failed read establishes nothing: each row says its check did not run
       // rather than keeping an unconfirmed badge, and Refresh comes back.
+      trackUsage('library_check', { outcome: 'failed', count: libraryEntries.length });
+      libraryPassStartedAt = null;
       libraryRequested = true;
       libraryRefreshing = false;
       foundationRereadPending = false;
@@ -3885,6 +4060,16 @@ function timedMainMessage(event: MessageEvent): void {
  */
 window.onmessage = __DRIFT_TIMING__ ? timedMainMessage : handleMainMessage;
 
+// Outbound links are anchors (the guide, the site, support mail); which one
+// opened is counted, never the address itself.
+document.addEventListener('click', (event) => {
+  const target = event.target;
+  if (!(target instanceof Element)) return;
+  const anchor = target.closest<HTMLAnchorElement>('a[href]');
+  if (anchor) trackUsage('external_link', { kind: externalLinkKind(anchor.href) });
+});
+
 paintAllowance();
 paint();
+trackUsage('plugin_opened');
 send({ type: 'requestSelection' });

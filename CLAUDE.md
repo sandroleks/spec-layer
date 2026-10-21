@@ -198,11 +198,17 @@ descriptions, and diagnostics before it can be committed.
 **Usage metrics carry no content.** The proxy writes one data point per
 request to Analytics Engine (`packages/proxy/src/metrics.ts`): route,
 outcome, tier, client build, status, duration, byte and item counts, and the
-hashed identity the log lines already carry. Never a prompt, prose, bundle,
-name, description, key or Figma user id, never anything that changes an
-answer, and never a column reinterpreted: a changed meaning is a new dataset
-name. The plugin only ever adds `X-Plugin-Version` to requests it already
-makes; it sends no events of its own.
+hashed identity the log lines already carry. The plugin's own usage events
+(`packages/plugin/src/ui/usage.ts`, `POST /v1/events`,
+`packages/proxy/src/events.ts`) are the same kind of row under a random
+install id, and only while the Settings switch is on. Never a prompt, prose,
+bundle, name, description, key, URL or Figma user id, never anything that
+changes an answer, and never a column reinterpreted: a changed meaning is a
+new dataset name. Every event is in the catalogue
+`packages/extractor/src/usageEvents.ts`, shared by plugin and proxy; a new
+event or vocabulary value is added there first, with its column meanings,
+and the proxy drops anything outside it. `track` never throws, nothing on a
+build path awaits a send, and an unstamped build sends nothing.
 
 ## Where things stand (2026-10-14)
 

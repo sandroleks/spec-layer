@@ -89,6 +89,8 @@ const worker = {
       // One data point per request (metrics.ts); a failed write is logged
       // there and never reaches the answer.
       metrics: { write: (point) => env.METRICS.writeDataPoint(point) },
+      // One data point per plugin usage event (events.ts), in its own dataset.
+      events: { write: (point) => env.EVENTS.writeDataPoint(point) },
     };
     return route(req, deps);
   },

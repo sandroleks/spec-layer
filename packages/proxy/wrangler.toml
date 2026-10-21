@@ -42,6 +42,13 @@ simple = { limit = 20, period = 60 }
 binding = "METRICS"
 dataset = "spec_layer_requests_v1"
 
+# The plugin's usage events (src/events.ts), one point each, in a dataset of
+# their own: a request and an event are different rows with different
+# columns, and the two must never share a table.
+[[analytics_engine_datasets]]
+binding = "EVENTS"
+dataset = "spec_layer_events_v1"
+
 # Every invocation's logs reach the Workers dashboard. The log volume is a
 # few JSON lines per request, so sampling would only hide the rare
 # `upstream_error` or `fair_use_flag` this is for.
@@ -89,3 +96,7 @@ simple = { limit = 20, period = 60 }
 [[env.staging.analytics_engine_datasets]]
 binding = "METRICS"
 dataset = "spec_layer_requests_v1_staging"
+
+[[env.staging.analytics_engine_datasets]]
+binding = "EVENTS"
+dataset = "spec_layer_events_v1_staging"

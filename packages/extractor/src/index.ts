@@ -45,3 +45,4 @@ export * from './libraryBundle';
 export * from './libraryBundleHash';
 export * from './libraryDiff';
 export * from './componentSlugs';
+export * from './usageEvents';
