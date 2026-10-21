@@ -12,29 +12,27 @@
  * The token needs Account | Account Analytics | Read and nothing else. It is
  * read from the environment, never from a file or an argument, so it has no
  * place to land in this repository; the secret scan rejects its shape if it
- * ever does. The account id is the one in packages/proxy/wrangler.toml.
+ * ever does. The account id is pinned below and held equal to the one in
+ * packages/proxy/wrangler.toml by the test, so the script reads no file:
+ * what leaves it is the fixed endpoint, a statement and the token.
  *
  * Counts are SUM(_sample_interval), never COUNT(), because Analytics Engine
  * samples under load. A dataset that does not exist yet (no plugin build has
  * sent an event) is reported as such, not as a failure. Nothing here writes.
  */
-import { readFileSync, realpathSync } from 'node:fs';
+import { realpathSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 export const TOKEN_ENV = 'CLOUDFLARE_ANALYTICS_TOKEN';
+
+/** The Cloudflare account, as packages/proxy/wrangler.toml names it; the test pins the two together. */
+export const ACCOUNT_ID = 'f3ea0f8b485b5b11e917f415c224b1cb';
 
 /** Analytics Engine keeps three months; a longer window only reads as a shorter one. */
 export const MAX_DAYS = 92;
 
 export function sqlEndpoint(accountId) {
   return `https://api.cloudflare.com/client/v4/accounts/${accountId}/analytics_engine/sql`;
-}
-
-/** The `account_id` line of wrangler.toml, so the id is written once. */
-export function parseAccountId(toml) {
-  const match = /^account_id = "([0-9a-f]{32})"$/m.exec(toml);
-  if (!match) throw new Error('packages/proxy/wrangler.toml names no account_id');
-  return match[1];
 }
 
 /** The two datasets, as wrangler.toml names them for each environment. */
@@ -239,7 +237,7 @@ export function parseArgs(argv) {
  * test: returns the exit code, 0 on a report, 1 on an API failure, 2 on a
  * usage error. The token is read here and reaches nothing but the request.
  */
-export async function cli(argv, env, { fetchFn = fetch, stdout, stderr, wranglerToml }) {
+export async function cli(argv, env, { fetchFn = fetch, stdout, stderr }) {
   const options = parseArgs(argv);
   if (typeof options === 'string') {
     stderr(`${options}\n${USAGE}`);
@@ -252,7 +250,7 @@ export async function cli(argv, env, { fetchFn = fetch, stdout, stderr, wrangler
   }
   let report;
   try {
-    report = await runReport({ accountId: parseAccountId(wranglerToml), token, days: options.days, staging: options.staging, fetchFn });
+    report = await runReport({ accountId: ACCOUNT_ID, token, days: options.days, staging: options.staging, fetchFn });
   } catch (err) {
     stderr(err instanceof Error ? err.message : String(err));
     return 1;
@@ -262,11 +260,9 @@ export async function cli(argv, env, { fetchFn = fetch, stdout, stderr, wrangler
 }
 
 async function main() {
-  const toml = readFileSync(new URL('../packages/proxy/wrangler.toml', import.meta.url), 'utf8');
   const code = await cli(process.argv.slice(2), process.env, {
     stdout: (text) => process.stdout.write(text),
     stderr: (text) => console.error(text),
-    wranglerToml: toml,
   });
   process.exit(code);
 }

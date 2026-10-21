@@ -2,12 +2,12 @@ import { describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import {
-  MAX_DAYS, SECTIONS, SCRIPT_PATH, TOKEN_ENV, USAGE, cli, datasetNames, formatCell, formatTable, listDatasets,
-  parseAccountId, parseArgs, query, renderReport, runReport, sqlEndpoint,
+  ACCOUNT_ID, MAX_DAYS, SECTIONS, SCRIPT_PATH, TOKEN_ENV, USAGE, cli, datasetNames, formatCell, formatTable,
+  listDatasets, parseArgs, query, renderReport, runReport, sqlEndpoint,
 } from './analytics-report.mjs';
 
 const WRANGLER = readFileSync(new URL('../packages/proxy/wrangler.toml', import.meta.url), 'utf8');
-const ACCOUNT = parseAccountId(WRANGLER);
+const ACCOUNT = ACCOUNT_ID;
 // Shaped like nothing the secret scan knows; never a real token.
 const TOKEN = 'test-token-for-the-report';
 
@@ -27,10 +27,11 @@ function fakeApi(datasets: string[], answers: Array<[string, Row[]]> = []) {
 }
 
 describe('configuration', () => {
-  it('reads the account id from wrangler.toml and refuses a file without one', () => {
-    expect(ACCOUNT).toMatch(/^[0-9a-f]{32}$/);
+  it('pins the account id to the one wrangler.toml deploys with', () => {
+    // Pinned in the script rather than read from the file, so the script's
+    // one outbound request depends on nothing but its constants and the token.
+    expect(ACCOUNT_ID).toBe(/^account_id = "([0-9a-f]{32})"$/m.exec(WRANGLER)?.[1]);
     expect(sqlEndpoint(ACCOUNT)).toBe(`https://api.cloudflare.com/client/v4/accounts/${ACCOUNT}/analytics_engine/sql`);
-    expect(() => parseAccountId('name = "x"\n')).toThrow('names no account_id');
   });
 
   it('names the datasets wrangler.toml binds, per environment', () => {
@@ -162,7 +163,7 @@ describe('cli', () => {
   const io = () => {
     const out: string[] = [];
     const err: string[] = [];
-    return { out, err, stdout: (t: string) => { out.push(t); }, stderr: (t: string) => { err.push(t); }, wranglerToml: WRANGLER };
+    return { out, err, stdout: (t: string) => { out.push(t); }, stderr: (t: string) => { err.push(t); } };
   };
 
   it('parses its arguments and refuses the rest with usage', () => {
