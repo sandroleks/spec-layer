@@ -1,4 +1,23 @@
+import { PLUGIN_VERSION_HEADER } from '@spec-layer/extractor';
 import type { ProseProxyErrorCode, ProxyQuota } from '@spec-layer/extractor';
+
+declare const __PLUGIN_VERSION__: string;
+
+/** The build version esbuild stamped, or null in a build that stamped none
+ *  (a test, the harness). Never a guess: an unstamped build sends nothing. */
+export function pluginVersion(): string | null {
+  return typeof __PLUGIN_VERSION__ === 'string' ? __PLUGIN_VERSION__ : null;
+}
+
+/**
+ * `X-Plugin-Version` for every request to the proxy, so its usage metrics
+ * can tell which builds are in use (the manifest's network reasoning says
+ * so). Empty when the build is unstamped. The extractor's prose client adds
+ * the same header from `proxy.pluginVersion`.
+ */
+export function clientHeaders(version: string | null = pluginVersion()): Record<string, string> {
+  return version ? { [PLUGIN_VERSION_HEADER]: version } : {};
+}
 
 // Production API. Keep this host aligned with the manifest's network access.
 export const PROXY_URL = 'https://api.spec-layer.com';
@@ -138,7 +157,7 @@ export async function fetchQuota(
   const headers = authHeaders(auth);
   if (!headers) return null;
   try {
-    const res = await fetcher(`${PROXY_URL}/v1/quota`, { headers });
+    const res = await fetcher(`${PROXY_URL}/v1/quota`, { headers: { ...headers, ...clientHeaders() } });
     if (!res.ok) return null;
     return (await res.json()) as ProxyQuota;
   } catch {
@@ -165,7 +184,7 @@ export async function activateLicense(
   const body = instanceId ? { key, instanceId } : { key, instanceName: activationInstanceName(now) };
   const res = await fetcher(`${PROXY_URL}/v1/license/activate`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', ...clientHeaders() },
     body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(`activation failed: ${res.status}`);
@@ -181,7 +200,7 @@ export async function deactivateLicense(
   try {
     const res = await fetcher(`${PROXY_URL}/v1/license/deactivate`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', ...clientHeaders() },
       body: JSON.stringify({ key, instanceId }),
     });
     if (!res.ok) return false;

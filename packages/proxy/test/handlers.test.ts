@@ -4,6 +4,7 @@ import { handleProse, requestLog, UPSTREAM_TIMEOUT_MS, type QuotaClient } from '
 import { RESERVATION_TTL_MS } from '../src/quota';
 import { memQuota } from './quotaHarness';
 import { SlidingWindowLimiter } from '../src/ratelimit';
+import { hashFigmaId } from '../src/identity';
 import {
   proseRequest, proseCacheKey,
   LEGACY_PROSE_SYSTEM_PROMPT, legacyProseFewShot, LEGACY_PROSE_MAX_TOKENS,
@@ -82,10 +83,41 @@ function deps(overrides: Partial<Parameters<typeof handleProse>[1]> = {}) {
     licenseLimiter: new SlidingWindowLimiter(20, 60_000),
     requestLimiter: new SlidingWindowLimiter(60, 60_000),
     libraryStore: new MemKV(),
+    record: vi.fn(),
     _anthropic: anthropic,
     ...overrides,
   };
 }
+
+/** Every fact the handler recorded, merged as route()'s collector would. */
+function recorded(d: Pick<Parameters<typeof handleProse>[1], 'record'>): Record<string, unknown> {
+  const calls = (d.record as unknown as { mock: { calls: [Record<string, unknown>][] } }).mock.calls;
+  return Object.assign({}, ...calls.map(([facts]) => facts)) as Record<string, unknown>;
+}
+
+describe('handleProse usage facts', () => {
+  it('records the contract, the identity, the tier and one billed generation', async () => {
+    const d = deps();
+    await handleProse(proseReq(GOOD_BODY, { 'X-Figma-User': 'u1' }), d);
+    expect(recorded(d)).toEqual({
+      kind: 'component', detail: 'v9', identity: `free:${hashFigmaId('u1', 'salt')}`, tier: 'free', count: 1,
+    });
+  });
+
+  it('records no generation for a cached replay, and the contract for a refused request', async () => {
+    const d = deps();
+    await handleProse(proseReq(GOOD_BODY, { 'X-Figma-User': 'u1' }), d);
+    const replay = { ...d, record: vi.fn() };
+    await handleProse(proseReq(GOOD_BODY, { 'X-Figma-User': 'u1' }), replay);
+    expect(recorded(replay).count).toBeUndefined();
+    const refused = deps();
+    const res = await handleProse(proseReq(PRO_BODY, { 'X-Figma-User': 'u1' }), refused);
+    expect(res.status).toBe(400);
+    expect(recorded(refused)).toEqual({
+      kind: 'component', detail: 'v9', identity: `free:${hashFigmaId('u1', 'salt')}`, tier: 'free',
+    });
+  });
+});
 
 describe('handleProse', () => {
   it('free user: forwards to Anthropic and returns quota headers', async () => {

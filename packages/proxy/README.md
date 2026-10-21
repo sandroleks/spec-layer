@@ -12,7 +12,9 @@ lapsed key proving ownership) and/or `X-Figma-User: <figma-user-id>` (free;
 stored only as a salted SHA-256 hash). AI writing meters against the license
 when a bearer is present. Library endpoints read both headers: the tier comes
 from the license when it is active, and a library is owned by any identity the
-caller proves.
+caller proves. The plugin also sends `X-Plugin-Version: <build>` on every
+request, and the CLI a `spec-layer/<version>` user agent; both are optional
+and only name the client in the usage metrics below.
 
 ### `POST /v1/prose`
 
@@ -264,10 +266,66 @@ beside a small `engine` counter record, with the newest 500 responses retained
 per identity; prompts and prose are never logged. An `engine` value written
 before this split is migrated to that layout the first time it is read.
 
+## Usage metrics
+
+Every request writes one data point to Workers Analytics Engine
+(`src/metrics.ts`, the `METRICS` binding, dataset `spec_layer_requests_v1`;
+staging writes to `spec_layer_requests_v1_staging`). A point is counters,
+codes and the hashed identity the logs already carry, never content: no
+prompt, prose, bundle, name, description, key or Figma user id reaches it.
+Handlers record what only they know through `deps.record`; `route` writes
+the point once the answer is final, and a failed write is logged as
+`metrics_write_failed` and never changes the answer. Analytics Engine keeps
+points for three months and samples under load, so a count is
+`SUM(_sample_interval)`, not `COUNT()`.
+
+Columns are positional. The layout is fixed in `dataPoint`; a column that
+changes meaning takes a new dataset name, never a reinterpretation of the
+rows already written.
+
+| Column | Value |
+|---|---|
+| `index1` | The hashed quota identity the request proved, `lic:<sha256 of the key>` or `free:<salted sha256 of the Figma id>`, the same string the log lines carry; absent when the request proved none (a pull, a preflight, a 404) |
+| `blob1` | Route: `prose`, `quota`, `activate`, `deactivate`, `publish`, `pull`, `rotate`, `versions`, `preflight`, `unmatched` |
+| `blob2` | Outcome: `ok` under 400, else the answer's `error` code (`quota_exhausted`, `not_found`, ...), else `http_<status>` |
+| `blob3` | The tier the request proved: `pro`, `free`, or empty |
+| `blob4` | Client: `plugin/<version>` from `X-Plugin-Version`, `cli/<version>` from the CLI's user agent, or empty |
+| `blob5` | Route detail: the prose contract kind (`component`, `groups`, `descriptions`); the publish outcome (`created`, `updated`, `unchanged`, `replayed`, `dry_run`); the license verdict (`active`, `expired`, `invalid`, ...) |
+| `blob6` | Route detail: the prose contract version (`v9`, or `v8` from a 5.1.0 plugin); the publish bump (`initial`, `major`, `minor`, `patch`), or a dry run's minimum; `activate` or `validate` on the license route |
+| `blob7` | The library id a library route addressed, else empty |
+| `double1` | HTTP status |
+| `double2` | Duration in milliseconds, from the first line of `route` to the answer |
+| `double3` | Bytes: the body a publish or prose request carried, the bundle a pull served, else the request's `Content-Length` |
+| `double4` | Count: billed generations on `prose` (1 when Anthropic answered), components in the bundle on `publish` |
+
+Query it through the SQL API: a POST of the query text to
+`https://api.cloudflare.com/client/v4/accounts/<account_id>/analytics_engine/sql`
+with a bearer API token holding Account Analytics Read (the account id is in
+`wrangler.toml`). `SHOW TABLES` lists the datasets that exist so far; a
+request such as this one answers the weekly picture:
+
+```sql
+SELECT blob1 AS route, blob2 AS outcome, blob4 AS client, SUM(_sample_interval) AS requests
+FROM spec_layer_requests_v1
+WHERE timestamp > NOW() - INTERVAL '7' DAY
+GROUP BY route, outcome, client
+ORDER BY requests DESC
+```
+
+`COUNT(DISTINCT index1)` on a route, with `index1 != ''`, counts active
+callers; a legacy 5.1.0 prose request carries `blob6 = 'v8'`, which is how
+"has 5.1.0 traffic stopped" is answered before its branch is removed.
+
 ## Accepted risks and operational notes
 
 - **License identities are hashed.** License-cache keys, quota Durable Object
   names, and log lines all carry `sha256(key)`, never the raw license key.
+- **Usage metrics keep the hashed identity for three months.** Each data
+  point's index is the same digest the log lines carry (a license key's
+  `sha256`, or the salted `sha256` of a Figma user id), retained by Analytics
+  Engine for three months, longer than Workers Logs keep a line. Nothing in a
+  point reverses to a key or a Figma id, and no content is recorded; see
+  "Usage metrics".
 - **Device instances are validated per request.** Every call checks the
   `key:instanceId` bearer against Lemon Squeezy; deactivating a device in the
   LS dashboard frees its slot, visible here within the 24h cache TTL.
@@ -453,6 +511,7 @@ the model assigned by the proxy for the tier (Haiku on free).
 |---|---|---|
 | `LICENSE_CACHE` | KV namespace | Two unrelated datasets. License status cache keyed by a SHA-256 digest (30-day TTL), **and** durable library storage under `lib:` / `libowner:` keys with no expiry (see ARCHITECTURE.md for the record layout). Despite the name, this namespace is not disposable. |
 | `QUOTA` | Durable Object → `QuotaDO` | Per-identity quota state |
+| `METRICS` | Analytics Engine dataset | One data point per request (`src/metrics.ts`), queried with SQL, kept three months. Staging writes to its own dataset. |
 | `ANTHROPIC_API_KEY` | secret | Upstream auth |
 | `FIGMA_ID_SALT` | secret | Salted hashing of Figma user IDs. Rotating it resets all free-tier quotas — don't rotate casually. |
 
@@ -469,6 +528,13 @@ Every change merged to `main` that touches `packages/proxy/`,
    probes that call no upstream and write nothing;
 3. waits for approval in the GitHub `production` environment, then runs
    `wrangler deploy` and the same smoke test against `api.spec-layer.com`.
+
+The `METRICS` binding needs no setup on the account: Analytics Engine creates
+a dataset the first time a Worker writes to it, so `spec_layer_requests_v1`
+exists once production has answered one request, and the staging dataset
+once the smoke test's three probes have run. Reading it needs an API token
+with Account Analytics Read, kept out of this repository; see "Usage
+metrics" for the query.
 
 A run by hand can pick `rollout: upload-only`, which uploads the production
 version with `wrangler versions upload` and routes no traffic to it, so a

@@ -12,7 +12,7 @@ import {
 } from '@spec-layer/extractor';
 import { DEFAULT_COMPONENT_FORMAT, type ComponentFormat } from '../componentFormat';
 import { pluginBuild, generatedGuidelines } from './actions';
-import { PROXY_URL, authHeaders, isLibraryId, type ProxyAuth } from './proxy';
+import { PROXY_URL, authHeaders, clientHeaders, isLibraryId, type ProxyAuth } from './proxy';
 import { formatResetDate } from './viewModel/allowance';
 import { buildSkillFiles, skillZipFilename } from './skillZip';
 import { downloadBytes, zipFiles } from './download';
@@ -257,7 +257,9 @@ export async function publishBundle(
   try {
     res = await doFetch(`${PROXY_URL}/v1/libraries`, {
       method: 'POST',
-      headers: { ...withPullKey(headers, opts.libraryId ? opts.pullKey : null), 'content-type': 'application/json' },
+      headers: {
+        ...withPullKey(headers, opts.libraryId ? opts.pullKey : null), ...clientHeaders(), 'content-type': 'application/json',
+      },
       body: JSON.stringify({
         ...(opts.libraryId ? { libraryId: opts.libraryId } : {}),
         bundle,
@@ -311,7 +313,7 @@ export async function dryRunBundle(
   try {
     res = await doFetch(`${PROXY_URL}/v1/libraries`, {
       method: 'POST',
-      headers: { ...withPullKey(headers, opts.pullKey), 'content-type': 'application/json' },
+      headers: { ...withPullKey(headers, opts.pullKey), ...clientHeaders(), 'content-type': 'application/json' },
       body: JSON.stringify({ libraryId: opts.libraryId, bundle, dryRun: true }),
     });
   } catch {
@@ -347,7 +349,9 @@ export async function rotatePullKey(
   const doFetch = fetcher ?? fetch;
   let res: Response;
   try {
-    res = await doFetch(`${PROXY_URL}/v1/libraries/${libraryId}/rotate`, { method: 'POST', headers: withPullKey(headers, pullKey) });
+    res = await doFetch(`${PROXY_URL}/v1/libraries/${libraryId}/rotate`, {
+      method: 'POST', headers: { ...withPullKey(headers, pullKey), ...clientHeaders() },
+    });
   } catch {
     return { kind: 'error', message: UNREACHABLE };
   }

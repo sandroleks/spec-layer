@@ -4,7 +4,7 @@
  * a reopen sends If-None-Match and keeps its log on a 304.
  */
 import type { VersionLog } from '@spec-layer/extractor';
-import { PROXY_URL, isLibraryId } from './proxy';
+import { PROXY_URL, clientHeaders, isLibraryId } from './proxy';
 
 interface HistoryStateBase {
   log: VersionLog | null;
@@ -43,7 +43,9 @@ export async function fetchVersionLog(opts: {
   let res: Response;
   try {
     res = await doFetch(`${PROXY_URL}/v1/libraries/${opts.libraryId}/versions`, {
-      headers: { Authorization: `Bearer ${opts.pullKey}`, ...(opts.etag ? { 'If-None-Match': opts.etag } : {}) },
+      headers: {
+        Authorization: `Bearer ${opts.pullKey}`, ...clientHeaders(), ...(opts.etag ? { 'If-None-Match': opts.etag } : {}),
+      },
     });
   } catch {
     return { kind: 'error', message: UNREACHABLE };

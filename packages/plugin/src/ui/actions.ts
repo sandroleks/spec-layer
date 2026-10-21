@@ -20,7 +20,7 @@ import type { DocConfig } from '../docLink';
 import { generateProse } from './ai';
 import {
   AI_CONSEQUENCE, aiFailedCopy, effectiveAuth, generationErrorCopy, isNetworkFailure,
-  unreachableCopy, type AiBuildKind,
+  pluginVersion, unreachableCopy, type AiBuildKind,
 } from './proxy';
 import { formatResetDate } from './viewModel/allowance';
 import { emptyBrandTheme, type BrandTheme } from '../brandColors';
@@ -35,10 +35,9 @@ import {
 } from './foundationState';
 import { copyText, renderManualCopyModal } from './clipboard';
 
-declare const __PLUGIN_VERSION__: string;
-
-export const pluginBuild = (): string | null =>
-  typeof __PLUGIN_VERSION__ === 'string' ? __PLUGIN_VERSION__ : null;
+/** The stamped build version, or null when unstamped. One reader, in proxy.ts,
+ *  so the artifacts' `build` and the proxy header never disagree. */
+export const pluginBuild = pluginVersion;
 
 // ---------------------------------------------------------------------------
 // State

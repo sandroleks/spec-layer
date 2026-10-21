@@ -2,9 +2,38 @@ import { describe, it, expect, vi } from 'vitest';
 import type { ProxyQuota } from '@spec-layer/extractor';
 import {
   authHeaders, fetchQuota, activateLicense, activationInstanceName, deactivateLicense, PROXY_URL,
-  CHECKOUT_URL, effectiveAuth, generationErrorCopy, isNetworkFailure, isQuotaExhausted,
-  licenseExternalUrl, publishAuth, unreachableCopy,
+  CHECKOUT_URL, clientHeaders, effectiveAuth, generationErrorCopy, isNetworkFailure, isQuotaExhausted,
+  licenseExternalUrl, pluginVersion, publishAuth, unreachableCopy,
 } from '../src/ui/proxy';
+
+describe('clientHeaders', () => {
+  it('names the stamped build, and nothing when the build is unstamped', () => {
+    expect(clientHeaders('7.0.0')).toEqual({ 'X-Plugin-Version': '7.0.0' });
+    expect(clientHeaders(null)).toEqual({});
+    // No esbuild define under vitest, so the default is the unstamped case.
+    expect(pluginVersion()).toBeNull();
+    expect(clientHeaders()).toEqual({});
+  });
+
+  it('rides every proxy request once the build is stamped', async () => {
+    vi.stubGlobal('__PLUGIN_VERSION__', '7.0.0');
+    try {
+      const quota = vi.fn(async () => new Response(
+        JSON.stringify({ tier: 'free', used: 0, limit: 20, remaining: 20, resetsAt: '2026-08-10T00:00:00.000Z' }), { status: 200 },
+      ));
+      await fetchQuota({ licenseKey: null, licenseInstanceId: null, figmaUserId: 'u1' }, quota as unknown as typeof fetch);
+      expect(quota).toHaveBeenCalledWith(`${PROXY_URL}/v1/quota`, { headers: { 'X-Figma-User': 'u1', 'X-Plugin-Version': '7.0.0' } });
+      const activate = vi.fn(async () => new Response(JSON.stringify({ valid: true, status: 'active' }), { status: 200 }));
+      await activateLicense('LK-1', 'i1', activate as unknown as typeof fetch);
+      expect((activate.mock.calls[0] as unknown as [string, RequestInit])[1].headers).toMatchObject({ 'X-Plugin-Version': '7.0.0' });
+      const deactivate = vi.fn(async () => new Response(JSON.stringify({ deactivated: true }), { status: 200 }));
+      await deactivateLicense('LK-1', 'i1', deactivate as unknown as typeof fetch);
+      expect((deactivate.mock.calls[0] as unknown as [string, RequestInit])[1].headers).toMatchObject({ 'X-Plugin-Version': '7.0.0' });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
 
 describe('authHeaders', () => {
   it('sends the license key and the figma identity together when both are known', () => {

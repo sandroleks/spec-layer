@@ -153,8 +153,15 @@ function deps(overrides: Partial<TestDeps> = {}): TestDeps {
     licenseLimiter: new SlidingWindowLimiter(20, 60_000),
     requestLimiter: new SlidingWindowLimiter(60, 60_000),
     libraryStore: new MemKV(),
+    record: () => {},
     ...overrides,
   };
+}
+
+/** Every fact the handler recorded, merged as route()'s collector would. */
+function recorded(d: TestDeps): Record<string, unknown> {
+  const calls = (d.record as ReturnType<typeof vi.fn>).mock.calls as [Record<string, unknown>][];
+  return Object.assign({}, ...calls.map(([facts]) => facts)) as Record<string, unknown>;
 }
 
 /** Seeds a Pro-active license the way handlers.test.ts does for its Pro cases. */
@@ -166,6 +173,45 @@ async function seedPro(d: HandlerDeps, key = UUID_KEY) {
 async function seedFree(d: HandlerDeps, key = UUID_KEY) {
   await d.licenseCache.put(`lic:${sha256(key)}`, JSON.stringify({ status: 'expired', validatedAt: d.now() }));
 }
+
+describe('usage facts', () => {
+  it('a create records the caller, the outcome, the new library, the bytes and the component count', async () => {
+    const d = deps({ record: vi.fn() });
+    const res = await handlePublish(publishReq({ bundle: BUNDLE }, figma('u1')), d);
+    expect(res.status).toBe(201);
+    const { libraryId } = await res.json() as { libraryId: string };
+    expect(recorded(d)).toEqual({
+      identity: `free:${hashFigmaId('u1', 'salt')}`, tier: 'free', kind: 'created', detail: 'initial',
+      subject: libraryId, bytes: byteLength(JSON.stringify({ bundle: BUNDLE })), count: 1,
+    });
+  });
+
+  it('an update records its bump, an unchanged republish says so, and a dry run names the minimum', async () => {
+    const d = deps();
+    const { libraryId, headers } = await freeLibrary(d);
+    const update = { ...d, record: vi.fn() };
+    expect((await handlePublish(publishReq({ libraryId, bundle: BUNDLE_WITH_CARD }, headers), update)).status).toBe(200);
+    expect(recorded(update)).toMatchObject({ kind: 'updated', detail: 'minor', subject: libraryId, count: 2 });
+    const same = { ...d, record: vi.fn() };
+    expect((await handlePublish(publishReq({ libraryId, bundle: BUNDLE_WITH_CARD }, headers), same)).status).toBe(200);
+    expect(recorded(same)).toMatchObject({ kind: 'unchanged', subject: libraryId });
+    const dry = { ...d, record: vi.fn() };
+    expect((await handlePublish(publishReq({ libraryId, bundle: BUNDLE_EMPTY, dryRun: true }, headers), dry)).status).toBe(200);
+    expect(recorded(dry)).toMatchObject({ kind: 'dry_run', detail: 'major', subject: libraryId, count: 0 });
+  });
+
+  it('a pull records the library and the bytes it served, and no bytes on a 304', async () => {
+    const d = deps();
+    const { libraryId, pullKey } = await freeLibrary(d);
+    const full = { ...d, record: vi.fn() };
+    const res = await handlePull(pullReq(libraryId, pullKey), full, libraryId);
+    expect(res.status).toBe(200);
+    expect(recorded(full)).toEqual({ subject: libraryId, bytes: byteLength(JSON.stringify({ bundle: BUNDLE })) });
+    const same = { ...d, record: vi.fn() };
+    expect((await handlePull(pullReq(libraryId, pullKey, res.headers.get('ETag') as string), same, libraryId)).status).toBe(304);
+    expect(recorded(same)).toEqual({ subject: libraryId });
+  });
+});
 
 describe('id and key generation', () => {
   it('generates well-formed ids and keys', () => {

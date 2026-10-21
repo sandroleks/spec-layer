@@ -120,6 +120,16 @@ are accepted as they were. One Durable Object per hashed identity and profile
 simple abuse, while deployment-level rate rules remain the production
 backstop.
 
+Every request also writes one usage data point to Workers Analytics Engine
+(`packages/proxy/src/metrics.ts`): the route, the outcome, the tier, the
+client build, the status, the duration, byte and item counts, and the same
+hashed identity the logs carry, never a prompt, a bundle, a name or a key.
+Handlers record what only they know through `deps.record`, `route` writes
+the point once the answer is final, and a failed write is logged and never
+changes the answer. The plugin names its build in `X-Plugin-Version` on
+every request so the metrics can tell which builds are in use; the proxy's
+README lists the columns.
+
 `packages/proxy/src/libraries.ts` adds four `/v1/libraries` routes that store
 and serve a published library bundle without ever deriving it: the proxy
 parses the envelope and diffs it against the stored bundle only to decide the
@@ -368,7 +378,9 @@ verdicts and every published library record, and a Durable Object per hashed
 identity and profile that serializes quota updates, keeps each cached response
 under its own key (the newest 500), and, for publishing, holds each library's
 lock and the identity's library count. Neither stores a license key or a pull
-key in the clear.
+key in the clear. Beside that state, the Worker writes one usage data point
+per request to an Analytics Engine dataset, kept for three months: a record
+of requests, never something an answer reads back.
 
 ## Verification
 

@@ -33,6 +33,15 @@ name = "LICENSE_RATE_LIMITER"
 namespace_id = "1002"
 simple = { limit = 20, period = 60 }
 
+# Usage metrics: one data point per request (src/metrics.ts), queried with
+# SQL from the dashboard or the API; retention is three months. Bindings do
+# not inherit, so [env.staging] declares its own dataset and the two never
+# mix. The name carries the layout version: a column that changes meaning
+# takes a new name rather than reinterpreting the rows already written.
+[[analytics_engine_datasets]]
+binding = "METRICS"
+dataset = "spec_layer_requests_v1"
+
 # Every invocation's logs reach the Workers dashboard. The log volume is a
 # few JSON lines per request, so sampling would only hide the rare
 # `upstream_error` or `fair_use_flag` this is for.
@@ -76,3 +85,7 @@ simple = { limit = 60, period = 60 }
 name = "LICENSE_RATE_LIMITER"
 namespace_id = "2002"
 simple = { limit = 20, period = 60 }
+
+[[env.staging.analytics_engine_datasets]]
+binding = "METRICS"
+dataset = "spec_layer_requests_v1_staging"

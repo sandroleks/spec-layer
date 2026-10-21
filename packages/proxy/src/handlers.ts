@@ -5,6 +5,7 @@ import {
   LEGACY_FOUNDATION_SYSTEM_PROMPT,
   GROUP_MAX_TOKENS,
   DESCRIPTION_SYSTEM_PROMPT, DESCRIPTION_MAX_TOKENS,
+  PLUGIN_VERSION_HEADER,
 } from '@spec-layer/extractor';
 import { identityFromHeaders, licenseIdentityId, callerProofs } from './identity';
 import { handlePublish, handlePull, handleRotate, handleVersions, truncateUtf16 } from './libraries';
@@ -13,6 +14,7 @@ import { quotaHeaders } from './quota';
 import type { CommitOptions, QuotaProfile, QuotaSnapshot, ReleaseOptions, ReserveOptions, ReserveResult, Tier } from './quota';
 import type { RateLimiter } from './ratelimit';
 import { readBodyCapped } from './body';
+import { factsCollector, recordRequest, type MetricsSink, type RequestFacts, type RouteName } from './metrics';
 
 export { licenseIdentityId };
 export type { QuotaProfile };
@@ -39,7 +41,17 @@ export interface HandlerDeps {
   requestLimiter: RateLimiter;
   /** Separate from licenseCache so a dedicated namespace stays a one-line change. */
   libraryStore: LibraryStore;
+  /**
+   * Facts for this request's usage data point (metrics.ts): what the handler
+   * learns and route() cannot see. A later write wins. Counters, codes and
+   * hashed ids only, never content.
+   */
+  record(facts: Partial<RequestFacts>): void;
 }
+
+/** What the Worker adapter supplies: a handler's deps without the per-request
+ *  recorder, which route() makes, plus where the data point goes. */
+export type RouteDeps = Omit<HandlerDeps, 'record'> & { metrics: MetricsSink };
 
 const json = (status: number, body: unknown, headers: Record<string, string> = {}) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', ...headers } });
@@ -278,21 +290,27 @@ export async function handleProse(req: Request, deps: HandlerDeps): Promise<Resp
   if (invalid) return json(400, { error: invalid });
   const cacheKey = body.cacheKey as string;
 
+  // Recorded before the license check, so a refused request still says which
+  // contract asked.
+  const keyInfo = parseProseCacheKey(cacheKey)!; // validated above
+  deps.record({ kind: keyInfo.kind, detail: `v${keyInfo.version}` });
+
   let tier: Tier = 'free';
   let identityId: string;
   if (identity.kind === 'license') {
+    identityId = licenseIdentityId(identity.key);
+    deps.record({ identity: identityId });
     const lic = await checkLicense(identity.key, identity.instanceId, { fetcher: deps.fetcher, cache: deps.licenseCache, now: deps.now });
     if (lic.tier !== 'pro') return json(401, { error: 'license_not_active', reason: lic.reason });
     tier = 'pro';
-    identityId = licenseIdentityId(identity.key);
   } else {
     identityId = `free:${identity.id}`;
   }
+  deps.record({ identity: identityId, tier });
 
   // The answer is cached under the key's tier. A key disagreeing with the proof
   // would serve a Pro user a Haiku draft (or the reverse), so refuse it before
   // reserving any quota.
-  const keyInfo = parseProseCacheKey(cacheKey)!; // validated above
   if (keyInfo.tier !== null && keyInfo.tier !== tier) return json(400, { error: 'tier mismatch' });
 
   const quota = deps.quotaFor(identityId);
@@ -367,6 +385,8 @@ export async function handleProse(req: Request, deps: HandlerDeps): Promise<Resp
     }
     throw err;
   }
+  // Anthropic has answered: one billed generation, whatever the commit does.
+  deps.record({ count: 1 });
   // Anthropic has answered and billed, so a failed commit must not turn the
   // answer into a 500 and leave the reservation answering 409 for its whole
   // lifetime. The answer goes back uncounted and without quota headers (the
@@ -404,6 +424,7 @@ export async function handleQuota(req: Request, deps: HandlerDeps): Promise<Resp
   } else {
     identityId = `free:${identity.id}`;
   }
+  deps.record({ identity: identityId, tier });
   const proofs = callerProofs(req.headers, deps.salt);
   const figmaId = proofs.figmaHash ? `free:${proofs.figmaHash}` : null;
   // Must match `tierIdentity` in libraries.ts, or this meter reports a
@@ -427,16 +448,22 @@ export async function handleActivate(req: Request, deps: HandlerDeps): Promise<R
   if (parsed instanceof Response) return parsed;
   const body = parsed ?? {};
   if (typeof body.key !== 'string' || !body.key) return json(400, { error: 'missing key' });
-  if (!LICENSE_KEY_RE.test(body.key)) return json(200, { valid: false, status: 'invalid' });
+  if (!LICENSE_KEY_RE.test(body.key)) {
+    deps.record({ kind: 'invalid' });
+    return json(200, { valid: false, status: 'invalid' });
+  }
+  deps.record({ identity: licenseIdentityId(body.key) });
   const licenseDeps = { fetcher: deps.fetcher, cache: deps.licenseCache, now: deps.now };
   try {
     // A known device validates its instance; activate would consume another slot.
     if (typeof body.instanceId === 'string' && body.instanceId) {
       const v = await validateLicense(body.key, body.instanceId, licenseDeps);
+      deps.record({ kind: v.status, detail: 'validate' });
       return json(200, { valid: v.valid, status: v.status, instanceId: body.instanceId });
     }
     const requested = typeof body.instanceName === 'string' ? truncateUtf16(body.instanceName.trim(), MAX_INSTANCE_NAME_LENGTH) : '';
     const out = await activateLicense(body.key, requested || 'Figma plugin', licenseDeps);
+    deps.record({ kind: out.status, detail: 'activate' });
     return json(200, out);
   } catch (err) {
     if (err instanceof LsUnreachable) return json(502, { error: 'ls_unreachable' });
@@ -452,8 +479,10 @@ export async function handleDeactivate(req: Request, deps: HandlerDeps): Promise
   const body = parsed ?? {};
   if (typeof body.key !== 'string' || !LICENSE_KEY_RE.test(body.key)) return json(400, { error: 'missing key' });
   if (typeof body.instanceId !== 'string' || !body.instanceId) return json(400, { error: 'missing instanceId' });
+  deps.record({ identity: licenseIdentityId(body.key) });
   try {
     const out = await deactivateLicense(body.key, body.instanceId, { fetcher: deps.fetcher, cache: deps.licenseCache, now: deps.now });
+    deps.record({ kind: out.deactivated ? 'deactivated' : 'kept' });
     return json(200, out);
   } catch (err) {
     if (err instanceof LsUnreachable) return json(502, { error: 'ls_unreachable' });
@@ -466,7 +495,7 @@ const CORS_HEADERS: Record<string, string> = {
   // '*' is safe.
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Authorization, Content-Type, X-Figma-User, X-Pull-Key, If-None-Match',
+  'Access-Control-Allow-Headers': `Authorization, Content-Type, X-Figma-User, X-Pull-Key, If-None-Match, ${PLUGIN_VERSION_HEADER}`,
   // Without this the plugin iframe cannot read the quota headers.
   'Access-Control-Expose-Headers':
     'X-Tier, X-Quota-Used, X-Quota-Limit, X-Quota-Remaining, X-Quota-Resets-At, ETag, X-Published-At, X-Library-Version',
@@ -488,34 +517,54 @@ function withCors(res: Response): Response {
   return new Response(res.body, { status: res.status, headers });
 }
 
-async function routeInner(req: Request, deps: HandlerDeps): Promise<Response> {
+type Handler = (req: Request, deps: HandlerDeps) => Promise<Response>;
+
+/** The handler for a request and the name its data point carries. One table,
+ *  so a point can never name a route the router did not take. */
+function matchRoute(req: Request): { name: RouteName; handle: Handler } {
   const { pathname } = new URL(req.url);
-  if (req.method === 'POST' && pathname === '/v1/prose') return handleProse(req, deps);
-  if (req.method === 'GET' && pathname === '/v1/quota') return handleQuota(req, deps);
-  if (req.method === 'POST' && pathname === '/v1/license/activate') return handleActivate(req, deps);
-  if (req.method === 'POST' && pathname === '/v1/license/deactivate') return handleDeactivate(req, deps);
-  if (req.method === 'POST' && pathname === '/v1/libraries') return handlePublish(req, deps);
+  if (req.method === 'POST' && pathname === '/v1/prose') return { name: 'prose', handle: handleProse };
+  if (req.method === 'GET' && pathname === '/v1/quota') return { name: 'quota', handle: handleQuota };
+  if (req.method === 'POST' && pathname === '/v1/license/activate') return { name: 'activate', handle: handleActivate };
+  if (req.method === 'POST' && pathname === '/v1/license/deactivate') return { name: 'deactivate', handle: handleDeactivate };
+  if (req.method === 'POST' && pathname === '/v1/libraries') return { name: 'publish', handle: handlePublish };
   const pull = /^\/v1\/libraries\/(lib_[0-9a-f]{24})$/.exec(pathname);
-  if (req.method === 'GET' && pull) return handlePull(req, deps, pull[1]);
+  if (req.method === 'GET' && pull) return { name: 'pull', handle: (r, d) => handlePull(r, d, pull[1]) };
   const rotate = /^\/v1\/libraries\/(lib_[0-9a-f]{24})\/rotate$/.exec(pathname);
-  if (req.method === 'POST' && rotate) return handleRotate(req, deps, rotate[1]);
+  if (req.method === 'POST' && rotate) return { name: 'rotate', handle: (r, d) => handleRotate(r, d, rotate[1]) };
   const versions = /^\/v1\/libraries\/(lib_[0-9a-f]{24})\/versions$/.exec(pathname);
-  if (req.method === 'GET' && versions) return handleVersions(req, deps, versions[1]);
-  return json(404, { error: 'not_found' });
+  if (req.method === 'GET' && versions) return { name: 'versions', handle: (r, d) => handleVersions(r, d, versions[1]) };
+  return { name: 'unmatched', handle: async () => json(404, { error: 'not_found' }) };
 }
 
-export async function route(req: Request, deps: HandlerDeps): Promise<Response> {
-  if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: { ...CORS_HEADERS, ...SECURITY_HEADERS } });
-  try {
-    return withCors(await routeInner(req, deps));
-  } catch (err) {
-    // An uncaught throw must still carry CORS headers, or the plugin sees an
-    // opaque network failure instead of a real status.
-    // The response stays generic; the log carries the stack for triage.
-    deps.log('internal_error', {
-      message: err instanceof Error ? err.message : String(err),
-      ...(err instanceof Error && err.stack ? { stack: err.stack.slice(0, MAX_LOGGED_STACK_CHARS) } : {}),
-    });
-    return withCors(json(500, { error: 'internal' }));
+export async function route(req: Request, deps: RouteDeps): Promise<Response> {
+  const started = deps.now();
+  const facts = factsCollector();
+  let name: RouteName;
+  let res: Response;
+  if (req.method === 'OPTIONS') {
+    name = 'preflight';
+    res = new Response(null, { status: 204, headers: { ...CORS_HEADERS, ...SECURITY_HEADERS } });
+  } else {
+    const match = matchRoute(req);
+    name = match.name;
+    try {
+      res = withCors(await match.handle(req, { ...deps, record: facts.record }));
+    } catch (err) {
+      // An uncaught throw must still carry CORS headers, or the plugin sees an
+      // opaque network failure instead of a real status.
+      // The response stays generic; the log carries the stack for triage.
+      deps.log('internal_error', {
+        message: err instanceof Error ? err.message : String(err),
+        ...(err instanceof Error && err.stack ? { stack: err.stack.slice(0, MAX_LOGGED_STACK_CHARS) } : {}),
+      });
+      res = withCors(json(500, { error: 'internal' }));
+    }
   }
+  // Once the answer is final, so the point carries its status and outcome. A
+  // metrics failure is logged inside and never changes the answer.
+  await recordRequest(deps.metrics, deps.log, {
+    headers: req.headers, res, route: name, facts: facts.snapshot(), durationMs: deps.now() - started,
+  });
+  return res;
 }

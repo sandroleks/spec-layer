@@ -42,7 +42,11 @@ Two things worth knowing before you start:
 The only network destination the manifest permits is the Spec Layer proxy:
 `https://api.spec-layer.com`. AI writing is generated through this proxy,
 which enforces free-tier quotas and Pro licenses. There is **no Anthropic API
-key** in the plugin: no API key is requested, entered, or stored.
+key** in the plugin: no API key is requested, entered, or stored. Every
+request also carries the build's version in an `X-Plugin-Version` header,
+and the proxy records one usage data point per request (route, outcome,
+tier, client version, status, duration, sizes and counts), never content;
+`packages/proxy/README.md` lists the columns.
 
 Free users receive 20 generations per UTC calendar month. Pro has no fixed monthly cap for normal individual use, subject to fair
 use and rate limits. Component requests carry a structured summary and, when it
