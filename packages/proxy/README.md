@@ -298,8 +298,11 @@ rows already written.
 | `double3` | Bytes: the body a publish or prose request carried, the bundle a pull served, else the request's `Content-Length` |
 | `double4` | Count: billed generations on `prose` (1 when Anthropic answered), components in the bundle on `publish` |
 
-Query it from the dashboard (Workers & Pages, Analytics Engine) or the SQL
-API with an API token holding Account Analytics Read:
+Query it through the SQL API: a POST of the query text to
+`https://api.cloudflare.com/client/v4/accounts/<account_id>/analytics_engine/sql`
+with a bearer API token holding Account Analytics Read (the account id is in
+`wrangler.toml`). `SHOW TABLES` lists the datasets that exist so far; a
+request such as this one answers the weekly picture:
 
 ```sql
 SELECT blob1 AS route, blob2 AS outcome, blob4 AS client, SUM(_sample_interval) AS requests
@@ -526,10 +529,12 @@ Every change merged to `main` that touches `packages/proxy/`,
 3. waits for approval in the GitHub `production` environment, then runs
    `wrangler deploy` and the same smoke test against `api.spec-layer.com`.
 
-The `METRICS` binding needs Workers Analytics Engine on the account. If a
-staging deploy refuses the binding, enable Analytics Engine in the dashboard
-under Workers & Pages and rerun; the dry run in `npm run check` never reaches
-the account, so this shows up only there.
+The `METRICS` binding needs no setup on the account: Analytics Engine creates
+a dataset the first time a Worker writes to it, so `spec_layer_requests_v1`
+exists once production has answered one request, and the staging dataset
+once the smoke test's three probes have run. Reading it needs an API token
+with Account Analytics Read, kept out of this repository; see "Usage
+metrics" for the query.
 
 A run by hand can pick `rollout: upload-only`, which uploads the production
 version with `wrangler versions upload` and routes no traffic to it, so a
