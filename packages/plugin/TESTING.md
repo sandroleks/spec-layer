@@ -268,6 +268,46 @@ under its `$extensions["com.spec-layer"]` block.
     the preset, spring and Hold are absent from the set files with one
     `type_not_expressible` entry each in `report` naming the preset.
 
+## Doc placement
+
+Every placed doc keeps at least 80px from anything beside it and 64px from
+the edge of a Section that holds it. Check each with the Section selected
+and its position read from the design panel.
+
+1. **On a page.** Put a component on a page with a frame 100px to its right.
+   Create docs. The doc Section sits below the component, not over the
+   frame, and not far away on the page.
+2. **In a Section with room.** Put a component near the top left of a large
+   Section placed far from the page origin (for example at 4000, 2000).
+   Create docs. The doc is inside that Section, beside the component, and
+   the Section's size does not change.
+3. **In a full Section.** Shrink the Section until the component nearly
+   fills it and create docs again from a fresh component. The doc is inside
+   the Section and the Section grew right or down only: its top left corner
+   did not move, and nothing else in it moved.
+4. **Growth blocked.** Put a second Section 100px to the right of the full
+   one. Create docs. The doc goes beside the full Section on the page,
+   neither inside it nor over the second Section, and neither Section
+   changed size.
+5. **Variants and frames.** Create docs for a component set inside a Section,
+   then for a component inside a plain frame inside a Section. Each doc is
+   in the Section, beside the set or the frame, not inside the frame.
+6. **Moved by hand.** Drag a doc somewhere else, 40px from another node, and
+   regenerate it. It stays where you put it. Then add sections to the doc so
+   the rebuilt doc grows into its neighbour, and regenerate. It moves to the
+   nearest clear spot instead of overlapping.
+7. **Several in a row.** Put five components side by side 50px apart and
+   create docs for each in turn. No two docs overlap and none covers a
+   component.
+8. **Foundations.** On a page with no foundation docs, scroll to an empty
+   area and create docs for three collections. They appear near the middle
+   of the view, side by side, not far right of everything on the page. Run
+   it again with one more collection selected: the existing docs stay put
+   and the new one lines up beside them.
+9. **Foundation update.** From **Library**, update a foundation doc that has
+   grown into a neighbour. It moves to the nearest clear spot; one that
+   still fits stays where it is.
+
 ## Doc frame content
 
 Build one component Section with every section enabled, against a component

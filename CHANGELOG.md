@@ -116,6 +116,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   by AI.", so authored prose stays distinguishable. The YAML is unchanged.
   Pulled Markdown loses the line with the next CLI release.
 
+### Fixed
+
+- **Docs land beside their component and never on top of anything.** A
+  component inside a Section got its doc at the component's position within
+  that Section, read as a page position, so the doc landed far from the
+  component, often near the page origin. A doc now nests in the component's
+  Section at the nearest clear spot: right of the component, then below,
+  left or above, at least 80px from anything beside it and 64px from the
+  Section's edge. A Section with no room grows right or down, and only when
+  that runs into nothing; otherwise the doc goes beside the Section. A
+  rebuilt doc keeps its spot, and its Section, when it still fits there, so
+  a doc you moved by hand stays put; one that grew into a neighbour moves
+  to the nearest clear spot. New foundation docs line up beside the ones
+  already on the page, or in the middle of the view, instead of right of
+  everything on the page. Docs already on the canvas are not moved. No
+  extraction output changes, so `EXTRACTOR_VERSION` does not move.
+
 ## [7.0.0] - 2026-10-14
 
 Plugin 7.0.0 is a major release because every existing document asks to
