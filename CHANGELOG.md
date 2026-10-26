@@ -121,6 +121,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   queries in `packages/proxy/README.md` under "Usage events". The route
   needs the proxy in production before a plugin build that sends events is
   listed. A development build sends nothing.
+- **A weekly usage report, one command.** `npm run report:analytics`
+  (`scripts/analytics-report.mjs`, no dependencies) asks the Analytics
+  Engine SQL API the week's questions over both datasets and prints a
+  table per question: requests by route and outcome, active callers, AI
+  generations per tier, builds on the wire, whether any 5.1.0 traffic is
+  left, publishes, pulls, license verdicts and latency from the request
+  dataset; installs, events, Copy for AI and snapshot sizes, Library check
+  durations, where the error toast fires and the usage switch changes from
+  the events dataset, once a plugin build has written to it. The token is
+  read from `CLOUDFLARE_ANALYTICS_TOKEN` in the environment and never from
+  a file, every count is sample-weighted, and `--days`, `--staging` and
+  `--json` are the options. The secret scan now also rejects a Cloudflare
+  `cfat_` or `cfut_` token, so the one this script reads can never be
+  committed by mistake.
 
 ### Changed
 
