@@ -14,7 +14,7 @@
     "js-sha256": "^1.0.0"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^5.20261001.1",
-    "wrangler": "^4.149.0"
+    "@cloudflare/workers-types": "^5.20261019.1",
+    "wrangler": "^4.151.2"
   }
 }
