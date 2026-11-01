@@ -35,7 +35,7 @@ jobs:
           persist-credentials: false
       # No dependency cache in a release workflow: a poisoned cache entry
       # written by any other run would flow straight into the published bytes.
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
           package-manager-cache: false
@@ -77,7 +77,7 @@ jobs:
         with:
           persist-credentials: false
       # Node 24 ships npm 11, which trusted publishing needs (11.5.1 or later).
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
