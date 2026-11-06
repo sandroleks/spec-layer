@@ -4,7 +4,7 @@
  */
 import {
   contentHash, upgradeProseV1, isProseV2, hasProseContent, normalizeAuthored,
-  type FoundationScope, type ProseV2, type ProseDrafts, type SpecHashProjection, type FoundationUnitContent,
+  type FoundationScope, type FoundationSpec, type ProseV2, type ProseDrafts, type SpecHashProjection, type FoundationUnitContent,
 } from '@spec-layer/extractor';
 import { KNOWN_SECTION_IDS, LEGACY_SECTION_IDS, type SectionId, type MeasureView } from './ui/docModel';
 
@@ -289,11 +289,36 @@ export function mergeFoundationGroupDescriptions(
   return merged;
 }
 
-/** The key that matches a foundation Section to its predecessor on regenerate. */
+/**
+ * The key that matches a foundation Section to its predecessor on regenerate.
+ * Computed from both sides each time, never stored. No group (the whole
+ * source) has no trailing segment, so it stays apart from the root group ''.
+ */
 export function foundationScopeKey(s: FoundationScope): string {
-  if (s.target === 'textStyles') return `text:${s.group ?? ''}`;
-  if (s.target === 'effectStyles') return `effect:${s.group ?? ''}`;
-  return `coll:${s.collectionId}:${s.group ?? ''}`;
+  const group = s.group === undefined ? '' : `:${s.group}`;
+  if (s.target === 'textStyles') return `text${group}`;
+  if (s.target === 'effectStyles') return `effect${group}`;
+  return `coll:${s.collectionId}${group}`;
+}
+
+/**
+ * Why a group-scoped doc cannot update. A doc made before folderless variables
+ * shared one doc stored a variable's own name as its group; that variable is
+ * still here, so "nothing is named" would be false.
+ */
+export function missingGroupMessage(spec: FoundationSpec, scope: FoundationScope): string {
+  const group = scope.group ?? '';
+  const names = scope.target === 'collection'
+    ? spec.collections.find((c) => c.id === scope.collectionId)?.variables.map((v) => v.name) ?? []
+    : (scope.target === 'textStyles' ? spec.textStyles : spec.effectStyles).map((s) => s.name);
+  if (group !== '' && names.includes(group)) {
+    const kind = scope.target === 'collection' ? 'Variables' : 'Styles';
+    const source = scope.target === 'collection' ? `the ${scope.collectionName} docs`
+      : scope.target === 'textStyles' ? 'the text styles doc' : 'the effect styles doc';
+    return `Couldn’t update this doc. ${kind} that are not in a group now share one doc. `
+      + `Create ${source} again, then delete this one.`;
+  }
+  return `Couldn’t update this doc. No group named “${group}” is in this file anymore.`;
 }
 
 /**

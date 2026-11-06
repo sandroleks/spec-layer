@@ -249,10 +249,15 @@ export const MAX_MODE_COLUMNS = 4;
  * Top-level path segment ("color/bg/brand" → "color"): the SPLIT key dividing a
  * large collection into documents. `folderOf` is the finer BLOCK key that groups
  * one document's rows.
+ *
+ * A name with no slash belongs to the root group, ''. Every folderless name
+ * shares it, so a split collection keeps them in one document instead of one
+ * document per variable (179 one-row frames for a flat 179-variable collection).
+ * '' is a real group: test a scope's group with `!== undefined`, never truthiness.
  */
 export function groupOf(name: string): string {
   const i = name.indexOf('/');
-  return i <= 0 ? name : name.slice(0, i);
+  return i < 0 ? '' : i === 0 ? name : name.slice(0, i);
 }
 
 /**
@@ -761,7 +766,11 @@ export interface FoundationUnit {
   omittedModeNames: string[];
 }
 
-/** The one place the title format lives: "Semantic", "Primitives · color". */
+/**
+ * The one place the title format lives: "Semantic", "Primitives · color". The
+ * root group '' has no name to add, so its unit takes the bare collection
+ * title and the footer's part note says what it covers.
+ */
 function titleOf(base: string, group?: string): string {
   return group ? `${base} · ${group}` : base;
 }
@@ -1075,18 +1084,18 @@ export function unitContent(
   spec: FoundationSpec, scope: FoundationScope,
 ): FoundationUnitContent | null {
   if (scope.target === 'textStyles') {
-    const styles = scope.group
+    const styles = scope.group !== undefined
       ? spec.textStyles.filter((s) => s.group === scope.group)
       : spec.textStyles;
     // Groups come from style names, so an empty named group is gone; a valid
     // empty unit would read "In sync" over an empty frame.
-    if (scope.group && styles.length === 0) return null;
-    const part = scope.group
+    if (scope.group !== undefined && styles.length === 0) return null;
+    const part = scope.group !== undefined
       ? partOf(groupsInOrder(spec.textStyles.map((s) => s.name)), scope.group)
       : undefined;
     return {
       collectionName: '',
-      ...(scope.group ? { group: scope.group } : {}),
+      ...(scope.group !== undefined ? { group: scope.group } : {}),
       modeNames: [],
       omittedModeNames: [],
       ...(part ? { part } : {}),
@@ -1106,18 +1115,18 @@ export function unitContent(
   }
 
   if (scope.target === 'effectStyles') {
-    const styles = scope.group
+    const styles = scope.group !== undefined
       ? spec.effectStyles.filter((s) => s.group === scope.group)
       : spec.effectStyles;
-    if (scope.group && styles.length === 0) return null;
-    const part = scope.group
+    if (scope.group !== undefined && styles.length === 0) return null;
+    const part = scope.group !== undefined
       ? partOf(groupsInOrder(spec.effectStyles.map((s) => s.name)), scope.group)
       : undefined;
     const nameById = new Map<string, string>();
     for (const c of spec.collections) for (const v of c.variables) nameById.set(v.provenance.id, v.name);
     return {
       collectionName: '',
-      ...(scope.group ? { group: scope.group } : {}),
+      ...(scope.group !== undefined ? { group: scope.group } : {}),
       modeNames: [],
       omittedModeNames: [],
       ...(part ? { part } : {}),
@@ -1150,25 +1159,25 @@ export function unitContent(
     .map((id) => collection.modes.find((m) => m.modeId === id))
     .filter((m): m is FoundationMode => m !== undefined);
 
-  const variables = scope.group
+  const variables = scope.group !== undefined
     ? collection.variables.filter((v) => v.group === scope.group)
     : collection.variables;
 
   // As for text styles, an empty group is gone. An empty collection with no
   // group is legitimate and returns a valid, empty unit.
-  if (scope.group && variables.length === 0) return null;
+  if (scope.group !== undefined && variables.length === 0) return null;
 
   const omittedModeNames = collection.modes
     .filter((m) => !scope.modeIds.includes(m.modeId))
     .map((m) => m.name);
 
-  const part = scope.group
+  const part = scope.group !== undefined
     ? partOf(groupsInOrder(collection.variables.map((v) => v.name)), scope.group)
     : undefined;
 
   return {
     collectionName: collection.name,
-    ...(scope.group ? { group: scope.group } : {}),
+    ...(scope.group !== undefined ? { group: scope.group } : {}),
     modeNames: modes.map((m) => m.name),
     omittedModeNames,
     ...(part ? { part } : {}),

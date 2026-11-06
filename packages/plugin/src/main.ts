@@ -31,7 +31,7 @@ import {
 import {
   DOC_LINK_KEY, DOC_REGISTRY_KEY, DOC_PROSE_KEY, DOC_BASELINE_KEY,
   parseDocLink, serializeDocLink, parseRegistry, serializeRegistry, addDoc, removeDoc, pruneRegistry,
-  textContentHash, isFoundationLink, foundationScopeKey, retargetScope,
+  textContentHash, isFoundationLink, foundationScopeKey, retargetScope, missingGroupMessage,
   serializeProse, parseProse, mergeFoundationGroupDescriptions,
   serializeBaseline, baselineFor,
   type DocLinkData, type FoundationDocLink, type DocRegistry, type DocBaseline,
@@ -1304,7 +1304,7 @@ const handleUiMessage = async (raw: unknown): Promise<void> => {
           reply = { type: 'docSourceError', docId: msg.docId,
             message: collectionGone
               ? 'Couldn’t update this doc. Its collection is no longer in this file.'
-              : `Couldn’t update this doc. Nothing in this file is named “${scope.group}” anymore.` };
+              : missingGroupMessage(spec, scope) };
           break;
         }
 

@@ -155,6 +155,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **A large collection of flat names makes one Foundation doc, not one per
+  variable.** A collection or style set past 150 rows splits by top-level
+  group, and a name with no slash counted as a group of its own, so Ant
+  Design's flat `static` collection (179 variables) made 179 one-row docs.
+  Names with no slash now share the root group: when every name is flat the
+  collection stays one doc, and beside real groups they make one part, titled
+  with the bare collection name and footed "covering the variables that are
+  not in a group". Collections under 150 rows and split collections with no
+  flat names render and hash as before. A doc made by the old split shows as
+  Source missing in the Library, and Update says to create the collection's
+  docs again and delete it, instead of claiming nothing has that name. On
+  regenerate, a whole-collection doc and a root part no longer match each
+  other's Section.
 - **Docs land beside their component and never on top of anything.** A
   component inside a Section got its doc at the component's position within
   that Section, read as a page position, so the doc landed far from the
