@@ -41,8 +41,10 @@ describe('groupOf', () => {
   it('takes the segment before the first slash', () => {
     expect(groupOf('color/bg/brand')).toBe('color');
   });
-  it('returns the whole name when there is no slash', () => {
-    expect(groupOf('standalone')).toBe('standalone');
+  it('returns the root group, an empty string, when there is no slash', () => {
+    // Every folderless name shares one group, so a split never makes a
+    // document per variable.
+    expect(groupOf('standalone')).toBe('');
   });
   it('handles a leading slash without producing an empty group', () => {
     expect(groupOf('/odd')).toBe('/odd');
@@ -176,9 +178,9 @@ describe('buildFoundation — non-alias values', () => {
     expect(bool.valuesByMode.m1).toEqual({ kind: 'boolean', value: true });
   });
 
-  it('derives group for a name with no slash', () => {
+  it('puts a name with no slash in the root group', () => {
     const spec = buildFoundation(dumpOneOfEach());
-    expect(spec.collections[0].variables[4].group).toBe('standalone');
+    expect(spec.collections[0].variables[4].group).toBe('');
   });
 
   it('marks a mode with no value as missing rather than dropping the row', () => {
@@ -562,6 +564,49 @@ describe('planFoundationUnits', () => {
     expect(units[0].rowCount).toBe(SPLIT_THRESHOLD + 50);
     expect(units[0].title).toBe('Primitives');
     expect(units[0].scope).not.toHaveProperty('group');
+  });
+
+  it('keeps an oversized collection of folderless variables as one unit', () => {
+    // Ant Design's `static` collection: 179 flat names once made 179 one-row docs.
+    const dump = bigDump(SPLIT_THRESHOLD + 29, ['color']);
+    dump.collections[0].variables.forEach((v, i) => { v.name = `token${i}`; });
+    const units = planFoundationUnits(buildFoundation(dump), allOf(dump));
+    expect(units).toHaveLength(1);
+    expect(units[0].title).toBe('Primitives');
+    expect(units[0].rowCount).toBe(SPLIT_THRESHOLD + 29);
+    expect(units[0].scope).not.toHaveProperty('group');
+  });
+
+  it('pools folderless variables into one unit beside the folder units', () => {
+    const dump = bigDump(SPLIT_THRESHOLD + 4, ['color', 'space']);
+    // Four folderless names at the front: the root group appears first.
+    dump.collections[0].variables.slice(0, 4).forEach((v, i) => { v.name = `flat${i}`; });
+    const spec = buildFoundation(dump);
+    const units = planFoundationUnits(spec, allOf(dump));
+    expect(units.map((u) => u.title)).toEqual(['Primitives', 'Primitives · color', 'Primitives · space']);
+    expect(units[0].scope).toMatchObject({ group: '' });
+    expect(units[0].rowCount).toBe(4);
+    expect(units.reduce((n, u) => n + u.rowCount, 0)).toBe(SPLIT_THRESHOLD + 4);
+
+    const root = unitContent(spec, units[0].scope)!;
+    expect(root.group).toBe('');
+    expect(root.part).toEqual({ index: 0, total: 3 });
+    expect(root.rows.map((r) => r.name)).toEqual(['flat0', 'flat1', 'flat2', 'flat3']);
+  });
+
+  it('keeps an oversized set of folderless text styles as one unit', () => {
+    const dump = bigDump(1, ['color']);
+    dump.textStyles = Array.from({ length: SPLIT_THRESHOLD + 10 }, (_, i) => ({
+      name: `style${i}`, description: '', fontFamily: 'Inter', fontStyle: 'Regular',
+      fontSize: 16, lineHeight: { unit: 'PIXELS' as const, value: 24 },
+      letterSpacing: { unit: 'PERCENT' as const, value: 0 },
+      paragraphSpacing: 0, paragraphIndent: 0, textCase: 'ORIGINAL', textDecoration: 'NONE',
+      boundVariables: {},
+    }));
+    const units = planFoundationUnits(buildFoundation(dump), allOf(dump));
+    const textUnits = units.filter((u) => u.scope.target === 'textStyles');
+    expect(textUnits).toHaveLength(1);
+    expect(textUnits[0].scope).toEqual({ target: 'textStyles' });
   });
 
   it('leaves a single-group oversized text-styles set as one tall unit', () => {

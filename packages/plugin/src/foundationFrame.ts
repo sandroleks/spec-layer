@@ -172,8 +172,13 @@ export function footerNotes(content: FoundationUnitContent): string[] {
   if (content.omittedModeNames.length > 0) {
     notes.push(`Modes not shown: ${content.omittedModeNames.join(', ')}`);
   }
-  if (content.part && content.group) {
-    notes.push(`Part ${content.part.index + 1} of ${content.part.total}, covering ${content.group}.`);
+  if (content.part && content.group !== undefined) {
+    // The root group '' has no name; say what it holds instead. Style units
+    // carry an empty collectionName.
+    const covering = content.group !== '' ? content.group
+      : content.collectionName === '' ? 'the styles that are not in a group'
+      : 'the variables that are not in a group';
+    notes.push(`Part ${content.part.index + 1} of ${content.part.total}, covering ${covering}.`);
   }
   return notes;
 }

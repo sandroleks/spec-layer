@@ -168,6 +168,13 @@ describe('footerNotes', () => {
       .toEqual(['Part 2 of 3, covering space.']);
   });
 
+  it('names the root part by what it holds, since it has no group name', () => {
+    expect(footerNotes({ ...base, group: '', part: { index: 0, total: 3 } }))
+      .toEqual(['Part 1 of 3, covering the variables that are not in a group.']);
+    expect(footerNotes({ ...base, collectionName: '', group: '', part: { index: 0, total: 2 } }))
+      .toEqual(['Part 1 of 2, covering the styles that are not in a group.']);
+  });
+
   it('omits the part note when the unit was not split', () => {
     expect(footerNotes({ ...base, group: 'space' })).toEqual([]);
   });

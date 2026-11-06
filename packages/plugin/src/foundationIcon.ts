@@ -46,7 +46,7 @@ export function scopeIconKind(
   if (!collection) return 'mixed';
 
   return variablesIconKind(
-    scope.group
+    scope.group !== undefined
       ? collection.variables.filter((v) => v.group === scope.group)
       : collection.variables,
   );

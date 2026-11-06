@@ -70,7 +70,9 @@ function typographyFacts(style: FoundationTextStyle, all: readonly FoundationTex
   const facts = [
     `Font: ${style.fontFamily} ${style.fontStyle}, ${style.fontSize}px, line height ${lineHeightLabel(style.lineHeight)}, letter spacing ${spacing}`,
   ];
-  const sizes = all.filter((s) => s.group === style.group).map((s) => s.fontSize);
+  // Root-level styles share the unnamed group '', which is not a group anyone
+  // made, so it gets no "Group:" fact.
+  const sizes = style.group === '' ? [] : all.filter((s) => s.group === style.group).map((s) => s.fontSize);
   if (sizes.length > 1) {
     facts.push(`Group: ${style.group}, ${sizes.length} text styles from ${Math.min(...sizes)}px to ${Math.max(...sizes)}px`);
   }

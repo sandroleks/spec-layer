@@ -1,9 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
-import { EXTRACTOR_VERSION, type ProseV2, type SpecHashProjection, type FoundationUnitContent } from '@spec-layer/extractor';
+import { EXTRACTOR_VERSION, buildFoundation, type ProseV2, type SpecHashProjection, type FoundationUnitContent } from '@spec-layer/extractor';
 import {
   serializeDocLink, parseDocLink, serializeRegistry, parseRegistry,
   addDoc, removeDoc, pruneRegistry, textContentHash, resolveStatus,
-  isFoundationLink, foundationScopeKey, retargetScope, mergeFoundationGroupDescriptions,
+  isFoundationLink, foundationScopeKey, retargetScope, mergeFoundationGroupDescriptions, missingGroupMessage,
   DOC_LINK_KEY, DOC_PROSE_KEY, DOC_BASELINE_KEY, BASELINE_BUDGET_BYTES,
   serializeProse, parseProse, PROSE_BUDGET_BYTES,
   serializeBaseline, parseBaseline, baselineFor,
@@ -340,22 +340,58 @@ describe('mergeFoundationGroupDescriptions', () => {
   });
 });
 
+describe('missingGroupMessage', () => {
+  const dump = (names: string[]) => buildFoundation({
+    fileKey: 'F', extractedAt: '2026-11-06T00:00:00.000Z', externals: [], textStyles: [], effectStyles: [],
+    collections: [{ id: 'c1', name: 'static', defaultModeId: 'm1', modes: [{ modeId: 'm1', name: 'Light' }],
+      variables: names.map((name, i) => ({ id: `v${i}`, name, resolvedType: 'FLOAT' as const,
+        description: '', codeSyntax: {}, valuesByMode: { m1: i } })) }],
+  });
+  const scope = (group: string) => ({
+    target: 'collection' as const, collectionId: 'c1', collectionName: 'static', group, modeIds: ['m1'],
+  });
+
+  it('explains a one-variable doc from before folderless variables were pooled', () => {
+    expect(missingGroupMessage(dump(['tooltipPadding', 'color/x']), scope('tooltipPadding')))
+      .toBe('Couldn’t update this doc. Variables that are not in a group now share one doc. '
+        + 'Create the static docs again, then delete this one.');
+  });
+
+  it('says the group is gone when no variable carries that name either', () => {
+    expect(missingGroupMessage(dump(['color/x']), scope('space')))
+      .toBe('Couldn’t update this doc. No group named “space” is in this file anymore.');
+  });
+
+  it('never contains an em dash', () => {
+    expect(missingGroupMessage(dump(['a']), scope('a'))).not.toMatch(/\u2014/);
+  });
+});
+
 describe('foundationScopeKey', () => {
   it('keys a collection scope by collection id and group', () => {
     expect(foundationScopeKey({ target: 'collection', collectionId: 'c1', collectionName: 'Semantic', modeIds: [] }))
-      .toBe('coll:c1:');
+      .toBe('coll:c1');
     expect(foundationScopeKey({ target: 'collection', collectionId: 'c1', collectionName: 'Semantic', group: 'color', modeIds: [] }))
       .toBe('coll:c1:color');
   });
 
   it('keys a text-styles scope by group alone, distinct from any collection key', () => {
-    expect(foundationScopeKey({ target: 'textStyles' })).toBe('text:');
+    expect(foundationScopeKey({ target: 'textStyles' })).toBe('text');
     expect(foundationScopeKey({ target: 'textStyles', group: 'Heading' })).toBe('text:Heading');
   });
 
   it('keys an effect-styles scope apart from text styles and collections', () => {
-    expect(foundationScopeKey({ target: 'effectStyles' })).toBe('effect:');
+    expect(foundationScopeKey({ target: 'effectStyles' })).toBe('effect');
     expect(foundationScopeKey({ target: 'effectStyles', group: 'Elevation' })).toBe('effect:Elevation');
+  });
+
+  it('keeps the root group apart from the whole source', () => {
+    // The root group '' is one part of a split source; no group is all of it.
+    // Matching one to the other on regenerate would reuse the wrong Section.
+    const whole = { target: 'collection' as const, collectionId: 'c1', collectionName: 'X', modeIds: [] };
+    expect(foundationScopeKey({ ...whole, group: '' })).not.toBe(foundationScopeKey(whole));
+    expect(foundationScopeKey({ target: 'textStyles', group: '' })).not.toBe(foundationScopeKey({ target: 'textStyles' }));
+    expect(foundationScopeKey({ target: 'effectStyles', group: '' })).not.toBe(foundationScopeKey({ target: 'effectStyles' }));
   });
 
   it('treats two collection scopes with the same id but different groups as distinct', () => {
