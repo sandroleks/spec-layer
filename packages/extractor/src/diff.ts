@@ -291,6 +291,9 @@ export function foundationChangeGroups(
     part.push(`Collection: ${before.collectionName} changed to ${after.collectionName}`);
   }
   if (before.group !== after.group) part.push(scalarItem('Group', before.group, after.group));
+  if (!canonicalEqual(before.groups, after.groups)) {
+    part.push(scalarItem('Groups', before.groups?.join(', '), after.groups?.join(', ')));
+  }
   if (!canonicalEqual(before.part, after.part)) part.push(scalarItem('Part', formatPart(before.part), formatPart(after.part)));
 
   return groups([

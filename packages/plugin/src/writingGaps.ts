@@ -6,7 +6,7 @@
  * display name, so it survives a rename. Nothing here enters a hash.
  */
 import {
-  durationLabel, easingLabel,
+  durationLabel, easingLabel, scopeHasGroup,
   type FoundationScope, type FoundationSpec, type FoundationValue,
 } from '@spec-layer/extractor';
 import { ALL_SECTIONS, type SectionId } from './ui/docModel';
@@ -127,7 +127,7 @@ export function foundationWritingGaps(spec: FoundationSpec, scope: FoundationSco
     const collection = spec.collections.find((c) => c.id === scope.collectionId);
     if (!collection) return [];
     return collection.variables
-      .filter((v) => (scope.group === undefined || v.group === scope.group) && blank(v.description))
+      .filter((v) => scopeHasGroup(scope, v.group) && blank(v.description))
       .map((v) => {
         const modes = collection.modes.map((m) => modeValue(m.name, v.valuesByMode[m.modeId]));
         return { kind: 'variable' as const, id: v.provenance.id, name: v.name, facts: modes.map((m) => m.full), modes };
@@ -136,6 +136,6 @@ export function foundationWritingGaps(spec: FoundationSpec, scope: FoundationSco
   const styles = scope.target === 'textStyles' ? spec.textStyles : spec.effectStyles;
   const family = scope.target === 'textStyles' ? 'typography' : 'effect';
   return styles
-    .filter((s) => typeof s.id === 'string' && (scope.group === undefined || s.group === scope.group) && blank(s.description))
+    .filter((s) => typeof s.id === 'string' && scopeHasGroup(scope, s.group) && blank(s.description))
     .map((s) => ({ kind: 'style' as const, id: s.id as string, name: s.name, facts: [family] }));
 }

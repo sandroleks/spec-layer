@@ -25,7 +25,7 @@ function groupsOf(colorsFrame: FakeFrame): FakeFrame {
 }
 import {
   buildFoundation, planFoundationUnits, unitContent,
-  SPLIT_THRESHOLD, type FoundationValue, type FoundationUnitContent,
+  type FoundationValue, type FoundationUnitContent,
   type SerializedFoundation,
 } from '@spec-layer/extractor';
 
@@ -175,6 +175,13 @@ describe('footerNotes', () => {
       .toEqual(['Part 1 of 2, covering the styles that are not in a group.']);
   });
 
+  it('lists every group a packed part covers', () => {
+    expect(footerNotes({ ...base, groups: ['Button', 'Menu'], part: { index: 0, total: 5 } }))
+      .toEqual(['Part 1 of 5, covering Button and Menu.']);
+    expect(footerNotes({ ...base, groups: ['', 'Button', 'Menu'], part: { index: 1, total: 5 } }))
+      .toEqual(['Part 2 of 5, covering the variables that are not in a group, Button and Menu.']);
+  });
+
   it('omits the part note when the unit was not split', () => {
     expect(footerNotes({ ...base, group: 'space' })).toEqual([]);
   });
@@ -194,10 +201,13 @@ describe('footerNotes', () => {
 });
 
 describe('footerNotes — end to end over a split batch', () => {
-  /** Two collections that each split: Primitives into 3, Semantic into 2. */
+  /**
+   * Two collections that each split: Primitives into 3, Semantic into 2. 100
+   * rows per group, so no two groups share a pack.
+   */
   function twoSplitCollections(): SerializedFoundation {
     const varsFor = (prefix: string, mode: string, groups: string[]) =>
-      Array.from({ length: SPLIT_THRESHOLD + groups.length }, (_, i) => ({
+      Array.from({ length: 100 * groups.length }, (_, i) => ({
         id: `${prefix}${i}`, name: `${groups[i % groups.length]}/item${i}`,
         resolvedType: 'COLOR' as const, description: '', codeSyntax: {},
         valuesByMode: { [mode]: { r: 0, g: 0, b: 0, a: 1 } },

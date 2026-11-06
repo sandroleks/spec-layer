@@ -230,13 +230,35 @@ export interface FoundationSpec {
   sourceIssues?: FoundationSourceIssue[];
 }
 
+/**
+ * Which rows of a source a unit covers. Neither `groups` nor `group`: all of
+ * it. `groups`: a pack of whole top-level groups, what planning emits for a
+ * source past SPLIT_THRESHOLD. `group`: one top-level group, what planning
+ * emitted before packing; still read so those docs keep resolving and hashing
+ * as they did. Never both.
+ */
 export type FoundationScope =
   | { target: 'collection'; collectionId: string; collectionName: string;
-      group?: string; modeIds: string[] }
-  | { target: 'textStyles'; group?: string }
-  | { target: 'effectStyles'; group?: string };
+      group?: string; groups?: string[]; modeIds: string[] }
+  | { target: 'textStyles'; group?: string; groups?: string[] }
+  | { target: 'effectStyles'; group?: string; groups?: string[] };
 
-/** Rows per output unit, above which a unit splits by top-level group. */
+/** Whether rows in top-level `group` belong to the scope. */
+export function scopeHasGroup(scope: FoundationScope, group: string): boolean {
+  if (scope.groups !== undefined) return scope.groups.includes(group);
+  if (scope.group !== undefined) return scope.group === group;
+  return true;
+}
+
+/** Whether the scope covers only part of its source. */
+export function isGroupScoped(scope: FoundationScope): boolean {
+  return scope.groups !== undefined || scope.group !== undefined;
+}
+
+/**
+ * Rows per output unit. A source past it is cut into packs of whole top-level
+ * groups, each at most this many rows unless one group alone is larger.
+ */
 export const SPLIT_THRESHOLD = 150;
 /** Hard ceiling on rendered mode columns. */
 export const MAX_MODE_COLUMNS = 4;
@@ -790,7 +812,7 @@ export function foundationUnitTitle(
   const base = scope.target === 'textStyles' ? TEXT_STYLES_TITLE
     : scope.target === 'effectStyles' ? EFFECT_STYLES_TITLE
     : content.collectionName;
-  return titleOf(base, content.group);
+  return titleOf(base, content.groups !== undefined ? packLabel(content.groups) : content.group);
 }
 
 /** Distinct top-level groups in first-appearance order. */
@@ -798,6 +820,60 @@ function groupsInOrder(names: string[]): string[] {
   const seen = new Set<string>();
   for (const name of names) seen.add(groupOf(name));
   return [...seen];
+}
+
+/**
+ * Whole top-level groups in first-appearance order, filled into packs of at
+ * most `limit` rows. A group is never cut: one larger than `limit` gets a pack
+ * of its own. 645 component tokens in 57 groups make 5 or 6 docs, not 57.
+ */
+export function packGroups(names: string[], limit = SPLIT_THRESHOLD): string[][] {
+  const counts = new Map<string, number>();
+  for (const name of names) {
+    const group = groupOf(name);
+    counts.set(group, (counts.get(group) ?? 0) + 1);
+  }
+  const packs: string[][] = [];
+  let current: string[] = [];
+  let size = 0;
+  for (const [group, count] of counts) {
+    if (current.length > 0 && size + count > limit) {
+      packs.push(current);
+      current = [];
+      size = 0;
+    }
+    current.push(group);
+    size += count;
+  }
+  if (current.length > 0) packs.push(current);
+  return packs;
+}
+
+/**
+ * A pack's title suffix: "g0 to g14", or the one group's name. The root group
+ * has no name, so it adds nothing; the footer's part note says it is there.
+ */
+function packLabel(groups: readonly string[]): string | undefined {
+  const named = groups.filter((g) => g !== '');
+  if (named.length === 0) return undefined;
+  return named.length === 1 ? named[0] : `${named[0]} to ${named[named.length - 1]}`;
+}
+
+/** Units for one source: the whole of it, or one per pack past SPLIT_THRESHOLD. */
+function planSource<S extends FoundationScope>(
+  base: S, title: string, names: string[], omittedModeNames: string[],
+): FoundationUnit[] {
+  const packs = names.length <= SPLIT_THRESHOLD ? [] : packGroups(names);
+  if (packs.length <= 1) {
+    // Under the threshold, or one group that cannot split: one frame.
+    return [{ scope: base, title: titleOf(title), rowCount: names.length, omittedModeNames }];
+  }
+  return packs.map((groups) => ({
+    scope: { ...base, groups },
+    title: titleOf(title, packLabel(groups)),
+    rowCount: names.filter((n) => groups.includes(groupOf(n))).length,
+    omittedModeNames,
+  }));
 }
 
 export function planFoundationUnits(
@@ -823,32 +899,7 @@ export function planFoundationUnits(
       modeIds,
     };
 
-    if (collection.variables.length <= SPLIT_THRESHOLD) {
-      units.push({
-        scope: base, title: titleOf(collection.name),
-        rowCount: collection.variables.length, omittedModeNames,
-      });
-      continue;
-    }
-
-    const groups = groupsInOrder(collection.variables.map((v) => v.name));
-    if (groups.length <= 1) {
-      // Cannot split further. One tall frame is the faithful outcome.
-      units.push({
-        scope: base, title: titleOf(collection.name),
-        rowCount: collection.variables.length, omittedModeNames,
-      });
-      continue;
-    }
-
-    for (const group of groups) {
-      units.push({
-        scope: { ...base, group },
-        title: titleOf(collection.name, group),
-        rowCount: collection.variables.filter((v) => v.group === group).length,
-        omittedModeNames,
-      });
-    }
+    units.push(...planSource(base, collection.name, collection.variables.map((v) => v.name), omittedModeNames));
   }
 
   if (selection.textStyles) {
@@ -860,22 +911,12 @@ export function planFoundationUnits(
   return units;
 }
 
-/** Units for a style list: one, or one per top-level group past SPLIT_THRESHOLD. */
+/** Units for a style list: one, or one per pack past SPLIT_THRESHOLD. */
 function planStyleUnits(
   target: 'textStyles' | 'effectStyles', title: string, names: string[],
 ): FoundationUnit[] {
   if (names.length === 0) return [];
-  const groups = groupsInOrder(names);
-  if (names.length <= SPLIT_THRESHOLD || groups.length <= 1) {
-    // A lone group cannot split further; one tall frame is the faithful outcome.
-    return [{ scope: { target }, title: titleOf(title), rowCount: names.length, omittedModeNames: [] }];
-  }
-  return groups.map((group) => ({
-    scope: { target, group },
-    title: titleOf(title, group),
-    rowCount: names.filter((n) => groupOf(n) === group).length,
-    omittedModeNames: [],
-  }));
+  return planSource({ target }, title, names, []);
 }
 
 // ---------------------------------------------------------------------------
@@ -1001,7 +1042,10 @@ export type FoundationRow = FoundationVariableRow | FoundationTextRow | Foundati
 
 export interface FoundationUnitContent {
   collectionName: string;   // '' for the text-styles unit
+  /** The legacy single-group scope's group. Absent for a whole source and for a pack. */
   group?: string;
+  /** A packed scope's groups, as stored, so the footer can list them. */
+  groups?: string[];
   modeNames: string[];
   rows: FoundationRow[];
   /**
@@ -1011,10 +1055,12 @@ export interface FoundationUnitContent {
    */
   omittedModeNames: string[];
   /**
-   * Set only when a source was split into several units (`scope.group` set);
-   * drawn as "Part {index + 1} of {total}, covering {group}." Derived here so the
-   * note is hashed, and from the scope alone so a batch render and a single-doc
-   * rebuild number parts the same.
+   * Set only when a source was split into several units (`scope.groups` or
+   * `scope.group` set); drawn as "Part {index + 1} of {total}, covering ...".
+   * Derived here so the note is hashed, and from the scope and live source
+   * alone so a batch render and a single-doc rebuild number parts the same.
+   * For a pack, set only while the live packing still holds exactly the stored
+   * groups: once rows move the boundaries, "Part 2 of 5" would no longer be true.
    */
   part?: { index: number; total: number };
 }
@@ -1028,6 +1074,27 @@ function partOf(groups: string[], group: string): { index: number; total: number
   if (groups.length <= 1) return undefined;
   const index = groups.indexOf(group);
   return index < 0 ? undefined : { index, total: groups.length };
+}
+
+/** A pack's place among the live packs, when the live packing still holds it exactly. */
+function partOfPack(packs: string[][], groups: readonly string[]): { index: number; total: number } | undefined {
+  if (packs.length <= 1) return undefined;
+  const index = packs.findIndex((p) => p.length === groups.length && p.every((g, i) => g === groups[i]));
+  return index < 0 ? undefined : { index, total: packs.length };
+}
+
+/** The part note's numbers for a scope over a source with these row names. */
+function partFor(scope: FoundationScope, names: string[]): { index: number; total: number } | undefined {
+  if (scope.groups !== undefined) return partOfPack(packGroups(names), scope.groups);
+  if (scope.group !== undefined) return partOf(groupsInOrder(names), scope.group);
+  return undefined;
+}
+
+/** The scope fields a unit's content carries, so the footer and the hash see them. */
+function scopeFields(scope: FoundationScope): { group?: string; groups?: string[] } {
+  if (scope.groups !== undefined) return { groups: [...scope.groups] };
+  if (scope.group !== undefined) return { group: scope.group };
+  return {};
 }
 
 /** Only platforms with a non-empty declared syntax, in code-unit key order so the hash is stable. */
@@ -1084,18 +1151,14 @@ export function unitContent(
   spec: FoundationSpec, scope: FoundationScope,
 ): FoundationUnitContent | null {
   if (scope.target === 'textStyles') {
-    const styles = scope.group !== undefined
-      ? spec.textStyles.filter((s) => s.group === scope.group)
-      : spec.textStyles;
+    const styles = spec.textStyles.filter((s) => scopeHasGroup(scope, s.group));
     // Groups come from style names, so an empty named group is gone; a valid
     // empty unit would read "In sync" over an empty frame.
-    if (scope.group !== undefined && styles.length === 0) return null;
-    const part = scope.group !== undefined
-      ? partOf(groupsInOrder(spec.textStyles.map((s) => s.name)), scope.group)
-      : undefined;
+    if (isGroupScoped(scope) && styles.length === 0) return null;
+    const part = partFor(scope, spec.textStyles.map((s) => s.name));
     return {
       collectionName: '',
-      ...(scope.group !== undefined ? { group: scope.group } : {}),
+      ...scopeFields(scope),
       modeNames: [],
       omittedModeNames: [],
       ...(part ? { part } : {}),
@@ -1115,18 +1178,14 @@ export function unitContent(
   }
 
   if (scope.target === 'effectStyles') {
-    const styles = scope.group !== undefined
-      ? spec.effectStyles.filter((s) => s.group === scope.group)
-      : spec.effectStyles;
-    if (scope.group !== undefined && styles.length === 0) return null;
-    const part = scope.group !== undefined
-      ? partOf(groupsInOrder(spec.effectStyles.map((s) => s.name)), scope.group)
-      : undefined;
+    const styles = spec.effectStyles.filter((s) => scopeHasGroup(scope, s.group));
+    if (isGroupScoped(scope) && styles.length === 0) return null;
+    const part = partFor(scope, spec.effectStyles.map((s) => s.name));
     const nameById = new Map<string, string>();
     for (const c of spec.collections) for (const v of c.variables) nameById.set(v.provenance.id, v.name);
     return {
       collectionName: '',
-      ...(scope.group !== undefined ? { group: scope.group } : {}),
+      ...scopeFields(scope),
       modeNames: [],
       omittedModeNames: [],
       ...(part ? { part } : {}),
@@ -1159,25 +1218,21 @@ export function unitContent(
     .map((id) => collection.modes.find((m) => m.modeId === id))
     .filter((m): m is FoundationMode => m !== undefined);
 
-  const variables = scope.group !== undefined
-    ? collection.variables.filter((v) => v.group === scope.group)
-    : collection.variables;
+  const variables = collection.variables.filter((v) => scopeHasGroup(scope, v.group));
 
   // As for text styles, an empty group is gone. An empty collection with no
   // group is legitimate and returns a valid, empty unit.
-  if (scope.group !== undefined && variables.length === 0) return null;
+  if (isGroupScoped(scope) && variables.length === 0) return null;
 
   const omittedModeNames = collection.modes
     .filter((m) => !scope.modeIds.includes(m.modeId))
     .map((m) => m.name);
 
-  const part = scope.group !== undefined
-    ? partOf(groupsInOrder(collection.variables.map((v) => v.name)), scope.group)
-    : undefined;
+  const part = partFor(scope, collection.variables.map((v) => v.name));
 
   return {
     collectionName: collection.name,
-    ...(scope.group !== undefined ? { group: scope.group } : {}),
+    ...scopeFields(scope),
     modeNames: modes.map((m) => m.name),
     omittedModeNames,
     ...(part ? { part } : {}),

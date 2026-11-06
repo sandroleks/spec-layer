@@ -169,6 +169,17 @@ describe('docLink foundation variant', () => {
     expect(parseDocLink(serializeDocLink(FOUNDATION))).toEqual(FOUNDATION);
   });
 
+  it('round-trips a packed scope on every target', () => {
+    for (const scope of [
+      { ...FOUNDATION.scope, groups: ['', 'Button', 'Menu'] },
+      { target: 'textStyles' as const, groups: ['Heading', 'Body'] },
+      { target: 'effectStyles' as const, groups: ['Elevation'] },
+    ]) {
+      const d: FoundationDocLink = { ...FOUNDATION, scope };
+      expect(parseDocLink(serializeDocLink(d))).toEqual(d);
+    }
+  });
+
   it('round-trips a text-styles scope', () => {
     const d: FoundationDocLink = { ...FOUNDATION, scope: { target: 'textStyles', group: 'Heading' } };
     expect(parseDocLink(serializeDocLink(d))).toEqual(d);
@@ -362,6 +373,13 @@ describe('missingGroupMessage', () => {
       .toBe('Couldn’t update this doc. No group named “space” is in this file anymore.');
   });
 
+  it('says a pack is gone when none of its groups is left', () => {
+    expect(missingGroupMessage(dump(['color/x']), {
+      target: 'collection', collectionId: 'c1', collectionName: 'static', groups: ['space', 'radius'], modeIds: ['m1'],
+    }))
+      .toBe('Couldn’t update this doc. None of its groups are in this file anymore.');
+  });
+
   it('never contains an em dash', () => {
     expect(missingGroupMessage(dump(['a']), scope('a'))).not.toMatch(/\u2014/);
   });
@@ -372,17 +390,26 @@ describe('foundationScopeKey', () => {
     expect(foundationScopeKey({ target: 'collection', collectionId: 'c1', collectionName: 'Semantic', modeIds: [] }))
       .toBe('coll:c1');
     expect(foundationScopeKey({ target: 'collection', collectionId: 'c1', collectionName: 'Semantic', group: 'color', modeIds: [] }))
-      .toBe('coll:c1:color');
+      .toBe('coll:c1:group:color');
   });
 
   it('keys a text-styles scope by group alone, distinct from any collection key', () => {
     expect(foundationScopeKey({ target: 'textStyles' })).toBe('text');
-    expect(foundationScopeKey({ target: 'textStyles', group: 'Heading' })).toBe('text:Heading');
+    expect(foundationScopeKey({ target: 'textStyles', group: 'Heading' })).toBe('text:group:Heading');
   });
 
   it('keys an effect-styles scope apart from text styles and collections', () => {
     expect(foundationScopeKey({ target: 'effectStyles' })).toBe('effect');
-    expect(foundationScopeKey({ target: 'effectStyles', group: 'Elevation' })).toBe('effect:Elevation');
+    expect(foundationScopeKey({ target: 'effectStyles', group: 'Elevation' })).toBe('effect:group:Elevation');
+  });
+
+  it('keys a pack by its groups, apart from a legacy single group', () => {
+    const base = { target: 'collection' as const, collectionId: 'c1', collectionName: 'X', modeIds: [] };
+    expect(foundationScopeKey({ ...base, groups: ['Button', 'Menu'] }))
+      .toBe(foundationScopeKey({ ...base, groups: ['Button', 'Menu'] }));
+    expect(foundationScopeKey({ ...base, groups: ['Button'] })).not.toBe(foundationScopeKey({ ...base, group: 'Button' }));
+    expect(foundationScopeKey({ ...base, groups: ['Button', 'Menu'] }))
+      .not.toBe(foundationScopeKey({ ...base, groups: ['Button'] }));
   });
 
   it('keeps the root group apart from the whole source', () => {

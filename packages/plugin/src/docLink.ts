@@ -295,7 +295,8 @@ export function mergeFoundationGroupDescriptions(
  * source) has no trailing segment, so it stays apart from the root group ''.
  */
 export function foundationScopeKey(s: FoundationScope): string {
-  const group = s.group === undefined ? '' : `:${s.group}`;
+  const group = s.groups !== undefined ? `:pack:${JSON.stringify(s.groups)}`
+    : s.group !== undefined ? `:group:${s.group}` : '';
   if (s.target === 'textStyles') return `text${group}`;
   if (s.target === 'effectStyles') return `effect${group}`;
   return `coll:${s.collectionId}${group}`;
@@ -307,6 +308,7 @@ export function foundationScopeKey(s: FoundationScope): string {
  * still here, so "nothing is named" would be false.
  */
 export function missingGroupMessage(spec: FoundationSpec, scope: FoundationScope): string {
+  if (scope.groups !== undefined) return 'Couldn’t update this doc. None of its groups are in this file anymore.';
   const group = scope.group ?? '';
   const names = scope.target === 'collection'
     ? spec.collections.find((c) => c.id === scope.collectionId)?.variables.map((v) => v.name) ?? []
@@ -417,19 +419,23 @@ function parseComponentLink(j: Partial<ComponentDocLink>): ComponentDocLink | nu
   };
 }
 
+/** A stored scope's pack, else its legacy single group, else neither. */
+function parseGroups(s: Record<string, unknown>): { group?: string; groups?: string[] } {
+  if (Array.isArray(s.groups) && s.groups.every((g) => typeof g === 'string')) {
+    return { groups: [...s.groups] as string[] };
+  }
+  return typeof s.group === 'string' ? { group: s.group } : {};
+}
+
 function parseScope(raw: unknown): FoundationScope | null {
   if (!raw || typeof raw !== 'object') return null;
   const s = raw as Record<string, unknown>;
 
   if (s.target === 'textStyles') {
-    return typeof s.group === 'string'
-      ? { target: 'textStyles', group: s.group }
-      : { target: 'textStyles' };
+    return { target: 'textStyles', ...parseGroups(s) };
   }
   if (s.target === 'effectStyles') {
-    return typeof s.group === 'string'
-      ? { target: 'effectStyles', group: s.group }
-      : { target: 'effectStyles' };
+    return { target: 'effectStyles', ...parseGroups(s) };
   }
   if (s.target === 'collection') {
     if (typeof s.collectionId !== 'string' || typeof s.collectionName !== 'string') return null;
@@ -440,7 +446,7 @@ function parseScope(raw: unknown): FoundationScope | null {
       target: 'collection',
       collectionId: s.collectionId,
       collectionName: s.collectionName,
-      ...(typeof s.group === 'string' ? { group: s.group } : {}),
+      ...parseGroups(s),
       modeIds,
     };
   }

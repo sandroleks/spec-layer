@@ -162,6 +162,12 @@ export function headerSubtitle(content: FoundationUnitContent, target: Foundatio
     + plural(content.modeNames.length, 'mode', 'modes');
 }
 
+/** "a", "a and b", "a, b and c". */
+function listOf(items: string[]): string {
+  return items.length <= 1 ? (items[0] ?? '')
+    : `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
+}
+
 /**
  * The frame's footer lines, in render order. Takes ONLY `content`: whatever a
  * footer says must come from what the drift hash reads, or it is rendered
@@ -172,13 +178,14 @@ export function footerNotes(content: FoundationUnitContent): string[] {
   if (content.omittedModeNames.length > 0) {
     notes.push(`Modes not shown: ${content.omittedModeNames.join(', ')}`);
   }
-  if (content.part && content.group !== undefined) {
+  const covered = content.groups ?? (content.group !== undefined ? [content.group] : undefined);
+  if (content.part && covered) {
     // The root group '' has no name; say what it holds instead. Style units
     // carry an empty collectionName.
-    const covering = content.group !== '' ? content.group
+    const names = covered.map((g) => g !== '' ? g
       : content.collectionName === '' ? 'the styles that are not in a group'
-      : 'the variables that are not in a group';
-    notes.push(`Part ${content.part.index + 1} of ${content.part.total}, covering ${covering}.`);
+      : 'the variables that are not in a group');
+    notes.push(`Part ${content.part.index + 1} of ${content.part.total}, covering ${listOf(names)}.`);
   }
   return notes;
 }

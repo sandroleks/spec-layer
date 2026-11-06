@@ -266,8 +266,9 @@ describe('frameCount', () => {
 
 describe('framesPerSource', () => {
   it('reports each source, whether or not it is selected', () => {
+    // 51 rows per group: color and space share a pack, radius gets the next.
     const spec = buildFoundation(bigDump(SPLIT_THRESHOLD + 3, ['color', 'space', 'radius'], 2));
-    expect(framesPerSource(spec)).toEqual({ collections: { big: 3 }, textStyles: 1, effectStyles: 0 });
+    expect(framesPerSource(spec)).toEqual({ collections: { big: 2 }, textStyles: 1, effectStyles: 0 });
   });
 
   it('reports one frame for an unsplit collection', () => {

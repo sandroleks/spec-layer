@@ -5,11 +5,12 @@
  * including an unreadable source, is `mixed`, never a majority guess.
  */
 
-import type {
-  FoundationCollection,
-  FoundationScope,
-  FoundationSpec,
-  FoundationVariable,
+import {
+  scopeHasGroup,
+  type FoundationCollection,
+  type FoundationScope,
+  type FoundationSpec,
+  type FoundationVariable,
 } from '@spec-layer/extractor';
 
 export type FoundationIconKind = 'color' | 'dimension' | 'mixed' | 'typography' | 'effect';
@@ -46,8 +47,6 @@ export function scopeIconKind(
   if (!collection) return 'mixed';
 
   return variablesIconKind(
-    scope.group !== undefined
-      ? collection.variables.filter((v) => v.group === scope.group)
-      : collection.variables,
+    collection.variables.filter((v) => scopeHasGroup(scope, v.group)),
   );
 }

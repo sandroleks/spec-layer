@@ -3,7 +3,7 @@ import {
   buildFoundation, groupOf, groupRowsByFolder, type SerializedFoundation,
   planFoundationUnits, unitContent, SPLIT_THRESHOLD, MAX_MODE_COLUMNS,
   foundationUnitTitle, groupTitle, groupTitles,
-  glyphForScopes,
+  glyphForScopes, packGroups,
   type FoundationSelection,
 } from '../src/foundation';
 
@@ -48,6 +48,19 @@ describe('groupOf', () => {
   });
   it('handles a leading slash without producing an empty group', () => {
     expect(groupOf('/odd')).toBe('/odd');
+  });
+});
+
+describe('packGroups', () => {
+  it('keeps groups whole and in first-appearance order', () => {
+    const names = ['a/1', 'b/1', 'a/2', 'c/1', 'c/2', 'c/3'];
+    expect(packGroups(names, 3)).toEqual([['a', 'b'], ['c']]);
+  });
+  it('gives a group larger than the limit a pack of its own', () => {
+    expect(packGroups(['a/1', 'b/1', 'b/2', 'b/3', 'c/1'], 2)).toEqual([['a'], ['b'], ['c']]);
+  });
+  it('packs the root group like any other', () => {
+    expect(packGroups(['x', 'y', 'a/1'], 3)).toEqual([['', 'a']]);
   });
 });
 
@@ -554,7 +567,8 @@ describe('planFoundationUnits', () => {
     expect(units).toHaveLength(2);
     expect(units.map((u) => u.title)).toEqual(['Primitives · color', 'Primitives · space']);
     expect(units.reduce((n, u) => n + u.rowCount, 0)).toBe(SPLIT_THRESHOLD + 1);
-    expect(units[0].scope).toMatchObject({ group: 'color' });
+    // 76 + 75 rows: no two groups fit in one pack, so each gets its own.
+    expect(units[0].scope).toMatchObject({ groups: ['color'] });
   });
 
   it('leaves a single-group oversized collection as one tall unit', () => {
@@ -564,6 +578,56 @@ describe('planFoundationUnits', () => {
     expect(units[0].rowCount).toBe(SPLIT_THRESHOLD + 50);
     expect(units[0].title).toBe('Primitives');
     expect(units[0].scope).not.toHaveProperty('group');
+  });
+
+  it('packs whole groups, in order, into units of at most the threshold', () => {
+    // Ant Design's `components` collection: 645 rows in 57 small groups once
+    // made 57 docs. Twenty groups of ten rows pack into two units.
+    const groups = Array.from({ length: 20 }, (_, i) => `g${i}`);
+    const dump = bigDump(200, groups);
+    const spec = buildFoundation(dump);
+    const units = planFoundationUnits(spec, allOf(dump));
+    expect(units.map((u) => u.rowCount)).toEqual([150, 50]);
+    expect(units.map((u) => u.title)).toEqual(['Primitives · g0 to g14', 'Primitives · g15 to g19']);
+    expect(units[0].scope).toMatchObject({ groups: groups.slice(0, 15) });
+    expect(units[0].scope).not.toHaveProperty('group');
+
+    const second = unitContent(spec, units[1].scope)!;
+    expect(second.groups).toEqual(groups.slice(15));
+    expect(second.part).toEqual({ index: 1, total: 2 });
+    expect(second.rows).toHaveLength(50);
+    expect(foundationUnitTitle(units[1].scope, second)).toBe('Primitives · g15 to g19');
+  });
+
+  it('still reads a single-group scope from a doc made before packing', () => {
+    const dump = bigDump(200, Array.from({ length: 20 }, (_, i) => `g${i}`));
+    const spec = buildFoundation(dump);
+    const legacy = unitContent(spec, {
+      target: 'collection', collectionId: 'c1', collectionName: 'Primitives', group: 'g3', modeIds: ['m1'],
+    })!;
+    expect(legacy.group).toBe('g3');
+    expect(legacy).not.toHaveProperty('groups');
+    expect(legacy.rows).toHaveLength(10);
+    expect(legacy.part).toEqual({ index: 3, total: 20 });
+  });
+
+  it('drops the part note when the live packing no longer matches the stored groups', () => {
+    const groups = Array.from({ length: 20 }, (_, i) => `g${i}`);
+    const dump = bigDump(200, groups);
+    const spec = buildFoundation(dump);
+    const content = unitContent(spec, {
+      target: 'collection', collectionId: 'c1', collectionName: 'Primitives',
+      groups: groups.slice(0, 10), modeIds: ['m1'],
+    })!;
+    expect(content.rows).toHaveLength(100);
+    expect(content).not.toHaveProperty('part');
+  });
+
+  it('returns null when none of a pack\'s groups is left', () => {
+    const spec = buildFoundation(bigDump(200, ['a', 'b']));
+    expect(unitContent(spec, {
+      target: 'collection', collectionId: 'c1', collectionName: 'Primitives', groups: ['x', 'y'], modeIds: ['m1'],
+    })).toBeNull();
   });
 
   it('keeps an oversized collection of folderless variables as one unit', () => {
@@ -577,21 +641,22 @@ describe('planFoundationUnits', () => {
     expect(units[0].scope).not.toHaveProperty('group');
   });
 
-  it('pools folderless variables into one unit beside the folder units', () => {
+  it('packs folderless variables as one group beside the folder groups', () => {
     const dump = bigDump(SPLIT_THRESHOLD + 4, ['color', 'space']);
     // Four folderless names at the front: the root group appears first.
     dump.collections[0].variables.slice(0, 4).forEach((v, i) => { v.name = `flat${i}`; });
     const spec = buildFoundation(dump);
     const units = planFoundationUnits(spec, allOf(dump));
-    expect(units.map((u) => u.title)).toEqual(['Primitives', 'Primitives · color', 'Primitives · space']);
-    expect(units[0].scope).toMatchObject({ group: '' });
-    expect(units[0].rowCount).toBe(4);
+    // The root group (4) and color (75) share a pack; space (75) would overflow it.
+    expect(units.map((u) => u.title)).toEqual(['Primitives · color', 'Primitives · space']);
+    expect(units[0].scope).toMatchObject({ groups: ['', 'color'] });
+    expect(units[0].rowCount).toBe(79);
     expect(units.reduce((n, u) => n + u.rowCount, 0)).toBe(SPLIT_THRESHOLD + 4);
 
-    const root = unitContent(spec, units[0].scope)!;
-    expect(root.group).toBe('');
-    expect(root.part).toEqual({ index: 0, total: 3 });
-    expect(root.rows.map((r) => r.name)).toEqual(['flat0', 'flat1', 'flat2', 'flat3']);
+    const first = unitContent(spec, units[0].scope)!;
+    expect(first.groups).toEqual(['', 'color']);
+    expect(first.part).toEqual({ index: 0, total: 2 });
+    expect(first.rows.slice(0, 4).map((r) => r.name)).toEqual(['flat0', 'flat1', 'flat2', 'flat3']);
   });
 
   it('keeps an oversized set of folderless text styles as one unit', () => {
@@ -628,8 +693,9 @@ describe('planFoundationUnits', () => {
   it('orders split groups by first appearance, stably', () => {
     const dump = bigDump(SPLIT_THRESHOLD + 3, ['radius', 'color', 'space']);
     const units = planFoundationUnits(buildFoundation(dump), allOf(dump));
+    // 51 rows each: radius and color fill the first pack, space starts the next.
     expect(units.map((u) => u.title))
-      .toEqual(['Primitives · radius', 'Primitives · color', 'Primitives · space']);
+      .toEqual(['Primitives · radius to color', 'Primitives · space']);
   });
 
   it('omits unselected collections', () => {
@@ -834,10 +900,13 @@ describe('unitContent', () => {
 });
 
 describe('unitContent — part numbering', () => {
-  /** Two collections that each split: c1 into 3 groups, c2 into 2. */
+  /**
+   * Two collections that each split: c1 into 3 parts, c2 into 2. 100 rows per
+   * group, so no two groups share a pack and each part is one group.
+   */
   function twoSplitCollections(): SerializedFoundation {
     const varsFor = (prefix: string, groups: string[]) =>
-      Array.from({ length: SPLIT_THRESHOLD + groups.length }, (_, i) => ({
+      Array.from({ length: 100 * groups.length }, (_, i) => ({
         id: `${prefix}${i}`,
         name: `${groups[i % groups.length]}/item${i}`,
         resolvedType: 'COLOR' as const,
