@@ -91,16 +91,18 @@ comments, so the provenance lives here. Each entry names the parent whose own
 range still asks for the vulnerable version; when `npm explain <package>` no
 longer prints an `overridden … (was …)` line for it, the parent has caught up
 and the entry should be deleted in the next dependency pull request. Recorded
-2026-10-02:
+2026-11-22:
 
 | Override | Parent that asks for less | Drop when |
 |---|---|---|
-| `minimatch` `^10.2.6` | `eslint@10.11.0` asks for `^10.2.5`, `@eslint/config-array@0.23.5` for `^10.2.4`, `@typescript-eslint/typescript-estree@8.71.0` and `glob@13.0.6` for `^10.2.2` | every parent asks for `^10.2.6` or later |
-| `brace-expansion` `^5.0.9` | `minimatch@10.2.6` asks for `^5.0.8` | minimatch asks for `^5.0.9` or later |
+| `glob` `^14.0.6` | `@bundled-es-modules/glob@13.0.6` (through `style-dictionary`, 5.5.5 and the latest 5.8.0 alike) asks for `^13.0.6`, and every 13.x is in GHSA-3g3m-2fjr-6pw4 | it asks for `^14.0.2` or later |
 
-`sharp`, `undici` and `nanoid` were dropped on 2026-10-02: `miniflare` now
-asks for `sharp@0.35.4` and `undici@7.29.1` itself, and `npm explain nanoid`
-showed no override in effect. `npm audit` stays clean without them.
+`minimatch` and `brace-expansion` were dropped on 2026-11-22: `eslint@10.15.0`
+and `typescript-eslint@8.73.0` ask for minimatch 11, past GHSA-g3hv-75wg-m249,
+and minimatch 11 asks for a newer brace-expansion than the old override did.
+`sharp`, `undici` and `nanoid` were dropped on 2026-10-02 once `miniflare`
+caught up; `undici` is clean again through `wrangler@4.166.0`. `npm audit`
+stays clean without them.
 
 ## Reporting security issues
 
